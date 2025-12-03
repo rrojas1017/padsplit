@@ -55,7 +55,7 @@ export default function AgentManagement() {
       return;
     }
 
-    const site = mockSites.find(s => s.id === siteId);
+    const site = sites.find(s => s.id === siteId);
 
     if (editingAgent) {
       updateAgent(editingAgent, { name: name.trim(), siteId, siteName: site?.name || '' });
@@ -128,7 +128,7 @@ export default function AgentManagement() {
                       <SelectValue placeholder="Select site" />
                     </SelectTrigger>
                     <SelectContent>
-                      {mockSites.map(site => (
+                      {sites.map(site => (
                         <SelectItem key={site.id} value={site.id}>
                           {site.name}
                         </SelectItem>
