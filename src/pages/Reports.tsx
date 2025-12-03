@@ -1,14 +1,18 @@
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
-import { mockBookings, mockAgents } from '@/data/mockData';
+import { useBookings } from '@/contexts/BookingsContext';
 import { DateRangeFilter } from '@/components/dashboard/DateRangeFilter';
 import { SiteFilter } from '@/components/dashboard/SiteFilter';
 import { Button } from '@/components/ui/button';
-import { Download, Filter, Search } from 'lucide-react';
+import { Download, Filter, Search, PlusCircle } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { format } from 'date-fns';
 import { cn } from '@/lib/utils';
+import { useNavigate } from 'react-router-dom';
 
 export default function Reports() {
+  const { bookings } = useBookings();
+  const navigate = useNavigate();
+  
   const statusColors: Record<string, string> = {
     'Pending Move-In': 'bg-warning/20 text-warning',
     'Moved In': 'bg-success/20 text-success',
@@ -34,9 +38,13 @@ export default function Reports() {
           <Filter className="w-4 h-4" />
           More Filters
         </Button>
-        <Button className="gap-2">
+        <Button variant="outline" className="gap-2">
           <Download className="w-4 h-4" />
           Export CSV
+        </Button>
+        <Button className="gap-2" onClick={() => navigate('/add-booking')}>
+          <PlusCircle className="w-4 h-4" />
+          Add Booking
         </Button>
       </div>
 
@@ -57,7 +65,7 @@ export default function Reports() {
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
-              {mockBookings.slice(0, 20).map((booking) => (
+              {bookings.slice(0, 20).map((booking) => (
                 <tr key={booking.id} className="hover:bg-muted/30 transition-colors">
                   <td className="py-3 px-4 text-sm text-foreground">
                     {format(booking.bookingDate, 'MMM d, yyyy')}
@@ -97,7 +105,7 @@ export default function Reports() {
         {/* Pagination */}
         <div className="p-4 border-t border-border flex items-center justify-between">
           <p className="text-sm text-muted-foreground">
-            Showing 1-20 of {mockBookings.length} bookings
+            Showing 1-20 of {bookings.length} bookings
           </p>
           <div className="flex items-center gap-2">
             <Button variant="outline" size="sm" disabled>Previous</Button>
