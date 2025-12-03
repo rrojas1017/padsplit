@@ -18,6 +18,7 @@ import MyPerformance from "./pages/MyPerformance";
 import Leaderboard from "./pages/Leaderboard";
 import Reports from "./pages/Reports";
 import AddBooking from "./pages/AddBooking";
+import EditBooking from "./pages/EditBooking";
 import Wallboard from "./pages/Wallboard";
 import UserManagement from "./pages/UserManagement";
 import AgentManagement from "./pages/AgentManagement";
@@ -70,8 +71,14 @@ const App = () => (
               } />
 
               <Route path="/add-booking" element={
-                <ProtectedRoute allowedRoles={['super_admin', 'admin', 'supervisor']}>
+                <ProtectedRoute allowedRoles={['super_admin', 'admin', 'supervisor', 'agent']}>
                   <AddBooking />
+                </ProtectedRoute>
+              } />
+
+              <Route path="/edit-booking/:id" element={
+                <ProtectedRoute allowedRoles={['super_admin', 'admin', 'supervisor', 'agent']}>
+                  <EditBooking />
                 </ProtectedRoute>
               } />
               

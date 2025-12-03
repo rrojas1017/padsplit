@@ -1,9 +1,11 @@
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { useBookings } from '@/contexts/BookingsContext';
+import { useAuth } from '@/contexts/AuthContext';
+import { useAgents } from '@/contexts/AgentsContext';
 import { DateRangeFilter } from '@/components/dashboard/DateRangeFilter';
 import { SiteFilter } from '@/components/dashboard/SiteFilter';
 import { Button } from '@/components/ui/button';
-import { Download, Filter, Search, PlusCircle } from 'lucide-react';
+import { Download, Filter, Search, PlusCircle, Pencil } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { format } from 'date-fns';
 import { cn } from '@/lib/utils';
@@ -11,7 +13,26 @@ import { useNavigate } from 'react-router-dom';
 
 export default function Reports() {
   const { bookings } = useBookings();
+  const { user } = useAuth();
+  const { agents } = useAgents();
   const navigate = useNavigate();
+
+  // Check if user can edit a specific booking
+  const canEditBooking = (bookingAgentId: string) => {
+    if (!user) return false;
+    if (user.role === 'super_admin' || user.role === 'admin') return true;
+    if (user.role === 'supervisor') {
+      // Supervisors can edit bookings from agents in their site
+      const agent = agents.find(a => a.id === bookingAgentId);
+      return agent?.siteId === user.siteId;
+    }
+    if (user.role === 'agent') {
+      // Agents can edit their own bookings
+      const agent = agents.find(a => a.id === bookingAgentId);
+      return agent?.userId === user.id;
+    }
+    return false;
+  };
   
   const statusColors: Record<string, string> = {
     'Pending Move-In': 'bg-warning/20 text-warning',
@@ -62,6 +83,7 @@ export default function Reports() {
                 <th className="text-left py-3 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Type</th>
                 <th className="text-left py-3 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Status</th>
                 <th className="text-left py-3 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Method</th>
+                <th className="text-left py-3 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
@@ -95,6 +117,18 @@ export default function Reports() {
                   </td>
                   <td className="py-3 px-4 text-sm text-muted-foreground">
                     {booking.communicationMethod}
+                  </td>
+                  <td className="py-3 px-4">
+                    {canEditBooking(booking.agentId) && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-8 w-8 p-0"
+                        onClick={() => navigate(`/edit-booking/${booking.id}`)}
+                      >
+                        <Pencil className="h-4 w-4" />
+                      </Button>
+                    )}
                   </td>
                 </tr>
               ))}
