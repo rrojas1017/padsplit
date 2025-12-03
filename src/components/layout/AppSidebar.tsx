@@ -176,6 +176,11 @@ export function AppSidebar() {
           <LogOut className="w-5 h-5 flex-shrink-0" />
           {!collapsed && <span className="text-sm font-medium">Logout</span>}
         </button>
+        {!collapsed && (
+          <p className="mt-3 text-center text-xs text-sidebar-foreground/50">
+            Powered by Appendify LLC
+          </p>
+        )}
       </div>
     </aside>
   );
