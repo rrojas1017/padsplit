@@ -80,7 +80,7 @@ export default function Login() {
           </div>
           <div className="flex items-center gap-2 text-primary-foreground/80">
             <img src={appendifyLogo} alt="Appendify" className="h-5 w-auto" />
-            <span className="text-sm font-medium">Powered by Appendify</span>
+            <span className="text-sm font-medium">Powered by Appendify LLC</span>
           </div>
         </div>
 

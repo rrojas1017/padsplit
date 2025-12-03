@@ -181,7 +181,7 @@ export default function Wallboard() {
 
       {/* Footer */}
       <footer className="mt-8 text-center text-sm text-muted-foreground">
-        <p className="flex items-center justify-center gap-2">Auto-refreshes every 60 seconds • Powered by <img src={appendifyLogo} alt="Appendify" className="h-4 w-auto" /></p>
+        <p>Auto-refreshes every 60 seconds • Powered by Appendify LLC</p>
       </footer>
     </div>
   );

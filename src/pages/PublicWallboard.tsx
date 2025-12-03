@@ -259,7 +259,7 @@ export default function PublicWallboard() {
       <footer className="flex-shrink-0 pt-3 text-center text-xs text-muted-foreground">
         <p className="flex items-center justify-center gap-2">
           <RefreshCw className={cn("w-3 h-3", secondsUntilRefresh <= 5 && "animate-spin")} />
-          Next refresh in {secondsUntilRefresh}s • Last updated {format(lastRefresh, 'HH:mm:ss')} • Powered by <img src={appendifyLogo} alt="Appendify" className="h-3 w-auto" />
+          Next refresh in {secondsUntilRefresh}s • Last updated {format(lastRefresh, 'HH:mm:ss')} • Powered by Appendify LLC
         </p>
       </footer>
     </div>
