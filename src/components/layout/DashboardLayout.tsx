@@ -1,6 +1,8 @@
 import { ReactNode } from 'react';
 import { AppSidebar } from './AppSidebar';
 import { Header } from './Header';
+import { useSidebar } from '@/contexts/SidebarContext';
+import { cn } from '@/lib/utils';
 
 interface DashboardLayoutProps {
   children: ReactNode;
@@ -9,10 +11,15 @@ interface DashboardLayoutProps {
 }
 
 export function DashboardLayout({ children, title, subtitle }: DashboardLayoutProps) {
+  const { collapsed } = useSidebar();
+  
   return (
     <div className="min-h-screen bg-background flex w-full">
       <AppSidebar />
-      <div className="flex-1 ml-64 transition-all duration-300">
+      <div className={cn(
+        "flex-1 transition-all duration-300",
+        collapsed ? "ml-16" : "ml-64"
+      )}>
         <Header title={title} subtitle={subtitle} />
         <main className="p-6">
           {children}
