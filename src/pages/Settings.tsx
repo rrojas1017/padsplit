@@ -4,7 +4,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { useTheme } from '@/contexts/ThemeContext';
-import { Database, Bell, Moon, Sun, Upload, Key } from 'lucide-react';
+import { Database, Bell, Moon, Sun, Upload, Key, FileText, Download } from 'lucide-react';
+import { generateRoleDocumentationPDF } from '@/utils/roleDocumentation';
 
 export default function Settings() {
   const { theme, toggleTheme } = useTheme();
@@ -122,6 +123,28 @@ export default function Settings() {
               </div>
               <Button variant="outline" size="sm">Connect</Button>
             </div>
+          </div>
+        </div>
+
+        {/* Documentation */}
+        <div className="bg-card rounded-xl border border-border p-6 shadow-card">
+          <div className="flex items-center gap-3 mb-6">
+            <FileText className="w-5 h-5 text-accent" />
+            <h3 className="text-lg font-semibold text-foreground">Documentation</h3>
+          </div>
+          
+          <div className="space-y-4">
+            <div>
+              <p className="font-medium text-foreground">Role & Permissions Guide</p>
+              <p className="text-sm text-muted-foreground">
+                Download the complete user manual with role definitions, permissions, and responsibilities
+              </p>
+            </div>
+            
+            <Button onClick={generateRoleDocumentationPDF} className="gap-2">
+              <Download className="w-4 h-4" />
+              Download PDF Guide
+            </Button>
           </div>
         </div>
       </div>
