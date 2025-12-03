@@ -7,7 +7,6 @@ export interface User {
   role: UserRole;
   siteId?: string;
   avatarUrl?: string;
-  lastLogin?: Date;
   status: 'active' | 'inactive';
 }
 
@@ -44,6 +43,7 @@ export interface Booking {
   kixieLink?: string;
   adminProfileLink?: string;
   moveInDayReachOut?: boolean;
+  createdBy?: string;
 }
 
 export interface DailyMetrics {
@@ -104,4 +104,13 @@ export interface FilterState {
   sites: string[];
   agents: string[];
   status: string[];
+}
+
+export interface DisplayToken {
+  id: string;
+  name: string;
+  token: string;
+  createdAt: Date;
+  expiresAt?: Date;
+  siteFilter?: string;
 }

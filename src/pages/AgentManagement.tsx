@@ -27,12 +27,11 @@ import {
 } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { useAgents } from '@/contexts/AgentsContext';
-import { mockSites } from '@/data/mockData';
 import { PlusCircle, Pencil, UserX, UserCheck } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 
 export default function AgentManagement() {
-  const { agents, addAgent, updateAgent, toggleAgentStatus } = useAgents();
+  const { agents, sites, addAgent, updateAgent, toggleAgentStatus } = useAgents();
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [editingAgent, setEditingAgent] = useState<string | null>(null);
   

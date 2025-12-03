@@ -28,7 +28,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { useDisplayTokens } from '@/contexts/DisplayTokensContext';
-import { mockSites } from '@/data/mockData';
+import { useAgents } from '@/contexts/AgentsContext';
 import { PlusCircle, Copy, Trash2, CalendarIcon, ExternalLink } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 import { format } from 'date-fns';
@@ -36,7 +36,9 @@ import { cn } from '@/lib/utils';
 
 export default function DisplayLinks() {
   const { tokens, addToken, deleteToken } = useDisplayTokens();
+  const { sites } = useAgents();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   
   // Form state
   const [name, setName] = useState('');
@@ -49,28 +51,35 @@ export default function DisplayLinks() {
     setExpiresAt(undefined);
   };
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (!name.trim()) {
       toast({ title: 'Error', description: 'Display name is required', variant: 'destructive' });
       return;
     }
 
-    const newToken = addToken({
-      name: name.trim(),
-      siteFilter: siteFilter || undefined,
-      expiresAt,
-    });
+    setIsSubmitting(true);
+    try {
+      const newToken = await addToken({
+        name: name.trim(),
+        siteFilter: siteFilter || undefined,
+        expiresAt,
+      });
 
-    const displayUrl = `${window.location.origin}/display/${newToken.token}`;
-    navigator.clipboard.writeText(displayUrl);
+      const displayUrl = `${window.location.origin}/display/${newToken.token}`;
+      navigator.clipboard.writeText(displayUrl);
 
-    toast({
-      title: 'Display Link Created',
-      description: 'The link has been copied to your clipboard',
-    });
+      toast({
+        title: 'Display Link Created',
+        description: 'The link has been copied to your clipboard',
+      });
 
-    resetForm();
-    setIsDialogOpen(false);
+      resetForm();
+      setIsDialogOpen(false);
+    } catch (error) {
+      toast({ title: 'Error', description: 'Failed to create display link', variant: 'destructive' });
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const handleCopyLink = (token: string) => {
@@ -79,9 +88,13 @@ export default function DisplayLinks() {
     toast({ title: 'Link Copied', description: 'Display link copied to clipboard' });
   };
 
-  const handleDelete = (id: string) => {
-    deleteToken(id);
-    toast({ title: 'Link Deleted', description: 'Display link has been revoked' });
+  const handleDelete = async (id: string) => {
+    try {
+      await deleteToken(id);
+      toast({ title: 'Link Deleted', description: 'Display link has been revoked' });
+    } catch (error) {
+      toast({ title: 'Error', description: 'Failed to delete link', variant: 'destructive' });
+    }
   };
 
   const handleOpenLink = (token: string) => {
@@ -125,7 +138,7 @@ export default function DisplayLinks() {
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="all">All Sites</SelectItem>
-                      {mockSites.map(site => (
+                      {sites.map(site => (
                         <SelectItem key={site.id} value={site.id}>
                           {site.name}
                         </SelectItem>
@@ -167,8 +180,8 @@ export default function DisplayLinks() {
                   }}>
                     Cancel
                   </Button>
-                  <Button onClick={handleSubmit}>
-                    Create Link
+                  <Button onClick={handleSubmit} disabled={isSubmitting}>
+                    {isSubmitting ? 'Creating...' : 'Create Link'}
                   </Button>
                 </div>
               </div>
@@ -197,7 +210,7 @@ export default function DisplayLinks() {
               </TableHeader>
               <TableBody>
                 {tokens.map(token => {
-                  const site = mockSites.find(s => s.id === token.siteFilter);
+                  const site = sites.find(s => s.id === token.siteFilter);
                   return (
                     <TableRow key={token.id}>
                       <TableCell className="font-medium">{token.name}</TableCell>
