@@ -34,6 +34,16 @@ import { toast } from '@/hooks/use-toast';
 import { format } from 'date-fns';
 import { cn } from '@/lib/utils';
 
+const PRODUCTION_DOMAIN = 'https://padsplit.tools';
+
+const getBaseUrl = () => {
+  const hostname = window.location.hostname;
+  if (hostname === 'localhost' || hostname.includes('lovable')) {
+    return PRODUCTION_DOMAIN;
+  }
+  return window.location.origin;
+};
+
 export default function DisplayLinks() {
   const { tokens, addToken, deleteToken } = useDisplayTokens();
   const { sites } = useAgents();
@@ -65,7 +75,7 @@ export default function DisplayLinks() {
         expiresAt,
       });
 
-      const displayUrl = `${window.location.origin}/display/${newToken.token}`;
+      const displayUrl = `${getBaseUrl()}/display/${newToken.token}`;
       navigator.clipboard.writeText(displayUrl);
 
       toast({
@@ -83,7 +93,7 @@ export default function DisplayLinks() {
   };
 
   const handleCopyLink = (token: string) => {
-    const displayUrl = `${window.location.origin}/display/${token}`;
+    const displayUrl = `${getBaseUrl()}/display/${token}`;
     navigator.clipboard.writeText(displayUrl);
     toast({ title: 'Link Copied', description: 'Display link copied to clipboard' });
   };
@@ -98,7 +108,7 @@ export default function DisplayLinks() {
   };
 
   const handleOpenLink = (token: string) => {
-    const displayUrl = `${window.location.origin}/display/${token}`;
+    const displayUrl = `${getBaseUrl()}/display/${token}`;
     window.open(displayUrl, '_blank');
   };
 
