@@ -98,12 +98,19 @@ export default {
           from: { opacity: "0", transform: "translateY(20px)" },
           to: { opacity: "1", transform: "translateY(0)" },
         },
+        "flash": {
+          "0%": { boxShadow: "0 0 0 0 hsl(var(--accent) / 0)" },
+          "25%": { boxShadow: "0 0 20px 4px hsl(var(--accent) / 0.6)" },
+          "50%": { boxShadow: "0 0 30px 8px hsl(var(--accent) / 0.4)" },
+          "100%": { boxShadow: "0 0 0 0 hsl(var(--accent) / 0)" },
+        },
       },
       animation: {
         "accordion-down": "accordion-down 0.2s ease-out",
         "accordion-up": "accordion-up 0.2s ease-out",
         "fade-in": "fade-in 0.5s ease-out forwards",
         "slide-up": "slide-up 0.5s ease-out forwards",
+        "flash": "flash 0.8s ease-out",
       },
       boxShadow: {
         'glow': '0 0 20px hsl(42 72% 55% / 0.3)',
