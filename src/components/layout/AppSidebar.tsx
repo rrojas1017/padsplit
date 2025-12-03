@@ -17,6 +17,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useSidebar } from '@/contexts/SidebarContext';
 import { cn } from '@/lib/utils';
 import padsplitLogo from '@/assets/padsplit-logo.jpeg';
+import appendifyLogo from '@/assets/appendify-logo.png';
 
 const menuItems = [
   { 
@@ -117,7 +118,10 @@ export function AppSidebar() {
             <img src={padsplitLogo} alt="PadSplit" className="h-8 w-auto rounded" />
             <div className="flex flex-col">
               <span className="text-sidebar-foreground font-semibold text-sm">PadSplit</span>
-              <span className="text-sidebar-foreground/60 text-xs">by Vixicom</span>
+              <div className="flex items-center gap-1">
+                <span className="text-sidebar-foreground/60 text-xs">by</span>
+                <img src={appendifyLogo} alt="Appendify" className="h-3 w-auto" />
+              </div>
             </div>
           </div>
         )}

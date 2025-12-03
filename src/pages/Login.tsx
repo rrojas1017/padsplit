@@ -7,6 +7,7 @@ import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Key, Mail, Lock, AlertCircle, Eye, EyeOff, User } from 'lucide-react';
 import padsplitLogo from '@/assets/padsplit-logo.jpeg';
+import appendifyLogo from '@/assets/appendify-logo.png';
 import { useTheme } from '@/contexts/ThemeContext';
 import { Sun, Moon } from 'lucide-react';
 
@@ -78,8 +79,8 @@ export default function Login() {
             <img src={padsplitLogo} alt="PadSplit" className="h-12 w-auto rounded-lg" />
           </div>
           <div className="flex items-center gap-2 text-primary-foreground/80">
-            <Key className="w-5 h-5 text-accent" />
-            <span className="text-sm font-medium">Powered by Vixicom</span>
+            <img src={appendifyLogo} alt="Appendify" className="h-5 w-auto" />
+            <span className="text-sm font-medium">Powered by Appendify</span>
           </div>
         </div>
 
