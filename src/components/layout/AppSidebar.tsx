@@ -12,9 +12,9 @@ import {
 } from 'lucide-react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
+import { useSidebar } from '@/contexts/SidebarContext';
 import { cn } from '@/lib/utils';
 import padsplitLogo from '@/assets/padsplit-logo.jpeg';
-import { useState } from 'react';
 
 const menuItems = [
   { 
@@ -70,7 +70,7 @@ const menuItems = [
 export function AppSidebar() {
   const { user, logout, hasRole } = useAuth();
   const location = useLocation();
-  const [collapsed, setCollapsed] = useState(false);
+  const { collapsed, toggleSidebar } = useSidebar();
 
   const visibleItems = menuItems.filter(item => 
     hasRole(item.roles as any[])
@@ -102,7 +102,7 @@ export function AppSidebar() {
           </div>
         )}
         <button 
-          onClick={() => setCollapsed(!collapsed)}
+          onClick={toggleSidebar}
           className="p-1.5 rounded-md hover:bg-sidebar-accent transition-colors"
         >
           <ChevronLeft className={cn(
