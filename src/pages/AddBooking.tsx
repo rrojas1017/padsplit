@@ -1,0 +1,378 @@
+import { DashboardLayout } from '@/components/layout/DashboardLayout';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+import { Checkbox } from '@/components/ui/checkbox';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { Calendar } from '@/components/ui/calendar';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { useBookings } from '@/contexts/BookingsContext';
+import { useAuth } from '@/contexts/AuthContext';
+import { mockAgents } from '@/data/mockData';
+import { Booking } from '@/types';
+import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { toast } from '@/hooks/use-toast';
+import { format } from 'date-fns';
+import { CalendarIcon, Save, PlusCircle, ArrowLeft } from 'lucide-react';
+import { cn } from '@/lib/utils';
+
+const markets = [
+  { city: 'Atlanta', state: 'GA' },
+  { city: 'Houston', state: 'TX' },
+  { city: 'Dallas', state: 'TX' },
+  { city: 'Phoenix', state: 'AZ' },
+  { city: 'Charlotte', state: 'NC' },
+  { city: 'Tampa', state: 'FL' },
+  { city: 'Orlando', state: 'FL' },
+  { city: 'Nashville', state: 'TN' },
+];
+
+const bookingTypes: Booking['bookingType'][] = ['Inbound', 'Outbound', 'Referral'];
+const statuses: Booking['status'][] = ['Pending Move-In', 'Moved In', 'Member Rejected', 'No Show', 'Cancelled'];
+const commMethods: Booking['communicationMethod'][] = ['Phone', 'SMS', 'LC', 'Email'];
+
+export default function AddBooking() {
+  const { addBooking } = useBookings();
+  const { user } = useAuth();
+  const navigate = useNavigate();
+
+  const [bookingDate, setBookingDate] = useState<Date>(new Date());
+  const [moveInDate, setMoveInDate] = useState<Date | undefined>();
+  const [memberName, setMemberName] = useState('');
+  const [agentId, setAgentId] = useState('');
+  const [market, setMarket] = useState('');
+  const [bookingType, setBookingType] = useState<Booking['bookingType']>('Inbound');
+  const [status, setStatus] = useState<Booking['status']>('Pending Move-In');
+  const [communicationMethod, setCommunicationMethod] = useState<Booking['communicationMethod']>('Phone');
+  const [notes, setNotes] = useState('');
+  const [hubspotLink, setHubspotLink] = useState('');
+  const [kixieLink, setKixieLink] = useState('');
+  const [adminProfileLink, setAdminProfileLink] = useState('');
+  const [moveInDayReachOut, setMoveInDayReachOut] = useState(false);
+
+  // Filter agents based on user role (supervisors only see their site's agents)
+  const availableAgents = user?.role === 'supervisor' && user.siteId
+    ? mockAgents.filter(a => a.siteId === user.siteId && a.active)
+    : mockAgents.filter(a => a.active);
+
+  const handleSubmit = (e: React.FormEvent, addAnother: boolean = false) => {
+    e.preventDefault();
+
+    if (!memberName.trim()) {
+      toast({ title: 'Error', description: 'Member name is required', variant: 'destructive' });
+      return;
+    }
+    if (!agentId) {
+      toast({ title: 'Error', description: 'Please select an agent', variant: 'destructive' });
+      return;
+    }
+    if (!market) {
+      toast({ title: 'Error', description: 'Please select a market', variant: 'destructive' });
+      return;
+    }
+    if (!moveInDate) {
+      toast({ title: 'Error', description: 'Move-in date is required', variant: 'destructive' });
+      return;
+    }
+
+    const selectedAgent = mockAgents.find(a => a.id === agentId);
+    const selectedMarket = markets.find(m => `${m.city}, ${m.state}` === market);
+
+    if (!selectedAgent || !selectedMarket) return;
+
+    addBooking({
+      bookingDate,
+      moveInDate,
+      memberName: memberName.trim(),
+      bookingType,
+      agentId,
+      agentName: selectedAgent.name,
+      marketCity: selectedMarket.city,
+      marketState: selectedMarket.state,
+      communicationMethod,
+      status,
+      notes: notes.trim() || undefined,
+      hubspotLink: hubspotLink.trim() || undefined,
+      kixieLink: kixieLink.trim() || undefined,
+      adminProfileLink: adminProfileLink.trim() || undefined,
+      moveInDayReachOut,
+    });
+
+    toast({
+      title: 'Booking Added',
+      description: `Successfully added booking for ${memberName}`,
+    });
+
+    if (addAnother) {
+      // Reset form for another entry
+      setMemberName('');
+      setMoveInDate(undefined);
+      setNotes('');
+      setHubspotLink('');
+      setKixieLink('');
+      setAdminProfileLink('');
+      setMoveInDayReachOut(false);
+    } else {
+      navigate('/reports');
+    }
+  };
+
+  return (
+    <DashboardLayout title="Add Booking" subtitle="Manually enter a new booking">
+      <div className="max-w-3xl">
+        <Button
+          variant="ghost"
+          className="mb-4 gap-2"
+          onClick={() => navigate(-1)}
+        >
+          <ArrowLeft className="w-4 h-4" />
+          Back
+        </Button>
+
+        <form onSubmit={(e) => handleSubmit(e, false)} className="space-y-6">
+          {/* Booking Info Section */}
+          <div className="bg-card rounded-xl border border-border p-6 shadow-card">
+            <h3 className="text-lg font-semibold text-foreground mb-4">Booking Information</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Booking Date</Label>
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      className={cn(
+                        "w-full justify-start text-left font-normal",
+                        !bookingDate && "text-muted-foreground"
+                      )}
+                    >
+                      <CalendarIcon className="mr-2 h-4 w-4" />
+                      {bookingDate ? format(bookingDate, "PPP") : "Select date"}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0 bg-popover" align="start">
+                    <Calendar
+                      mode="single"
+                      selected={bookingDate}
+                      onSelect={(date) => date && setBookingDate(date)}
+                      initialFocus
+                    />
+                  </PopoverContent>
+                </Popover>
+              </div>
+
+              <div className="space-y-2">
+                <Label>Move-In Date *</Label>
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      className={cn(
+                        "w-full justify-start text-left font-normal",
+                        !moveInDate && "text-muted-foreground"
+                      )}
+                    >
+                      <CalendarIcon className="mr-2 h-4 w-4" />
+                      {moveInDate ? format(moveInDate, "PPP") : "Select date"}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0 bg-popover" align="start">
+                    <Calendar
+                      mode="single"
+                      selected={moveInDate}
+                      onSelect={setMoveInDate}
+                      initialFocus
+                    />
+                  </PopoverContent>
+                </Popover>
+              </div>
+
+              <div className="space-y-2">
+                <Label>Booking Type</Label>
+                <Select value={bookingType} onValueChange={(v) => setBookingType(v as Booking['bookingType'])}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {bookingTypes.map(type => (
+                      <SelectItem key={type} value={type}>{type}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label>Status</Label>
+                <Select value={status} onValueChange={(v) => setStatus(v as Booking['status'])}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {statuses.map(s => (
+                      <SelectItem key={s} value={s}>{s}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          </div>
+
+          {/* Member Info Section */}
+          <div className="bg-card rounded-xl border border-border p-6 shadow-card">
+            <h3 className="text-lg font-semibold text-foreground mb-4">Member Information</h3>
+            <div className="space-y-2">
+              <Label htmlFor="memberName">Member Name *</Label>
+              <Input
+                id="memberName"
+                value={memberName}
+                onChange={(e) => setMemberName(e.target.value)}
+                placeholder="Enter member's full name"
+              />
+            </div>
+          </div>
+
+          {/* Agent & Location Section */}
+          <div className="bg-card rounded-xl border border-border p-6 shadow-card">
+            <h3 className="text-lg font-semibold text-foreground mb-4">Agent & Location</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Agent *</Label>
+                <Select value={agentId} onValueChange={setAgentId}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select agent" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {availableAgents.map(agent => (
+                      <SelectItem key={agent.id} value={agent.id}>
+                        {agent.name} ({agent.siteName})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label>Market *</Label>
+                <Select value={market} onValueChange={setMarket}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select market" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {markets.map(m => (
+                      <SelectItem key={`${m.city}-${m.state}`} value={`${m.city}, ${m.state}`}>
+                        {m.city}, {m.state}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          </div>
+
+          {/* Communication Section */}
+          <div className="bg-card rounded-xl border border-border p-6 shadow-card">
+            <h3 className="text-lg font-semibold text-foreground mb-4">Communication</h3>
+            <div className="space-y-2">
+              <Label>Communication Method</Label>
+              <Select value={communicationMethod} onValueChange={(v) => setCommunicationMethod(v as Booking['communicationMethod'])}>
+                <SelectTrigger className="w-full md:w-1/2">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {commMethods.map(method => (
+                    <SelectItem key={method} value={method}>{method}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          {/* Links Section */}
+          <div className="bg-card rounded-xl border border-border p-6 shadow-card">
+            <h3 className="text-lg font-semibold text-foreground mb-4">External Links (Optional)</h3>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="hubspotLink">HubSpot Link</Label>
+                <Input
+                  id="hubspotLink"
+                  value={hubspotLink}
+                  onChange={(e) => setHubspotLink(e.target.value)}
+                  placeholder="https://..."
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="kixieLink">Kixie Link</Label>
+                <Input
+                  id="kixieLink"
+                  value={kixieLink}
+                  onChange={(e) => setKixieLink(e.target.value)}
+                  placeholder="https://..."
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="adminProfileLink">Admin Profile Link</Label>
+                <Input
+                  id="adminProfileLink"
+                  value={adminProfileLink}
+                  onChange={(e) => setAdminProfileLink(e.target.value)}
+                  placeholder="https://..."
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Notes Section */}
+          <div className="bg-card rounded-xl border border-border p-6 shadow-card">
+            <h3 className="text-lg font-semibold text-foreground mb-4">Notes & Follow-up</h3>
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="notes">Notes (Optional)</Label>
+                <Textarea
+                  id="notes"
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                  placeholder="Any additional notes about this booking..."
+                  rows={3}
+                />
+              </div>
+              <div className="flex items-center space-x-2">
+                <Checkbox
+                  id="moveInReachOut"
+                  checked={moveInDayReachOut}
+                  onCheckedChange={(checked) => setMoveInDayReachOut(checked === true)}
+                />
+                <Label htmlFor="moveInReachOut" className="text-sm font-normal cursor-pointer">
+                  Move-in day reach out completed
+                </Label>
+              </div>
+            </div>
+          </div>
+
+          {/* Actions */}
+          <div className="flex flex-col sm:flex-row gap-3 pt-2">
+            <Button type="submit" className="gap-2">
+              <Save className="w-4 h-4" />
+              Save & View Reports
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              className="gap-2"
+              onClick={(e) => handleSubmit(e, true)}
+            >
+              <PlusCircle className="w-4 h-4" />
+              Save & Add Another
+            </Button>
+          </div>
+        </form>
+      </div>
+    </DashboardLayout>
+  );
+}

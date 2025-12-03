@@ -6,6 +6,7 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { ThemeProvider } from "@/contexts/ThemeContext";
 import { SidebarProvider } from "@/contexts/SidebarContext";
+import { BookingsProvider } from "@/contexts/BookingsContext";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 
 import Index from "./pages/Index";
@@ -14,6 +15,7 @@ import Dashboard from "./pages/Dashboard";
 import MyPerformance from "./pages/MyPerformance";
 import Leaderboard from "./pages/Leaderboard";
 import Reports from "./pages/Reports";
+import AddBooking from "./pages/AddBooking";
 import Wallboard from "./pages/Wallboard";
 import UserManagement from "./pages/UserManagement";
 import AuditLog from "./pages/AuditLog";
@@ -31,6 +33,7 @@ const App = () => (
           <Sonner />
           <BrowserRouter>
             <SidebarProvider>
+            <BookingsProvider>
             <Routes>
               <Route path="/" element={<Index />} />
               <Route path="/login" element={<Login />} />
@@ -56,6 +59,12 @@ const App = () => (
               <Route path="/reports" element={
                 <ProtectedRoute allowedRoles={['super_admin', 'admin', 'supervisor']}>
                   <Reports />
+                </ProtectedRoute>
+              } />
+
+              <Route path="/add-booking" element={
+                <ProtectedRoute allowedRoles={['super_admin', 'admin', 'supervisor']}>
+                  <AddBooking />
                 </ProtectedRoute>
               } />
               
@@ -85,6 +94,7 @@ const App = () => (
               
               <Route path="*" element={<NotFound />} />
             </Routes>
+            </BookingsProvider>
             </SidebarProvider>
           </BrowserRouter>
         </TooltipProvider>

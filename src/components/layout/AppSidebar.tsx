@@ -8,7 +8,7 @@ import {
   FileText,
   Shield,
   ChevronLeft,
-  Key
+  PlusCircle
 } from 'lucide-react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
@@ -28,6 +28,12 @@ const menuItems = [
     label: 'My Performance', 
     path: '/my-performance',
     roles: ['agent'] 
+  },
+  {
+    icon: PlusCircle,
+    label: 'Add Booking',
+    path: '/add-booking',
+    roles: ['super_admin', 'admin', 'supervisor']
   },
   { 
     icon: Users, 
