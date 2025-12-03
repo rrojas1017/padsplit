@@ -61,7 +61,7 @@ export default function DisplayLinks() {
     try {
       const newToken = await addToken({
         name: name.trim(),
-        siteFilter: siteFilter || undefined,
+        siteFilter: siteFilter && siteFilter !== 'all' ? siteFilter : undefined,
         expiresAt,
       });
 
