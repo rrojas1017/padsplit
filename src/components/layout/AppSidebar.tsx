@@ -8,7 +8,9 @@ import {
   FileText,
   Shield,
   ChevronLeft,
-  PlusCircle
+  PlusCircle,
+  UserCog,
+  Link2
 } from 'lucide-react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
@@ -58,6 +60,18 @@ const menuItems = [
     label: 'User Management', 
     path: '/users',
     roles: ['super_admin', 'admin'] 
+  },
+  {
+    icon: UserCog,
+    label: 'Agent Management',
+    path: '/agents',
+    roles: ['super_admin', 'admin']
+  },
+  {
+    icon: Link2,
+    label: 'Display Links',
+    path: '/display-links',
+    roles: ['super_admin', 'admin']
   },
   { 
     icon: Shield, 
