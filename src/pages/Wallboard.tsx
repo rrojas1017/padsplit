@@ -1,16 +1,17 @@
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { mockBookings, getLeaderboard, mockAgents } from '@/data/mockData';
 import { format, subDays } from 'date-fns';
-import { Trophy, TrendingUp, TrendingDown, RefreshCw, Users, Calendar } from 'lucide-react';
+import { Trophy, TrendingUp, TrendingDown, RefreshCw, Users, Calendar, ArrowLeft, Sun, Moon } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import padsplitLogo from '@/assets/padsplit-logo.jpeg';
 import { useTheme } from '@/contexts/ThemeContext';
 import { Button } from '@/components/ui/button';
-import { Sun, Moon } from 'lucide-react';
 
 export default function Wallboard() {
   const [time, setTime] = useState(new Date());
   const { theme, toggleTheme } = useTheme();
+  const navigate = useNavigate();
   
   useEffect(() => {
     const timer = setInterval(() => setTime(new Date()), 1000);
@@ -43,6 +44,16 @@ export default function Wallboard() {
       {/* Header */}
       <header className="flex items-center justify-between mb-8">
         <div className="flex items-center gap-4">
+          <Button 
+            variant="ghost" 
+            size="sm" 
+            onClick={() => navigate('/dashboard')}
+            className="gap-2"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            Dashboard
+          </Button>
+          <div className="h-6 w-px bg-border" />
           <img src={padsplitLogo} alt="PadSplit" className="h-10 w-auto rounded-lg" />
           <div>
             <h1 className="text-2xl lg:text-3xl font-bold text-foreground">Operations Dashboard</h1>
