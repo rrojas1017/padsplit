@@ -36,7 +36,7 @@ const menuItems = [
     icon: PlusCircle,
     label: 'Add Booking',
     path: '/add-booking',
-    roles: ['super_admin', 'admin', 'supervisor']
+    roles: ['super_admin', 'admin', 'supervisor', 'agent']
   },
   { 
     icon: Users, 

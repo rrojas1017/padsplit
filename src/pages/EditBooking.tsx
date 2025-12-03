@@ -18,18 +18,19 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useAgents } from '@/contexts/AgentsContext';
 import { Booking } from '@/types';
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { toast } from '@/hooks/use-toast';
 import { format } from 'date-fns';
-import { CalendarIcon, Save, PlusCircle, ArrowLeft } from 'lucide-react';
+import { CalendarIcon, Save, ArrowLeft } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 const bookingTypes: Booking['bookingType'][] = ['Inbound', 'Outbound', 'Referral'];
 const statuses: Booking['status'][] = ['Pending Move-In', 'Moved In', 'Member Rejected', 'No Show', 'Cancelled'];
 const commMethods: Booking['communicationMethod'][] = ['Phone', 'SMS', 'LC', 'Email'];
 
-export default function AddBooking() {
-  const { addBooking } = useBookings();
+export default function EditBooking() {
+  const { id } = useParams<{ id: string }>();
+  const { bookings, updateBooking, isLoading: bookingsLoading } = useBookings();
   const { user } = useAuth();
   const { agents } = useAgents();
   const navigate = useNavigate();
@@ -48,30 +49,61 @@ export default function AddBooking() {
   const [kixieLink, setKixieLink] = useState('');
   const [adminProfileLink, setAdminProfileLink] = useState('');
   const [moveInDayReachOut, setMoveInDayReachOut] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Find the booking
+  const booking = bookings.find(b => b.id === id);
+
+  // Check if user can edit this booking
+  const canEdit = (() => {
+    if (!user || !booking) return false;
+    if (user.role === 'super_admin' || user.role === 'admin') return true;
+    if (user.role === 'supervisor') {
+      const agent = agents.find(a => a.id === booking.agentId);
+      return agent?.siteId === user.siteId;
+    }
+    if (user.role === 'agent') {
+      const agent = agents.find(a => a.id === booking.agentId);
+      return agent?.userId === user.id;
+    }
+    return false;
+  })();
 
   // Filter agents based on user role
   const availableAgents = (() => {
     if (user?.role === 'agent') {
-      // Agents can only select themselves
       return agents.filter(a => a.userId === user.id && a.active);
     } else if (user?.role === 'supervisor' && user.siteId) {
-      // Supervisors see agents from their site
       return agents.filter(a => a.siteId === user.siteId && a.active);
     } else {
-      // Admins see all active agents
       return agents.filter(a => a.active);
     }
   })();
 
-  // Auto-select agent if there's only one option (for agents)
+  // Load booking data into form
   useEffect(() => {
-    if (availableAgents.length === 1 && !agentId) {
-      setAgentId(availableAgents[0].id);
+    if (booking) {
+      setBookingDate(booking.bookingDate);
+      setMoveInDate(booking.moveInDate);
+      setMemberName(booking.memberName);
+      setAgentId(booking.agentId);
+      setMarketCity(booking.marketCity);
+      setMarketState(booking.marketState);
+      setBookingType(booking.bookingType);
+      setStatus(booking.status);
+      setCommunicationMethod(booking.communicationMethod);
+      setNotes(booking.notes || '');
+      setHubspotLink(booking.hubspotLink || '');
+      setKixieLink(booking.kixieLink || '');
+      setAdminProfileLink(booking.adminProfileLink || '');
+      setMoveInDayReachOut(booking.moveInDayReachOut || false);
     }
-  }, [availableAgents, agentId]);
+  }, [booking]);
 
-  const handleSubmit = (e: React.FormEvent, addAnother: boolean = false) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (!id) return;
 
     if (!memberName.trim()) {
       toast({ title: 'Error', description: 'Member name is required', variant: 'destructive' });
@@ -90,51 +122,77 @@ export default function AddBooking() {
       return;
     }
 
-    const selectedAgent = agents.find(a => a.id === agentId);
+    setIsSubmitting(true);
 
-    if (!selectedAgent) return;
+    try {
+      await updateBooking(id, {
+        bookingDate,
+        moveInDate,
+        memberName: memberName.trim(),
+        bookingType,
+        agentId,
+        marketCity: marketCity.trim(),
+        marketState: marketState.trim().toUpperCase(),
+        communicationMethod,
+        status,
+        notes: notes.trim() || undefined,
+        hubspotLink: hubspotLink.trim() || undefined,
+        kixieLink: kixieLink.trim() || undefined,
+        adminProfileLink: adminProfileLink.trim() || undefined,
+        moveInDayReachOut,
+      });
 
-    addBooking({
-      bookingDate,
-      moveInDate,
-      memberName: memberName.trim(),
-      bookingType,
-      agentId,
-      agentName: selectedAgent.name,
-      marketCity: marketCity.trim(),
-      marketState: marketState.trim().toUpperCase(),
-      communicationMethod,
-      status,
-      notes: notes.trim() || undefined,
-      hubspotLink: hubspotLink.trim() || undefined,
-      kixieLink: kixieLink.trim() || undefined,
-      adminProfileLink: adminProfileLink.trim() || undefined,
-      moveInDayReachOut,
-    });
+      toast({
+        title: 'Booking Updated',
+        description: `Successfully updated booking for ${memberName}`,
+      });
 
-    toast({
-      title: 'Booking Added',
-      description: `Successfully added booking for ${memberName}`,
-    });
-
-    if (addAnother) {
-      // Reset form for another entry
-      setMemberName('');
-      setMoveInDate(undefined);
-      setMarketCity('');
-      setMarketState('');
-      setNotes('');
-      setHubspotLink('');
-      setKixieLink('');
-      setAdminProfileLink('');
-      setMoveInDayReachOut(false);
-    } else {
       navigate('/reports');
+    } catch (error) {
+      toast({
+        title: 'Error',
+        description: 'Failed to update booking',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
+  if (bookingsLoading) {
+    return (
+      <DashboardLayout title="Edit Booking" subtitle="Loading...">
+        <div className="flex items-center justify-center py-12">
+          <div className="w-8 h-8 border-2 border-accent border-t-transparent rounded-full animate-spin" />
+        </div>
+      </DashboardLayout>
+    );
+  }
+
+  if (!booking) {
+    return (
+      <DashboardLayout title="Edit Booking" subtitle="Booking not found">
+        <div className="text-center py-12">
+          <p className="text-muted-foreground mb-4">The booking you're looking for doesn't exist or you don't have access to it.</p>
+          <Button onClick={() => navigate('/reports')}>Back to Reports</Button>
+        </div>
+      </DashboardLayout>
+    );
+  }
+
+  if (!canEdit) {
+    return (
+      <DashboardLayout title="Edit Booking" subtitle="Access denied">
+        <div className="text-center py-12">
+          <p className="text-muted-foreground mb-4">You don't have permission to edit this booking.</p>
+          <Button onClick={() => navigate('/reports')}>Back to Reports</Button>
+        </div>
+      </DashboardLayout>
+    );
+  }
+
   return (
-    <DashboardLayout title="Add Booking" subtitle="Manually enter a new booking">
+    <DashboardLayout title="Edit Booking" subtitle={`Editing booking for ${booking.memberName}`}>
       <div className="max-w-3xl">
         <Button
           variant="ghost"
@@ -145,7 +203,7 @@ export default function AddBooking() {
           Back
         </Button>
 
-        <form onSubmit={(e) => handleSubmit(e, false)} className="space-y-6">
+        <form onSubmit={handleSubmit} className="space-y-6">
           {/* Booking Info Section */}
           <div className="bg-card rounded-xl border border-border p-6 shadow-card">
             <h3 className="text-lg font-semibold text-foreground mb-4">Booking Information</h3>
@@ -370,18 +428,16 @@ export default function AddBooking() {
 
           {/* Actions */}
           <div className="flex flex-col sm:flex-row gap-3 pt-2">
-            <Button type="submit" className="gap-2">
+            <Button type="submit" className="gap-2" disabled={isSubmitting}>
               <Save className="w-4 h-4" />
-              Save & View Reports
+              {isSubmitting ? 'Saving...' : 'Save Changes'}
             </Button>
             <Button
               type="button"
               variant="outline"
-              className="gap-2"
-              onClick={(e) => handleSubmit(e, true)}
+              onClick={() => navigate('/reports')}
             >
-              <PlusCircle className="w-4 h-4" />
-              Save & Add Another
+              Cancel
             </Button>
           </div>
         </form>
