@@ -12,16 +12,32 @@ import padsplitLogo from '@/assets/padsplit-logo.jpeg';
 export default function PublicWallboard() {
   const { token } = useParams<{ token: string }>();
   const { validateToken } = useDisplayTokens();
-  const { bookings } = useBookings();
+  const { bookings, refreshBookings } = useBookings();
   const { agents } = useAgents();
   const [time, setTime] = useState(new Date());
+  const [lastRefresh, setLastRefresh] = useState(new Date());
+  const [secondsUntilRefresh, setSecondsUntilRefresh] = useState(60);
   
   const displayToken = token ? validateToken(token) : null;
 
+  // Clock and countdown timer
   useEffect(() => {
-    const timer = setInterval(() => setTime(new Date()), 1000);
+    const timer = setInterval(() => {
+      setTime(new Date());
+      setSecondsUntilRefresh(prev => (prev > 1 ? prev - 1 : 60));
+    }, 1000);
     return () => clearInterval(timer);
   }, []);
+
+  // Auto-refresh bookings every 60 seconds
+  useEffect(() => {
+    const refreshInterval = setInterval(() => {
+      refreshBookings();
+      setLastRefresh(new Date());
+      setSecondsUntilRefresh(60);
+    }, 60000);
+    return () => clearInterval(refreshInterval);
+  }, [refreshBookings]);
 
   if (!displayToken) {
     return (
@@ -196,7 +212,10 @@ export default function PublicWallboard() {
 
       {/* Footer */}
       <footer className="flex-shrink-0 pt-3 text-center text-xs text-muted-foreground">
-        <p>Auto-refreshes every 60 seconds • Powered by Vixicom</p>
+        <p className="flex items-center justify-center gap-2">
+          <RefreshCw className={cn("w-3 h-3", secondsUntilRefresh <= 5 && "animate-spin")} />
+          Next refresh in {secondsUntilRefresh}s • Last updated {format(lastRefresh, 'HH:mm:ss')} • Powered by Vixicom
+        </p>
       </footer>
     </div>
   );

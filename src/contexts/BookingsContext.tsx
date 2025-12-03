@@ -7,6 +7,7 @@ interface BookingsContextType {
   addBooking: (booking: Omit<Booking, 'id'>) => void;
   updateBooking: (id: string, booking: Partial<Booking>) => void;
   deleteBooking: (id: string) => void;
+  refreshBookings: () => void;
 }
 
 const BookingsContext = createContext<BookingsContextType | undefined>(undefined);
@@ -63,8 +64,19 @@ export function BookingsProvider({ children }: { children: ReactNode }) {
     setBookings(prev => prev.filter(b => b.id !== id));
   };
 
+  const refreshBookings = () => {
+    const stored = localStorage.getItem(STORAGE_KEY);
+    if (stored) {
+      try {
+        setBookings(deserializeBookings(stored));
+      } catch {
+        // Keep current bookings if parse fails
+      }
+    }
+  };
+
   return (
-    <BookingsContext.Provider value={{ bookings, addBooking, updateBooking, deleteBooking }}>
+    <BookingsContext.Provider value={{ bookings, addBooking, updateBooking, deleteBooking, refreshBookings }}>
       {children}
     </BookingsContext.Provider>
   );
