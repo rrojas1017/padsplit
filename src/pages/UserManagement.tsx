@@ -126,11 +126,30 @@ export default function UserManagement() {
     }
   };
 
+  const handleRoleChange = (role: string) => {
+    setNewUserRole(role);
+    // Clear site selection for roles that have all-site access
+    if (role === 'super_admin' || role === 'admin') {
+      setNewUserSiteId('none');
+    }
+  };
+
   const handleCreateUser = async () => {
     if (!newUserName || !newUserEmail || !newUserPassword || !newUserRole) {
       toast({
         title: 'Validation Error',
         description: 'Please fill in all required fields',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    // Validate site is required for supervisor and agent roles
+    if ((newUserRole === 'supervisor' || newUserRole === 'agent') && 
+        (!newUserSiteId || newUserSiteId === 'none')) {
+      toast({
+        title: 'Validation Error',
+        description: 'Site is required for supervisor and agent roles',
         variant: 'destructive',
       });
       return;
@@ -270,7 +289,7 @@ export default function UserManagement() {
               </div>
               <div className="grid gap-2">
                 <Label htmlFor="role">Role *</Label>
-                <Select value={newUserRole} onValueChange={setNewUserRole}>
+                <Select value={newUserRole} onValueChange={handleRoleChange}>
                   <SelectTrigger>
                     <SelectValue placeholder="Select a role" />
                   </SelectTrigger>
@@ -286,22 +305,35 @@ export default function UserManagement() {
                   </SelectContent>
                 </Select>
               </div>
-              <div className="grid gap-2">
-                <Label htmlFor="site">Site (Optional)</Label>
-                <Select value={newUserSiteId} onValueChange={setNewUserSiteId}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select a site" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">No site</SelectItem>
-                    {sites.map(site => (
-                      <SelectItem key={site.id} value={site.id}>
-                        {site.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+              
+              {/* Show "All Sites" message for super_admin and admin */}
+              {(newUserRole === 'super_admin' || newUserRole === 'admin') && (
+                <div className="grid gap-2">
+                  <Label>Site Access</Label>
+                  <p className="text-sm text-muted-foreground bg-muted px-3 py-2 rounded-md">
+                    All Sites (full access)
+                  </p>
+                </div>
+              )}
+              
+              {/* Show site selection only for supervisor and agent roles */}
+              {(newUserRole === 'supervisor' || newUserRole === 'agent') && (
+                <div className="grid gap-2">
+                  <Label htmlFor="site">Site *</Label>
+                  <Select value={newUserSiteId} onValueChange={setNewUserSiteId}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select a site" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {sites.map(site => (
+                        <SelectItem key={site.id} value={site.id}>
+                          {site.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
             </div>
             <DialogFooter>
               <Button variant="outline" onClick={() => setIsDialogOpen(false)}>
@@ -368,8 +400,11 @@ export default function UserManagement() {
                         {roleLabels[user.role] || user.role}
                       </span>
                     </td>
-                    <td className="py-4 px-4 text-sm text-muted-foreground">
-                      {user.site_name || '-'}
+                    <td className="py-4 px-4 text-sm">
+                      {(user.role === 'super_admin' || user.role === 'admin') 
+                        ? <span className="text-primary font-medium">All Sites</span>
+                        : <span className="text-muted-foreground">{user.site_name || '-'}</span>
+                      }
                     </td>
                     <td className="py-4 px-4">
                       <span className={cn(
