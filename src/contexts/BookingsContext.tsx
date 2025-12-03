@@ -1,82 +1,162 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { Booking } from '@/types';
-import { mockBookings as initialMockBookings } from '@/data/mockData';
+import { supabase } from '@/integrations/supabase/client';
 
 interface BookingsContextType {
   bookings: Booking[];
-  addBooking: (booking: Omit<Booking, 'id'>) => void;
-  updateBooking: (id: string, booking: Partial<Booking>) => void;
-  deleteBooking: (id: string) => void;
-  refreshBookings: () => void;
+  isLoading: boolean;
+  addBooking: (booking: Omit<Booking, 'id'>) => Promise<void>;
+  updateBooking: (id: string, booking: Partial<Booking>) => Promise<void>;
+  deleteBooking: (id: string) => Promise<void>;
+  refreshBookings: () => Promise<void>;
 }
 
 const BookingsContext = createContext<BookingsContextType | undefined>(undefined);
 
-const STORAGE_KEY = 'padsplit-bookings';
-
-function serializeBookings(bookings: Booking[]): string {
-  return JSON.stringify(bookings.map(b => ({
-    ...b,
-    bookingDate: b.bookingDate.toISOString(),
-    moveInDate: b.moveInDate.toISOString(),
-  })));
-}
-
-function deserializeBookings(data: string): Booking[] {
-  const parsed = JSON.parse(data);
-  return parsed.map((b: any) => ({
-    ...b,
-    bookingDate: new Date(b.bookingDate),
-    moveInDate: new Date(b.moveInDate),
-  }));
-}
-
 export function BookingsProvider({ children }: { children: ReactNode }) {
-  const [bookings, setBookings] = useState<Booking[]>(() => {
-    const stored = localStorage.getItem(STORAGE_KEY);
-    if (stored) {
-      try {
-        return deserializeBookings(stored);
-      } catch {
-        return initialMockBookings;
+  const [bookings, setBookings] = useState<Booking[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  const fetchBookings = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('bookings')
+        .select(`
+          *,
+          agents!inner(name, site_id, sites(name))
+        `)
+        .order('booking_date', { ascending: false });
+
+      if (error) {
+        console.error('Error fetching bookings:', error);
+        return;
       }
+
+      const transformedBookings: Booking[] = (data || []).map((b: any) => ({
+        id: b.id,
+        moveInDate: new Date(b.move_in_date),
+        bookingDate: new Date(b.booking_date),
+        memberName: b.member_name,
+        bookingType: b.booking_type,
+        agentId: b.agent_id,
+        agentName: b.agents?.name || 'Unknown',
+        marketCity: b.market_city || '',
+        marketState: b.market_state || '',
+        communicationMethod: b.communication_method,
+        status: b.status,
+        notes: b.notes || undefined,
+        hubspotLink: b.hubspot_link || undefined,
+        kixieLink: b.kixie_link || undefined,
+        adminProfileLink: b.admin_profile_link || undefined,
+        moveInDayReachOut: b.move_in_day_reach_out || false,
+        createdBy: b.created_by || undefined,
+      }));
+
+      setBookings(transformedBookings);
+    } catch (error) {
+      console.error('Error fetching bookings:', error);
+    } finally {
+      setIsLoading(false);
     }
-    return initialMockBookings;
-  });
+  };
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, serializeBookings(bookings));
-  }, [bookings]);
+    fetchBookings();
 
-  const addBooking = (booking: Omit<Booking, 'id'>) => {
-    const newBooking: Booking = {
-      ...booking,
-      id: `booking-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+    // Set up realtime subscription
+    const channel = supabase
+      .channel('bookings-changes')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'bookings' },
+        () => {
+          fetchBookings();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
     };
-    setBookings(prev => [newBooking, ...prev].sort((a, b) => b.bookingDate.getTime() - a.bookingDate.getTime()));
-  };
+  }, []);
 
-  const updateBooking = (id: string, updates: Partial<Booking>) => {
-    setBookings(prev => prev.map(b => b.id === id ? { ...b, ...updates } : b));
-  };
+  const addBooking = async (booking: Omit<Booking, 'id'>) => {
+    const { data: userData } = await supabase.auth.getUser();
+    
+    const { error } = await supabase.from('bookings').insert({
+      move_in_date: booking.moveInDate.toISOString().split('T')[0],
+      booking_date: booking.bookingDate.toISOString().split('T')[0],
+      member_name: booking.memberName,
+      booking_type: booking.bookingType,
+      agent_id: booking.agentId,
+      market_city: booking.marketCity,
+      market_state: booking.marketState,
+      communication_method: booking.communicationMethod,
+      status: booking.status,
+      notes: booking.notes || null,
+      hubspot_link: booking.hubspotLink || null,
+      kixie_link: booking.kixieLink || null,
+      admin_profile_link: booking.adminProfileLink || null,
+      move_in_day_reach_out: booking.moveInDayReachOut || false,
+      created_by: userData.user?.id || null,
+    });
 
-  const deleteBooking = (id: string) => {
-    setBookings(prev => prev.filter(b => b.id !== id));
-  };
-
-  const refreshBookings = () => {
-    const stored = localStorage.getItem(STORAGE_KEY);
-    if (stored) {
-      try {
-        setBookings(deserializeBookings(stored));
-      } catch {
-        // Keep current bookings if parse fails
-      }
+    if (error) {
+      console.error('Error adding booking:', error);
+      throw error;
     }
+
+    await fetchBookings();
+  };
+
+  const updateBooking = async (id: string, updates: Partial<Booking>) => {
+    const updateData: any = {};
+    
+    if (updates.moveInDate) updateData.move_in_date = updates.moveInDate.toISOString().split('T')[0];
+    if (updates.bookingDate) updateData.booking_date = updates.bookingDate.toISOString().split('T')[0];
+    if (updates.memberName) updateData.member_name = updates.memberName;
+    if (updates.bookingType) updateData.booking_type = updates.bookingType;
+    if (updates.agentId) updateData.agent_id = updates.agentId;
+    if (updates.marketCity !== undefined) updateData.market_city = updates.marketCity;
+    if (updates.marketState !== undefined) updateData.market_state = updates.marketState;
+    if (updates.communicationMethod) updateData.communication_method = updates.communicationMethod;
+    if (updates.status) updateData.status = updates.status;
+    if (updates.notes !== undefined) updateData.notes = updates.notes;
+    if (updates.hubspotLink !== undefined) updateData.hubspot_link = updates.hubspotLink;
+    if (updates.kixieLink !== undefined) updateData.kixie_link = updates.kixieLink;
+    if (updates.adminProfileLink !== undefined) updateData.admin_profile_link = updates.adminProfileLink;
+    if (updates.moveInDayReachOut !== undefined) updateData.move_in_day_reach_out = updates.moveInDayReachOut;
+
+    const { error } = await supabase
+      .from('bookings')
+      .update(updateData)
+      .eq('id', id);
+
+    if (error) {
+      console.error('Error updating booking:', error);
+      throw error;
+    }
+
+    await fetchBookings();
+  };
+
+  const deleteBooking = async (id: string) => {
+    const { error } = await supabase.from('bookings').delete().eq('id', id);
+
+    if (error) {
+      console.error('Error deleting booking:', error);
+      throw error;
+    }
+
+    await fetchBookings();
+  };
+
+  const refreshBookings = async () => {
+    await fetchBookings();
   };
 
   return (
-    <BookingsContext.Provider value={{ bookings, addBooking, updateBooking, deleteBooking, refreshBookings }}>
+    <BookingsContext.Provider value={{ bookings, isLoading, addBooking, updateBooking, deleteBooking, refreshBookings }}>
       {children}
     </BookingsContext.Provider>
   );

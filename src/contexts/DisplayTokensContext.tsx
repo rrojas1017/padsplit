@@ -1,19 +1,13 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-
-export interface DisplayToken {
-  id: string;
-  name: string;
-  token: string;
-  createdAt: Date;
-  expiresAt?: Date;
-  siteFilter?: string;
-}
+import { DisplayToken } from '@/types';
+import { supabase } from '@/integrations/supabase/client';
 
 interface DisplayTokensContextType {
   tokens: DisplayToken[];
-  addToken: (token: Omit<DisplayToken, 'id' | 'token' | 'createdAt'>) => DisplayToken;
-  deleteToken: (id: string) => void;
-  validateToken: (token: string) => DisplayToken | null;
+  isLoading: boolean;
+  addToken: (token: Omit<DisplayToken, 'id' | 'token' | 'createdAt'>) => Promise<DisplayToken>;
+  deleteToken: (id: string) => Promise<void>;
+  validateToken: (token: string) => Promise<DisplayToken | null>;
 }
 
 const DisplayTokensContext = createContext<DisplayTokensContextType | undefined>(undefined);
@@ -28,47 +22,114 @@ function generateToken(): string {
 }
 
 export function DisplayTokensProvider({ children }: { children: ReactNode }) {
-  const [tokens, setTokens] = useState<DisplayToken[]>(() => {
-    const saved = localStorage.getItem('padsplit-display-tokens');
-    if (saved) {
-      const parsed = JSON.parse(saved);
-      return parsed.map((t: any) => ({
-        ...t,
-        createdAt: new Date(t.createdAt),
-        expiresAt: t.expiresAt ? new Date(t.expiresAt) : undefined,
+  const [tokens, setTokens] = useState<DisplayToken[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  const fetchTokens = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('display_tokens')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        console.error('Error fetching tokens:', error);
+        return;
+      }
+
+      const transformedTokens: DisplayToken[] = (data || []).map((t: any) => ({
+        id: t.id,
+        name: t.name,
+        token: t.token,
+        createdAt: new Date(t.created_at),
+        expiresAt: t.expires_at ? new Date(t.expires_at) : undefined,
+        siteFilter: t.site_filter || undefined,
       }));
+
+      setTokens(transformedTokens);
+    } catch (error) {
+      console.error('Error fetching tokens:', error);
+    } finally {
+      setIsLoading(false);
     }
-    return [];
-  });
+  };
 
   useEffect(() => {
-    localStorage.setItem('padsplit-display-tokens', JSON.stringify(tokens));
-  }, [tokens]);
+    fetchTokens();
+  }, []);
 
-  const addToken = (tokenData: Omit<DisplayToken, 'id' | 'token' | 'createdAt'>): DisplayToken => {
+  const addToken = async (tokenData: Omit<DisplayToken, 'id' | 'token' | 'createdAt'>): Promise<DisplayToken> => {
+    const { data: userData } = await supabase.auth.getUser();
+    const newTokenString = generateToken();
+    
+    const { data, error } = await supabase
+      .from('display_tokens')
+      .insert({
+        name: tokenData.name,
+        token: newTokenString,
+        site_filter: tokenData.siteFilter || null,
+        expires_at: tokenData.expiresAt?.toISOString() || null,
+        created_by: userData.user?.id || null,
+      })
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Error adding token:', error);
+      throw error;
+    }
+
     const newToken: DisplayToken = {
-      ...tokenData,
-      id: `token-${Date.now()}`,
-      token: generateToken(),
-      createdAt: new Date(),
+      id: data.id,
+      name: data.name,
+      token: data.token,
+      createdAt: new Date(data.created_at),
+      expiresAt: data.expires_at ? new Date(data.expires_at) : undefined,
+      siteFilter: data.site_filter || undefined,
     };
-    setTokens(prev => [...prev, newToken]);
+
+    await fetchTokens();
     return newToken;
   };
 
-  const deleteToken = (id: string) => {
-    setTokens(prev => prev.filter(token => token.id !== id));
+  const deleteToken = async (id: string) => {
+    const { error } = await supabase.from('display_tokens').delete().eq('id', id);
+
+    if (error) {
+      console.error('Error deleting token:', error);
+      throw error;
+    }
+
+    await fetchTokens();
   };
 
-  const validateToken = (tokenString: string): DisplayToken | null => {
-    const token = tokens.find(t => t.token === tokenString);
-    if (!token) return null;
-    if (token.expiresAt && new Date() > token.expiresAt) return null;
-    return token;
+  const validateToken = async (tokenString: string): Promise<DisplayToken | null> => {
+    // Use anon key to validate - this works for public access
+    const { data, error } = await supabase
+      .from('display_tokens')
+      .select('*')
+      .eq('token', tokenString)
+      .maybeSingle();
+
+    if (error || !data) return null;
+    
+    // Check expiration
+    if (data.expires_at && new Date() > new Date(data.expires_at)) {
+      return null;
+    }
+
+    return {
+      id: data.id,
+      name: data.name,
+      token: data.token,
+      createdAt: new Date(data.created_at),
+      expiresAt: data.expires_at ? new Date(data.expires_at) : undefined,
+      siteFilter: data.site_filter || undefined,
+    };
   };
 
   return (
-    <DisplayTokensContext.Provider value={{ tokens, addToken, deleteToken, validateToken }}>
+    <DisplayTokensContext.Provider value={{ tokens, isLoading, addToken, deleteToken, validateToken }}>
       {children}
     </DisplayTokensContext.Provider>
   );

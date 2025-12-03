@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
-import { useParams, Navigate } from 'react-router-dom';
+import { useParams } from 'react-router-dom';
 import { useDisplayTokens } from '@/contexts/DisplayTokensContext';
 import { useBookings } from '@/contexts/BookingsContext';
 import { useAgents } from '@/contexts/AgentsContext';
 import { getLeaderboard } from '@/data/mockData';
+import { DisplayToken } from '@/types';
 import { format, subDays } from 'date-fns';
 import { Trophy, TrendingUp, TrendingDown, RefreshCw, Users, Calendar } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -13,13 +14,25 @@ export default function PublicWallboard() {
   const { token } = useParams<{ token: string }>();
   const { validateToken } = useDisplayTokens();
   const { bookings, refreshBookings } = useBookings();
-  const { agents } = useAgents();
+  const { agents, sites } = useAgents();
   const [time, setTime] = useState(new Date());
   const [lastRefresh, setLastRefresh] = useState(new Date());
   const [secondsUntilRefresh, setSecondsUntilRefresh] = useState(60);
   const [isFlashing, setIsFlashing] = useState(false);
+  const [displayToken, setDisplayToken] = useState<DisplayToken | null>(null);
+  const [isValidating, setIsValidating] = useState(true);
   
-  const displayToken = token ? validateToken(token) : null;
+  // Validate token on mount
+  useEffect(() => {
+    const validate = async () => {
+      if (token) {
+        const validatedToken = await validateToken(token);
+        setDisplayToken(validatedToken);
+      }
+      setIsValidating(false);
+    };
+    validate();
+  }, [token, validateToken]);
 
   // Clock and countdown timer
   useEffect(() => {
@@ -43,6 +56,17 @@ export default function PublicWallboard() {
     return () => clearInterval(refreshInterval);
   }, [refreshBookings]);
 
+  if (isValidating) {
+    return (
+      <div className="h-screen bg-background flex items-center justify-center">
+        <div className="text-center">
+          <div className="w-8 h-8 border-2 border-accent border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+          <p className="text-muted-foreground">Validating display link...</p>
+        </div>
+      </div>
+    );
+  }
+
   if (!displayToken) {
     return (
       <div className="h-screen bg-background flex items-center justify-center">
@@ -56,6 +80,10 @@ export default function PublicWallboard() {
 
   const today = format(new Date(), 'yyyy-MM-dd');
   const yesterday = format(subDays(new Date(), 1), 'yyyy-MM-dd');
+  
+  // Get site IDs from database
+  const vixicomSite = sites.find(s => s.name === 'Vixicom');
+  const padsplitSite = sites.find(s => s.name === 'PadSplit Internal');
   
   // Filter bookings based on site filter if set
   const filteredAgentIds = displayToken.siteFilter && displayToken.siteFilter !== 'all'
@@ -73,11 +101,11 @@ export default function PublicWallboard() {
   );
   
   const vixicomToday = todayBookings.filter(b => 
-    agents.find(a => a.id === b.agentId)?.siteId === 'site-1'
+    agents.find(a => a.id === b.agentId)?.siteId === vixicomSite?.id
   ).length;
   
   const padsplitToday = todayBookings.filter(b => 
-    agents.find(a => a.id === b.agentId)?.siteId === 'site-2'
+    agents.find(a => a.id === b.agentId)?.siteId === padsplitSite?.id
   ).length;
 
   const leaderboard = getLeaderboard(bookings).slice(0, 10);
