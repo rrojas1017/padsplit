@@ -146,7 +146,7 @@ export default function UserManagement() {
           password: newUserPassword,
           name: newUserName,
           role: newUserRole,
-          siteId: newUserSiteId || null,
+          siteId: newUserSiteId === 'none' ? null : newUserSiteId || null,
         },
       });
 
@@ -293,7 +293,7 @@ export default function UserManagement() {
                     <SelectValue placeholder="Select a site" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">No site</SelectItem>
+                    <SelectItem value="none">No site</SelectItem>
                     {sites.map(site => (
                       <SelectItem key={site.id} value={site.id}>
                         {site.name}
