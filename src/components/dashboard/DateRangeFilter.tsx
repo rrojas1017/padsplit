@@ -21,7 +21,7 @@ interface DateRangeFilterProps {
 }
 
 export function DateRangeFilter({ onRangeChange }: DateRangeFilterProps) {
-  const [selected, setSelected] = useState('7d');
+  const [selected, setSelected] = useState('today');
 
   const handleSelect = (value: string) => {
     setSelected(value);
