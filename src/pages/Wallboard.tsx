@@ -5,6 +5,7 @@ import { format, subDays } from 'date-fns';
 import { Trophy, TrendingUp, TrendingDown, RefreshCw, Users, Calendar, ArrowLeft, Sun, Moon } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import padsplitLogo from '@/assets/padsplit-logo.jpeg';
+import appendifyLogo from '@/assets/appendify-logo.png';
 import { useTheme } from '@/contexts/ThemeContext';
 import { Button } from '@/components/ui/button';
 
@@ -180,7 +181,7 @@ export default function Wallboard() {
 
       {/* Footer */}
       <footer className="mt-8 text-center text-sm text-muted-foreground">
-        <p>Auto-refreshes every 60 seconds • Powered by Vixicom</p>
+        <p className="flex items-center justify-center gap-2">Auto-refreshes every 60 seconds • Powered by <img src={appendifyLogo} alt="Appendify" className="h-4 w-auto" /></p>
       </footer>
     </div>
   );
