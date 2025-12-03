@@ -7,6 +7,8 @@ import { AuthProvider } from "@/contexts/AuthContext";
 import { ThemeProvider } from "@/contexts/ThemeContext";
 import { SidebarProvider } from "@/contexts/SidebarContext";
 import { BookingsProvider } from "@/contexts/BookingsContext";
+import { AgentsProvider } from "@/contexts/AgentsContext";
+import { DisplayTokensProvider } from "@/contexts/DisplayTokensContext";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 
 import Index from "./pages/Index";
@@ -18,6 +20,9 @@ import Reports from "./pages/Reports";
 import AddBooking from "./pages/AddBooking";
 import Wallboard from "./pages/Wallboard";
 import UserManagement from "./pages/UserManagement";
+import AgentManagement from "./pages/AgentManagement";
+import DisplayLinks from "./pages/DisplayLinks";
+import PublicWallboard from "./pages/PublicWallboard";
 import AuditLog from "./pages/AuditLog";
 import Settings from "./pages/Settings";
 import NotFound from "./pages/NotFound";
@@ -34,6 +39,8 @@ const App = () => (
           <BrowserRouter>
             <SidebarProvider>
             <BookingsProvider>
+            <AgentsProvider>
+            <DisplayTokensProvider>
             <Routes>
               <Route path="/" element={<Index />} />
               <Route path="/login" element={<Login />} />
@@ -79,6 +86,20 @@ const App = () => (
                   <UserManagement />
                 </ProtectedRoute>
               } />
+
+              <Route path="/agents" element={
+                <ProtectedRoute allowedRoles={['super_admin', 'admin']}>
+                  <AgentManagement />
+                </ProtectedRoute>
+              } />
+
+              <Route path="/display-links" element={
+                <ProtectedRoute allowedRoles={['super_admin', 'admin']}>
+                  <DisplayLinks />
+                </ProtectedRoute>
+              } />
+
+              <Route path="/display/:token" element={<PublicWallboard />} />
               
               <Route path="/audit-log" element={
                 <ProtectedRoute allowedRoles={['super_admin', 'admin']}>
@@ -94,6 +115,8 @@ const App = () => (
               
               <Route path="*" element={<NotFound />} />
             </Routes>
+            </DisplayTokensProvider>
+            </AgentsProvider>
             </BookingsProvider>
             </SidebarProvider>
           </BrowserRouter>

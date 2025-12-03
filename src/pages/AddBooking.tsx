@@ -15,7 +15,7 @@ import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { useBookings } from '@/contexts/BookingsContext';
 import { useAuth } from '@/contexts/AuthContext';
-import { mockAgents } from '@/data/mockData';
+import { useAgents } from '@/contexts/AgentsContext';
 import { Booking } from '@/types';
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -24,17 +24,6 @@ import { format } from 'date-fns';
 import { CalendarIcon, Save, PlusCircle, ArrowLeft } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
-const markets = [
-  { city: 'Atlanta', state: 'GA' },
-  { city: 'Houston', state: 'TX' },
-  { city: 'Dallas', state: 'TX' },
-  { city: 'Phoenix', state: 'AZ' },
-  { city: 'Charlotte', state: 'NC' },
-  { city: 'Tampa', state: 'FL' },
-  { city: 'Orlando', state: 'FL' },
-  { city: 'Nashville', state: 'TN' },
-];
-
 const bookingTypes: Booking['bookingType'][] = ['Inbound', 'Outbound', 'Referral'];
 const statuses: Booking['status'][] = ['Pending Move-In', 'Moved In', 'Member Rejected', 'No Show', 'Cancelled'];
 const commMethods: Booking['communicationMethod'][] = ['Phone', 'SMS', 'LC', 'Email'];
@@ -42,13 +31,15 @@ const commMethods: Booking['communicationMethod'][] = ['Phone', 'SMS', 'LC', 'Em
 export default function AddBooking() {
   const { addBooking } = useBookings();
   const { user } = useAuth();
+  const { agents } = useAgents();
   const navigate = useNavigate();
 
   const [bookingDate, setBookingDate] = useState<Date>(new Date());
   const [moveInDate, setMoveInDate] = useState<Date | undefined>();
   const [memberName, setMemberName] = useState('');
   const [agentId, setAgentId] = useState('');
-  const [market, setMarket] = useState('');
+  const [marketCity, setMarketCity] = useState('');
+  const [marketState, setMarketState] = useState('');
   const [bookingType, setBookingType] = useState<Booking['bookingType']>('Inbound');
   const [status, setStatus] = useState<Booking['status']>('Pending Move-In');
   const [communicationMethod, setCommunicationMethod] = useState<Booking['communicationMethod']>('Phone');
@@ -60,8 +51,8 @@ export default function AddBooking() {
 
   // Filter agents based on user role (supervisors only see their site's agents)
   const availableAgents = user?.role === 'supervisor' && user.siteId
-    ? mockAgents.filter(a => a.siteId === user.siteId && a.active)
-    : mockAgents.filter(a => a.active);
+    ? agents.filter(a => a.siteId === user.siteId && a.active)
+    : agents.filter(a => a.active);
 
   const handleSubmit = (e: React.FormEvent, addAnother: boolean = false) => {
     e.preventDefault();
@@ -74,8 +65,8 @@ export default function AddBooking() {
       toast({ title: 'Error', description: 'Please select an agent', variant: 'destructive' });
       return;
     }
-    if (!market) {
-      toast({ title: 'Error', description: 'Please select a market', variant: 'destructive' });
+    if (!marketCity.trim() || !marketState.trim()) {
+      toast({ title: 'Error', description: 'Market city and state are required', variant: 'destructive' });
       return;
     }
     if (!moveInDate) {
@@ -83,10 +74,9 @@ export default function AddBooking() {
       return;
     }
 
-    const selectedAgent = mockAgents.find(a => a.id === agentId);
-    const selectedMarket = markets.find(m => `${m.city}, ${m.state}` === market);
+    const selectedAgent = agents.find(a => a.id === agentId);
 
-    if (!selectedAgent || !selectedMarket) return;
+    if (!selectedAgent) return;
 
     addBooking({
       bookingDate,
@@ -95,8 +85,8 @@ export default function AddBooking() {
       bookingType,
       agentId,
       agentName: selectedAgent.name,
-      marketCity: selectedMarket.city,
-      marketState: selectedMarket.state,
+      marketCity: marketCity.trim(),
+      marketState: marketState.trim().toUpperCase(),
       communicationMethod,
       status,
       notes: notes.trim() || undefined,
@@ -115,6 +105,8 @@ export default function AddBooking() {
       // Reset form for another entry
       setMemberName('');
       setMoveInDate(undefined);
+      setMarketCity('');
+      setMarketState('');
       setNotes('');
       setHubspotLink('');
       setKixieLink('');
@@ -259,19 +251,24 @@ export default function AddBooking() {
               </div>
 
               <div className="space-y-2">
-                <Label>Market *</Label>
-                <Select value={market} onValueChange={setMarket}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select market" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {markets.map(m => (
-                      <SelectItem key={`${m.city}-${m.state}`} value={`${m.city}, ${m.state}`}>
-                        {m.city}, {m.state}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <Label htmlFor="marketCity">Market City *</Label>
+                <Input
+                  id="marketCity"
+                  value={marketCity}
+                  onChange={(e) => setMarketCity(e.target.value)}
+                  placeholder="e.g., Atlanta"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="marketState">State *</Label>
+                <Input
+                  id="marketState"
+                  value={marketState}
+                  onChange={(e) => setMarketState(e.target.value)}
+                  placeholder="e.g., GA"
+                  maxLength={2}
+                  className="uppercase"
+                />
               </div>
             </div>
           </div>
