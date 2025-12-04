@@ -139,8 +139,9 @@ export const parseExcelFile = async (file: File): Promise<ParseResult> => {
         const sheetsToProcess = workbook.SheetNames.filter(name => {
           const lower = name.toLowerCase();
           const isBookingSheet = lower.includes('booking') || lower.includes('tracker');
+          const isDecember = lower.includes('december');
           const isExcluded = lower.includes('call') || lower.includes('promo') || lower.includes('agent');
-          return isBookingSheet && !isExcluded;
+          return isBookingSheet && isDecember && !isExcluded;
         });
         
         console.log('All sheet names in file:', workbook.SheetNames);
