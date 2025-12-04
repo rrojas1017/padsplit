@@ -3,7 +3,7 @@ import { useParams } from 'react-router-dom';
 import { useDisplayTokens } from '@/contexts/DisplayTokensContext';
 import { useBookings } from '@/contexts/BookingsContext';
 import { useAgents } from '@/contexts/AgentsContext';
-import { getLeaderboard } from '@/data/mockData';
+import { calculateLeaderboard } from '@/utils/dashboardCalculations';
 import { DisplayToken } from '@/types';
 import { format, subDays } from 'date-fns';
 import { Trophy, TrendingUp, TrendingDown, RefreshCw, Users, Calendar } from 'lucide-react';
@@ -109,7 +109,7 @@ export default function PublicWallboard() {
     agents.find(a => a.id === b.agentId)?.siteId === padsplitSite?.id
   ).length;
 
-  const leaderboard = getLeaderboard(bookings).slice(0, 10);
+  const leaderboard = calculateLeaderboard(bookings, agents).slice(0, 10);
 
   const change = todayBookings.length - yesterdayBookings.length;
   const changePercent = yesterdayBookings.length > 0 
