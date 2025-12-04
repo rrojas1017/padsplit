@@ -54,6 +54,7 @@ export default function MyPerformance() {
   // Check for ties (agents with same booking count)
   const agentsWithSameBookings = allAgentBookings.filter(a => a.bookings === myBookingsCount).length;
   const isTied = myAgent && agentsWithSameBookings > 1;
+  const hasNoBookings = myBookingsCount === 0;
   
   // Prepare chart data for last 7 days
   const chartData = [];
@@ -152,19 +153,21 @@ export default function MyPerformance() {
           <p className="text-foreground font-semibold">
             {!myAgent 
               ? 'Account not linked to an agent profile'
-              : isTied 
-                ? `You're tied for #${trueRank} with ${agentsWithSameBookings - 1} other${agentsWithSameBookings > 2 ? 's' : ''}`
-                : `You're ranked #${trueRank} out of ${activeAgents.length} agents`
+              : hasNoBookings
+                ? 'Complete your first booking to get ranked!'
+                : isTied 
+                  ? `You're tied for #${trueRank} with ${agentsWithSameBookings - 1} other${agentsWithSameBookings > 2 ? 's' : ''}`
+                  : `You're ranked #${trueRank} out of ${activeAgents.length} agents`
             }
           </p>
           <p className="text-muted-foreground text-sm">
             {!myAgent 
               ? 'Contact an administrator to link your account'
-              : trueRank <= 3 && trueRank > 0 
-                ? "You're in the top 3!" 
-                : trueRank > 3 
-                  ? `Keep going! ${trueRank - 3} position${trueRank - 3 > 1 ? 's' : ''} away from top 3`
-                  : 'Complete some bookings to get ranked'
+              : hasNoBookings
+                ? 'Make your first booking to start climbing the leaderboard!'
+                : trueRank <= 3 
+                  ? "You're in the top 3!" 
+                  : `Keep going! ${trueRank - 3} position${trueRank - 3 > 1 ? 's' : ''} away from top 3`
             }
           </p>
         </div>
