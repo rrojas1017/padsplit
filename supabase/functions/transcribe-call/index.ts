@@ -50,7 +50,14 @@ serve(async (req) => {
       throw new Error(`Failed to download audio: ${audioResponse.status}`);
     }
     const audioBlob = await audioResponse.blob();
-    console.log(`Audio downloaded, size: ${audioBlob.size} bytes`);
+    const fileSizeMB = audioBlob.size / (1024 * 1024);
+    console.log(`Audio downloaded, size: ${audioBlob.size} bytes (${fileSizeMB.toFixed(2)} MB)`);
+
+    // Check file size - Whisper API has a 25MB limit
+    const MAX_FILE_SIZE_MB = 25;
+    if (fileSizeMB > MAX_FILE_SIZE_MB) {
+      throw new Error(`Audio file too large (${fileSizeMB.toFixed(1)}MB). Maximum supported size is ${MAX_FILE_SIZE_MB}MB. This call recording exceeds the limit for transcription.`);
+    }
 
     // Step 2: Transcribe with OpenAI Whisper
     console.log('Sending to OpenAI Whisper...');
@@ -58,6 +65,7 @@ serve(async (req) => {
     formData.append('file', audioBlob, 'recording.wav');
     formData.append('model', 'whisper-1');
     formData.append('language', 'en');
+    formData.append('response_format', 'text');
 
     const whisperResponse = await fetch('https://api.openai.com/v1/audio/transcriptions', {
       method: 'POST',
@@ -73,8 +81,8 @@ serve(async (req) => {
       throw new Error(`Whisper API error: ${whisperResponse.status}`);
     }
 
-    const whisperResult = await whisperResponse.json();
-    const transcription = whisperResult.text;
+    // When using response_format: 'text', the response is plain text
+    const transcription = await whisperResponse.text();
     console.log('Transcription complete, length:', transcription.length);
 
     // Step 3: Generate summary and key points with Lovable AI
