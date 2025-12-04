@@ -18,10 +18,11 @@ const presets = [
 
 interface DateRangeFilterProps {
   onRangeChange?: (range: string) => void;
+  defaultValue?: string;
 }
 
-export function DateRangeFilter({ onRangeChange }: DateRangeFilterProps) {
-  const [selected, setSelected] = useState('today');
+export function DateRangeFilter({ onRangeChange, defaultValue = 'today' }: DateRangeFilterProps) {
+  const [selected, setSelected] = useState(defaultValue);
 
   const handleSelect = (value: string) => {
     setSelected(value);

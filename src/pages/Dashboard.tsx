@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { KPICard } from '@/components/dashboard/KPICard';
 import { BookingsChart } from '@/components/dashboard/BookingsChart';
@@ -10,13 +11,14 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useBookings } from '@/contexts/BookingsContext';
 import { useAgents } from '@/contexts/AgentsContext';
 import { Navigate } from 'react-router-dom';
-import { calculateKPIData, calculateChartData, calculateLeaderboard, calculateMarketData } from '@/utils/dashboardCalculations';
+import { calculateKPIData, calculateChartData, calculateLeaderboard, calculateMarketData, DateRangeFilter as DateRangeFilterType } from '@/utils/dashboardCalculations';
 import { Skeleton } from '@/components/ui/skeleton';
 
 export default function Dashboard() {
   const { user } = useAuth();
   const { bookings, isLoading: bookingsLoading } = useBookings();
   const { agents, isLoading: agentsLoading } = useAgents();
+  const [dateRange, setDateRange] = useState<DateRangeFilterType>('today');
 
   // Redirect agents to their performance page
   if (user?.role === 'agent') {
@@ -25,10 +27,10 @@ export default function Dashboard() {
 
   const isLoading = bookingsLoading || agentsLoading;
 
-  // Calculate real data from Supabase
-  const kpiData = calculateKPIData(bookings, agents);
-  const chartData = calculateChartData(bookings, agents);
-  const leaderboard = calculateLeaderboard(bookings, agents);
+  // Calculate real data from Supabase with date filter
+  const kpiData = calculateKPIData(bookings, agents, dateRange);
+  const chartData = calculateChartData(bookings, agents, dateRange);
+  const leaderboard = calculateLeaderboard(bookings, agents, dateRange);
   const marketData = calculateMarketData(bookings);
 
   const kpiIcons = [
@@ -73,7 +75,7 @@ export default function Dashboard() {
       {/* Filters */}
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-3">
-          <DateRangeFilter />
+          <DateRangeFilter onRangeChange={(range) => setDateRange(range as DateRangeFilterType)} />
           <SiteFilter />
         </div>
         <div className="text-sm text-muted-foreground">

@@ -1,5 +1,5 @@
 import { Booking, Agent, KPIData, ChartDataPoint, LeaderboardEntry } from '@/types';
-import { startOfDay, subDays, format, isToday, isYesterday, parseISO, isWeekend, eachDayOfInterval } from 'date-fns';
+import { startOfDay, startOfMonth, subDays, format, isToday, isYesterday, parseISO, isWeekend, eachDayOfInterval } from 'date-fns';
 
 const countWeekdays = (startDate: Date, endDate: Date): number => {
   const days = eachDayOfInterval({ start: startDate, end: endDate });
@@ -20,6 +20,15 @@ const filterBookingsByDate = (bookings: Booking[], date: Date): Booking[] => {
   });
 };
 
+const filterBookingsByDateRange = (bookings: Booking[], start: Date, end: Date): Booking[] => {
+  const startDay = startOfDay(start);
+  const endDay = startOfDay(end);
+  return bookings.filter(b => {
+    const bookingDate = startOfDay(getBookingDate(b));
+    return bookingDate >= startDay && bookingDate <= endDay;
+  });
+};
+
 const getAgentsBySiteName = (agents: Agent[], siteName: string): Agent[] => {
   return agents.filter(a => 
     a.siteName.toLowerCase().includes(siteName.toLowerCase())
@@ -31,21 +40,47 @@ const getBookingsBySite = (bookings: Booking[], agents: Agent[], siteName: strin
   return bookings.filter(b => siteAgentIds.includes(b.agentId));
 };
 
-export const calculateKPIData = (bookings: Booking[], agents: Agent[]): KPIData[] => {
-  const today = new Date();
-  const yesterday = subDays(today, 1);
+export type DateRangeFilter = 'today' | 'yesterday' | '7d' | '30d' | 'month';
 
-  const todayBookings = filterBookingsByDate(bookings, today);
-  const yesterdayBookings = filterBookingsByDate(bookings, yesterday);
+export const getDateRangeFromFilter = (filter: DateRangeFilter): { start: Date; end: Date } => {
+  const today = startOfDay(new Date());
+  switch (filter) {
+    case 'yesterday':
+      return { start: subDays(today, 1), end: subDays(today, 1) };
+    case '7d':
+      return { start: subDays(today, 6), end: today };
+    case '30d':
+      return { start: subDays(today, 29), end: today };
+    case 'month':
+      return { start: startOfMonth(today), end: today };
+    default: // 'today'
+      return { start: today, end: today };
+  }
+};
 
-  const todayVixicom = getBookingsBySite(todayBookings, agents, 'vixicom');
-  const yesterdayVixicom = getBookingsBySite(yesterdayBookings, agents, 'vixicom');
+export const calculateKPIData = (
+  bookings: Booking[], 
+  agents: Agent[], 
+  dateFilter: DateRangeFilter = 'today'
+): KPIData[] => {
+  const { start, end } = getDateRangeFromFilter(dateFilter);
+  const periodDays = Math.max(1, Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1);
+  
+  // Get previous period for comparison
+  const prevEnd = subDays(start, 1);
+  const prevStart = subDays(prevEnd, periodDays - 1);
 
-  const todayPadsplit = getBookingsBySite(todayBookings, agents, 'padsplit');
-  const yesterdayPadsplit = getBookingsBySite(yesterdayBookings, agents, 'padsplit');
+  const currentBookings = filterBookingsByDateRange(bookings, start, end);
+  const previousBookings = filterBookingsByDateRange(bookings, prevStart, prevEnd);
 
-  const todayPending = todayBookings.filter(b => b.status === 'Pending Move-In');
-  const yesterdayPending = yesterdayBookings.filter(b => b.status === 'Pending Move-In');
+  const currentVixicom = getBookingsBySite(currentBookings, agents, 'vixicom');
+  const previousVixicom = getBookingsBySite(previousBookings, agents, 'vixicom');
+
+  const currentPadsplit = getBookingsBySite(currentBookings, agents, 'padsplit');
+  const previousPadsplit = getBookingsBySite(previousBookings, agents, 'padsplit');
+
+  const currentPending = currentBookings.filter(b => b.status === 'Pending Move-In');
+  const previousPending = previousBookings.filter(b => b.status === 'Pending Move-In');
 
   const calculateChange = (current: number, previous: number): { change: number; changeType: 'increase' | 'decrease' | 'neutral' } => {
     if (previous === 0) {
@@ -58,49 +93,63 @@ export const calculateKPIData = (bookings: Booking[], agents: Agent[]): KPIData[
     };
   };
 
-  const totalChange = calculateChange(todayBookings.length, yesterdayBookings.length);
-  const vixicomChange = calculateChange(todayVixicom.length, yesterdayVixicom.length);
-  const padsplitChange = calculateChange(todayPadsplit.length, yesterdayPadsplit.length);
-  const pendingChange = calculateChange(todayPending.length, yesterdayPending.length);
+  const totalChange = calculateChange(currentBookings.length, previousBookings.length);
+  const vixicomChange = calculateChange(currentVixicom.length, previousVixicom.length);
+  const padsplitChange = calculateChange(currentPadsplit.length, previousPadsplit.length);
+  const pendingChange = calculateChange(currentPending.length, previousPending.length);
+
+  const periodLabel = dateFilter === 'today' ? 'Today' : 
+    dateFilter === 'yesterday' ? 'Yesterday' : 
+    dateFilter === '7d' ? 'Last 7 Days' : 
+    dateFilter === '30d' ? 'Last 30 Days' : 'This Month';
+
+  const comparisonLabel = dateFilter === 'today' ? 'yesterday' : 'previous period';
 
   return [
     {
-      label: 'Total Bookings Today',
-      value: todayBookings.length,
-      previousValue: yesterdayBookings.length,
+      label: `Total Bookings ${periodLabel === 'Today' ? 'Today' : ''}`,
+      value: currentBookings.length,
+      previousValue: previousBookings.length,
       change: totalChange.change,
       changeType: totalChange.changeType,
     },
     {
       label: 'Vixicom Bookings',
-      value: todayVixicom.length,
-      previousValue: yesterdayVixicom.length,
+      value: currentVixicom.length,
+      previousValue: previousVixicom.length,
       change: vixicomChange.change,
       changeType: vixicomChange.changeType,
     },
     {
       label: 'PadSplit Internal',
-      value: todayPadsplit.length,
-      previousValue: yesterdayPadsplit.length,
+      value: currentPadsplit.length,
+      previousValue: previousPadsplit.length,
       change: padsplitChange.change,
       changeType: padsplitChange.changeType,
     },
     {
       label: 'Pending Move-Ins',
-      value: todayPending.length,
-      previousValue: yesterdayPending.length,
+      value: currentPending.length,
+      previousValue: previousPending.length,
       change: pendingChange.change,
       changeType: pendingChange.changeType,
     },
   ];
 };
 
-export const calculateChartData = (bookings: Booking[], agents: Agent[], days: number = 7): ChartDataPoint[] => {
+export const calculateChartData = (
+  bookings: Booking[], 
+  agents: Agent[], 
+  dateFilter: DateRangeFilter = 'today'
+): ChartDataPoint[] => {
   const chartData: ChartDataPoint[] = [];
-  const today = new Date();
-
+  const { start, end } = getDateRangeFromFilter(dateFilter);
+  
+  // Calculate number of days to show
+  const days = Math.max(1, Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1);
+  
   for (let i = days - 1; i >= 0; i--) {
-    const date = subDays(today, i);
+    const date = subDays(end, i);
     const dayBookings = filterBookingsByDate(bookings, date);
     
     const vixicomBookings = getBookingsBySite(dayBookings, agents, 'vixicom');
@@ -117,16 +166,16 @@ export const calculateChartData = (bookings: Booking[], agents: Agent[], days: n
   return chartData;
 };
 
-export const calculateLeaderboard = (bookings: Booking[], agents: Agent[]): LeaderboardEntry[] => {
-  const today = new Date();
-  const weekStart = subDays(today, 7);
-  const weekdaysInPeriod = countWeekdays(weekStart, today);
+export const calculateLeaderboard = (
+  bookings: Booking[], 
+  agents: Agent[],
+  dateFilter: DateRangeFilter = 'today'
+): LeaderboardEntry[] => {
+  const { start, end } = getDateRangeFromFilter(dateFilter);
+  const weekdaysInPeriod = countWeekdays(start, end);
 
-  // Get bookings from the last 7 days
-  const recentBookings = bookings.filter(b => {
-    const bookingDate = getBookingDate(b);
-    return bookingDate >= weekStart && bookingDate <= today;
-  });
+  // Get bookings from the selected period
+  const recentBookings = filterBookingsByDateRange(bookings, start, end);
 
   // Group bookings by agent
   const agentBookings = new Map<string, Booking[]>();
@@ -144,7 +193,8 @@ export const calculateLeaderboard = (bookings: Booking[], agents: Agent[]): Lead
     const pending = agentBookingsList.filter(b => b.status === 'Pending Move-In').length;
     const rejected = agentBookingsList.filter(b => b.status === 'Member Rejected').length;
 
-    // Calculate today vs yesterday change
+    // Calculate change based on filter
+    const today = new Date();
     const todayBookings = filterBookingsByDate(agentBookingsList, today).length;
     const yesterdayBookings = filterBookingsByDate(agentBookingsList, subDays(today, 1)).length;
     const change = todayBookings - yesterdayBookings;
