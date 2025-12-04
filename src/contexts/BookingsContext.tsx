@@ -88,6 +88,12 @@ export function BookingsProvider({ children }: { children: ReactNode }) {
     // User is authenticated, fetch data
     fetchBookings();
 
+    // Delayed re-fetch to ensure complete data on fresh login
+    // This catches any JWT propagation timing issues with RLS
+    const refreshTimeout = setTimeout(() => {
+      fetchBookings();
+    }, 500);
+
     // Set up realtime subscription
     const channel = supabase
       .channel('bookings-changes')
@@ -101,6 +107,7 @@ export function BookingsProvider({ children }: { children: ReactNode }) {
       .subscribe();
 
     return () => {
+      clearTimeout(refreshTimeout);
       supabase.removeChannel(channel);
     };
   }, [user, authLoading]);
