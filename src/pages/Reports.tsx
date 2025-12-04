@@ -3,7 +3,7 @@ import { useBookings } from '@/contexts/BookingsContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { useAgents } from '@/contexts/AgentsContext';
 import { Button } from '@/components/ui/button';
-import { Download, Search, PlusCircle, Pencil, ChevronDown, Building2, User, MessageSquare, Tag, CheckCircle } from 'lucide-react';
+import { Download, Search, PlusCircle, Pencil, ChevronDown, Building2, User, MessageSquare, Tag, CheckCircle, RotateCcw } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { format, startOfDay, endOfDay, isWithinInterval } from 'date-fns';
 import { cn } from '@/lib/utils';
@@ -85,6 +85,24 @@ export default function Reports() {
   const [methodFilter, setMethodFilter] = useState('all');
   const [agentFilter, setAgentFilter] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
+
+  // Clear all filters
+  const clearAllFilters = () => {
+    setBookingDateRange({ from: startOfDay(new Date()), to: endOfDay(new Date()) });
+    setMoveInDateRange({ from: undefined, to: undefined });
+    setSiteFilter('all');
+    setStatusFilter('all');
+    setTypeFilter('all');
+    setMethodFilter('all');
+    setAgentFilter('all');
+    setSearchQuery('');
+  };
+
+  const hasActiveFilters = 
+    moveInDateRange.from || moveInDateRange.to ||
+    siteFilter !== 'all' || statusFilter !== 'all' || 
+    typeFilter !== 'all' || methodFilter !== 'all' || 
+    agentFilter !== 'all' || searchQuery !== '';
 
   // Pagination
   const [currentPage, setCurrentPage] = useState(1);
@@ -387,6 +405,14 @@ export default function Reports() {
             onChange={(e) => setSearchQuery(e.target.value)}
           />
         </div>
+
+        {/* Clear All Filters */}
+        {hasActiveFilters && (
+          <Button variant="ghost" className="gap-2 text-muted-foreground" onClick={clearAllFilters}>
+            <RotateCcw className="w-4 h-4" />
+            Clear Filters
+          </Button>
+        )}
 
         {/* Items per page */}
         <Select value={String(itemsPerPage)} onValueChange={(v) => setItemsPerPage(Number(v))}>
