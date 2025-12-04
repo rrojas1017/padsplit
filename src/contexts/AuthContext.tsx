@@ -57,43 +57,40 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const isMountedRef = { current: true };
-    let initializationComplete = false;
-    
-    // Timeout failsafe - prevent infinite loading
-    const timeoutId = setTimeout(() => {
-      if (isMountedRef.current && !initializationComplete) {
-        console.warn('Auth initialization timed out, forcing loading state to false');
-        setIsLoading(false);
-      }
-    }, 5000);
     
     // Set up auth state listener
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
+      (event, session) => {
         console.log('Auth state change:', event, session?.user?.email);
         
+        // Synchronous state updates only - no async Supabase calls directly here
+        setSession(session);
+        
         if (event === 'INITIAL_SESSION') {
-          // Handle INITIAL_SESSION - this is the first session state from Supabase
-          setSession(session);
+          // Defer Supabase calls to avoid deadlock
           if (session?.user) {
-            await fetchUserData(session.user);
-          }
-          initializationComplete = true;
-          if (isMountedRef.current) {
+            const userToFetch = session.user;
+            setTimeout(() => {
+              fetchUserData(userToFetch).finally(() => {
+                if (isMountedRef.current) {
+                  setIsLoading(false);
+                }
+              });
+            }, 0);
+          } else {
             setIsLoading(false);
           }
           return;
         }
         
         // Handle other events (SIGNED_IN, SIGNED_OUT, TOKEN_REFRESHED)
-        setSession(session);
         if (session?.user) {
-          await fetchUserData(session.user);
+          const userToFetch = session.user;
+          setTimeout(() => {
+            fetchUserData(userToFetch);
+          }, 0);
         } else if (event === 'SIGNED_OUT') {
           setUser(null);
-        }
-        if (isMountedRef.current) {
-          setIsLoading(false);
         }
       }
     );
@@ -115,7 +112,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     return () => {
       isMountedRef.current = false;
-      clearTimeout(timeoutId);
       subscription.unsubscribe();
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
@@ -132,15 +128,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return { success: false, error: error.message };
       }
 
+      // Don't call fetchUserData here - onAuthStateChange will handle it
+      // Log access asynchronously (fire-and-forget, non-blocking)
       if (data.user) {
-        await fetchUserData(data.user);
-        
-        // Log access
-        await supabase.from('access_logs').insert({
+        supabase.from('access_logs').insert({
           user_id: data.user.id,
           user_name: data.user.email,
           action: 'login',
           resource: '/dashboard',
+        }).then(({ error }) => {
+          if (error) console.error('Failed to log login:', error);
+          else console.log('Login logged');
         });
       }
 
@@ -190,11 +188,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logout = async () => {
     if (user) {
-      await supabase.from('access_logs').insert({
+      // Fire-and-forget logout logging
+      supabase.from('access_logs').insert({
         user_id: user.id,
         user_name: user.name,
         action: 'logout',
         resource: window.location.pathname,
+      }).then(({ error }) => {
+        if (error) console.error('Failed to log logout:', error);
       });
     }
 
