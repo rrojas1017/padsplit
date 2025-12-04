@@ -3,7 +3,7 @@ import { useBookings } from '@/contexts/BookingsContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { useAgents } from '@/contexts/AgentsContext';
 import { Button } from '@/components/ui/button';
-import { Download, Search, PlusCircle, Pencil, ChevronDown, Building2, User, MessageSquare, Tag, CheckCircle, RotateCcw, ArrowUp, ArrowDown, ArrowUpDown, X } from 'lucide-react';
+import { Download, Search, PlusCircle, Pencil, ChevronDown, Building2, User, MessageSquare, Tag, CheckCircle, RotateCcw, ArrowUp, ArrowDown, ArrowUpDown, X, ExternalLink, Phone, UserCircle } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { format, startOfDay, endOfDay, isWithinInterval } from 'date-fns';
 import { cn } from '@/lib/utils';
@@ -298,6 +298,9 @@ export default function Reports() {
       'Status',
       'Communication Method',
       'Notes',
+      'HubSpot Link',
+      'Kixie Link',
+      'Admin Profile Link',
     ];
 
     const rows = filteredBookings.map(booking => [
@@ -311,6 +314,9 @@ export default function Reports() {
       booking.status,
       booking.communicationMethod || '',
       booking.notes || '',
+      booking.hubspotLink || '',
+      booking.kixieLink || '',
+      booking.adminProfileLink || '',
     ]);
 
     const csvContent = [
@@ -579,13 +585,14 @@ export default function Reports() {
                 <SortableHeader column="bookingType" label="Type" />
                 <SortableHeader column="status" label="Status" />
                 <SortableHeader column="communicationMethod" label="Method" />
+                <th className="text-left py-3 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Links</th>
                 <th className="text-left py-3 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
               {paginatedBookings.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="py-8 text-center text-muted-foreground">
+                  <td colSpan={10} className="py-8 text-center text-muted-foreground">
                     No bookings found matching your filters
                   </td>
                 </tr>
@@ -620,6 +627,25 @@ export default function Reports() {
                     </td>
                     <td className="py-3 px-4 text-sm text-muted-foreground">
                       {booking.communicationMethod}
+                    </td>
+                    <td className="py-3 px-4">
+                      <div className="flex items-center gap-2">
+                        {booking.hubspotLink && (
+                          <a href={booking.hubspotLink} target="_blank" rel="noopener noreferrer" title="HubSpot">
+                            <ExternalLink className="h-4 w-4 text-orange-500 hover:text-orange-600 transition-colors" />
+                          </a>
+                        )}
+                        {booking.kixieLink && (
+                          <a href={booking.kixieLink} target="_blank" rel="noopener noreferrer" title="Kixie Call">
+                            <Phone className="h-4 w-4 text-green-500 hover:text-green-600 transition-colors" />
+                          </a>
+                        )}
+                        {booking.adminProfileLink && (
+                          <a href={booking.adminProfileLink} target="_blank" rel="noopener noreferrer" title="Admin Profile">
+                            <UserCircle className="h-4 w-4 text-blue-500 hover:text-blue-600 transition-colors" />
+                          </a>
+                        )}
+                      </div>
                     </td>
                     <td className="py-3 px-4">
                       {canEditBooking(booking.agentId) && (
