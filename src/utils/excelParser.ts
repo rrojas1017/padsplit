@@ -128,22 +128,15 @@ export const parseExcelFile = async (file: File): Promise<ParseResult> => {
         
         const bookings: ParsedBooking[] = [];
         
-        // Process sheets that contain booking data (Page 1 and Page 4 based on analysis)
-        const bookingSheets = workbook.SheetNames.filter(name => 
-          name.toLowerCase().includes('page 1') || 
-          name.toLowerCase().includes('page 4') ||
-          name === 'Sheet1' ||
-          name === 'Page 1' ||
-          name === 'Page 4'
-        );
+        // Process sheets that contain booking data (look for "booking" or "tracker" in name)
+        const sheetsToProcess = workbook.SheetNames.filter(name => {
+          const lower = name.toLowerCase();
+          const isBookingSheet = lower.includes('booking') || lower.includes('tracker');
+          const isExcluded = lower.includes('call') || lower.includes('promo') || lower.includes('agent');
+          return isBookingSheet && !isExcluded;
+        });
         
-        // If no matching sheets, try all sheets except known non-booking sheets
-        const sheetsToProcess = bookingSheets.length > 0 
-          ? bookingSheets 
-          : workbook.SheetNames.filter(name => 
-              !name.toLowerCase().includes('call') && 
-              !name.toLowerCase().includes('promo')
-            );
+        console.log('Found booking sheets:', sheetsToProcess);
         
         for (const sheetName of sheetsToProcess) {
           const sheet = workbook.Sheets[sheetName];
