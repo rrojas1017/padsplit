@@ -221,10 +221,16 @@ export const calculateLeaderboard = (
   return leaderboardData;
 };
 
-export const calculateMarketData = (bookings: Booking[]): { market: string; bookings: number }[] => {
+export const calculateMarketData = (
+  bookings: Booking[],
+  dateFilter: DateRangeFilter = 'today'
+): { market: string; bookings: number }[] => {
+  const { start, end } = getDateRangeFromFilter(dateFilter);
+  const filteredBookings = filterBookingsByDateRange(bookings, start, end);
+  
   const marketCounts = new Map<string, number>();
 
-  bookings.forEach(booking => {
+  filteredBookings.forEach(booking => {
     const market = booking.marketCity || 'Unknown';
     marketCounts.set(market, (marketCounts.get(market) || 0) + 1);
   });
