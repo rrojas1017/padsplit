@@ -56,51 +56,47 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   useEffect(() => {
-    let isMounted = true;
-    let initialSessionHandled = false;
+    const isMountedRef = { current: true };
+    let initializationComplete = false;
     
-    // Set up auth state listener FIRST
+    // Timeout failsafe - prevent infinite loading
+    const timeoutId = setTimeout(() => {
+      if (isMountedRef.current && !initializationComplete) {
+        console.warn('Auth initialization timed out, forcing loading state to false');
+        setIsLoading(false);
+      }
+    }, 5000);
+    
+    // Set up auth state listener
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
         console.log('Auth state change:', event, session?.user?.email);
         
-        // For INITIAL_SESSION, mark as handled but let initializeAuth do the work
         if (event === 'INITIAL_SESSION') {
-          initialSessionHandled = true;
+          // Handle INITIAL_SESSION - this is the first session state from Supabase
+          setSession(session);
+          if (session?.user) {
+            await fetchUserData(session.user);
+          }
+          initializationComplete = true;
+          if (isMountedRef.current) {
+            setIsLoading(false);
+          }
           return;
         }
         
+        // Handle other events (SIGNED_IN, SIGNED_OUT, TOKEN_REFRESHED)
         setSession(session);
         if (session?.user) {
           await fetchUserData(session.user);
         } else if (event === 'SIGNED_OUT') {
           setUser(null);
         }
-        if (isMounted) {
+        if (isMountedRef.current) {
           setIsLoading(false);
         }
       }
     );
-
-    // THEN check for existing session
-    const initializeAuth = async () => {
-      try {
-        const { data: { session } } = await supabase.auth.getSession();
-        console.log('Initial session check:', session?.user?.email || 'no session');
-        setSession(session);
-        if (session?.user) {
-          await fetchUserData(session.user);
-        }
-      } catch (error) {
-        console.error('Error initializing auth:', error);
-      } finally {
-        if (isMounted) {
-          setIsLoading(false);
-        }
-      }
-    };
-    
-    initializeAuth();
 
     // Handle visibility change (mobile tab resume)
     const handleVisibilityChange = () => {
@@ -118,7 +114,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     document.addEventListener('visibilitychange', handleVisibilityChange);
 
     return () => {
-      isMounted = false;
+      isMountedRef.current = false;
+      clearTimeout(timeoutId);
       subscription.unsubscribe();
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
