@@ -13,17 +13,37 @@ import { Skeleton } from '@/components/ui/skeleton';
 
 export default function Wallboard() {
   const [time, setTime] = useState(new Date());
+  const [lastRefresh, setLastRefresh] = useState(new Date());
+  const [secondsUntilRefresh, setSecondsUntilRefresh] = useState(60);
+  const [isFlashing, setIsFlashing] = useState(false);
   const { theme, toggleTheme } = useTheme();
   const navigate = useNavigate();
-  const { bookings, isLoading: bookingsLoading } = useBookings();
+  const { bookings, isLoading: bookingsLoading, refreshBookings } = useBookings();
   const { agents, sites, isLoading: agentsLoading } = useAgents();
   
   const isLoading = bookingsLoading || agentsLoading;
   
+  // Clock and countdown timer
   useEffect(() => {
-    const timer = setInterval(() => setTime(new Date()), 1000);
+    const timer = setInterval(() => {
+      setTime(new Date());
+      setSecondsUntilRefresh(prev => (prev > 1 ? prev - 1 : 60));
+    }, 1000);
     return () => clearInterval(timer);
   }, []);
+
+  // Auto-refresh bookings every 60 seconds
+  useEffect(() => {
+    const refreshInterval = setInterval(() => {
+      refreshBookings();
+      setLastRefresh(new Date());
+      setSecondsUntilRefresh(60);
+      // Trigger flash animation
+      setIsFlashing(true);
+      setTimeout(() => setIsFlashing(false), 800);
+    }, 60000);
+    return () => clearInterval(refreshInterval);
+  }, [refreshBookings]);
 
   const today = format(new Date(), 'yyyy-MM-dd');
   const yesterday = format(subDays(new Date(), 1), 'yyyy-MM-dd');
@@ -104,7 +124,10 @@ export default function Wallboard() {
       {/* Top Stats */}
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 mb-8">
         {/* Total Today */}
-        <div className="bg-card rounded-2xl p-6 border border-border shadow-card">
+        <div className={cn(
+          "bg-card rounded-2xl p-6 border border-border shadow-card transition-shadow",
+          isFlashing && "animate-flash"
+        )}>
           <div className="flex items-center justify-between mb-4">
             <Calendar className="w-8 h-8 text-accent" />
             <div className={cn(
@@ -120,7 +143,10 @@ export default function Wallboard() {
         </div>
 
         {/* Vixicom */}
-        <div className="bg-card rounded-2xl p-6 border border-accent/30 shadow-card">
+        <div className={cn(
+          "bg-card rounded-2xl p-6 border border-accent/30 shadow-card transition-shadow",
+          isFlashing && "animate-flash"
+        )}>
           <div className="flex items-center gap-2 mb-4">
             <Users className="w-8 h-8 text-accent" />
             <span className="text-lg font-medium text-accent">Vixicom</span>
@@ -130,7 +156,10 @@ export default function Wallboard() {
         </div>
 
         {/* PadSplit Internal */}
-        <div className="bg-card rounded-2xl p-6 border border-primary/30 shadow-card">
+        <div className={cn(
+          "bg-card rounded-2xl p-6 border border-primary/30 shadow-card transition-shadow",
+          isFlashing && "animate-flash"
+        )}>
           <div className="flex items-center gap-2 mb-4">
             <Users className="w-8 h-8 text-primary" />
             <span className="text-lg font-medium text-primary">PadSplit Internal</span>
@@ -140,7 +169,10 @@ export default function Wallboard() {
         </div>
 
         {/* vs Yesterday */}
-        <div className="bg-card rounded-2xl p-6 border border-border shadow-card">
+        <div className={cn(
+          "bg-card rounded-2xl p-6 border border-border shadow-card transition-shadow",
+          isFlashing && "animate-flash"
+        )}>
           <div className="flex items-center gap-2 mb-4">
             <RefreshCw className="w-8 h-8 text-muted-foreground" />
             <span className="text-lg font-medium text-muted-foreground">Yesterday</span>
@@ -212,7 +244,10 @@ export default function Wallboard() {
 
       {/* Footer */}
       <footer className="mt-8 text-center text-sm text-muted-foreground">
-        <p>Auto-refreshes every 60 seconds • Powered by Appendify LLC</p>
+        <p className="flex items-center justify-center gap-2">
+          <RefreshCw className={cn("w-4 h-4", secondsUntilRefresh <= 5 && "animate-spin")} />
+          Next refresh in {secondsUntilRefresh}s • Last updated {format(lastRefresh, 'HH:mm:ss')} • Powered by Appendify LLC
+        </p>
       </footer>
     </div>
   );
