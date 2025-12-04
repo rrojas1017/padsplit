@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Button } from '@/components/ui/button';
-import { Plus, MoreVertical, Shield, ShieldCheck, User, Crown, Loader2, Link, Pencil } from 'lucide-react';
+import { Plus, MoreVertical, Shield, ShieldCheck, User, Crown, Loader2, Link, Pencil, Trash2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
@@ -82,6 +82,11 @@ export default function UserManagement() {
 
   // Linked user info for agents tab
   const [linkedUsers, setLinkedUsers] = useState<Record<string, { name: string; email: string }>>({});
+
+  // Delete user state
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [userToDelete, setUserToDelete] = useState<UserWithRole | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const isSuperAdmin = hasRole(['super_admin']);
 
@@ -353,6 +358,53 @@ export default function UserManagement() {
     }
   };
 
+  const handleDeleteUser = async () => {
+    if (!userToDelete) return;
+
+    // Prevent deleting yourself
+    if (userToDelete.id === currentUser?.id) {
+      toast({
+        title: 'Error',
+        description: 'You cannot delete your own account',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setIsDeleting(true);
+    try {
+      const response = await supabase.functions.invoke('delete-user', {
+        body: { userId: userToDelete.id },
+      });
+
+      if (response.error) {
+        throw new Error(response.error.message || 'Failed to delete user');
+      }
+
+      if (response.data?.error) {
+        throw new Error(response.data.error);
+      }
+
+      toast({
+        title: 'Success',
+        description: `User ${userToDelete.email} deleted successfully`,
+      });
+
+      setIsDeleteDialogOpen(false);
+      setUserToDelete(null);
+      fetchUsers();
+    } catch (error: any) {
+      console.error('Error deleting user:', error);
+      toast({
+        title: 'Error',
+        description: error.message || 'Failed to delete user',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
   const getRoleIcon = (role: string) => {
     switch (role) {
       case 'super_admin': return <Crown className="w-4 h-4" />;
@@ -620,6 +672,18 @@ export default function UserManagement() {
                               <DropdownMenuItem>Edit User</DropdownMenuItem>
                               <DropdownMenuItem>Change Role</DropdownMenuItem>
                               <DropdownMenuItem className="text-destructive">Deactivate</DropdownMenuItem>
+                              {user.id !== currentUser?.id && (
+                                <DropdownMenuItem 
+                                  className="text-destructive"
+                                  onClick={() => {
+                                    setUserToDelete(user);
+                                    setIsDeleteDialogOpen(true);
+                                  }}
+                                >
+                                  <Trash2 className="w-4 h-4 mr-2" />
+                                  Delete User
+                                </DropdownMenuItem>
+                              )}
                             </DropdownMenuContent>
                           </DropdownMenu>
                         </td>
@@ -738,6 +802,18 @@ export default function UserManagement() {
                                       <DropdownMenuContent align="end">
                                         <DropdownMenuItem>Edit User</DropdownMenuItem>
                                         <DropdownMenuItem className="text-destructive">Deactivate</DropdownMenuItem>
+                                        {user.id !== currentUser?.id && (
+                                          <DropdownMenuItem 
+                                            className="text-destructive"
+                                            onClick={() => {
+                                              setUserToDelete(user);
+                                              setIsDeleteDialogOpen(true);
+                                            }}
+                                          >
+                                            <Trash2 className="w-4 h-4 mr-2" />
+                                            Delete User
+                                          </DropdownMenuItem>
+                                        )}
                                       </DropdownMenuContent>
                                     </DropdownMenu>
                                   )}
@@ -801,6 +877,49 @@ export default function UserManagement() {
             </Button>
             <Button onClick={handleSaveAgent}>
               Save Changes
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete User Confirmation Dialog */}
+      <Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle className="text-destructive">Delete User</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete this user? This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          {userToDelete && (
+            <div className="py-4">
+              <div className="bg-destructive/10 border border-destructive/20 rounded-lg p-4">
+                <p className="font-medium text-foreground">{userToDelete.name}</p>
+                <p className="text-sm text-muted-foreground">{userToDelete.email}</p>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Role: {roleLabels[userToDelete.role] || userToDelete.role}
+                </p>
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button 
+              variant="outline" 
+              onClick={() => {
+                setIsDeleteDialogOpen(false);
+                setUserToDelete(null);
+              }}
+              disabled={isDeleting}
+            >
+              Cancel
+            </Button>
+            <Button 
+              variant="destructive" 
+              onClick={handleDeleteUser}
+              disabled={isDeleting}
+            >
+              {isDeleting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+              Delete User
             </Button>
           </DialogFooter>
         </DialogContent>
