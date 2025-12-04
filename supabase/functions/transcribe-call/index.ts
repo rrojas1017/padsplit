@@ -112,8 +112,8 @@ async function processTranscription(bookingId: string, kixieUrl: string) {
     
     console.log('[Background] Transcription complete, length:', transcription.length);
 
-    // Step 3: Generate summary and key points with Lovable AI
-    console.log('[Background] Generating AI summary...');
+    // Step 3: Generate summary, key points, and agent feedback with Lovable AI
+    console.log('[Background] Generating AI summary and agent feedback...');
     const summaryPrompt = `You are an expert at analyzing sales call transcriptions for a housing/rental service called PadSplit. 
     
 Analyze this call transcription and extract structured insights in JSON format.
@@ -129,11 +129,24 @@ Return a JSON object with EXACTLY this structure (no markdown, just JSON):
   "recommendedActions": ["Array of recommended follow-up actions for the agent"],
   "objections": ["Array of any hesitations or objections raised"],
   "moveInReadiness": "high" or "medium" or "low",
-  "callSentiment": "positive" or "neutral" or "negative"
+  "callSentiment": "positive" or "neutral" or "negative",
+  "agentFeedback": {
+    "overallRating": "excellent" or "good" or "needs_improvement" or "poor",
+    "strengths": ["Array of things the agent did well on this call"],
+    "improvements": ["Array of specific areas where the agent could improve"],
+    "coachingTips": ["Array of actionable coaching tips for the agent based on this call"],
+    "scores": {
+      "communication": 1-10 score for clarity, active listening, and rapport building,
+      "productKnowledge": 1-10 score for PadSplit knowledge and ability to answer questions,
+      "objectionHandling": 1-10 score for addressing concerns and objections effectively,
+      "closingSkills": 1-10 score for guiding the conversation toward booking/next steps
+    }
+  }
 }
 
 If a category has no relevant information, return an empty array [].
-Focus on actionable insights that will help with follow-up conversations.`;
+Focus on actionable insights that will help with follow-up conversations.
+For agent feedback, be specific and constructive - mention exact phrases or moments from the call when possible.`;
 
     const aiResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
       method: 'POST',
@@ -161,6 +174,7 @@ Focus on actionable insights that will help with follow-up conversations.`;
 
     // Parse the JSON response
     let keyPoints;
+    let agentFeedback;
     let summary = '';
     try {
       let cleanedContent = aiContent.trim();
@@ -175,8 +189,20 @@ Focus on actionable insights that will help with follow-up conversations.`;
       }
       cleanedContent = cleanedContent.trim();
       
-      keyPoints = JSON.parse(cleanedContent);
-      summary = keyPoints.summary || '';
+      const parsed = JSON.parse(cleanedContent);
+      summary = parsed.summary || '';
+      agentFeedback = parsed.agentFeedback || null;
+      
+      // Extract keyPoints without agentFeedback
+      keyPoints = {
+        summary: parsed.summary,
+        memberConcerns: parsed.memberConcerns || [],
+        memberPreferences: parsed.memberPreferences || [],
+        recommendedActions: parsed.recommendedActions || [],
+        objections: parsed.objections || [],
+        moveInReadiness: parsed.moveInReadiness || 'medium',
+        callSentiment: parsed.callSentiment || 'neutral'
+      };
     } catch (parseError) {
       console.error('[Background] Failed to parse AI response:', parseError);
       keyPoints = {
@@ -188,11 +214,12 @@ Focus on actionable insights that will help with follow-up conversations.`;
         moveInReadiness: 'medium',
         callSentiment: 'neutral'
       };
+      agentFeedback = null;
       summary = keyPoints.summary;
     }
 
-    // Step 4: Update the booking with transcription data
-    console.log('[Background] Updating booking with transcription data...');
+    // Step 4: Update the booking with transcription data and agent feedback
+    console.log('[Background] Updating booking with transcription data and agent feedback...');
     const { error: updateError } = await supabase
       .from('bookings')
       .update({
@@ -202,6 +229,7 @@ Focus on actionable insights that will help with follow-up conversations.`;
         call_duration_seconds: callDurationSeconds,
         transcription_status: 'completed',
         transcribed_at: new Date().toISOString(),
+        agent_feedback: agentFeedback,
       })
       .eq('id', bookingId);
 

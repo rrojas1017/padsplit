@@ -61,6 +61,7 @@ export function BookingsProvider({ children }: { children: ReactNode }) {
         transcriptionStatus: b.transcription_status || undefined,
         transcribedAt: b.transcribed_at ? new Date(b.transcribed_at) : undefined,
         callDurationSeconds: b.call_duration_seconds || undefined,
+        agentFeedback: b.agent_feedback || undefined,
       }));
 
       setBookings(transformedBookings);
