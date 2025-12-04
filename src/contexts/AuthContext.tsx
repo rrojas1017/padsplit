@@ -63,12 +63,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       async (event, session) => {
         console.log('Auth state change:', event, session?.user?.email);
         
+        // Skip INITIAL_SESSION - let initializeAuth handle the initial state
+        // This prevents race condition where callback fires before getSession() completes
+        if (event === 'INITIAL_SESSION') {
+          return;
+        }
+        
         setSession(session);
         if (session?.user) {
           // Fetch user data and wait for it to complete
           await fetchUserData(session.user);
         } else {
-          // Only clear user if this is a deliberate sign out, not a transient state
+          // Only clear user if this is a deliberate sign out
           if (event === 'SIGNED_OUT') {
             setUser(null);
           }
