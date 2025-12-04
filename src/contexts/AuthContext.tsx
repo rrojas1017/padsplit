@@ -57,27 +57,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let isMounted = true;
+    let initialSessionHandled = false;
     
     // Set up auth state listener FIRST
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
         console.log('Auth state change:', event, session?.user?.email);
         
-        // Skip INITIAL_SESSION - let initializeAuth handle the initial state
-        // This prevents race condition where callback fires before getSession() completes
+        // For INITIAL_SESSION, mark as handled but let initializeAuth do the work
         if (event === 'INITIAL_SESSION') {
+          initialSessionHandled = true;
           return;
         }
         
         setSession(session);
         if (session?.user) {
-          // Fetch user data and wait for it to complete
           await fetchUserData(session.user);
-        } else {
-          // Only clear user if this is a deliberate sign out
-          if (event === 'SIGNED_OUT') {
-            setUser(null);
-          }
+        } else if (event === 'SIGNED_OUT') {
+          setUser(null);
         }
         if (isMounted) {
           setIsLoading(false);
@@ -87,14 +84,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     // THEN check for existing session
     const initializeAuth = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      console.log('Initial session check:', session?.user?.email || 'no session');
-      setSession(session);
-      if (session?.user) {
-        await fetchUserData(session.user);
-      }
-      if (isMounted) {
-        setIsLoading(false);
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        console.log('Initial session check:', session?.user?.email || 'no session');
+        setSession(session);
+        if (session?.user) {
+          await fetchUserData(session.user);
+        }
+      } catch (error) {
+        console.error('Error initializing auth:', error);
+      } finally {
+        if (isMounted) {
+          setIsLoading(false);
+        }
       }
     };
     
