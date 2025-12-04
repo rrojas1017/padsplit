@@ -6,11 +6,12 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { useToast } from '@/hooks/use-toast';
 import { useAgents } from '@/contexts/AgentsContext';
 import { useBookings } from '@/contexts/BookingsContext';
 import { parseExcelFile, ParsedBooking, ParseResult, SheetInfo } from '@/utils/excelParser';
-import { Upload, FileSpreadsheet, CheckCircle2, XCircle, AlertTriangle, Loader2 } from 'lucide-react';
+import { Upload, FileSpreadsheet, CheckCircle2, XCircle, AlertTriangle, Loader2, ExternalLink } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 export default function ImportBookings() {
@@ -374,6 +375,9 @@ export default function ImportBookings() {
                         <TableHead>Agent</TableHead>
                         <TableHead>Market</TableHead>
                         <TableHead>Status</TableHead>
+                        <TableHead>HubSpot</TableHead>
+                        <TableHead>Kixie</TableHead>
+                        <TableHead>Admin Profile</TableHead>
                         <TableHead>Issues</TableHead>
                       </TableRow>
                     </TableHeader>
@@ -417,6 +421,78 @@ export default function ImportBookings() {
                             >
                               {booking.status}
                             </Badge>
+                          </TableCell>
+                          <TableCell>
+                            {booking.hubspotLink ? (
+                              <TooltipProvider>
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <a 
+                                      href={booking.hubspotLink} 
+                                      target="_blank" 
+                                      rel="noopener noreferrer"
+                                      className="text-primary hover:underline flex items-center gap-1"
+                                    >
+                                      <ExternalLink className="w-3 h-3" />
+                                      Link
+                                    </a>
+                                  </TooltipTrigger>
+                                  <TooltipContent>
+                                    <p className="max-w-xs truncate">{booking.hubspotLink}</p>
+                                  </TooltipContent>
+                                </Tooltip>
+                              </TooltipProvider>
+                            ) : (
+                              <span className="text-muted-foreground">—</span>
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            {booking.kixieLink ? (
+                              <TooltipProvider>
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <a 
+                                      href={booking.kixieLink} 
+                                      target="_blank" 
+                                      rel="noopener noreferrer"
+                                      className="text-primary hover:underline flex items-center gap-1"
+                                    >
+                                      <ExternalLink className="w-3 h-3" />
+                                      Link
+                                    </a>
+                                  </TooltipTrigger>
+                                  <TooltipContent>
+                                    <p className="max-w-xs truncate">{booking.kixieLink}</p>
+                                  </TooltipContent>
+                                </Tooltip>
+                              </TooltipProvider>
+                            ) : (
+                              <span className="text-muted-foreground">—</span>
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            {booking.adminProfileLink ? (
+                              <TooltipProvider>
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <a 
+                                      href={booking.adminProfileLink} 
+                                      target="_blank" 
+                                      rel="noopener noreferrer"
+                                      className="text-primary hover:underline flex items-center gap-1"
+                                    >
+                                      <ExternalLink className="w-3 h-3" />
+                                      Link
+                                    </a>
+                                  </TooltipTrigger>
+                                  <TooltipContent>
+                                    <p className="max-w-xs truncate">{booking.adminProfileLink}</p>
+                                  </TooltipContent>
+                                </Tooltip>
+                              </TooltipProvider>
+                            ) : (
+                              <span className="text-muted-foreground">—</span>
+                            )}
                           </TableCell>
                           <TableCell>
                             {booking.errors.length > 0 && (
