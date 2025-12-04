@@ -178,6 +178,38 @@ export type Database = {
           },
         ]
       }
+      display_token_views: {
+        Row: {
+          id: string
+          ip_address: string | null
+          token_id: string
+          user_agent: string | null
+          viewed_at: string
+        }
+        Insert: {
+          id?: string
+          ip_address?: string | null
+          token_id: string
+          user_agent?: string | null
+          viewed_at?: string
+        }
+        Update: {
+          id?: string
+          ip_address?: string | null
+          token_id?: string
+          user_agent?: string | null
+          viewed_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "display_token_views_token_id_fkey"
+            columns: ["token_id"]
+            isOneToOne: false
+            referencedRelation: "display_tokens"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       display_tokens: {
         Row: {
           created_at: string

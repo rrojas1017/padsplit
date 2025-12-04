@@ -27,11 +27,12 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import { Badge } from '@/components/ui/badge';
 import { useDisplayTokens } from '@/contexts/DisplayTokensContext';
 import { useAgents } from '@/contexts/AgentsContext';
-import { PlusCircle, Copy, Trash2, CalendarIcon, ExternalLink } from 'lucide-react';
+import { PlusCircle, Copy, Trash2, CalendarIcon, ExternalLink, Eye, RefreshCw } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
-import { format } from 'date-fns';
+import { format, formatDistanceToNow } from 'date-fns';
 import { cn } from '@/lib/utils';
 
 const PRODUCTION_DOMAIN = 'https://padsplit.tools';
@@ -45,10 +46,11 @@ const getBaseUrl = () => {
 };
 
 export default function DisplayLinks() {
-  const { tokens, addToken, deleteToken } = useDisplayTokens();
+  const { tokens, addToken, deleteToken, refreshTokens, isLoading } = useDisplayTokens();
   const { sites } = useAgents();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   
   // Form state
   const [name, setName] = useState('');
@@ -112,10 +114,56 @@ export default function DisplayLinks() {
     window.open(displayUrl, '_blank');
   };
 
+  const handleRefresh = async () => {
+    setIsRefreshing(true);
+    try {
+      await refreshTokens();
+      toast({ title: 'Refreshed', description: 'Usage stats updated' });
+    } catch (error) {
+      toast({ title: 'Error', description: 'Failed to refresh stats', variant: 'destructive' });
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
+
+  // Calculate totals
+  const totalViews = tokens.reduce((sum, t) => sum + t.viewCount, 0);
+  const activeLinks = tokens.filter(t => !t.expiresAt || t.expiresAt > new Date()).length;
+
   return (
     <DashboardLayout title="Display Links" subtitle="Generate shareable wallboard links for TVs and displays">
       <div className="space-y-6">
-        <div className="flex justify-end">
+        {/* Stats Cards */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="bg-card rounded-xl border border-border p-4">
+            <div className="text-sm text-muted-foreground">Total Links</div>
+            <div className="text-2xl font-bold">{tokens.length}</div>
+          </div>
+          <div className="bg-card rounded-xl border border-border p-4">
+            <div className="text-sm text-muted-foreground">Active Links</div>
+            <div className="text-2xl font-bold text-green-500">{activeLinks}</div>
+          </div>
+          <div className="bg-card rounded-xl border border-border p-4">
+            <div className="text-sm text-muted-foreground">Total Views</div>
+            <div className="text-2xl font-bold flex items-center gap-2">
+              <Eye className="w-5 h-5 text-muted-foreground" />
+              {totalViews}
+            </div>
+          </div>
+        </div>
+
+        <div className="flex justify-between items-center">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleRefresh}
+            disabled={isRefreshing || isLoading}
+            className="gap-2"
+          >
+            <RefreshCw className={cn("w-4 h-4", isRefreshing && "animate-spin")} />
+            Refresh Stats
+          </Button>
+          
           <Dialog open={isDialogOpen} onOpenChange={(open) => {
             setIsDialogOpen(open);
             if (!open) resetForm();
@@ -212,7 +260,10 @@ export default function DisplayLinks() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Name</TableHead>
+                  <TableHead>Created By</TableHead>
                   <TableHead>Site Filter</TableHead>
+                  <TableHead className="text-center">Views</TableHead>
+                  <TableHead>Last Viewed</TableHead>
                   <TableHead>Created</TableHead>
                   <TableHead>Expires</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
@@ -221,10 +272,38 @@ export default function DisplayLinks() {
               <TableBody>
                 {tokens.map(token => {
                   const site = sites.find(s => s.id === token.siteFilter);
+                  const isExpired = token.expiresAt && token.expiresAt < new Date();
                   return (
-                    <TableRow key={token.id}>
-                      <TableCell className="font-medium">{token.name}</TableCell>
+                    <TableRow key={token.id} className={cn(isExpired && "opacity-50")}>
+                      <TableCell className="font-medium">
+                        <div className="flex items-center gap-2">
+                          {token.name}
+                          {isExpired && (
+                            <Badge variant="destructive" className="text-xs">Expired</Badge>
+                          )}
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <div className="text-sm">
+                          {token.createdByName || token.createdByEmail || 'Unknown'}
+                        </div>
+                      </TableCell>
                       <TableCell>{site?.name || 'All Sites'}</TableCell>
+                      <TableCell className="text-center">
+                        <Badge variant="secondary" className="gap-1">
+                          <Eye className="w-3 h-3" />
+                          {token.viewCount}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        {token.lastViewedAt ? (
+                          <span className="text-sm text-muted-foreground">
+                            {formatDistanceToNow(token.lastViewedAt, { addSuffix: true })}
+                          </span>
+                        ) : (
+                          <span className="text-sm text-muted-foreground">Never</span>
+                        )}
+                      </TableCell>
                       <TableCell>{format(token.createdAt, 'MMM d, yyyy')}</TableCell>
                       <TableCell>
                         {token.expiresAt ? format(token.expiresAt, 'MMM d, yyyy') : 'Never'}
@@ -236,6 +315,7 @@ export default function DisplayLinks() {
                             size="icon"
                             onClick={() => handleOpenLink(token.token)}
                             title="Open in new tab"
+                            disabled={isExpired}
                           >
                             <ExternalLink className="w-4 h-4" />
                           </Button>

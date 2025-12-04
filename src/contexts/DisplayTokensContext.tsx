@@ -2,12 +2,20 @@ import { createContext, useContext, useState, useEffect, ReactNode } from 'react
 import { DisplayToken } from '@/types';
 import { supabase } from '@/integrations/supabase/client';
 
+interface DisplayTokenWithStats extends DisplayToken {
+  viewCount: number;
+  lastViewedAt: Date | null;
+  createdByName: string | null;
+  createdByEmail: string | null;
+}
+
 interface DisplayTokensContextType {
-  tokens: DisplayToken[];
+  tokens: DisplayTokenWithStats[];
   isLoading: boolean;
   addToken: (token: Omit<DisplayToken, 'id' | 'token' | 'createdAt'>) => Promise<DisplayToken>;
   deleteToken: (id: string) => Promise<void>;
   validateToken: (token: string) => Promise<DisplayToken | null>;
+  refreshTokens: () => Promise<void>;
 }
 
 const DisplayTokensContext = createContext<DisplayTokensContextType | undefined>(undefined);
@@ -22,29 +30,69 @@ function generateToken(): string {
 }
 
 export function DisplayTokensProvider({ children }: { children: ReactNode }) {
-  const [tokens, setTokens] = useState<DisplayToken[]>([]);
+  const [tokens, setTokens] = useState<DisplayTokenWithStats[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   const fetchTokens = async () => {
     try {
-      const { data, error } = await supabase
+      // Fetch tokens with creator profile info
+      const { data: tokensData, error: tokensError } = await supabase
         .from('display_tokens')
-        .select('*')
+        .select(`
+          *,
+          profiles:created_by (
+            name,
+            email
+          )
+        `)
         .order('created_at', { ascending: false });
 
-      if (error) {
-        console.error('Error fetching tokens:', error);
+      if (tokensError) {
+        console.error('Error fetching tokens:', tokensError);
         return;
       }
 
-      const transformedTokens: DisplayToken[] = (data || []).map((t: any) => ({
-        id: t.id,
-        name: t.name,
-        token: t.token,
-        createdAt: new Date(t.created_at),
-        expiresAt: t.expires_at ? new Date(t.expires_at) : undefined,
-        siteFilter: t.site_filter || undefined,
-      }));
+      // Fetch view stats for all tokens
+      const { data: viewStats, error: viewsError } = await supabase
+        .from('display_token_views')
+        .select('token_id, viewed_at');
+
+      if (viewsError) {
+        console.error('Error fetching view stats:', viewsError);
+      }
+
+      // Aggregate view stats per token
+      const viewStatsMap = new Map<string, { count: number; lastViewed: Date | null }>();
+      if (viewStats) {
+        for (const view of viewStats) {
+          const existing = viewStatsMap.get(view.token_id);
+          const viewedAt = new Date(view.viewed_at);
+          if (existing) {
+            existing.count++;
+            if (!existing.lastViewed || viewedAt > existing.lastViewed) {
+              existing.lastViewed = viewedAt;
+            }
+          } else {
+            viewStatsMap.set(view.token_id, { count: 1, lastViewed: viewedAt });
+          }
+        }
+      }
+
+      const transformedTokens: DisplayTokenWithStats[] = (tokensData || []).map((t: any) => {
+        const stats = viewStatsMap.get(t.id) || { count: 0, lastViewed: null };
+        return {
+          id: t.id,
+          name: t.name,
+          token: t.token,
+          createdAt: new Date(t.created_at),
+          expiresAt: t.expires_at ? new Date(t.expires_at) : undefined,
+          siteFilter: t.site_filter || undefined,
+          viewCount: stats.count,
+          lastViewedAt: stats.lastViewed,
+          createdByName: t.profiles?.name || null,
+          createdByEmail: t.profiles?.email || null,
+        };
+      });
 
       setTokens(transformedTokens);
     } catch (error) {
@@ -133,8 +181,12 @@ export function DisplayTokensProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const refreshTokens = async () => {
+    await fetchTokens();
+  };
+
   return (
-    <DisplayTokensContext.Provider value={{ tokens, isLoading, addToken, deleteToken, validateToken }}>
+    <DisplayTokensContext.Provider value={{ tokens, isLoading, addToken, deleteToken, validateToken, refreshTokens }}>
       {children}
     </DisplayTokensContext.Provider>
   );

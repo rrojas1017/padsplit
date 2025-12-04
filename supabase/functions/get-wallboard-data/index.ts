@@ -53,7 +53,26 @@ serve(async (req) => {
       );
     }
 
-    console.log('Token validated, fetching data...');
+    console.log('Token validated, logging view and fetching data...');
+
+    // Log the view - fire and forget, don't block the response
+    const ipAddress = req.headers.get('x-forwarded-for') || 
+                      req.headers.get('cf-connecting-ip') || 
+                      req.headers.get('x-real-ip') || 
+                      null;
+    const userAgent = req.headers.get('user-agent') || null;
+    
+    supabase.from('display_token_views').insert({
+      token_id: tokenData.id,
+      ip_address: ipAddress,
+      user_agent: userAgent
+    }).then(({ error }) => {
+      if (error) {
+        console.error('Error logging view:', error);
+      } else {
+        console.log('View logged successfully');
+      }
+    });
 
     // Fetch all sites
     const { data: sites, error: sitesError } = await supabase
