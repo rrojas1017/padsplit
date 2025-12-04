@@ -9,7 +9,6 @@ import {
   Shield,
   ChevronLeft,
   PlusCircle,
-  UserCog,
   Link2,
   Upload
 } from 'lucide-react';
@@ -62,12 +61,6 @@ const menuItems = [
     label: 'User Management', 
     path: '/users',
     roles: ['super_admin', 'admin'] 
-  },
-  {
-    icon: UserCog,
-    label: 'Agent Management',
-    path: '/agents',
-    roles: ['super_admin', 'admin']
   },
   {
     icon: Link2,
