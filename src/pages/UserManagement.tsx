@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Button } from '@/components/ui/button';
-import { Plus, MoreVertical, Shield, ShieldCheck, User, Crown, Loader2 } from 'lucide-react';
+import { Plus, MoreVertical, Shield, ShieldCheck, User, Crown, Loader2, Link } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import {
   DropdownMenu,
@@ -46,6 +46,13 @@ interface Site {
   name: string;
 }
 
+interface UnlinkedAgent {
+  id: string;
+  name: string;
+  bookingCount: number;
+  siteName: string;
+}
+
 export default function UserManagement() {
   const [users, setUsers] = useState<UserWithRole[]>([]);
   const [sites, setSites] = useState<Site[]>([]);
@@ -61,6 +68,9 @@ export default function UserManagement() {
   const [newUserPassword, setNewUserPassword] = useState('');
   const [newUserRole, setNewUserRole] = useState<string>('');
   const [newUserSiteId, setNewUserSiteId] = useState<string>('');
+  const [linkedAgentId, setLinkedAgentId] = useState<string>('');
+  const [unlinkedAgents, setUnlinkedAgents] = useState<UnlinkedAgent[]>([]);
+  const [loadingAgents, setLoadingAgents] = useState(false);
 
   const isSuperAdmin = hasRole(['super_admin']);
 
@@ -68,6 +78,61 @@ export default function UserManagement() {
     fetchUsers();
     fetchSites();
   }, []);
+
+  // Fetch unlinked agents when role is 'agent' and site is selected
+  useEffect(() => {
+    if (newUserRole === 'agent' && newUserSiteId && newUserSiteId !== 'none') {
+      fetchUnlinkedAgents(newUserSiteId);
+    } else {
+      setUnlinkedAgents([]);
+      setLinkedAgentId('');
+    }
+  }, [newUserRole, newUserSiteId]);
+
+  const fetchUnlinkedAgents = async (siteId: string) => {
+    setLoadingAgents(true);
+    try {
+      // Fetch agents without user_id for the selected site
+      const { data: agents, error: agentsError } = await supabase
+        .from('agents')
+        .select('id, name, site_id')
+        .is('user_id', null)
+        .eq('site_id', siteId);
+
+      if (agentsError) throw agentsError;
+
+      // Fetch booking counts for each agent
+      const { data: bookings, error: bookingsError } = await supabase
+        .from('bookings')
+        .select('agent_id');
+
+      if (bookingsError) throw bookingsError;
+
+      // Fetch site name
+      const { data: siteData } = await supabase
+        .from('sites')
+        .select('name')
+        .eq('id', siteId)
+        .single();
+
+      // Calculate booking counts
+      const agentsWithCounts: UnlinkedAgent[] = (agents || []).map(agent => {
+        const bookingCount = bookings?.filter(b => b.agent_id === agent.id).length || 0;
+        return {
+          id: agent.id,
+          name: agent.name,
+          bookingCount,
+          siteName: siteData?.name || '',
+        };
+      });
+
+      setUnlinkedAgents(agentsWithCounts);
+    } catch (error) {
+      console.error('Error fetching unlinked agents:', error);
+    } finally {
+      setLoadingAgents(false);
+    }
+  };
 
   const fetchUsers = async () => {
     try {
@@ -128,10 +193,16 @@ export default function UserManagement() {
 
   const handleRoleChange = (role: string) => {
     setNewUserRole(role);
-    // Clear site selection for roles that have all-site access
+    // Clear site selection and linked agent for roles that have all-site access
     if (role === 'super_admin' || role === 'admin') {
       setNewUserSiteId('none');
+      setLinkedAgentId('');
     }
+  };
+
+  const handleSiteChange = (siteId: string) => {
+    setNewUserSiteId(siteId);
+    setLinkedAgentId(''); // Reset linked agent when site changes
   };
 
   const handleCreateUser = async () => {
@@ -166,6 +237,7 @@ export default function UserManagement() {
           name: newUserName,
           role: newUserRole,
           siteId: newUserSiteId === 'none' ? null : newUserSiteId || null,
+          linkedAgentId: linkedAgentId && linkedAgentId !== 'none' ? linkedAgentId : null,
         },
       });
 
@@ -177,9 +249,15 @@ export default function UserManagement() {
         throw new Error(response.data.error);
       }
 
+      const linkedAgentName = linkedAgentId && linkedAgentId !== 'none' 
+        ? unlinkedAgents.find(a => a.id === linkedAgentId)?.name 
+        : null;
+
       toast({
         title: 'Success',
-        description: 'User created successfully',
+        description: linkedAgentName 
+          ? `User created and linked to existing agent "${linkedAgentName}"`
+          : 'User created successfully',
       });
 
       // Reset form and close dialog
@@ -188,6 +266,7 @@ export default function UserManagement() {
       setNewUserPassword('');
       setNewUserRole('');
       setNewUserSiteId('');
+      setLinkedAgentId('');
       setIsDialogOpen(false);
 
       // Refresh users list
@@ -320,7 +399,7 @@ export default function UserManagement() {
               {(newUserRole === 'supervisor' || newUserRole === 'agent') && (
                 <div className="grid gap-2">
                   <Label htmlFor="site">Site *</Label>
-                  <Select value={newUserSiteId} onValueChange={setNewUserSiteId}>
+                  <Select value={newUserSiteId} onValueChange={handleSiteChange}>
                     <SelectTrigger>
                       <SelectValue placeholder="Select a site" />
                     </SelectTrigger>
@@ -332,6 +411,47 @@ export default function UserManagement() {
                       ))}
                     </SelectContent>
                   </Select>
+                </div>
+              )}
+
+              {/* Link to Existing Agent - only for agent role with site selected */}
+              {newUserRole === 'agent' && newUserSiteId && newUserSiteId !== 'none' && (
+                <div className="grid gap-2">
+                  <Label htmlFor="linkedAgent" className="flex items-center gap-2">
+                    <Link className="w-4 h-4" />
+                    Link to Existing Agent
+                    <span className="text-muted-foreground font-normal">(optional)</span>
+                  </Label>
+                  <Select value={linkedAgentId} onValueChange={setLinkedAgentId}>
+                    <SelectTrigger>
+                      <SelectValue placeholder={loadingAgents ? "Loading agents..." : "Select an agent to link"} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">
+                        <span className="text-muted-foreground">Don't link (create new agent)</span>
+                      </SelectItem>
+                      {unlinkedAgents.map(agent => (
+                        <SelectItem key={agent.id} value={agent.id}>
+                          <div className="flex items-center justify-between gap-4">
+                            <span>{agent.name}</span>
+                            <span className="text-xs text-muted-foreground">
+                              ({agent.bookingCount} booking{agent.bookingCount !== 1 ? 's' : ''})
+                            </span>
+                          </div>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {unlinkedAgents.length === 0 && !loadingAgents && (
+                    <p className="text-xs text-muted-foreground">
+                      No unlinked agents found for this site
+                    </p>
+                  )}
+                  {linkedAgentId && linkedAgentId !== 'none' && (
+                    <p className="text-xs text-accent">
+                      This user will inherit all bookings from the linked agent
+                    </p>
+                  )}
                 </div>
               )}
             </div>
