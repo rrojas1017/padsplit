@@ -7,7 +7,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { useState } from 'react';
-import { mockSites } from '@/data/mockData';
+import { useAgents } from '@/contexts/AgentsContext';
 
 interface SiteFilterProps {
   onSiteChange?: (siteId: string | null) => void;
@@ -15,6 +15,7 @@ interface SiteFilterProps {
 
 export function SiteFilter({ onSiteChange }: SiteFilterProps) {
   const [selected, setSelected] = useState<string | null>(null);
+  const { sites } = useAgents();
 
   const handleSelect = (siteId: string | null) => {
     setSelected(siteId);
@@ -22,7 +23,7 @@ export function SiteFilter({ onSiteChange }: SiteFilterProps) {
   };
 
   const selectedLabel = selected 
-    ? mockSites.find(s => s.id === selected)?.name 
+    ? sites.find(s => s.id === selected)?.name 
     : 'All Sites';
 
   return (
@@ -41,7 +42,7 @@ export function SiteFilter({ onSiteChange }: SiteFilterProps) {
         >
           All Sites
         </DropdownMenuItem>
-        {mockSites.map((site) => (
+        {sites.map((site) => (
           <DropdownMenuItem
             key={site.id}
             onClick={() => handleSelect(site.id)}
