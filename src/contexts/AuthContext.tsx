@@ -19,7 +19,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  const fetchUserData = async (supabaseUser: SupabaseUser) => {
+  const fetchUserData = async (supabaseUser: SupabaseUser): Promise<boolean> => {
     try {
       // Get profile
       const { data: profile } = await supabase
@@ -46,43 +46,53 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           status: profile.status as 'active' | 'inactive',
         };
         setUser(userData);
+        return true;
       }
+      return false;
     } catch (error) {
       console.error('Error fetching user data:', error);
+      return false;
     }
   };
 
   useEffect(() => {
+    let isMounted = true;
+    
     // Set up auth state listener FIRST
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (event, session) => {
+      async (event, session) => {
         console.log('Auth state change:', event, session?.user?.email);
         
         setSession(session);
         if (session?.user) {
-          // Defer Supabase calls with setTimeout to prevent deadlock
-          setTimeout(() => {
-            fetchUserData(session.user);
-          }, 0);
+          // Fetch user data and wait for it to complete
+          await fetchUserData(session.user);
         } else {
           // Only clear user if this is a deliberate sign out, not a transient state
           if (event === 'SIGNED_OUT') {
             setUser(null);
           }
         }
-        setIsLoading(false);
+        if (isMounted) {
+          setIsLoading(false);
+        }
       }
     );
 
     // THEN check for existing session
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    const initializeAuth = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
       console.log('Initial session check:', session?.user?.email || 'no session');
       setSession(session);
       if (session?.user) {
-        fetchUserData(session.user);
+        await fetchUserData(session.user);
       }
-      setIsLoading(false);
-    });
+      if (isMounted) {
+        setIsLoading(false);
+      }
+    };
+    
+    initializeAuth();
 
     // Handle visibility change (mobile tab resume)
     const handleVisibilityChange = () => {
@@ -100,6 +110,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     document.addEventListener('visibilitychange', handleVisibilityChange);
 
     return () => {
+      isMounted = false;
       subscription.unsubscribe();
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
