@@ -9,7 +9,7 @@ import { Progress } from '@/components/ui/progress';
 import { useToast } from '@/hooks/use-toast';
 import { useAgents } from '@/contexts/AgentsContext';
 import { useBookings } from '@/contexts/BookingsContext';
-import { parseExcelFile, ParsedBooking, ParseResult } from '@/utils/excelParser';
+import { parseExcelFile, ParsedBooking, ParseResult, SheetInfo } from '@/utils/excelParser';
 import { Upload, FileSpreadsheet, CheckCircle2, XCircle, AlertTriangle, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -294,6 +294,20 @@ export default function ImportBookings() {
                 </div>
               </CardHeader>
               <CardContent>
+                {/* Sheet Breakdown */}
+                {parseResult.sheets && parseResult.sheets.length > 0 && (
+                  <div className="mb-4 p-3 rounded-lg bg-blue-500/10 border border-blue-500/20">
+                    <p className="text-sm font-medium text-blue-600 dark:text-blue-400 mb-1">Sheets Processed:</p>
+                    <div className="flex flex-wrap gap-2">
+                      {parseResult.sheets.map((sheet, idx) => (
+                        <Badge key={idx} variant="outline" className="text-xs">
+                          {sheet.name}: {sheet.rows} rows
+                        </Badge>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
                 <div className="grid grid-cols-3 gap-4 mb-6">
                   <div className="p-4 rounded-lg bg-muted/50">
                     <p className="text-2xl font-bold">{parseResult.totalRows}</p>

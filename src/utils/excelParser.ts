@@ -19,11 +19,17 @@ export interface ParsedBooking {
   errors: string[];
 }
 
+export interface SheetInfo {
+  name: string;
+  rows: number;
+}
+
 export interface ParseResult {
   bookings: ParsedBooking[];
   totalRows: number;
   validRows: number;
   invalidRows: number;
+  sheets: SheetInfo[];
 }
 
 const normalizeAgentName = (rawName: string): string => {
@@ -127,6 +133,7 @@ export const parseExcelFile = async (file: File): Promise<ParseResult> => {
         const workbook = XLSX.read(data, { type: 'array', cellDates: true });
         
         const bookings: ParsedBooking[] = [];
+        const sheetInfos: SheetInfo[] = [];
         
         // Process sheets that contain booking data (look for "booking" or "tracker" in name)
         const sheetsToProcess = workbook.SheetNames.filter(name => {
@@ -136,10 +143,12 @@ export const parseExcelFile = async (file: File): Promise<ParseResult> => {
           return isBookingSheet && !isExcluded;
         });
         
+        console.log('All sheet names in file:', workbook.SheetNames);
         console.log('Found booking sheets:', sheetsToProcess);
         
         for (const sheetName of sheetsToProcess) {
           const sheet = workbook.Sheets[sheetName];
+          let sheetRowCount = 0;
           const jsonData = XLSX.utils.sheet_to_json(sheet, { header: 1, raw: false });
           
           // Find header row
@@ -222,7 +231,11 @@ export const parseExcelFile = async (file: File): Promise<ParseResult> => {
               isValid: errors.length === 0,
               errors,
             });
+            sheetRowCount++;
           }
+          
+          console.log(`Sheet "${sheetName}": ${sheetRowCount} rows`);
+          sheetInfos.push({ name: sheetName, rows: sheetRowCount });
         }
         
         resolve({
@@ -230,6 +243,7 @@ export const parseExcelFile = async (file: File): Promise<ParseResult> => {
           totalRows: bookings.length,
           validRows: bookings.filter(b => b.isValid).length,
           invalidRows: bookings.filter(b => !b.isValid).length,
+          sheets: sheetInfos,
         });
       } catch (error) {
         reject(error);
