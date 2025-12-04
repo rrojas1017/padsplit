@@ -10,7 +10,8 @@ import {
   ChevronLeft,
   PlusCircle,
   UserCog,
-  Link2
+  Link2,
+  Upload
 } from 'lucide-react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
@@ -72,6 +73,12 @@ const menuItems = [
     icon: Link2,
     label: 'Display Links',
     path: '/display-links',
+    roles: ['super_admin', 'admin']
+  },
+  {
+    icon: Upload,
+    label: 'Import Bookings',
+    path: '/import-bookings',
     roles: ['super_admin', 'admin']
   },
   { 
