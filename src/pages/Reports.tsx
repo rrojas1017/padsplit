@@ -3,7 +3,7 @@ import { useBookings } from '@/contexts/BookingsContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { useAgents } from '@/contexts/AgentsContext';
 import { Button } from '@/components/ui/button';
-import { Download, Search, PlusCircle, Pencil, ChevronDown, Building2, User, MessageSquare, Tag, CheckCircle, RotateCcw, ArrowUp, ArrowDown, ArrowUpDown } from 'lucide-react';
+import { Download, Search, PlusCircle, Pencil, ChevronDown, Building2, User, MessageSquare, Tag, CheckCircle, RotateCcw, ArrowUp, ArrowDown, ArrowUpDown, X } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { format, startOfDay, endOfDay, isWithinInterval } from 'date-fns';
 import { cn } from '@/lib/utils';
@@ -107,17 +107,38 @@ export default function Reports() {
     typeFilter !== 'all' || methodFilter !== 'all' || 
     agentFilter !== 'all' || searchQuery !== '';
 
-  // Sorting
+  // Sorting (primary and secondary)
   const [sortColumn, setSortColumn] = useState<SortColumn>('bookingDate');
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
+  const [secondarySortColumn, setSecondarySortColumn] = useState<SortColumn>(null);
+  const [secondarySortDirection, setSecondarySortDirection] = useState<SortDirection>('asc');
 
-  const handleSort = (column: SortColumn) => {
-    if (sortColumn === column) {
-      setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc');
+  const handleSort = (column: SortColumn, isShiftClick: boolean = false) => {
+    if (isShiftClick && sortColumn && column !== sortColumn) {
+      // Shift+click: set secondary sort
+      if (secondarySortColumn === column) {
+        setSecondarySortDirection(prev => prev === 'asc' ? 'desc' : 'asc');
+      } else {
+        setSecondarySortColumn(column);
+        setSecondarySortDirection(column === 'bookingDate' || column === 'moveInDate' ? 'desc' : 'asc');
+      }
     } else {
-      setSortColumn(column);
-      setSortDirection(column === 'bookingDate' || column === 'moveInDate' ? 'desc' : 'asc');
+      // Regular click: set primary sort
+      if (sortColumn === column) {
+        setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc');
+      } else {
+        setSortColumn(column);
+        setSortDirection(column === 'bookingDate' || column === 'moveInDate' ? 'desc' : 'asc');
+        // Clear secondary if it's the same as new primary
+        if (secondarySortColumn === column) {
+          setSecondarySortColumn(null);
+        }
+      }
     }
+  };
+
+  const clearSecondarySort = () => {
+    setSecondarySortColumn(null);
   };
 
   // Pagination
@@ -205,56 +226,54 @@ export default function Reports() {
     });
   }, [bookings, bookingDateRange, moveInDateRange, siteFilter, statusFilter, typeFilter, methodFilter, agentFilter, searchQuery, agents]);
 
-  // Sort bookings
+  // Helper to get sort value for a booking by column
+  const getSortValue = (booking: typeof filteredBookings[0], column: SortColumn): string | number => {
+    switch (column) {
+      case 'bookingDate':
+        return new Date(booking.bookingDate).getTime();
+      case 'moveInDate':
+        return new Date(booking.moveInDate).getTime();
+      case 'memberName':
+        return booking.memberName.toLowerCase();
+      case 'agentName':
+        return booking.agentName.toLowerCase();
+      case 'market':
+        return `${booking.marketCity || ''} ${booking.marketState || ''}`.toLowerCase();
+      case 'bookingType':
+        return booking.bookingType.toLowerCase();
+      case 'status':
+        return booking.status.toLowerCase();
+      case 'communicationMethod':
+        return (booking.communicationMethod || '').toLowerCase();
+      default:
+        return 0;
+    }
+  };
+
+  // Sort bookings (with primary and secondary sort)
   const sortedBookings = useMemo(() => {
     if (!sortColumn) return filteredBookings;
 
     return [...filteredBookings].sort((a, b) => {
-      let aValue: string | number;
-      let bValue: string | number;
-
-      switch (sortColumn) {
-        case 'bookingDate':
-          aValue = new Date(a.bookingDate).getTime();
-          bValue = new Date(b.bookingDate).getTime();
-          break;
-        case 'moveInDate':
-          aValue = new Date(a.moveInDate).getTime();
-          bValue = new Date(b.moveInDate).getTime();
-          break;
-        case 'memberName':
-          aValue = a.memberName.toLowerCase();
-          bValue = b.memberName.toLowerCase();
-          break;
-        case 'agentName':
-          aValue = a.agentName.toLowerCase();
-          bValue = b.agentName.toLowerCase();
-          break;
-        case 'market':
-          aValue = `${a.marketCity || ''} ${a.marketState || ''}`.toLowerCase();
-          bValue = `${b.marketCity || ''} ${b.marketState || ''}`.toLowerCase();
-          break;
-        case 'bookingType':
-          aValue = a.bookingType.toLowerCase();
-          bValue = b.bookingType.toLowerCase();
-          break;
-        case 'status':
-          aValue = a.status.toLowerCase();
-          bValue = b.status.toLowerCase();
-          break;
-        case 'communicationMethod':
-          aValue = (a.communicationMethod || '').toLowerCase();
-          bValue = (b.communicationMethod || '').toLowerCase();
-          break;
-        default:
-          return 0;
-      }
+      // Primary sort
+      const aValue = getSortValue(a, sortColumn);
+      const bValue = getSortValue(b, sortColumn);
 
       if (aValue < bValue) return sortDirection === 'asc' ? -1 : 1;
       if (aValue > bValue) return sortDirection === 'asc' ? 1 : -1;
+
+      // Secondary sort (when primary values are equal)
+      if (secondarySortColumn) {
+        const aSecondary = getSortValue(a, secondarySortColumn);
+        const bSecondary = getSortValue(b, secondarySortColumn);
+
+        if (aSecondary < bSecondary) return secondarySortDirection === 'asc' ? -1 : 1;
+        if (aSecondary > bSecondary) return secondarySortDirection === 'asc' ? 1 : -1;
+      }
+
       return 0;
     });
-  }, [filteredBookings, sortColumn, sortDirection]);
+  }, [filteredBookings, sortColumn, sortDirection, secondarySortColumn, secondarySortDirection]);
 
   // Pagination calculations
   const totalPages = Math.ceil(sortedBookings.length / itemsPerPage);
@@ -264,7 +283,7 @@ export default function Reports() {
   // Reset to page 1 when filters or sort change
   useEffect(() => {
     setCurrentPage(1);
-  }, [bookingDateRange, moveInDateRange, siteFilter, statusFilter, typeFilter, methodFilter, agentFilter, searchQuery, sortColumn, sortDirection]);
+  }, [bookingDateRange, moveInDateRange, siteFilter, statusFilter, typeFilter, methodFilter, agentFilter, searchQuery, sortColumn, sortDirection, secondarySortColumn, secondarySortDirection]);
 
   // Export CSV
   const exportCSV = () => {
@@ -317,21 +336,35 @@ export default function Reports() {
   const selectedSiteLabel = siteFilter === 'all' ? 'All Sites' : sites.find(s => s.id === siteFilter)?.name || 'All Sites';
 
   // Sortable header component
-  const SortableHeader = ({ column, label }: { column: SortColumn; label: string }) => (
-    <th
-      className="text-left py-3 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider cursor-pointer hover:text-foreground transition-colors group select-none"
-      onClick={() => handleSort(column)}
-    >
-      <div className="flex items-center gap-1">
-        {label}
-        {sortColumn === column ? (
-          sortDirection === 'asc' ? <ArrowUp className="w-3 h-3" /> : <ArrowDown className="w-3 h-3" />
-        ) : (
-          <ArrowUpDown className="w-3 h-3 opacity-0 group-hover:opacity-50" />
-        )}
-      </div>
-    </th>
-  );
+  const SortableHeader = ({ column, label }: { column: SortColumn; label: string }) => {
+    const isPrimary = sortColumn === column;
+    const isSecondary = secondarySortColumn === column;
+    
+    return (
+      <th
+        className="text-left py-3 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider cursor-pointer hover:text-foreground transition-colors group select-none"
+        onClick={(e) => handleSort(column, e.shiftKey)}
+        title={isPrimary ? "Primary sort" : isSecondary ? "Secondary sort (click to change)" : "Click to sort, Shift+click for secondary sort"}
+      >
+        <div className="flex items-center gap-1">
+          {label}
+          {isPrimary ? (
+            <span className="flex items-center">
+              {sortDirection === 'asc' ? <ArrowUp className="w-3 h-3" /> : <ArrowDown className="w-3 h-3" />}
+              <span className="text-[10px] ml-0.5 text-primary font-bold">1</span>
+            </span>
+          ) : isSecondary ? (
+            <span className="flex items-center text-muted-foreground">
+              {secondarySortDirection === 'asc' ? <ArrowUp className="w-3 h-3" /> : <ArrowDown className="w-3 h-3" />}
+              <span className="text-[10px] ml-0.5 font-bold">2</span>
+            </span>
+          ) : (
+            <ArrowUpDown className="w-3 h-3 opacity-0 group-hover:opacity-50" />
+          )}
+        </div>
+      </th>
+    );
+  };
 
   return (
     <DashboardLayout 
@@ -495,6 +528,14 @@ export default function Reports() {
           <Button variant="ghost" className="gap-2 text-muted-foreground" onClick={clearAllFilters}>
             <RotateCcw className="w-4 h-4" />
             Clear Filters
+          </Button>
+        )}
+
+        {/* Clear Secondary Sort */}
+        {secondarySortColumn && (
+          <Button variant="ghost" size="sm" className="gap-1.5 text-muted-foreground text-xs" onClick={clearSecondarySort}>
+            <X className="w-3 h-3" />
+            Clear 2nd sort
           </Button>
         )}
 
