@@ -115,7 +115,7 @@ Deno.serve(async (req) => {
       })
     }
 
-    const { email, password, name, role, siteId } = requestBody;
+    const { email, password, name, role, siteId, linkedAgentId } = requestBody;
 
     // Validate required fields exist
     if (!email || !password || !name || !role) {
@@ -182,6 +182,40 @@ Deno.serve(async (req) => {
       }
     }
 
+    // Validate linkedAgentId if provided
+    if (linkedAgentId !== undefined && linkedAgentId !== null && linkedAgentId !== '') {
+      if (typeof linkedAgentId !== 'string' || !isValidUUID(linkedAgentId)) {
+        console.log(`Invalid linkedAgentId format: ${linkedAgentId}`);
+        return new Response(JSON.stringify({ error: 'Invalid linkedAgentId format. Must be a valid UUID' }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        })
+      }
+
+      // Verify the agent exists and has no user_id
+      const { data: existingAgent, error: agentError } = await adminClient
+        .from('agents')
+        .select('id, user_id, name')
+        .eq('id', linkedAgentId)
+        .single();
+
+      if (agentError || !existingAgent) {
+        console.log(`Agent not found: ${linkedAgentId}`);
+        return new Response(JSON.stringify({ error: 'Linked agent not found' }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        })
+      }
+
+      if (existingAgent.user_id) {
+        console.log(`Agent ${linkedAgentId} already has a user linked`);
+        return new Response(JSON.stringify({ error: 'This agent is already linked to another user' }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        })
+      }
+    }
+
     // Only super_admin can create admin or super_admin users
     if ((role === 'super_admin' || role === 'admin') && userRole.role !== 'super_admin') {
       console.log(`User ${requestingUser.id} attempted to create ${role} without super_admin privileges`);
@@ -231,10 +265,27 @@ Deno.serve(async (req) => {
       })
     }
 
+    // Link to existing agent if linkedAgentId is provided
+    if (linkedAgentId) {
+      const { error: linkError } = await adminClient
+        .from('agents')
+        .update({ user_id: newUser.user.id })
+        .eq('id', linkedAgentId);
+
+      if (linkError) {
+        console.log(`Error linking agent: ${linkError.message}`);
+        // Don't rollback for this - user is created, just log the error
+        // The admin can manually link the agent later
+      } else {
+        console.log(`Successfully linked agent ${linkedAgentId} to user ${newUser.user.id}`);
+      }
+    }
+
     console.log(`Successfully created user ${newUser.user.id} with role ${role}`);
     return new Response(JSON.stringify({ 
       success: true, 
-      user: { id: newUser.user.id, email: newUser.user.email } 
+      user: { id: newUser.user.id, email: newUser.user.email },
+      linkedAgentId: linkedAgentId || null,
     }), {
       status: 200,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
