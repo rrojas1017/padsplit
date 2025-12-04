@@ -104,28 +104,33 @@ export function DisplayTokensProvider({ children }: { children: ReactNode }) {
   };
 
   const validateToken = async (tokenString: string): Promise<DisplayToken | null> => {
-    // Use anon key to validate - this works for public access
-    const { data, error } = await supabase
-      .from('display_tokens')
-      .select('*')
-      .eq('token', tokenString)
-      .maybeSingle();
+    try {
+      // Use edge function to validate token securely (server-side)
+      const { data, error } = await supabase.functions.invoke('validate-display-token', {
+        body: { token: tokenString }
+      });
 
-    if (error || !data) return null;
-    
-    // Check expiration
-    if (data.expires_at && new Date() > new Date(data.expires_at)) {
+      if (error) {
+        console.error('Error validating token:', error);
+        return null;
+      }
+
+      if (!data?.valid || !data?.data) {
+        return null;
+      }
+
+      return {
+        id: data.data.id,
+        name: data.data.name,
+        token: tokenString, // Keep the token for reference (user already has it in URL)
+        createdAt: new Date(), // Not returned from edge function, use current date
+        expiresAt: data.data.expiresAt ? new Date(data.data.expiresAt) : undefined,
+        siteFilter: data.data.siteFilter || undefined,
+      };
+    } catch (error) {
+      console.error('Error validating token:', error);
       return null;
     }
-
-    return {
-      id: data.id,
-      name: data.name,
-      token: data.token,
-      createdAt: new Date(data.created_at),
-      expiresAt: data.expires_at ? new Date(data.expires_at) : undefined,
-      siteFilter: data.site_filter || undefined,
-    };
   };
 
   return (
