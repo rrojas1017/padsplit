@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { Agent } from '@/types';
 import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from '@/contexts/AuthContext';
 
 interface AgentsContextType {
   agents: Agent[];
@@ -15,6 +16,7 @@ interface AgentsContextType {
 const AgentsContext = createContext<AgentsContextType | undefined>(undefined);
 
 export function AgentsProvider({ children }: { children: ReactNode }) {
+  const { user, isLoading: authLoading } = useAuth();
   const [agents, setAgents] = useState<Agent[]>([]);
   const [sites, setSites] = useState<{ id: string; name: string; type: string }[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -35,6 +37,7 @@ export function AgentsProvider({ children }: { children: ReactNode }) {
 
   const fetchAgents = async () => {
     try {
+      setIsLoading(true);
       const { data, error } = await supabase
         .from('agents')
         .select(`
@@ -67,6 +70,20 @@ export function AgentsProvider({ children }: { children: ReactNode }) {
   };
 
   useEffect(() => {
+    // Wait for auth to be ready
+    if (authLoading) {
+      return;
+    }
+
+    // If no user, clear data
+    if (!user) {
+      setAgents([]);
+      setSites([]);
+      setIsLoading(false);
+      return;
+    }
+
+    // User is authenticated, fetch data
     fetchSites();
     fetchAgents();
 
@@ -85,7 +102,7 @@ export function AgentsProvider({ children }: { children: ReactNode }) {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, []);
+  }, [user, authLoading]);
 
   const addAgent = async (agentData: Omit<Agent, 'id'>) => {
     const { error } = await supabase.from('agents').insert({
