@@ -60,6 +60,7 @@ export function BookingsProvider({ children }: { children: ReactNode }) {
         callKeyPoints: b.call_key_points || undefined,
         transcriptionStatus: b.transcription_status || undefined,
         transcribedAt: b.transcribed_at ? new Date(b.transcribed_at) : undefined,
+        callDurationSeconds: b.call_duration_seconds || undefined,
       }));
 
       setBookings(transformedBookings);

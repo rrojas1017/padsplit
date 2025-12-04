@@ -86,9 +86,19 @@ serve(async (req) => {
 
     // Format transcription with speaker labels if diarization is available
     let transcription = elevenLabsResult.text || '';
+    let callDurationSeconds: number | null = null;
     
     // If we have word-level data with speakers, format it nicely
     if (elevenLabsResult.words && elevenLabsResult.words.length > 0) {
+      // Calculate duration from the last word's end timestamp
+      const lastWord = elevenLabsResult.words[elevenLabsResult.words.length - 1];
+      if (lastWord.end) {
+        callDurationSeconds = Math.ceil(lastWord.end);
+        const mins = Math.floor(callDurationSeconds / 60);
+        const secs = callDurationSeconds % 60;
+        console.log(`Call duration: ${callDurationSeconds} seconds (${mins}:${secs.toString().padStart(2, '0')})`);
+      }
+
       const formattedSegments: string[] = [];
       let currentSpeaker = '';
       let currentText = '';
@@ -213,6 +223,7 @@ Focus on actionable insights that will help with follow-up conversations.`;
         call_transcription: transcription,
         call_summary: summary,
         call_key_points: keyPoints,
+        call_duration_seconds: callDurationSeconds,
         transcription_status: 'completed',
         transcribed_at: new Date().toISOString(),
       })

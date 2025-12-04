@@ -61,6 +61,7 @@ export interface Booking {
   callKeyPoints?: CallKeyPoints;
   transcriptionStatus?: 'pending' | 'processing' | 'completed' | 'failed';
   transcribedAt?: Date;
+  callDurationSeconds?: number;
 }
 
 export interface DailyMetrics {
