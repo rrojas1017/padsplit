@@ -15,8 +15,8 @@ export default function MyPerformance() {
   
   const isLoading = bookingsLoading || agentsLoading;
   
-  // Find the agent linked to the current user
-  const myAgent = agents.find(a => a.userId === user?.id) || agents[0];
+  // Find the agent linked to the current user (no fallback - must be properly linked)
+  const myAgent = agents.find(a => a.userId === user?.id);
   
   const today = new Date();
   const weekAgo = subDays(today, 7);
@@ -28,14 +28,32 @@ export default function MyPerformance() {
     format(b.bookingDate, 'yyyy-MM-dd') === format(today, 'yyyy-MM-dd')
   );
   
-  // Calculate rank among all active agents
+  // Calculate rank among all active agents with deterministic sorting
   const activeAgents = agents.filter(a => a.active);
   const allAgentBookings = activeAgents.map(a => ({
     agent: a,
     bookings: bookings.filter(b => b.agentId === a.id && b.bookingDate >= weekAgo).length
-  })).sort((a, b) => b.bookings - a.bookings);
+  })).sort((a, b) => {
+    // Primary sort: by bookings (descending)
+    if (b.bookings !== a.bookings) {
+      return b.bookings - a.bookings;
+    }
+    // Secondary sort: alphabetical by name (deterministic tie-breaker)
+    return a.agent.name.localeCompare(b.agent.name);
+  });
   
-  const myRank = myAgent ? allAgentBookings.findIndex(a => a.agent.id === myAgent.id) + 1 : 0;
+  // Calculate accurate rank with tie handling
+  const myBookingsCount = myAgent 
+    ? allAgentBookings.find(a => a.agent.id === myAgent.id)?.bookings || 0 
+    : 0;
+  
+  // True rank = number of agents with MORE bookings + 1
+  const agentsWithMoreBookings = allAgentBookings.filter(a => a.bookings > myBookingsCount).length;
+  const trueRank = myAgent ? agentsWithMoreBookings + 1 : 0;
+  
+  // Check for ties (agents with same booking count)
+  const agentsWithSameBookings = allAgentBookings.filter(a => a.bookings === myBookingsCount).length;
+  const isTied = myAgent && agentsWithSameBookings > 1;
   
   // Prepare chart data for last 7 days
   const chartData = [];
@@ -132,10 +150,22 @@ export default function MyPerformance() {
         </div>
         <div>
           <p className="text-foreground font-semibold">
-            {myRank > 0 ? `You're ranked #${myRank} out of ${activeAgents.length} agents` : 'Rank not available'}
+            {!myAgent 
+              ? 'Account not linked to an agent profile'
+              : isTied 
+                ? `You're tied for #${trueRank} with ${agentsWithSameBookings - 1} other${agentsWithSameBookings > 2 ? 's' : ''}`
+                : `You're ranked #${trueRank} out of ${activeAgents.length} agents`
+            }
           </p>
           <p className="text-muted-foreground text-sm">
-            {myRank <= 3 && myRank > 0 ? "You're in the top 3!" : myRank > 0 ? `Keep going! ${myRank - 3} positions away from top 3` : 'Complete some bookings to get ranked'}
+            {!myAgent 
+              ? 'Contact an administrator to link your account'
+              : trueRank <= 3 && trueRank > 0 
+                ? "You're in the top 3!" 
+                : trueRank > 3 
+                  ? `Keep going! ${trueRank - 3} position${trueRank - 3 > 1 ? 's' : ''} away from top 3`
+                  : 'Complete some bookings to get ranked'
+            }
           </p>
         </div>
       </div>
