@@ -5,3 +5,6 @@ verify_jwt = true
 
 [functions.validate-display-token]
 verify_jwt = false
+
+[functions.get-wallboard-data]
+verify_jwt = false

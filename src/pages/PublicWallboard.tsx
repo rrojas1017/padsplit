@@ -1,39 +1,115 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useParams } from 'react-router-dom';
-import { useDisplayTokens } from '@/contexts/DisplayTokensContext';
-import { useBookings } from '@/contexts/BookingsContext';
-import { useAgents } from '@/contexts/AgentsContext';
+import { supabase } from '@/integrations/supabase/client';
 import { calculateLeaderboard } from '@/utils/dashboardCalculations';
-import { DisplayToken } from '@/types';
+import { Booking, Agent } from '@/types';
 import { format, subDays } from 'date-fns';
 import { Trophy, TrendingUp, TrendingDown, RefreshCw, Users, Calendar } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import padsplitLogo from '@/assets/padsplit-logo.jpeg';
-import appendifyLogo from '@/assets/appendify-logo.png';
+
+interface WallboardToken {
+  id: string;
+  name: string;
+  siteFilter: string | null;
+  expiresAt: string | null;
+}
+
+interface Site {
+  id: string;
+  name: string;
+  type: string;
+}
 
 export default function PublicWallboard() {
   const { token } = useParams<{ token: string }>();
-  const { validateToken } = useDisplayTokens();
-  const { bookings, refreshBookings } = useBookings();
-  const { agents, sites } = useAgents();
   const [time, setTime] = useState(new Date());
   const [lastRefresh, setLastRefresh] = useState(new Date());
   const [secondsUntilRefresh, setSecondsUntilRefresh] = useState(60);
   const [isFlashing, setIsFlashing] = useState(false);
-  const [displayToken, setDisplayToken] = useState<DisplayToken | null>(null);
-  const [isValidating, setIsValidating] = useState(true);
+  const [displayToken, setDisplayToken] = useState<WallboardToken | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   
-  // Validate token on mount
-  useEffect(() => {
-    const validate = async () => {
-      if (token) {
-        const validatedToken = await validateToken(token);
-        setDisplayToken(validatedToken);
+  // Data state
+  const [bookings, setBookings] = useState<Booking[]>([]);
+  const [agents, setAgents] = useState<Agent[]>([]);
+  const [sites, setSites] = useState<Site[]>([]);
+
+  const fetchWallboardData = useCallback(async () => {
+    if (!token) return;
+
+    try {
+      console.log('Fetching wallboard data...');
+      const { data, error } = await supabase.functions.invoke('get-wallboard-data', {
+        body: { token }
+      });
+
+      if (error) {
+        console.error('Edge function error:', error);
+        setError('Failed to load wallboard data');
+        return;
       }
-      setIsValidating(false);
+
+      if (!data.valid) {
+        setError(data.error || 'Invalid token');
+        return;
+      }
+
+      setDisplayToken(data.token);
+      
+      // Transform bookings to match our Booking type
+      const transformedBookings: Booking[] = (data.bookings || []).map((b: any) => ({
+        id: b.id,
+        moveInDate: new Date(b.move_in_date + 'T00:00:00'),
+        bookingDate: new Date(b.booking_date + 'T00:00:00'),
+        memberName: b.member_name,
+        bookingType: b.booking_type,
+        agentId: b.agent_id,
+        marketCity: b.market_city,
+        marketState: b.market_state,
+        status: b.status,
+        communicationMethod: b.communication_method,
+        moveInDayReachOut: b.move_in_day_reach_out,
+        notes: b.notes,
+        hubspotLink: b.hubspot_link,
+        kixieLink: b.kixie_link,
+        adminProfileLink: b.admin_profile_link,
+        createdAt: new Date(b.created_at),
+        createdBy: b.created_by
+      }));
+
+      // Transform agents to match our Agent type
+      const transformedAgents: Agent[] = (data.agents || []).map((a: any) => ({
+        id: a.id,
+        name: a.name,
+        siteId: a.site_id,
+        active: a.active,
+        avatarUrl: a.avatar_url,
+        userId: a.user_id
+      }));
+
+      setBookings(transformedBookings);
+      setAgents(transformedAgents);
+      setSites(data.sites || []);
+      setError(null);
+      
+      console.log(`Loaded ${transformedBookings.length} bookings, ${transformedAgents.length} agents`);
+    } catch (err) {
+      console.error('Error fetching wallboard data:', err);
+      setError('Failed to connect to server');
+    }
+  }, [token]);
+
+  // Initial fetch and validate
+  useEffect(() => {
+    const init = async () => {
+      setIsLoading(true);
+      await fetchWallboardData();
+      setIsLoading(false);
     };
-    validate();
-  }, [token, validateToken]);
+    init();
+  }, [fetchWallboardData]);
 
   // Clock and countdown timer
   useEffect(() => {
@@ -44,36 +120,35 @@ export default function PublicWallboard() {
     return () => clearInterval(timer);
   }, []);
 
-  // Auto-refresh bookings every 60 seconds
+  // Auto-refresh every 60 seconds
   useEffect(() => {
-    const refreshInterval = setInterval(() => {
-      refreshBookings();
+    const refreshInterval = setInterval(async () => {
+      await fetchWallboardData();
       setLastRefresh(new Date());
       setSecondsUntilRefresh(60);
-      // Trigger flash animation
       setIsFlashing(true);
       setTimeout(() => setIsFlashing(false), 800);
     }, 60000);
     return () => clearInterval(refreshInterval);
-  }, [refreshBookings]);
+  }, [fetchWallboardData]);
 
-  if (isValidating) {
+  if (isLoading) {
     return (
       <div className="h-screen bg-background flex items-center justify-center">
         <div className="text-center">
           <div className="w-8 h-8 border-2 border-accent border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-          <p className="text-muted-foreground">Validating display link...</p>
+          <p className="text-muted-foreground">Loading wallboard...</p>
         </div>
       </div>
     );
   }
 
-  if (!displayToken) {
+  if (error || !displayToken) {
     return (
       <div className="h-screen bg-background flex items-center justify-center">
         <div className="text-center">
           <h1 className="text-2xl font-bold text-foreground mb-2">Invalid or Expired Link</h1>
-          <p className="text-muted-foreground">This display link is no longer valid.</p>
+          <p className="text-muted-foreground">{error || 'This display link is no longer valid.'}</p>
         </div>
       </div>
     );
@@ -82,7 +157,7 @@ export default function PublicWallboard() {
   const today = format(new Date(), 'yyyy-MM-dd');
   const yesterday = format(subDays(new Date(), 1), 'yyyy-MM-dd');
   
-  // Get site IDs from database
+  // Get site IDs from data
   const vixicomSite = sites.find(s => s.name === 'Vixicom');
   const padsplitSite = sites.find(s => s.name === 'PadSplit Internal');
   
@@ -91,7 +166,7 @@ export default function PublicWallboard() {
     ? agents.filter(a => a.siteId === displayToken.siteFilter).map(a => a.id)
     : null;
 
-  const filterByAgent = (booking: any) => 
+  const filterByAgent = (booking: Booking) => 
     !filteredAgentIds || filteredAgentIds.includes(booking.agentId);
 
   const todayBookings = bookings.filter(b => 
@@ -135,7 +210,7 @@ export default function PublicWallboard() {
         </div>
       </header>
 
-      {/* Main Content - fills remaining space */}
+      {/* Main Content */}
       <div className="flex-1 flex flex-col gap-4 min-h-0">
         {/* Top Stats */}
         <div className="flex-shrink-0 grid grid-cols-2 lg:grid-cols-4 gap-3 lg:gap-4">
@@ -198,7 +273,7 @@ export default function PublicWallboard() {
           </div>
         </div>
 
-        {/* Leaderboard - fills remaining space */}
+        {/* Leaderboard */}
         <div className="flex-1 min-h-0 bg-card rounded-xl border border-border shadow-card overflow-hidden flex flex-col">
           <div className="flex-shrink-0 px-4 lg:px-6 py-3 border-b border-border bg-muted/30">
             <h2 className="text-lg lg:text-xl font-bold text-foreground flex items-center gap-2">
