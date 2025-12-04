@@ -3,7 +3,7 @@ import { useBookings } from '@/contexts/BookingsContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { useAgents } from '@/contexts/AgentsContext';
 import { Button } from '@/components/ui/button';
-import { Download, Search, PlusCircle, Pencil, ChevronDown, Building2, User, MessageSquare, Tag, CheckCircle, RotateCcw } from 'lucide-react';
+import { Download, Search, PlusCircle, Pencil, ChevronDown, Building2, User, MessageSquare, Tag, CheckCircle, RotateCcw, ArrowUp, ArrowDown, ArrowUpDown } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { format, startOfDay, endOfDay, isWithinInterval } from 'date-fns';
 import { cn } from '@/lib/utils';
@@ -34,6 +34,9 @@ interface DateRange {
   from: Date | undefined;
   to: Date | undefined;
 }
+
+type SortColumn = 'bookingDate' | 'moveInDate' | 'memberName' | 'agentName' | 'market' | 'bookingType' | 'status' | 'communicationMethod' | null;
+type SortDirection = 'asc' | 'desc';
 
 const statusOptions = [
   { label: 'All Statuses', value: 'all' },
@@ -103,6 +106,19 @@ export default function Reports() {
     siteFilter !== 'all' || statusFilter !== 'all' || 
     typeFilter !== 'all' || methodFilter !== 'all' || 
     agentFilter !== 'all' || searchQuery !== '';
+
+  // Sorting
+  const [sortColumn, setSortColumn] = useState<SortColumn>('bookingDate');
+  const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
+
+  const handleSort = (column: SortColumn) => {
+    if (sortColumn === column) {
+      setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortColumn(column);
+      setSortDirection(column === 'bookingDate' || column === 'moveInDate' ? 'desc' : 'asc');
+    }
+  };
 
   // Pagination
   const [currentPage, setCurrentPage] = useState(1);
@@ -189,15 +205,66 @@ export default function Reports() {
     });
   }, [bookings, bookingDateRange, moveInDateRange, siteFilter, statusFilter, typeFilter, methodFilter, agentFilter, searchQuery, agents]);
 
-  // Pagination calculations
-  const totalPages = Math.ceil(filteredBookings.length / itemsPerPage);
-  const startIndex = (currentPage - 1) * itemsPerPage;
-  const paginatedBookings = filteredBookings.slice(startIndex, startIndex + itemsPerPage);
+  // Sort bookings
+  const sortedBookings = useMemo(() => {
+    if (!sortColumn) return filteredBookings;
 
-  // Reset to page 1 when filters change
+    return [...filteredBookings].sort((a, b) => {
+      let aValue: string | number;
+      let bValue: string | number;
+
+      switch (sortColumn) {
+        case 'bookingDate':
+          aValue = new Date(a.bookingDate).getTime();
+          bValue = new Date(b.bookingDate).getTime();
+          break;
+        case 'moveInDate':
+          aValue = new Date(a.moveInDate).getTime();
+          bValue = new Date(b.moveInDate).getTime();
+          break;
+        case 'memberName':
+          aValue = a.memberName.toLowerCase();
+          bValue = b.memberName.toLowerCase();
+          break;
+        case 'agentName':
+          aValue = a.agentName.toLowerCase();
+          bValue = b.agentName.toLowerCase();
+          break;
+        case 'market':
+          aValue = `${a.marketCity || ''} ${a.marketState || ''}`.toLowerCase();
+          bValue = `${b.marketCity || ''} ${b.marketState || ''}`.toLowerCase();
+          break;
+        case 'bookingType':
+          aValue = a.bookingType.toLowerCase();
+          bValue = b.bookingType.toLowerCase();
+          break;
+        case 'status':
+          aValue = a.status.toLowerCase();
+          bValue = b.status.toLowerCase();
+          break;
+        case 'communicationMethod':
+          aValue = (a.communicationMethod || '').toLowerCase();
+          bValue = (b.communicationMethod || '').toLowerCase();
+          break;
+        default:
+          return 0;
+      }
+
+      if (aValue < bValue) return sortDirection === 'asc' ? -1 : 1;
+      if (aValue > bValue) return sortDirection === 'asc' ? 1 : -1;
+      return 0;
+    });
+  }, [filteredBookings, sortColumn, sortDirection]);
+
+  // Pagination calculations
+  const totalPages = Math.ceil(sortedBookings.length / itemsPerPage);
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const paginatedBookings = sortedBookings.slice(startIndex, startIndex + itemsPerPage);
+
+  // Reset to page 1 when filters or sort change
   useEffect(() => {
     setCurrentPage(1);
-  }, [bookingDateRange, moveInDateRange, siteFilter, statusFilter, typeFilter, methodFilter, agentFilter, searchQuery]);
+  }, [bookingDateRange, moveInDateRange, siteFilter, statusFilter, typeFilter, methodFilter, agentFilter, searchQuery, sortColumn, sortDirection]);
 
   // Export CSV
   const exportCSV = () => {
@@ -248,6 +315,23 @@ export default function Reports() {
   };
 
   const selectedSiteLabel = siteFilter === 'all' ? 'All Sites' : sites.find(s => s.id === siteFilter)?.name || 'All Sites';
+
+  // Sortable header component
+  const SortableHeader = ({ column, label }: { column: SortColumn; label: string }) => (
+    <th
+      className="text-left py-3 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider cursor-pointer hover:text-foreground transition-colors group select-none"
+      onClick={() => handleSort(column)}
+    >
+      <div className="flex items-center gap-1">
+        {label}
+        {sortColumn === column ? (
+          sortDirection === 'asc' ? <ArrowUp className="w-3 h-3" /> : <ArrowDown className="w-3 h-3" />
+        ) : (
+          <ArrowUpDown className="w-3 h-3 opacity-0 group-hover:opacity-50" />
+        )}
+      </div>
+    </th>
+  );
 
   return (
     <DashboardLayout 
@@ -446,14 +530,14 @@ export default function Reports() {
           <table className="w-full">
             <thead>
               <tr className="border-b border-border bg-muted/30">
-                <th className="text-left py-3 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Booking Date</th>
-                <th className="text-left py-3 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Move-In Date</th>
-                <th className="text-left py-3 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Member</th>
-                <th className="text-left py-3 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Agent</th>
-                <th className="text-left py-3 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Market</th>
-                <th className="text-left py-3 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Type</th>
-                <th className="text-left py-3 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Status</th>
-                <th className="text-left py-3 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Method</th>
+                <SortableHeader column="bookingDate" label="Booking Date" />
+                <SortableHeader column="moveInDate" label="Move-In Date" />
+                <SortableHeader column="memberName" label="Member" />
+                <SortableHeader column="agentName" label="Agent" />
+                <SortableHeader column="market" label="Market" />
+                <SortableHeader column="bookingType" label="Type" />
+                <SortableHeader column="status" label="Status" />
+                <SortableHeader column="communicationMethod" label="Method" />
                 <th className="text-left py-3 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Actions</th>
               </tr>
             </thead>
@@ -518,7 +602,7 @@ export default function Reports() {
         {/* Pagination */}
         <div className="p-4 border-t border-border flex items-center justify-between">
           <p className="text-sm text-muted-foreground">
-            Showing {filteredBookings.length === 0 ? 0 : startIndex + 1}-{Math.min(startIndex + itemsPerPage, filteredBookings.length)} of {filteredBookings.length} bookings
+            Showing {sortedBookings.length === 0 ? 0 : startIndex + 1}-{Math.min(startIndex + itemsPerPage, sortedBookings.length)} of {sortedBookings.length} bookings
           </p>
           <div className="flex items-center gap-2">
             <Button 
