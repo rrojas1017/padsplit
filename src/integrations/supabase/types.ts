@@ -340,6 +340,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      get_agent_user_ids_for_site: {
+        Args: { _site_id: string }
+        Returns: string[]
+      }
       get_user_role: {
         Args: { _user_id: string }
         Returns: Database["public"]["Enums"]["app_role"]
@@ -352,6 +356,7 @@ export type Database = {
         }
         Returns: boolean
       }
+      is_agent: { Args: { _user_id: string }; Returns: boolean }
     }
     Enums: {
       app_role: "super_admin" | "admin" | "supervisor" | "agent"
