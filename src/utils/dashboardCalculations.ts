@@ -1,5 +1,10 @@
 import { Booking, Agent, KPIData, ChartDataPoint, LeaderboardEntry } from '@/types';
-import { startOfDay, subDays, format, isToday, isYesterday, parseISO } from 'date-fns';
+import { startOfDay, subDays, format, isToday, isYesterday, parseISO, isWeekend, eachDayOfInterval } from 'date-fns';
+
+const countWeekdays = (startDate: Date, endDate: Date): number => {
+  const days = eachDayOfInterval({ start: startDate, end: endDate });
+  return days.filter(day => !isWeekend(day)).length;
+};
 
 const getBookingDate = (booking: Booking): Date => {
   return booking.bookingDate instanceof Date 
@@ -115,6 +120,7 @@ export const calculateChartData = (bookings: Booking[], agents: Agent[], days: n
 export const calculateLeaderboard = (bookings: Booking[], agents: Agent[]): LeaderboardEntry[] => {
   const today = new Date();
   const weekStart = subDays(today, 7);
+  const weekdaysInPeriod = countWeekdays(weekStart, today);
 
   // Get bookings from the last 7 days
   const recentBookings = bookings.filter(b => {
@@ -149,7 +155,7 @@ export const calculateLeaderboard = (bookings: Booking[], agents: Agent[]): Lead
       agentName: agent.name,
       siteName: agent.siteName,
       bookings: agentBookingsList.length,
-      bookingsPerDay: Math.round((agentBookingsList.length / 7) * 10) / 10,
+      bookingsPerDay: Math.round((agentBookingsList.length / Math.max(weekdaysInPeriod, 1)) * 10) / 10,
       pending,
       rejected,
       change,
