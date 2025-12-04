@@ -34,8 +34,8 @@ export function BookingsProvider({ children }: { children: ReactNode }) {
 
       const transformedBookings: Booking[] = (data || []).map((b: any) => ({
         id: b.id,
-        moveInDate: new Date(b.move_in_date),
-        bookingDate: new Date(b.booking_date),
+        moveInDate: new Date(b.move_in_date + 'T00:00:00'),
+        bookingDate: new Date(b.booking_date + 'T00:00:00'),
         memberName: b.member_name,
         bookingType: b.booking_type,
         agentId: b.agent_id,
