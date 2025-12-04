@@ -1,3 +1,4 @@
+import { ReactNode } from 'react';
 import { Sun, Moon, Bell, Search } from 'lucide-react';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useAuth } from '@/contexts/AuthContext';
@@ -7,17 +8,21 @@ import { Input } from '@/components/ui/input';
 interface HeaderProps {
   title: string;
   subtitle?: string;
+  actions?: ReactNode;
 }
 
-export function Header({ title, subtitle }: HeaderProps) {
+export function Header({ title, subtitle, actions }: HeaderProps) {
   const { theme, toggleTheme } = useTheme();
   const { user } = useAuth();
 
   return (
     <header className="h-16 border-b border-border bg-card/50 backdrop-blur-sm flex items-center justify-between px-6 sticky top-0 z-40">
-      <div>
-        <h1 className="text-xl font-semibold text-foreground">{title}</h1>
-        {subtitle && <p className="text-sm text-muted-foreground">{subtitle}</p>}
+      <div className="flex items-center gap-4">
+        <div>
+          <h1 className="text-xl font-semibold text-foreground">{title}</h1>
+          {subtitle && <p className="text-sm text-muted-foreground">{subtitle}</p>}
+        </div>
+        {actions && <div className="ml-4">{actions}</div>}
       </div>
 
       <div className="flex items-center gap-4">

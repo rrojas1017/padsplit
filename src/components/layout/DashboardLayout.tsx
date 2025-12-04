@@ -8,9 +8,10 @@ interface DashboardLayoutProps {
   children: ReactNode;
   title: string;
   subtitle?: string;
+  actions?: ReactNode;
 }
 
-export function DashboardLayout({ children, title, subtitle }: DashboardLayoutProps) {
+export function DashboardLayout({ children, title, subtitle, actions }: DashboardLayoutProps) {
   const { collapsed } = useSidebar();
   
   return (
@@ -20,7 +21,7 @@ export function DashboardLayout({ children, title, subtitle }: DashboardLayoutPr
         "flex-1 transition-all duration-300",
         collapsed ? "ml-16" : "ml-64"
       )}>
-        <Header title={title} subtitle={subtitle} />
+        <Header title={title} subtitle={subtitle} actions={actions} />
         <main className="p-6">
           {children}
         </main>
