@@ -5,10 +5,11 @@ import { DateRangeFilter, DateFilterValue } from '@/components/dashboard/DateRan
 import { useAuth } from '@/contexts/AuthContext';
 import { useBookings } from '@/contexts/BookingsContext';
 import { useAgents } from '@/contexts/AgentsContext';
-import { CalendarDays, TrendingUp, Clock, CheckCircle2, Trophy } from 'lucide-react';
+import { CalendarDays, TrendingUp, Clock, CheckCircle2, Trophy, GraduationCap, ThumbsUp, Lightbulb, Star } from 'lucide-react';
 import { format, subDays, startOfMonth, startOfDay, endOfDay } from 'date-fns';
 import { Area, AreaChart, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { Skeleton } from '@/components/ui/skeleton';
+import { AgentFeedback } from '@/types';
 
 // Helper to get date range from filter
 function getDateRangeFromFilter(filter: DateFilterValue): { start: Date; end: Date } {
@@ -341,6 +342,137 @@ export default function MyPerformance() {
           </div>
         </div>
       </div>
+
+      {/* Coaching Insights Section */}
+      {myAgent && (() => {
+        // Get bookings with agent feedback
+        const bookingsWithFeedback = myBookings.filter(b => b.agentFeedback);
+        
+        if (bookingsWithFeedback.length === 0) return null;
+        
+        // Calculate average scores
+        const avgScores = {
+          communication: 0,
+          productKnowledge: 0,
+          objectionHandling: 0,
+          closingSkills: 0,
+        };
+        
+        bookingsWithFeedback.forEach(b => {
+          const fb = b.agentFeedback as AgentFeedback;
+          if (fb.scores) {
+            avgScores.communication += fb.scores.communication || 0;
+            avgScores.productKnowledge += fb.scores.productKnowledge || 0;
+            avgScores.objectionHandling += fb.scores.objectionHandling || 0;
+            avgScores.closingSkills += fb.scores.closingSkills || 0;
+          }
+        });
+        
+        const count = bookingsWithFeedback.length;
+        Object.keys(avgScores).forEach(key => {
+          avgScores[key as keyof typeof avgScores] = Math.round((avgScores[key as keyof typeof avgScores] / count) * 10) / 10;
+        });
+        
+        // Get recent coaching tips (last 3 unique)
+        const recentTips: string[] = [];
+        for (const b of bookingsWithFeedback.slice(0, 5)) {
+          const fb = b.agentFeedback as AgentFeedback;
+          if (fb.coachingTips) {
+            for (const tip of fb.coachingTips) {
+              if (!recentTips.includes(tip) && recentTips.length < 3) {
+                recentTips.push(tip);
+              }
+            }
+          }
+        }
+        
+        // Get common strengths
+        const strengthCounts: Record<string, number> = {};
+        bookingsWithFeedback.forEach(b => {
+          const fb = b.agentFeedback as AgentFeedback;
+          fb.strengths?.forEach(s => {
+            strengthCounts[s] = (strengthCounts[s] || 0) + 1;
+          });
+        });
+        const topStrengths = Object.entries(strengthCounts)
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, 3)
+          .map(([s]) => s);
+        
+        const getScoreColor = (score: number) => {
+          if (score >= 8) return 'bg-success';
+          if (score >= 6) return 'bg-primary';
+          if (score >= 4) return 'bg-warning';
+          return 'bg-destructive';
+        };
+        
+        return (
+          <div className="bg-card rounded-xl p-6 border border-border shadow-card animate-slide-up" style={{ animationDelay: '400ms' }}>
+            <h3 className="text-lg font-semibold text-foreground mb-4 flex items-center gap-2">
+              <GraduationCap className="w-5 h-5 text-primary" />
+              Coaching Insights
+              <span className="text-xs text-muted-foreground font-normal">
+                (from {count} transcribed call{count !== 1 ? 's' : ''})
+              </span>
+            </h3>
+            
+            {/* Average Scores */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+              {[
+                { label: 'Communication', value: avgScores.communication },
+                { label: 'Product Knowledge', value: avgScores.productKnowledge },
+                { label: 'Objection Handling', value: avgScores.objectionHandling },
+                { label: 'Closing Skills', value: avgScores.closingSkills },
+              ].map((score) => (
+                <div key={score.label} className="bg-muted/30 rounded-lg p-3 border border-border">
+                  <div className="flex justify-between items-center mb-1">
+                    <span className="text-xs text-muted-foreground">{score.label}</span>
+                    <span className="text-sm font-semibold">{score.value}/10</span>
+                  </div>
+                  <div className="h-2 bg-muted rounded-full overflow-hidden">
+                    <div 
+                      className={`h-full rounded-full ${getScoreColor(score.value)}`}
+                      style={{ width: `${score.value * 10}%` }}
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
+            
+            <div className="grid md:grid-cols-2 gap-4">
+              {/* Top Strengths */}
+              {topStrengths.length > 0 && (
+                <div className="bg-success/5 rounded-lg p-4 border border-success/20">
+                  <h4 className="font-semibold mb-2 flex items-center gap-2 text-success text-sm">
+                    <ThumbsUp className="h-4 w-4" />
+                    Your Top Strengths
+                  </h4>
+                  <ul className="text-sm space-y-1">
+                    {topStrengths.map((s, i) => (
+                      <li key={i} className="text-muted-foreground">• {s}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              
+              {/* Recent Coaching Tips */}
+              {recentTips.length > 0 && (
+                <div className="bg-primary/5 rounded-lg p-4 border border-primary/20">
+                  <h4 className="font-semibold mb-2 flex items-center gap-2 text-primary text-sm">
+                    <Lightbulb className="h-4 w-4" />
+                    Recent Coaching Tips
+                  </h4>
+                  <ul className="text-sm space-y-1">
+                    {recentTips.map((tip, i) => (
+                      <li key={i} className="text-muted-foreground">• {tip}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      })()}
     </DashboardLayout>
   );
 }

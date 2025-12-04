@@ -4,10 +4,10 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
-import { Loader2, ChevronDown, ChevronUp, Mic, AlertCircle, CheckCircle2, Clock, TrendingUp, MessageSquare, Target, AlertTriangle, Lightbulb, Smile, Meh, Frown } from 'lucide-react';
+import { Loader2, ChevronDown, ChevronUp, Mic, AlertCircle, CheckCircle2, Clock, TrendingUp, MessageSquare, Target, AlertTriangle, Lightbulb, Smile, Meh, Frown, Star, Award, ThumbsUp, GraduationCap } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
-import { Booking, CallKeyPoints } from '@/types';
+import { Booking, CallKeyPoints, AgentFeedback } from '@/types';
 
 interface TranscriptionModalProps {
   booking: Booking;
@@ -108,6 +108,7 @@ export function TranscriptionModal({ booking, isOpen, onClose, onTranscriptionCo
   };
 
   const keyPoints = booking.callKeyPoints as CallKeyPoints | null;
+  const agentFeedback = booking.agentFeedback as AgentFeedback | null;
   const isProcessing = currentStatus === 'processing' || isTranscribing;
   const hasTranscription = currentStatus === 'completed' && booking.callSummary;
 
@@ -133,6 +134,23 @@ export function TranscriptionModal({ booking, isOpen, onClose, onTranscriptionCo
       case 'low': return 'bg-destructive/20 text-destructive border-destructive/30';
       default: return 'bg-muted text-muted-foreground';
     }
+  };
+
+  const getRatingColor = (rating?: string) => {
+    switch (rating) {
+      case 'excellent': return 'bg-success/20 text-success border-success/30';
+      case 'good': return 'bg-primary/20 text-primary border-primary/30';
+      case 'needs_improvement': return 'bg-warning/20 text-warning border-warning/30';
+      case 'poor': return 'bg-destructive/20 text-destructive border-destructive/30';
+      default: return 'bg-muted text-muted-foreground';
+    }
+  };
+
+  const getScoreColor = (score: number) => {
+    if (score >= 8) return 'bg-success';
+    if (score >= 6) return 'bg-primary';
+    if (score >= 4) return 'bg-warning';
+    return 'bg-destructive';
   };
 
   return (
@@ -294,6 +312,95 @@ export function TranscriptionModal({ booking, isOpen, onClose, onTranscriptionCo
                   </div>
                 )}
               </div>
+
+              {/* Agent Feedback Section */}
+              {agentFeedback && (
+                <div className="space-y-4 border-t border-border pt-6">
+                  <h4 className="font-semibold flex items-center gap-2">
+                    <GraduationCap className="h-5 w-5 text-primary" />
+                    Agent Performance Feedback
+                  </h4>
+                  
+                  {/* Overall Rating */}
+                  <div className="flex items-center gap-3">
+                    <Badge variant="outline" className={getRatingColor(agentFeedback.overallRating)}>
+                      <Award className="h-3 w-3 mr-1" />
+                      Overall: {agentFeedback.overallRating?.replace('_', ' ').toUpperCase()}
+                    </Badge>
+                  </div>
+
+                  {/* Scores */}
+                  {agentFeedback.scores && (
+                    <div className="grid grid-cols-2 gap-3">
+                      {[
+                        { label: 'Communication', value: agentFeedback.scores.communication },
+                        { label: 'Product Knowledge', value: agentFeedback.scores.productKnowledge },
+                        { label: 'Objection Handling', value: agentFeedback.scores.objectionHandling },
+                        { label: 'Closing Skills', value: agentFeedback.scores.closingSkills },
+                      ].map((score) => (
+                        <div key={score.label} className="bg-muted/30 rounded-lg p-3 border border-border">
+                          <div className="flex justify-between items-center mb-1">
+                            <span className="text-xs text-muted-foreground">{score.label}</span>
+                            <span className="text-sm font-semibold">{score.value}/10</span>
+                          </div>
+                          <div className="h-2 bg-muted rounded-full overflow-hidden">
+                            <div 
+                              className={`h-full rounded-full ${getScoreColor(score.value)}`}
+                              style={{ width: `${score.value * 10}%` }}
+                            />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Strengths & Improvements */}
+                  <div className="grid md:grid-cols-2 gap-4">
+                    {agentFeedback.strengths && agentFeedback.strengths.length > 0 && (
+                      <div className="bg-success/5 rounded-lg p-4 border border-success/20">
+                        <h5 className="font-semibold mb-2 flex items-center gap-2 text-success text-sm">
+                          <ThumbsUp className="h-4 w-4" />
+                          Strengths
+                        </h5>
+                        <ul className="text-sm space-y-1">
+                          {agentFeedback.strengths.map((s, i) => (
+                            <li key={i} className="text-muted-foreground">• {s}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+
+                    {agentFeedback.improvements && agentFeedback.improvements.length > 0 && (
+                      <div className="bg-warning/5 rounded-lg p-4 border border-warning/20">
+                        <h5 className="font-semibold mb-2 flex items-center gap-2 text-warning text-sm">
+                          <TrendingUp className="h-4 w-4" />
+                          Areas to Improve
+                        </h5>
+                        <ul className="text-sm space-y-1">
+                          {agentFeedback.improvements.map((imp, i) => (
+                            <li key={i} className="text-muted-foreground">• {imp}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Coaching Tips */}
+                  {agentFeedback.coachingTips && agentFeedback.coachingTips.length > 0 && (
+                    <div className="bg-primary/5 rounded-lg p-4 border border-primary/20">
+                      <h5 className="font-semibold mb-2 flex items-center gap-2 text-primary text-sm">
+                        <Lightbulb className="h-4 w-4" />
+                        Coaching Tips
+                      </h5>
+                      <ul className="text-sm space-y-1">
+                        {agentFeedback.coachingTips.map((tip, i) => (
+                          <li key={i} className="text-muted-foreground">• {tip}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* Full Transcript */}
               {booking.callTranscription && (

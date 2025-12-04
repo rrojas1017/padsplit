@@ -36,6 +36,19 @@ export interface CallKeyPoints {
   callSentiment: 'positive' | 'neutral' | 'negative';
 }
 
+export interface AgentFeedback {
+  overallRating: 'excellent' | 'good' | 'needs_improvement' | 'poor';
+  strengths: string[];
+  improvements: string[];
+  coachingTips: string[];
+  scores: {
+    communication: number; // 1-10
+    productKnowledge: number; // 1-10
+    objectionHandling: number; // 1-10
+    closingSkills: number; // 1-10
+  };
+}
+
 export interface Booking {
   id: string;
   moveInDate: Date;
@@ -62,6 +75,8 @@ export interface Booking {
   transcriptionStatus?: 'pending' | 'processing' | 'completed' | 'failed';
   transcribedAt?: Date;
   callDurationSeconds?: number;
+  // Agent feedback from transcription analysis
+  agentFeedback?: AgentFeedback;
 }
 
 export interface DailyMetrics {

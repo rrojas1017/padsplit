@@ -138,6 +138,7 @@ export type Database = {
       bookings: {
         Row: {
           admin_profile_link: string | null
+          agent_feedback: Json | null
           agent_id: string
           booking_date: string
           booking_type: string
@@ -164,6 +165,7 @@ export type Database = {
         }
         Insert: {
           admin_profile_link?: string | null
+          agent_feedback?: Json | null
           agent_id: string
           booking_date: string
           booking_type: string
@@ -190,6 +192,7 @@ export type Database = {
         }
         Update: {
           admin_profile_link?: string | null
+          agent_feedback?: Json | null
           agent_id?: string
           booking_date?: string
           booking_type?: string
