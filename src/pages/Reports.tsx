@@ -3,9 +3,9 @@ import { useBookings } from '@/contexts/BookingsContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { useAgents } from '@/contexts/AgentsContext';
 import { Button } from '@/components/ui/button';
-import { Download, Filter, Search, PlusCircle, Pencil, ChevronDown, Calendar, Building2, User, MessageSquare, Tag, CheckCircle } from 'lucide-react';
+import { Download, Search, PlusCircle, Pencil, ChevronDown, Building2, User, MessageSquare, Tag, CheckCircle } from 'lucide-react';
 import { Input } from '@/components/ui/input';
-import { format, startOfDay, endOfDay, subDays, startOfMonth, endOfMonth, isWithinInterval, parseISO } from 'date-fns';
+import { format, startOfDay, endOfDay, isWithinInterval } from 'date-fns';
 import { cn } from '@/lib/utils';
 import { useNavigate } from 'react-router-dom';
 import { useState, useMemo, useEffect } from 'react';
@@ -23,20 +23,17 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { DateRangePicker } from '@/components/dashboard/DateRangePicker';
 
 type Site = {
   id: string;
   name: string;
 };
 
-const datePresets = [
-  { label: 'Today', value: 'today' },
-  { label: 'Yesterday', value: 'yesterday' },
-  { label: 'Last 7 days', value: '7d' },
-  { label: 'Last 30 days', value: '30d' },
-  { label: 'This month', value: 'month' },
-  { label: 'All time', value: 'all' },
-];
+interface DateRange {
+  from: Date | undefined;
+  to: Date | undefined;
+}
 
 const statusOptions = [
   { label: 'All Statuses', value: 'all' },
@@ -71,8 +68,17 @@ export default function Reports() {
   // Sites from Supabase
   const [sites, setSites] = useState<Site[]>([]);
 
-  // Filter states
-  const [dateRange, setDateRange] = useState('today');
+  // Filter states - date ranges
+  const [bookingDateRange, setBookingDateRange] = useState<DateRange>({
+    from: startOfDay(new Date()),
+    to: endOfDay(new Date()),
+  });
+  const [moveInDateRange, setMoveInDateRange] = useState<DateRange>({
+    from: undefined,
+    to: undefined,
+  });
+
+  // Other filter states
   const [siteFilter, setSiteFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
   const [typeFilter, setTypeFilter] = useState('all');
@@ -108,35 +114,27 @@ export default function Reports() {
     return false;
   };
 
-  // Get date range for filtering
-  const getDateRange = (preset: string): { start: Date; end: Date } | null => {
-    const now = new Date();
-    switch (preset) {
-      case 'today':
-        return { start: startOfDay(now), end: endOfDay(now) };
-      case 'yesterday':
-        const yesterday = subDays(now, 1);
-        return { start: startOfDay(yesterday), end: endOfDay(yesterday) };
-      case '7d':
-        return { start: startOfDay(subDays(now, 7)), end: endOfDay(now) };
-      case '30d':
-        return { start: startOfDay(subDays(now, 30)), end: endOfDay(now) };
-      case 'month':
-        return { start: startOfMonth(now), end: endOfMonth(now) };
-      case 'all':
-      default:
-        return null;
-    }
-  };
-
   // Filter bookings
   const filteredBookings = useMemo(() => {
     return bookings.filter(booking => {
-      // Date range filter
-      const dateRangeObj = getDateRange(dateRange);
-      if (dateRangeObj) {
+      // Booking date range filter
+      if (bookingDateRange.from && bookingDateRange.to) {
         const bookingDate = new Date(booking.bookingDate);
-        if (!isWithinInterval(bookingDate, { start: dateRangeObj.start, end: dateRangeObj.end })) {
+        if (!isWithinInterval(bookingDate, { 
+          start: startOfDay(bookingDateRange.from), 
+          end: endOfDay(bookingDateRange.to) 
+        })) {
+          return false;
+        }
+      }
+
+      // Move-in date range filter
+      if (moveInDateRange.from && moveInDateRange.to) {
+        const moveInDate = new Date(booking.moveInDate);
+        if (!isWithinInterval(moveInDate, { 
+          start: startOfDay(moveInDateRange.from), 
+          end: endOfDay(moveInDateRange.to) 
+        })) {
           return false;
         }
       }
@@ -171,7 +169,7 @@ export default function Reports() {
 
       return true;
     });
-  }, [bookings, dateRange, siteFilter, statusFilter, typeFilter, methodFilter, agentFilter, searchQuery, agents]);
+  }, [bookings, bookingDateRange, moveInDateRange, siteFilter, statusFilter, typeFilter, methodFilter, agentFilter, searchQuery, agents]);
 
   // Pagination calculations
   const totalPages = Math.ceil(filteredBookings.length / itemsPerPage);
@@ -181,7 +179,7 @@ export default function Reports() {
   // Reset to page 1 when filters change
   useEffect(() => {
     setCurrentPage(1);
-  }, [dateRange, siteFilter, statusFilter, typeFilter, methodFilter, agentFilter, searchQuery]);
+  }, [bookingDateRange, moveInDateRange, siteFilter, statusFilter, typeFilter, methodFilter, agentFilter, searchQuery]);
 
   // Export CSV
   const exportCSV = () => {
@@ -231,7 +229,6 @@ export default function Reports() {
     'Cancelled': 'bg-muted text-muted-foreground',
   };
 
-  const selectedDateLabel = datePresets.find(p => p.value === dateRange)?.label || 'Select range';
   const selectedSiteLabel = siteFilter === 'all' ? 'All Sites' : sites.find(s => s.id === siteFilter)?.name || 'All Sites';
 
   return (
@@ -241,27 +238,19 @@ export default function Reports() {
     >
       {/* Filters Row 1 */}
       <div className="flex flex-wrap items-center gap-3 mb-3">
-        {/* Date Range Filter */}
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="outline" className="gap-2">
-              <Calendar className="w-4 h-4" />
-              {selectedDateLabel}
-              <ChevronDown className="w-4 h-4" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" className="w-48">
-            {datePresets.map((preset) => (
-              <DropdownMenuItem
-                key={preset.value}
-                onClick={() => setDateRange(preset.value)}
-                className={dateRange === preset.value ? 'bg-accent/20' : ''}
-              >
-                {preset.label}
-              </DropdownMenuItem>
-            ))}
-          </DropdownMenuContent>
-        </DropdownMenu>
+        {/* Booking Date Range Filter */}
+        <DateRangePicker
+          label="Booking Date"
+          dateRange={bookingDateRange}
+          onDateRangeChange={setBookingDateRange}
+        />
+
+        {/* Move-In Date Range Filter */}
+        <DateRangePicker
+          label="Move-In Date"
+          dateRange={moveInDateRange}
+          onDateRangeChange={setMoveInDateRange}
+        />
 
         {/* Site Filter */}
         <DropdownMenu>
