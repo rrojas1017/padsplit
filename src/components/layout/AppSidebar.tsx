@@ -60,7 +60,7 @@ const menuItems = [
     icon: Users, 
     label: 'User Management', 
     path: '/users',
-    roles: ['super_admin', 'admin'] 
+    roles: ['super_admin', 'admin', 'supervisor'] 
   },
   {
     icon: Link2,

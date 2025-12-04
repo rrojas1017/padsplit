@@ -86,7 +86,7 @@ Deno.serve(async (req) => {
       })
     }
 
-    // Use service role client to check if user has super_admin or admin role
+    // Use service role client to check if user has appropriate role
     const adminClient = createClient(supabaseUrl, supabaseServiceKey)
     
     const { data: userRole } = await adminClient
@@ -95,12 +95,33 @@ Deno.serve(async (req) => {
       .eq('user_id', requestingUser.id)
       .single()
 
-    if (!userRole || (userRole.role !== 'super_admin' && userRole.role !== 'admin')) {
+    // Allow super_admin, admin, and supervisor
+    if (!userRole || !['super_admin', 'admin', 'supervisor'].includes(userRole.role)) {
       console.log(`Insufficient permissions for user ${requestingUser.id}`);
       return new Response(JSON.stringify({ error: 'Insufficient permissions' }), {
         status: 403,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       })
+    }
+
+    // Get supervisor's site_id if they are a supervisor
+    let supervisorSiteId: string | null = null;
+    if (userRole.role === 'supervisor') {
+      const { data: supervisorProfile } = await adminClient
+        .from('profiles')
+        .select('site_id')
+        .eq('id', requestingUser.id)
+        .single();
+      
+      supervisorSiteId = supervisorProfile?.site_id || null;
+      
+      if (!supervisorSiteId) {
+        console.log(`Supervisor ${requestingUser.id} has no site assigned`);
+        return new Response(JSON.stringify({ error: 'Supervisor must have a site assigned' }), {
+          status: 403,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        })
+      }
     }
 
     // Parse and validate request body
@@ -171,10 +192,36 @@ Deno.serve(async (req) => {
       })
     }
 
-    // Validate siteId if provided
-    if (siteId !== undefined && siteId !== null && siteId !== '') {
-      if (typeof siteId !== 'string' || !isValidUUID(siteId)) {
-        console.log(`Invalid siteId format: ${siteId}`);
+    // Supervisor can only create agent users
+    if (userRole.role === 'supervisor' && role !== 'agent') {
+      console.log(`Supervisor ${requestingUser.id} attempted to create ${role} user`);
+      return new Response(JSON.stringify({ error: 'Supervisors can only create agent users' }), {
+        status: 403,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
+
+    // Only super_admin can create admin or super_admin users
+    if ((role === 'super_admin' || role === 'admin') && userRole.role !== 'super_admin') {
+      console.log(`User ${requestingUser.id} attempted to create ${role} without super_admin privileges`);
+      return new Response(JSON.stringify({ error: 'Only super admins can create admin users' }), {
+        status: 403,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
+
+    // Determine the effective site ID
+    // Supervisors must create agents in their own site
+    let effectiveSiteId = siteId;
+    if (userRole.role === 'supervisor') {
+      effectiveSiteId = supervisorSiteId;
+      console.log(`Supervisor creating agent in their site: ${effectiveSiteId}`);
+    }
+
+    // Validate siteId if provided (for non-supervisor cases)
+    if (effectiveSiteId !== undefined && effectiveSiteId !== null && effectiveSiteId !== '') {
+      if (typeof effectiveSiteId !== 'string' || !isValidUUID(effectiveSiteId)) {
+        console.log(`Invalid siteId format: ${effectiveSiteId}`);
         return new Response(JSON.stringify({ error: 'Invalid siteId format. Must be a valid UUID' }), {
           status: 400,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -195,7 +242,7 @@ Deno.serve(async (req) => {
       // Verify the agent exists and has no user_id
       const { data: existingAgent, error: agentError } = await adminClient
         .from('agents')
-        .select('id, user_id, name')
+        .select('id, user_id, name, site_id')
         .eq('id', linkedAgentId)
         .single();
 
@@ -214,15 +261,15 @@ Deno.serve(async (req) => {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         })
       }
-    }
 
-    // Only super_admin can create admin or super_admin users
-    if ((role === 'super_admin' || role === 'admin') && userRole.role !== 'super_admin') {
-      console.log(`User ${requestingUser.id} attempted to create ${role} without super_admin privileges`);
-      return new Response(JSON.stringify({ error: 'Only super admins can create admin users' }), {
-        status: 403,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      })
+      // Supervisors can only link agents from their own site
+      if (userRole.role === 'supervisor' && existingAgent.site_id !== supervisorSiteId) {
+        console.log(`Supervisor ${requestingUser.id} attempted to link agent from different site`);
+        return new Response(JSON.stringify({ error: 'You can only link agents from your own site' }), {
+          status: 403,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        })
+      }
     }
 
     // Create the user with admin API
@@ -243,10 +290,10 @@ Deno.serve(async (req) => {
     }
 
     // Update the profile with site_id if provided
-    if (siteId) {
+    if (effectiveSiteId) {
       await adminClient
         .from('profiles')
-        .update({ site_id: siteId })
+        .update({ site_id: effectiveSiteId })
         .eq('id', newUser.user.id)
     }
 
@@ -281,13 +328,13 @@ Deno.serve(async (req) => {
         console.log(`Successfully linked agent ${linkedAgentId} to user ${newUser.user.id}`);
         createdAgentId = linkedAgentId;
       }
-    } else if (role === 'agent' && siteId) {
+    } else if (role === 'agent' && effectiveSiteId) {
       // Auto-create new agent record for agent users
       const { data: newAgent, error: createAgentError } = await adminClient
         .from('agents')
         .insert({
           name: name,
-          site_id: siteId,
+          site_id: effectiveSiteId,
           user_id: newUser.user.id,
           active: true
         })
@@ -314,7 +361,7 @@ Deno.serve(async (req) => {
     })
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
-    console.error('Unexpected error in create-user function:', errorMessage);
+    console.error('Unexpected error in create-user function:', error);
     return new Response(JSON.stringify({ error: errorMessage }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },

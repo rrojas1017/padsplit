@@ -89,6 +89,28 @@ export default function UserManagement() {
   const [isDeleting, setIsDeleting] = useState(false);
 
   const isSuperAdmin = hasRole(['super_admin']);
+  const isAdmin = hasRole(['admin']);
+  const isSupervisor = hasRole(['supervisor']);
+
+  // Get current user's site_id for supervisors
+  const [currentUserSiteId, setCurrentUserSiteId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (isSupervisor && currentUser?.id) {
+      supabase
+        .from('profiles')
+        .select('site_id')
+        .eq('id', currentUser.id)
+        .single()
+        .then(({ data }) => {
+          if (data?.site_id) {
+            setCurrentUserSiteId(data.site_id);
+            // Auto-select site for supervisors
+            setNewUserSiteId(data.site_id);
+          }
+        });
+    }
+  }, [isSupervisor, currentUser?.id]);
 
   useEffect(() => {
     fetchUsers();
@@ -432,16 +454,18 @@ export default function UserManagement() {
 
   const availableRoles = isSuperAdmin 
     ? ['super_admin', 'admin', 'supervisor', 'agent']
-    : ['supervisor', 'agent'];
+    : isSupervisor
+      ? ['agent']
+      : ['supervisor', 'agent'];
 
   return (
     <DashboardLayout 
       title="User Management" 
       subtitle="Manage users, roles, and agents"
     >
-      <Tabs defaultValue="non-agents" className="w-full">
+      <Tabs defaultValue={isSupervisor ? "agents" : "non-agents"} className="w-full">
         <TabsList className="mb-6">
-          <TabsTrigger value="non-agents">Non-Agents</TabsTrigger>
+          {!isSupervisor && <TabsTrigger value="non-agents">Non-Agents</TabsTrigger>}
           <TabsTrigger value="agents">Agents</TabsTrigger>
         </TabsList>
 
@@ -530,18 +554,24 @@ export default function UserManagement() {
                   {(newUserRole === 'supervisor' || newUserRole === 'agent') && (
                     <div className="grid gap-2">
                       <Label htmlFor="site">Site *</Label>
-                      <Select value={newUserSiteId} onValueChange={handleSiteChange}>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select a site" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {sites.map(site => (
-                            <SelectItem key={site.id} value={site.id}>
-                              {site.name}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                      {isSupervisor ? (
+                        <p className="text-sm text-muted-foreground bg-muted px-3 py-2 rounded-md">
+                          {sites.find(s => s.id === currentUserSiteId)?.name || 'Your Site'}
+                        </p>
+                      ) : (
+                        <Select value={newUserSiteId} onValueChange={handleSiteChange}>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select a site" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {sites.map(site => (
+                              <SelectItem key={site.id} value={site.id}>
+                                {site.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      )}
                     </div>
                   )}
 
@@ -672,7 +702,7 @@ export default function UserManagement() {
                               <DropdownMenuItem>Edit User</DropdownMenuItem>
                               <DropdownMenuItem>Change Role</DropdownMenuItem>
                               <DropdownMenuItem className="text-destructive">Deactivate</DropdownMenuItem>
-                              {user.id !== currentUser?.id && (
+                              {user.id !== currentUser?.id && !isSupervisor && (
                                 <DropdownMenuItem 
                                   className="text-destructive"
                                   onClick={() => {
@@ -702,7 +732,14 @@ export default function UserManagement() {
         {/* Agents Tab */}
         <TabsContent value="agents">
           {(() => {
-            const agentUsers = users.filter(u => u.role === 'agent');
+            // Supervisors only see agents from their site
+            const agentUsers = users.filter(u => {
+              if (u.role !== 'agent') return false;
+              if (isSupervisor && currentUserSiteId) {
+                return u.site_id === currentUserSiteId;
+              }
+              return true;
+            });
             return (
               <>
                 <div className="flex items-center justify-between mb-6">
@@ -802,7 +839,7 @@ export default function UserManagement() {
                                       <DropdownMenuContent align="end">
                                         <DropdownMenuItem>Edit User</DropdownMenuItem>
                                         <DropdownMenuItem className="text-destructive">Deactivate</DropdownMenuItem>
-                                        {user.id !== currentUser?.id && (
+                                        {user.id !== currentUser?.id && !isSupervisor && (
                                           <DropdownMenuItem 
                                             className="text-destructive"
                                             onClick={() => {
