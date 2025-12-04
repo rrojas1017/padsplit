@@ -102,6 +102,13 @@ export function CallInsights({ booking, onTranscriptionComplete }: CallInsightsP
     }
   };
 
+  const formatDuration = (seconds?: number) => {
+    if (!seconds) return null;
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
+
   // Don't render if no Kixie link
   if (!booking.kixieLink) {
     return null;
@@ -160,7 +167,7 @@ export function CallInsights({ booking, onTranscriptionComplete }: CallInsightsP
             </CardHeader>
             <CardContent>
               <p className="text-sm text-muted-foreground">{booking.callSummary || booking.callKeyPoints.summary}</p>
-              <div className="flex gap-4 mt-3">
+              <div className="flex flex-wrap gap-4 mt-3">
                 <div className="flex items-center gap-2">
                   <span className="text-xs text-muted-foreground">Move-in Readiness:</span>
                   {getReadinessBadge(booking.callKeyPoints.moveInReadiness)}
@@ -169,6 +176,12 @@ export function CallInsights({ booking, onTranscriptionComplete }: CallInsightsP
                   <span className="text-xs text-muted-foreground">Sentiment:</span>
                   {getSentimentBadge(booking.callKeyPoints.callSentiment)}
                 </div>
+                {booking.callDurationSeconds && (
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-muted-foreground">Duration:</span>
+                    <Badge variant="secondary">{formatDuration(booking.callDurationSeconds)}</Badge>
+                  </div>
+                )}
               </div>
             </CardContent>
           </Card>

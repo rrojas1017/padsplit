@@ -62,6 +62,13 @@ export function TranscriptionModal({ booking, isOpen, onClose, onTranscriptionCo
   const keyPoints = booking.callKeyPoints as CallKeyPoints | null;
   const hasTranscription = booking.transcriptionStatus === 'completed' && booking.callSummary;
 
+  const formatDuration = (seconds?: number) => {
+    if (!seconds) return null;
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
+
   const getSentimentIcon = (sentiment?: string) => {
     switch (sentiment) {
       case 'positive': return <Smile className="h-4 w-4 text-success" />;
@@ -154,6 +161,12 @@ export function TranscriptionModal({ booking, isOpen, onClose, onTranscriptionCo
                   <CheckCircle2 className="h-3 w-3 mr-1" />
                   Transcribed
                 </Badge>
+                {booking.callDurationSeconds && (
+                  <Badge variant="outline" className="flex items-center gap-1">
+                    <Clock className="h-3 w-3" />
+                    {formatDuration(booking.callDurationSeconds)}
+                  </Badge>
+                )}
               </div>
 
               {/* Summary */}
