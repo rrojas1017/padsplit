@@ -44,6 +44,7 @@ export interface Booking {
   adminProfileLink?: string;
   moveInDayReachOut?: boolean;
   createdBy?: string;
+  createdAt?: Date;
 }
 
 export interface DailyMetrics {

@@ -1,5 +1,5 @@
 import { Booking, Agent, KPIData, ChartDataPoint, LeaderboardEntry } from '@/types';
-import { startOfDay, startOfMonth, subDays, format, isToday, isYesterday, parseISO, isWeekend, eachDayOfInterval } from 'date-fns';
+import { startOfDay, startOfMonth, startOfWeek, subDays, addDays, format, isToday, isYesterday, parseISO, isWeekend, eachDayOfInterval } from 'date-fns';
 
 const countWeekdays = (startDate: Date, endDate: Date): number => {
   const days = eachDayOfInterval({ start: startDate, end: endDate });
@@ -242,4 +242,133 @@ export const calculateMarketData = (
     .map(([market, count]) => ({ market, bookings: count }))
     .sort((a, b) => b.bookings - a.bookings)
     .slice(0, 6); // Top 6 markets
+};
+
+// Insights data interface
+export interface InsightsData {
+  todayVsYesterday: {
+    todayByNow: number;
+    yesterdayByNow: number;
+    change: number;
+    changeType: 'increase' | 'decrease' | 'neutral';
+    currentTime: string;
+  };
+  weeklyTopPerformer: {
+    name: string;
+    bookings: number;
+  } | null;
+  weeklyMarketLeader: {
+    market: string;
+    bookings: number;
+  } | null;
+  activeAgentsToday: number;
+  pendingMoveInsThisWeek: number;
+  conversionRateThisMonth: number;
+}
+
+export const calculateInsightsData = (
+  bookings: Booking[],
+  agents: Agent[]
+): InsightsData => {
+  const now = new Date();
+  const currentHour = now.getHours();
+  const currentMinutes = now.getMinutes();
+  const currentTime = format(now, 'h:mm a');
+  
+  const todayStart = startOfDay(now);
+  const yesterdayStart = subDays(todayStart, 1);
+  
+  // Get today's bookings
+  const todaysBookings = filterBookingsByDate(bookings, now);
+  
+  // Filter by createdAt time for same-time comparison
+  const todayByNow = todaysBookings.filter(b => {
+    if (!b.createdAt) return true; // Include if no timestamp
+    const createdHour = b.createdAt.getHours();
+    const createdMinutes = b.createdAt.getMinutes();
+    return createdHour < currentHour || 
+           (createdHour === currentHour && createdMinutes <= currentMinutes);
+  }).length;
+  
+  // Get yesterday's bookings
+  const yesterdaysBookings = filterBookingsByDate(bookings, yesterdayStart);
+  
+  // Filter yesterday's bookings by same time
+  const yesterdayByNow = yesterdaysBookings.filter(b => {
+    if (!b.createdAt) return true;
+    const createdHour = b.createdAt.getHours();
+    const createdMinutes = b.createdAt.getMinutes();
+    return createdHour < currentHour || 
+           (createdHour === currentHour && createdMinutes <= currentMinutes);
+  }).length;
+  
+  // Calculate change percentage
+  let change = 0;
+  let changeType: 'increase' | 'decrease' | 'neutral' = 'neutral';
+  if (yesterdayByNow > 0) {
+    change = Math.round(((todayByNow - yesterdayByNow) / yesterdayByNow) * 100);
+    changeType = change > 0 ? 'increase' : change < 0 ? 'decrease' : 'neutral';
+  } else if (todayByNow > 0) {
+    change = 100;
+    changeType = 'increase';
+  }
+  
+  // Weekly calculations (always current week, Monday-today)
+  const weekStart = startOfWeek(now, { weekStartsOn: 1 }); // Monday
+  const weekBookings = filterBookingsByDateRange(bookings, weekStart, now);
+  
+  // Weekly Top Performer
+  const agentCounts = new Map<string, { name: string; count: number }>();
+  weekBookings.forEach(b => {
+    const existing = agentCounts.get(b.agentId) || { name: b.agentName, count: 0 };
+    agentCounts.set(b.agentId, { name: existing.name, count: existing.count + 1 });
+  });
+  const sortedAgents = Array.from(agentCounts.values()).sort((a, b) => b.count - a.count);
+  const topPerformer = sortedAgents[0] || null;
+  
+  // Weekly Market Leader
+  const marketCounts = new Map<string, number>();
+  weekBookings.forEach(b => {
+    const market = b.marketCity || 'Unknown';
+    if (market !== 'Unknown') {
+      marketCounts.set(market, (marketCounts.get(market) || 0) + 1);
+    }
+  });
+  const sortedMarkets = Array.from(marketCounts.entries()).sort((a, b) => b[1] - a[1]);
+  const topMarket = sortedMarkets[0] ? { market: sortedMarkets[0][0], bookings: sortedMarkets[0][1] } : null;
+  
+  // Active agents today
+  const activeAgentsToday = new Set(todaysBookings.map(b => b.agentId)).size;
+  
+  // Pending move-ins this week (next 7 days from today)
+  const weekEnd = addDays(now, 7);
+  const pendingMoveInsThisWeek = bookings.filter(b => {
+    const moveInDate = b.moveInDate instanceof Date ? b.moveInDate : new Date(b.moveInDate);
+    return b.status === 'Pending Move-In' && 
+           moveInDate >= todayStart && 
+           moveInDate <= weekEnd;
+  }).length;
+  
+  // Conversion rate this month
+  const monthStart = startOfMonth(now);
+  const monthBookings = filterBookingsByDateRange(bookings, monthStart, now);
+  const movedIn = monthBookings.filter(b => b.status === 'Moved In').length;
+  const conversionRateThisMonth = monthBookings.length > 0 
+    ? Math.round((movedIn / monthBookings.length) * 100) 
+    : 0;
+  
+  return {
+    todayVsYesterday: {
+      todayByNow,
+      yesterdayByNow,
+      change: Math.abs(change),
+      changeType,
+      currentTime,
+    },
+    weeklyTopPerformer: topPerformer ? { name: topPerformer.name, bookings: topPerformer.count } : null,
+    weeklyMarketLeader: topMarket,
+    activeAgentsToday,
+    pendingMoveInsThisWeek,
+    conversionRateThisMonth,
+  };
 };

@@ -11,7 +11,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useBookings } from '@/contexts/BookingsContext';
 import { useAgents } from '@/contexts/AgentsContext';
 import { Navigate } from 'react-router-dom';
-import { calculateKPIData, calculateChartData, calculateLeaderboard, calculateMarketData, DateRangeFilter as DateRangeFilterType } from '@/utils/dashboardCalculations';
+import { calculateKPIData, calculateChartData, calculateLeaderboard, calculateMarketData, calculateInsightsData, DateRangeFilter as DateRangeFilterType } from '@/utils/dashboardCalculations';
 import { Skeleton } from '@/components/ui/skeleton';
 
 export default function Dashboard() {
@@ -32,6 +32,7 @@ export default function Dashboard() {
   const chartData = calculateChartData(bookings, agents, dateRange);
   const leaderboard = calculateLeaderboard(bookings, agents, dateRange);
   const marketData = calculateMarketData(bookings, dateRange);
+  const insights = calculateInsightsData(bookings, agents);
 
   const kpiIcons = [
     <CalendarDays className="w-5 h-5" />,
@@ -111,26 +112,51 @@ export default function Dashboard() {
       {/* Insights */}
       <div className="mt-6 p-6 rounded-xl bg-card border border-border animate-slide-up" style={{ animationDelay: '500ms' }}>
         <h3 className="text-lg font-semibold text-foreground mb-3">Today's Insights</h3>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+          {/* Today vs Yesterday Same Time */}
           <div className="p-4 rounded-lg bg-success/10 border border-success/20">
             <p className="text-sm text-success font-medium">
-              {kpiData[0].changeType === 'increase' ? '+' : kpiData[0].changeType === 'decrease' ? '-' : ''}
-              {kpiData[0].change}% vs Yesterday
+              {insights.todayVsYesterday.changeType === 'increase' ? '+' : insights.todayVsYesterday.changeType === 'decrease' ? '-' : ''}
+              {insights.todayVsYesterday.change}% vs Yesterday
             </p>
             <p className="text-muted-foreground text-sm mt-1">
-              {kpiData[0].value} total bookings today compared to {kpiData[0].previousValue} yesterday
+              {insights.todayVsYesterday.todayByNow} bookings by {insights.todayVsYesterday.currentTime} vs {insights.todayVsYesterday.yesterdayByNow} at this time yesterday
             </p>
           </div>
+          
+          {/* Weekly Top Performer */}
           <div className="p-4 rounded-lg bg-accent/10 border border-accent/20">
-            <p className="text-sm text-accent font-medium">Top Performer</p>
+            <p className="text-sm text-accent font-medium">Top Performer This Week</p>
             <p className="text-muted-foreground text-sm mt-1">
-              {leaderboard[0]?.agentName || 'N/A'} leads with {leaderboard[0]?.bookings || 0} bookings this week
+              {insights.weeklyTopPerformer 
+                ? `${insights.weeklyTopPerformer.name} leads with ${insights.weeklyTopPerformer.bookings} bookings`
+                : 'No bookings this week yet'}
             </p>
           </div>
+          
+          {/* Weekly Market Leader */}
           <div className="p-4 rounded-lg bg-primary/10 border border-primary/20">
-            <p className="text-sm text-primary font-medium">Market Leader</p>
+            <p className="text-sm text-primary font-medium">Market Leader This Week</p>
             <p className="text-muted-foreground text-sm mt-1">
-              {marketData[0]?.market || 'N/A'} has the most bookings with {marketData[0]?.bookings || 0} total
+              {insights.weeklyMarketLeader 
+                ? `${insights.weeklyMarketLeader.market} has ${insights.weeklyMarketLeader.bookings} bookings`
+                : 'No market data this week'}
+            </p>
+          </div>
+          
+          {/* Active Agents Today */}
+          <div className="p-4 rounded-lg bg-purple-500/10 border border-purple-500/20">
+            <p className="text-sm text-purple-500 font-medium">Active Agents Today</p>
+            <p className="text-muted-foreground text-sm mt-1">
+              {insights.activeAgentsToday} {insights.activeAgentsToday === 1 ? 'agent has' : 'agents have'} logged bookings today
+            </p>
+          </div>
+          
+          {/* Pending Move-ins This Week */}
+          <div className="p-4 rounded-lg bg-orange-500/10 border border-orange-500/20">
+            <p className="text-sm text-orange-500 font-medium">Pending Move-ins</p>
+            <p className="text-muted-foreground text-sm mt-1">
+              {insights.pendingMoveInsThisWeek} move-ins scheduled in the next 7 days
             </p>
           </div>
         </div>
