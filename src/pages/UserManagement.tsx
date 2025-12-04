@@ -414,8 +414,8 @@ export default function UserManagement() {
                 </div>
               )}
 
-              {/* Link to Existing Agent - only for agent role with site selected */}
-              {newUserRole === 'agent' && newUserSiteId && newUserSiteId !== 'none' && (
+              {/* Link to Existing Agent - only show when there are unlinked agents */}
+              {newUserRole === 'agent' && newUserSiteId && newUserSiteId !== 'none' && !loadingAgents && unlinkedAgents.length > 0 && (
                 <div className="grid gap-2">
                   <Label htmlFor="linkedAgent" className="flex items-center gap-2">
                     <Link className="w-4 h-4" />
@@ -424,7 +424,7 @@ export default function UserManagement() {
                   </Label>
                   <Select value={linkedAgentId} onValueChange={setLinkedAgentId}>
                     <SelectTrigger>
-                      <SelectValue placeholder={loadingAgents ? "Loading agents..." : "Select an agent to link"} />
+                      <SelectValue placeholder="Select an agent to link" />
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="none">
@@ -442,11 +442,6 @@ export default function UserManagement() {
                       ))}
                     </SelectContent>
                   </Select>
-                  {unlinkedAgents.length === 0 && !loadingAgents && (
-                    <p className="text-xs text-muted-foreground">
-                      No unlinked agents found for this site
-                    </p>
-                  )}
                   {linkedAgentId && linkedAgentId !== 'none' && (
                     <p className="text-xs text-accent">
                       This user will inherit all bookings from the linked agent

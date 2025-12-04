@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -27,17 +27,57 @@ import {
 } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { useAgents } from '@/contexts/AgentsContext';
-import { PlusCircle, Pencil, UserX, UserCheck } from 'lucide-react';
+import { supabase } from '@/integrations/supabase/client';
+import { PlusCircle, Pencil, UserX, UserCheck, Link, Unlink } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
+
+interface LinkedUserInfo {
+  id: string;
+  name: string | null;
+  email: string | null;
+}
 
 export default function AgentManagement() {
   const { agents, sites, addAgent, updateAgent, toggleAgentStatus } = useAgents();
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [editingAgent, setEditingAgent] = useState<string | null>(null);
+  const [linkedUsers, setLinkedUsers] = useState<Record<string, LinkedUserInfo>>({});
   
   // Form state
   const [name, setName] = useState('');
   const [siteId, setSiteId] = useState('');
+
+  // Fetch linked user info for all agents
+  useEffect(() => {
+    const fetchLinkedUsers = async () => {
+      const agentUserIds = agents
+        .filter(a => a.userId)
+        .map(a => a.userId as string);
+      
+      if (agentUserIds.length === 0) {
+        setLinkedUsers({});
+        return;
+      }
+
+      const { data: profiles, error } = await supabase
+        .from('profiles')
+        .select('id, name, email')
+        .in('id', agentUserIds);
+
+      if (error) {
+        console.error('Error fetching linked users:', error);
+        return;
+      }
+
+      const userMap: Record<string, LinkedUserInfo> = {};
+      profiles?.forEach(profile => {
+        userMap[profile.id] = profile;
+      });
+      setLinkedUsers(userMap);
+    };
+
+    fetchLinkedUsers();
+  }, [agents]);
 
   const resetForm = () => {
     setName('');
@@ -91,6 +131,39 @@ export default function AgentManagement() {
       title: agent?.active ? 'Agent Deactivated' : 'Agent Activated',
       description: `${agent?.name} has been ${agent?.active ? 'deactivated' : 'activated'}`,
     });
+  };
+
+  const getLinkedUserDisplay = (agent: typeof agents[0]) => {
+    if (!agent.userId) {
+      return (
+        <Badge variant="outline" className="text-muted-foreground border-dashed">
+          <Unlink className="w-3 h-3 mr-1" />
+          Unlinked
+        </Badge>
+      );
+    }
+    
+    const user = linkedUsers[agent.userId];
+    if (!user) {
+      return (
+        <Badge variant="secondary" className="text-muted-foreground">
+          <Link className="w-3 h-3 mr-1" />
+          Loading...
+        </Badge>
+      );
+    }
+
+    return (
+      <div className="flex items-center gap-2">
+        <Badge variant="secondary" className="text-primary">
+          <Link className="w-3 h-3 mr-1" />
+          Linked
+        </Badge>
+        <span className="text-sm text-muted-foreground">
+          {user.name || user.email}
+        </span>
+      </div>
+    );
   };
 
   return (
@@ -158,6 +231,7 @@ export default function AgentManagement() {
               <TableRow>
                 <TableHead>Name</TableHead>
                 <TableHead>Site</TableHead>
+                <TableHead>Linked User</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
               </TableRow>
@@ -167,6 +241,7 @@ export default function AgentManagement() {
                 <TableRow key={agent.id}>
                   <TableCell className="font-medium">{agent.name}</TableCell>
                   <TableCell>{agent.siteName}</TableCell>
+                  <TableCell>{getLinkedUserDisplay(agent)}</TableCell>
                   <TableCell>
                     <Badge variant={agent.active ? 'default' : 'secondary'}>
                       {agent.active ? 'Active' : 'Inactive'}
