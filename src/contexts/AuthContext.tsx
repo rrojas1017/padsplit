@@ -56,6 +56,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // Set up auth state listener FIRST
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       (event, session) => {
+        console.log('Auth state change:', event, session?.user?.email);
+        
         setSession(session);
         if (session?.user) {
           // Defer Supabase calls with setTimeout to prevent deadlock
@@ -63,7 +65,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             fetchUserData(session.user);
           }, 0);
         } else {
-          setUser(null);
+          // Only clear user if this is a deliberate sign out, not a transient state
+          if (event === 'SIGNED_OUT') {
+            setUser(null);
+          }
         }
         setIsLoading(false);
       }
@@ -71,6 +76,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     // THEN check for existing session
     supabase.auth.getSession().then(({ data: { session } }) => {
+      console.log('Initial session check:', session?.user?.email || 'no session');
       setSession(session);
       if (session?.user) {
         fetchUserData(session.user);
@@ -78,7 +84,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setIsLoading(false);
     });
 
-    return () => subscription.unsubscribe();
+    // Handle visibility change (mobile tab resume)
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        console.log('Tab became visible, refreshing session...');
+        supabase.auth.getSession().then(({ data: { session } }) => {
+          if (session?.user) {
+            setSession(session);
+            fetchUserData(session.user);
+          }
+        });
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      subscription.unsubscribe();
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
   }, []);
 
   const login = async (email: string, password: string): Promise<{ success: boolean; error?: string }> => {
