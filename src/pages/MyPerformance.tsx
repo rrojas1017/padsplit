@@ -1,36 +1,43 @@
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { KPICard } from '@/components/dashboard/KPICard';
 import { useAuth } from '@/contexts/AuthContext';
-import { mockBookings, mockAgents, getChartData } from '@/data/mockData';
+import { useBookings } from '@/contexts/BookingsContext';
+import { useAgents } from '@/contexts/AgentsContext';
 import { CalendarDays, TrendingUp, Clock, CheckCircle2, Trophy } from 'lucide-react';
 import { format, subDays } from 'date-fns';
 import { Area, AreaChart, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { Skeleton } from '@/components/ui/skeleton';
 
 export default function MyPerformance() {
   const { user } = useAuth();
+  const { bookings, isLoading: bookingsLoading } = useBookings();
+  const { agents, isLoading: agentsLoading } = useAgents();
   
-  // Find agent data - for demo, use first agent if logged in as agent
-  const agent = mockAgents.find(a => a.name === user?.name) || mockAgents[0];
+  const isLoading = bookingsLoading || agentsLoading;
+  
+  // Find the agent linked to the current user
+  const myAgent = agents.find(a => a.userId === user?.id) || agents[0];
   
   const today = new Date();
   const weekAgo = subDays(today, 7);
   
   // Get agent's bookings
-  const myBookings = mockBookings.filter(b => b.agentId === agent.id);
+  const myBookings = myAgent ? bookings.filter(b => b.agentId === myAgent.id) : [];
   const thisWeekBookings = myBookings.filter(b => b.bookingDate >= weekAgo);
   const todayBookings = myBookings.filter(b => 
     format(b.bookingDate, 'yyyy-MM-dd') === format(today, 'yyyy-MM-dd')
   );
   
-  // Calculate rank
-  const allAgentBookings = mockAgents.map(a => ({
+  // Calculate rank among all active agents
+  const activeAgents = agents.filter(a => a.active);
+  const allAgentBookings = activeAgents.map(a => ({
     agent: a,
-    bookings: mockBookings.filter(b => b.agentId === a.id && b.bookingDate >= weekAgo).length
+    bookings: bookings.filter(b => b.agentId === a.id && b.bookingDate >= weekAgo).length
   })).sort((a, b) => b.bookings - a.bookings);
   
-  const myRank = allAgentBookings.findIndex(a => a.agent.id === agent.id) + 1;
+  const myRank = myAgent ? allAgentBookings.findIndex(a => a.agent.id === myAgent.id) + 1 : 0;
   
-  // Prepare chart data
+  // Prepare chart data for last 7 days
   const chartData = [];
   for (let i = 6; i >= 0; i--) {
     const date = subDays(today, i);
@@ -42,34 +49,43 @@ export default function MyPerformance() {
     });
   }
 
+  // Calculate previous period values for comparison
+  const prevWeekStart = subDays(today, 14);
+  const prevWeekBookings = myBookings.filter(b => b.bookingDate >= prevWeekStart && b.bookingDate < weekAgo);
+  const yesterdayBookings = myBookings.filter(b => 
+    format(b.bookingDate, 'yyyy-MM-dd') === format(subDays(today, 1), 'yyyy-MM-dd')
+  );
+
   const kpiData: { label: string; value: number; previousValue: number; change: number; changeType: 'increase' | 'decrease' | 'neutral' }[] = [
     {
       label: "Today's Bookings",
       value: todayBookings.length,
-      previousValue: 3,
-      change: Math.round((todayBookings.length - 3) / 3 * 100) || 0,
-      changeType: todayBookings.length >= 3 ? 'increase' : 'decrease',
+      previousValue: yesterdayBookings.length,
+      change: yesterdayBookings.length > 0 ? Math.round((todayBookings.length - yesterdayBookings.length) / yesterdayBookings.length * 100) : 0,
+      changeType: todayBookings.length >= yesterdayBookings.length ? 'increase' : 'decrease',
     },
     {
       label: 'This Week',
       value: thisWeekBookings.length,
-      previousValue: 18,
-      change: Math.round((thisWeekBookings.length - 18) / 18 * 100) || 0,
-      changeType: thisWeekBookings.length >= 18 ? 'increase' : 'decrease',
+      previousValue: prevWeekBookings.length,
+      change: prevWeekBookings.length > 0 ? Math.round((thisWeekBookings.length - prevWeekBookings.length) / prevWeekBookings.length * 100) : 0,
+      changeType: thisWeekBookings.length >= prevWeekBookings.length ? 'increase' : 'decrease',
     },
     {
       label: 'Pending Move-Ins',
       value: thisWeekBookings.filter(b => b.status === 'Pending Move-In').length,
-      previousValue: 5,
+      previousValue: prevWeekBookings.filter(b => b.status === 'Pending Move-In').length,
       change: 0,
       changeType: 'neutral',
     },
     {
       label: 'Confirmed Move-Ins',
       value: thisWeekBookings.filter(b => b.status === 'Moved In').length,
-      previousValue: 4,
-      change: 20,
-      changeType: 'increase',
+      previousValue: prevWeekBookings.filter(b => b.status === 'Moved In').length,
+      change: prevWeekBookings.filter(b => b.status === 'Moved In').length > 0 
+        ? Math.round((thisWeekBookings.filter(b => b.status === 'Moved In').length - prevWeekBookings.filter(b => b.status === 'Moved In').length) / prevWeekBookings.filter(b => b.status === 'Moved In').length * 100) 
+        : 0,
+      changeType: thisWeekBookings.filter(b => b.status === 'Moved In').length >= prevWeekBookings.filter(b => b.status === 'Moved In').length ? 'increase' : 'decrease',
     },
   ];
 
@@ -80,10 +96,34 @@ export default function MyPerformance() {
     <CheckCircle2 className="w-5 h-5" />,
   ];
 
+  if (isLoading) {
+    return (
+      <DashboardLayout 
+        title="My Performance" 
+        subtitle="Loading your performance data..."
+      >
+        <div className="mb-6">
+          <Skeleton className="h-20 w-full rounded-xl" />
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+          {[...Array(4)].map((_, i) => (
+            <Skeleton key={i} className="h-32 rounded-xl" />
+          ))}
+        </div>
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <Skeleton className="lg:col-span-2 h-[300px] rounded-xl" />
+          <Skeleton className="h-[300px] rounded-xl" />
+        </div>
+      </DashboardLayout>
+    );
+  }
+
+  const displayName = myAgent?.name || user?.name || 'Agent';
+
   return (
     <DashboardLayout 
       title="My Performance" 
-      subtitle={`Welcome back, ${agent.name}`}
+      subtitle={`Welcome back, ${displayName}`}
     >
       {/* Rank Banner */}
       <div className="mb-6 p-4 rounded-xl bg-gradient-to-r from-accent/20 to-accent/5 border border-accent/30 flex items-center gap-4 animate-slide-up">
@@ -92,10 +132,10 @@ export default function MyPerformance() {
         </div>
         <div>
           <p className="text-foreground font-semibold">
-            You're ranked #{myRank} out of {mockAgents.length} agents
+            {myRank > 0 ? `You're ranked #${myRank} out of ${activeAgents.length} agents` : 'Rank not available'}
           </p>
           <p className="text-muted-foreground text-sm">
-            Keep up the great work! You're {myRank <= 3 ? 'in the top 3!' : `${myRank - 3} bookings away from top 3`}
+            {myRank <= 3 && myRank > 0 ? "You're in the top 3!" : myRank > 0 ? `Keep going! ${myRank - 3} positions away from top 3` : 'Complete some bookings to get ranked'}
           </p>
         </div>
       </div>
@@ -164,7 +204,7 @@ export default function MyPerformance() {
             {todayBookings.length === 0 ? (
               <p className="text-muted-foreground text-sm">No bookings yet today. Keep going!</p>
             ) : (
-              todayBookings.slice(0, 5).map((booking, i) => (
+              todayBookings.slice(0, 5).map((booking) => (
                 <div key={booking.id} className="p-3 rounded-lg bg-muted/50 border border-border">
                   <p className="font-medium text-foreground text-sm">{booking.memberName}</p>
                   <div className="flex items-center justify-between mt-1">
