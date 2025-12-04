@@ -53,6 +53,7 @@ export function BookingsProvider({ children }: { children: ReactNode }) {
         adminProfileLink: b.admin_profile_link || undefined,
         moveInDayReachOut: b.move_in_day_reach_out || false,
         createdBy: b.created_by || undefined,
+        createdAt: b.created_at ? new Date(b.created_at) : undefined,
       }));
 
       setBookings(transformedBookings);
