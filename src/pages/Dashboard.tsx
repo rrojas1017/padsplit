@@ -31,7 +31,7 @@ export default function Dashboard() {
   const kpiData = calculateKPIData(bookings, agents, dateRange);
   const chartData = calculateChartData(bookings, agents, dateRange);
   const leaderboard = calculateLeaderboard(bookings, agents, dateRange);
-  const marketData = calculateMarketData(bookings);
+  const marketData = calculateMarketData(bookings, dateRange);
 
   const kpiIcons = [
     <CalendarDays className="w-5 h-5" />,
