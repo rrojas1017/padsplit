@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -19,17 +19,66 @@ interface TranscriptionModalProps {
 export function TranscriptionModal({ booking, isOpen, onClose, onTranscriptionComplete }: TranscriptionModalProps) {
   const [isTranscribing, setIsTranscribing] = useState(false);
   const [showFullTranscript, setShowFullTranscript] = useState(false);
+  const [currentStatus, setCurrentStatus] = useState(booking.transcriptionStatus);
   const { toast } = useToast();
+
+  // Real-time subscription for status updates
+  useEffect(() => {
+    if (!isOpen) return;
+    
+    // Sync with prop
+    setCurrentStatus(booking.transcriptionStatus);
+    
+    // Subscribe to changes for this booking
+    const channel = supabase
+      .channel(`booking-transcription-${booking.id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'bookings',
+          filter: `id=eq.${booking.id}`,
+        },
+        (payload) => {
+          console.log('Booking update received:', payload);
+          const newStatus = payload.new.transcription_status;
+          setCurrentStatus(newStatus);
+          
+          if (newStatus === 'completed') {
+            toast({
+              title: "Transcription Complete",
+              description: `Call for ${booking.memberName} has been analyzed.`,
+            });
+            setIsTranscribing(false);
+            onTranscriptionComplete();
+          } else if (newStatus === 'failed') {
+            toast({
+              title: "Transcription Failed",
+              description: "There was an error processing the call.",
+              variant: "destructive",
+            });
+            setIsTranscribing(false);
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [isOpen, booking.id, booking.memberName, onTranscriptionComplete, toast]);
+
+  // Sync status when booking prop updates
+  useEffect(() => {
+    setCurrentStatus(booking.transcriptionStatus);
+  }, [booking.transcriptionStatus]);
 
   const handleTranscribe = async () => {
     if (!booking.kixieLink) return;
     
     setIsTranscribing(true);
-    
-    toast({
-      title: "Starting Transcription",
-      description: `Processing call for ${booking.memberName}...`,
-    });
+    setCurrentStatus('processing');
     
     try {
       const { data, error } = await supabase.functions.invoke('transcribe-call', {
@@ -42,25 +91,25 @@ export function TranscriptionModal({ booking, isOpen, onClose, onTranscriptionCo
       if (error) throw error;
 
       toast({
-        title: "Transcription Complete",
-        description: "Call has been transcribed and analyzed successfully.",
+        title: "Transcription Started",
+        description: `Processing call for ${booking.memberName}... You can close this dialog.`,
       });
       
-      onTranscriptionComplete();
     } catch (error) {
       console.error('Transcription error:', error);
+      setCurrentStatus('failed');
+      setIsTranscribing(false);
       toast({
-        title: "Transcription Failed",
-        description: error instanceof Error ? error.message : "Failed to transcribe call",
+        title: "Failed to Start Transcription",
+        description: error instanceof Error ? error.message : "Failed to start transcription",
         variant: "destructive",
       });
-    } finally {
-      setIsTranscribing(false);
     }
   };
 
   const keyPoints = booking.callKeyPoints as CallKeyPoints | null;
-  const hasTranscription = booking.transcriptionStatus === 'completed' && booking.callSummary;
+  const isProcessing = currentStatus === 'processing' || isTranscribing;
+  const hasTranscription = currentStatus === 'completed' && booking.callSummary;
 
   const formatDuration = (seconds?: number) => {
     if (!seconds) return null;
@@ -99,15 +148,18 @@ export function TranscriptionModal({ booking, isOpen, onClose, onTranscriptionCo
         <ScrollArea className="max-h-[calc(85vh-100px)] pr-4">
           {!hasTranscription ? (
             <div className="flex flex-col items-center justify-center py-12 text-center">
-              {booking.transcriptionStatus === 'processing' || isTranscribing ? (
+              {isProcessing ? (
                 <>
                   <Loader2 className="h-12 w-12 text-primary animate-spin mb-4" />
                   <p className="text-lg font-medium">Transcribing call...</p>
                   <p className="text-sm text-muted-foreground mt-1">
                     This may take a minute depending on call length
                   </p>
+                  <p className="text-xs text-muted-foreground mt-2">
+                    You can close this dialog — you'll be notified when complete
+                  </p>
                 </>
-              ) : booking.transcriptionStatus === 'failed' ? (
+              ) : currentStatus === 'failed' ? (
                 <>
                   <AlertCircle className="h-12 w-12 text-destructive mb-4" />
                   <p className="text-lg font-medium">Transcription Failed</p>
@@ -129,7 +181,7 @@ export function TranscriptionModal({ booking, isOpen, onClose, onTranscriptionCo
                     {isTranscribing ? (
                       <>
                         <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        Transcribing...
+                        Starting...
                       </>
                     ) : (
                       <>
