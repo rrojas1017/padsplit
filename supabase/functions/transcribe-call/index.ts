@@ -23,13 +23,13 @@ serve(async (req) => {
     console.log(`Starting transcription for booking ${bookingId}`);
     console.log(`Kixie URL: ${kixieUrl}`);
 
-    const openaiApiKey = Deno.env.get('OPENAI_API_KEY');
+    const elevenLabsApiKey = Deno.env.get('ELEVENLABS_API_KEY');
     const lovableApiKey = Deno.env.get('LOVABLE_API_KEY');
     const supabaseUrl = Deno.env.get('SUPABASE_URL');
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
 
-    if (!openaiApiKey) {
-      throw new Error('OPENAI_API_KEY not configured');
+    if (!elevenLabsApiKey) {
+      throw new Error('ELEVENLABS_API_KEY not configured');
     }
     if (!lovableApiKey) {
       throw new Error('LOVABLE_API_KEY not configured');
@@ -53,36 +53,70 @@ serve(async (req) => {
     const fileSizeMB = audioBlob.size / (1024 * 1024);
     console.log(`Audio downloaded, size: ${audioBlob.size} bytes (${fileSizeMB.toFixed(2)} MB)`);
 
-    // Check file size - Whisper API has a 25MB limit
-    const MAX_FILE_SIZE_MB = 25;
-    if (fileSizeMB > MAX_FILE_SIZE_MB) {
-      throw new Error(`Audio file too large (${fileSizeMB.toFixed(1)}MB). Maximum supported size is ${MAX_FILE_SIZE_MB}MB. This call recording exceeds the limit for transcription.`);
-    }
-
-    // Step 2: Transcribe with OpenAI Whisper
-    console.log('Sending to OpenAI Whisper...');
+    // Step 2: Transcribe with ElevenLabs Speech-to-Text
+    console.log('Sending to ElevenLabs Speech-to-Text...');
     const formData = new FormData();
     formData.append('file', audioBlob, 'recording.wav');
-    formData.append('model', 'whisper-1');
-    formData.append('language', 'en');
-    formData.append('response_format', 'text');
+    formData.append('model_id', 'scribe_v1');
+    formData.append('diarize', 'true'); // Enable speaker diarization
+    formData.append('language_code', 'eng');
+    formData.append('tag_audio_events', 'true');
 
-    const whisperResponse = await fetch('https://api.openai.com/v1/audio/transcriptions', {
+    const elevenLabsResponse = await fetch('https://api.elevenlabs.io/v1/speech-to-text', {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${openaiApiKey}`,
+        'xi-api-key': elevenLabsApiKey,
       },
       body: formData,
     });
 
-    if (!whisperResponse.ok) {
-      const errorText = await whisperResponse.text();
-      console.error('Whisper API error:', errorText);
-      throw new Error(`Whisper API error: ${whisperResponse.status}`);
+    if (!elevenLabsResponse.ok) {
+      const errorText = await elevenLabsResponse.text();
+      console.error('ElevenLabs API error:', errorText);
+      throw new Error(`ElevenLabs API error: ${elevenLabsResponse.status}`);
     }
 
-    // When using response_format: 'text', the response is plain text
-    const transcription = await whisperResponse.text();
+    const elevenLabsResult = await elevenLabsResponse.json();
+    console.log('ElevenLabs response received');
+
+    // Format transcription with speaker labels if diarization is available
+    let transcription = elevenLabsResult.text || '';
+    
+    // If we have word-level data with speakers, format it nicely
+    if (elevenLabsResult.words && elevenLabsResult.words.length > 0) {
+      const formattedSegments: string[] = [];
+      let currentSpeaker = '';
+      let currentText = '';
+      
+      for (const word of elevenLabsResult.words) {
+        const speaker = word.speaker_id || 'Unknown';
+        
+        if (speaker !== currentSpeaker) {
+          // Save previous segment
+          if (currentText.trim()) {
+            const speakerLabel = currentSpeaker === 'speaker_0' ? 'Agent' : 
+                                currentSpeaker === 'speaker_1' ? 'Member' : currentSpeaker;
+            formattedSegments.push(`${speakerLabel}: ${currentText.trim()}`);
+          }
+          currentSpeaker = speaker;
+          currentText = word.text + ' ';
+        } else {
+          currentText += word.text + ' ';
+        }
+      }
+      
+      // Don't forget the last segment
+      if (currentText.trim()) {
+        const speakerLabel = currentSpeaker === 'speaker_0' ? 'Agent' : 
+                            currentSpeaker === 'speaker_1' ? 'Member' : currentSpeaker;
+        formattedSegments.push(`${speakerLabel}: ${currentText.trim()}`);
+      }
+      
+      if (formattedSegments.length > 0) {
+        transcription = formattedSegments.join('\n\n');
+      }
+    }
+    
     console.log('Transcription complete, length:', transcription.length);
 
     // Step 3: Generate summary and key points with Lovable AI
