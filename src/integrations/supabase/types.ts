@@ -141,6 +141,9 @@ export type Database = {
           agent_id: string
           booking_date: string
           booking_type: string
+          call_key_points: Json | null
+          call_summary: string | null
+          call_transcription: string | null
           communication_method: string | null
           created_at: string
           created_by: string | null
@@ -154,6 +157,8 @@ export type Database = {
           move_in_day_reach_out: boolean | null
           notes: string | null
           status: string
+          transcribed_at: string | null
+          transcription_status: string | null
           updated_at: string
         }
         Insert: {
@@ -161,6 +166,9 @@ export type Database = {
           agent_id: string
           booking_date: string
           booking_type: string
+          call_key_points?: Json | null
+          call_summary?: string | null
+          call_transcription?: string | null
           communication_method?: string | null
           created_at?: string
           created_by?: string | null
@@ -174,6 +182,8 @@ export type Database = {
           move_in_day_reach_out?: boolean | null
           notes?: string | null
           status?: string
+          transcribed_at?: string | null
+          transcription_status?: string | null
           updated_at?: string
         }
         Update: {
@@ -181,6 +191,9 @@ export type Database = {
           agent_id?: string
           booking_date?: string
           booking_type?: string
+          call_key_points?: Json | null
+          call_summary?: string | null
+          call_transcription?: string | null
           communication_method?: string | null
           created_at?: string
           created_by?: string | null
@@ -194,6 +207,8 @@ export type Database = {
           move_in_day_reach_out?: boolean | null
           notes?: string | null
           status?: string
+          transcribed_at?: string | null
+          transcription_status?: string | null
           updated_at?: string
         }
         Relationships: [

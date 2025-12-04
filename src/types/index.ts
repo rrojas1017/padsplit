@@ -26,6 +26,16 @@ export interface Agent {
   avatarUrl?: string;
 }
 
+export interface CallKeyPoints {
+  summary: string;
+  memberConcerns: string[];
+  memberPreferences: string[];
+  recommendedActions: string[];
+  objections: string[];
+  moveInReadiness: 'high' | 'medium' | 'low';
+  callSentiment: 'positive' | 'neutral' | 'negative';
+}
+
 export interface Booking {
   id: string;
   moveInDate: Date;
@@ -45,6 +55,12 @@ export interface Booking {
   moveInDayReachOut?: boolean;
   createdBy?: string;
   createdAt?: Date;
+  // Call transcription fields
+  callTranscription?: string;
+  callSummary?: string;
+  callKeyPoints?: CallKeyPoints;
+  transcriptionStatus?: 'pending' | 'processing' | 'completed' | 'failed';
+  transcribedAt?: Date;
 }
 
 export interface DailyMetrics {

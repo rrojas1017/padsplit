@@ -23,6 +23,7 @@ import { toast } from '@/hooks/use-toast';
 import { format } from 'date-fns';
 import { CalendarIcon, Save, ArrowLeft } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { CallInsights } from '@/components/booking/CallInsights';
 
 const bookingTypes: Booking['bookingType'][] = ['Inbound', 'Outbound', 'Referral'];
 const statuses: Booking['status'][] = ['Pending Move-In', 'Moved In', 'Member Rejected', 'No Show', 'Cancelled'];
@@ -30,7 +31,7 @@ const commMethods: Booking['communicationMethod'][] = ['Phone', 'SMS', 'LC', 'Em
 
 export default function EditBooking() {
   const { id } = useParams<{ id: string }>();
-  const { bookings, updateBooking, isLoading: bookingsLoading } = useBookings();
+  const { bookings, updateBooking, isLoading: bookingsLoading, refreshBookings } = useBookings();
   const { user } = useAuth();
   const { agents } = useAgents();
   const navigate = useNavigate();
@@ -425,6 +426,13 @@ export default function EditBooking() {
               </div>
             </div>
           </div>
+
+          {/* Call Recording Section */}
+          {booking && booking.kixieLink && (
+            <div className="bg-card rounded-xl border border-border p-6 shadow-card">
+              <CallInsights booking={booking} onTranscriptionComplete={refreshBookings} />
+            </div>
+          )}
 
           {/* Actions */}
           <div className="flex flex-col sm:flex-row gap-3 pt-2">
