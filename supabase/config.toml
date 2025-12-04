@@ -11,3 +11,6 @@ verify_jwt = false
 
 [functions.get-wallboard-data]
 verify_jwt = false
+
+[functions.transcribe-call]
+verify_jwt = true

@@ -54,6 +54,12 @@ export function BookingsProvider({ children }: { children: ReactNode }) {
         moveInDayReachOut: b.move_in_day_reach_out || false,
         createdBy: b.created_by || undefined,
         createdAt: b.created_at ? new Date(b.created_at) : undefined,
+        // Call transcription fields
+        callTranscription: b.call_transcription || undefined,
+        callSummary: b.call_summary || undefined,
+        callKeyPoints: b.call_key_points || undefined,
+        transcriptionStatus: b.transcription_status || undefined,
+        transcribedAt: b.transcribed_at ? new Date(b.transcribed_at) : undefined,
       }));
 
       setBookings(transformedBookings);
