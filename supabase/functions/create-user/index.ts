@@ -265,8 +265,11 @@ Deno.serve(async (req) => {
       })
     }
 
-    // Link to existing agent if linkedAgentId is provided
+    // Handle agent record creation/linking for agent role
+    let createdAgentId: string | null = null;
+    
     if (linkedAgentId) {
+      // Link to existing agent
       const { error: linkError } = await adminClient
         .from('agents')
         .update({ user_id: newUser.user.id })
@@ -274,10 +277,29 @@ Deno.serve(async (req) => {
 
       if (linkError) {
         console.log(`Error linking agent: ${linkError.message}`);
-        // Don't rollback for this - user is created, just log the error
-        // The admin can manually link the agent later
       } else {
         console.log(`Successfully linked agent ${linkedAgentId} to user ${newUser.user.id}`);
+        createdAgentId = linkedAgentId;
+      }
+    } else if (role === 'agent' && siteId) {
+      // Auto-create new agent record for agent users
+      const { data: newAgent, error: createAgentError } = await adminClient
+        .from('agents')
+        .insert({
+          name: name,
+          site_id: siteId,
+          user_id: newUser.user.id,
+          active: true
+        })
+        .select('id')
+        .single();
+
+      if (createAgentError) {
+        console.log(`Warning: Failed to create agent record: ${createAgentError.message}`);
+        // Don't rollback - user exists, admin can create agent manually
+      } else {
+        console.log(`Created new agent record ${newAgent.id} for user ${newUser.user.id}`);
+        createdAgentId = newAgent.id;
       }
     }
 
@@ -285,7 +307,7 @@ Deno.serve(async (req) => {
     return new Response(JSON.stringify({ 
       success: true, 
       user: { id: newUser.user.id, email: newUser.user.email },
-      linkedAgentId: linkedAgentId || null,
+      agentId: createdAgentId,
     }), {
       status: 200,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
