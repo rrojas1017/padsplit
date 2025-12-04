@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { Booking } from '@/types';
 import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from '@/contexts/AuthContext';
 
 interface BookingsContextType {
   bookings: Booking[];
@@ -14,11 +15,13 @@ interface BookingsContextType {
 const BookingsContext = createContext<BookingsContextType | undefined>(undefined);
 
 export function BookingsProvider({ children }: { children: ReactNode }) {
+  const { user, isLoading: authLoading } = useAuth();
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   const fetchBookings = async () => {
     try {
+      setIsLoading(true);
       const { data, error } = await supabase
         .from('bookings')
         .select(`
@@ -61,6 +64,19 @@ export function BookingsProvider({ children }: { children: ReactNode }) {
   };
 
   useEffect(() => {
+    // Wait for auth to be ready
+    if (authLoading) {
+      return;
+    }
+
+    // If no user, clear bookings
+    if (!user) {
+      setBookings([]);
+      setIsLoading(false);
+      return;
+    }
+
+    // User is authenticated, fetch data
     fetchBookings();
 
     // Set up realtime subscription
@@ -78,7 +94,7 @@ export function BookingsProvider({ children }: { children: ReactNode }) {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, []);
+  }, [user, authLoading]);
 
   const addBooking = async (booking: Omit<Booking, 'id'>) => {
     const { data: userData } = await supabase.auth.getUser();
