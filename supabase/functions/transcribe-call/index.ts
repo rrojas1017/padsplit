@@ -13,8 +13,13 @@ serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
+  // Parse body ONCE and store bookingId for error handling
+  let bookingId: string | undefined;
+
   try {
-    const { bookingId, kixieUrl } = await req.json();
+    const body = await req.json();
+    bookingId = body.bookingId;
+    const kixieUrl = body.kixieUrl;
     
     if (!bookingId || !kixieUrl) {
       throw new Error('Missing bookingId or kixieUrl');
@@ -233,10 +238,9 @@ Focus on actionable insights that will help with follow-up conversations.`;
   } catch (error) {
     console.error('Transcription error:', error);
     
-    // Try to update status to failed if we have bookingId
-    try {
-      const { bookingId } = await req.clone().json();
-      if (bookingId) {
+    // Update status to failed using bookingId from outer scope
+    if (bookingId) {
+      try {
         const supabaseUrl = Deno.env.get('SUPABASE_URL');
         const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
         const supabase = createClient(supabaseUrl!, supabaseServiceKey!);
@@ -244,9 +248,10 @@ Focus on actionable insights that will help with follow-up conversations.`;
           .from('bookings')
           .update({ transcription_status: 'failed' })
           .eq('id', bookingId);
+        console.log('Status updated to failed for booking:', bookingId);
+      } catch (e) {
+        console.error('Failed to update status to failed:', e);
       }
-    } catch (e) {
-      console.error('Failed to update status to failed:', e);
     }
 
     return new Response(
