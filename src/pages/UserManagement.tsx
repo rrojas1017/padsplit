@@ -479,148 +479,13 @@ export default function UserManagement() {
                   <p className="text-muted-foreground">
                     {loading ? 'Loading...' : `${nonAgentUsers.length} administrators & supervisors`}
                   </p>
-            <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-              <DialogTrigger asChild>
-                <Button className="gap-2">
-                  <Plus className="w-4 h-4" />
-                  Add User
-                </Button>
-              </DialogTrigger>
-              <DialogContent className="sm:max-w-[425px]">
-                <DialogHeader>
-                  <DialogTitle>Create New User</DialogTitle>
-                  <DialogDescription>
-                    Add a new user to the system. They will receive login credentials.
-                  </DialogDescription>
-                </DialogHeader>
-                <div className="grid gap-4 py-4">
-                  <div className="grid gap-2">
-                    <Label htmlFor="name">Full Name *</Label>
-                    <Input
-                      id="name"
-                      value={newUserName}
-                      onChange={(e) => setNewUserName(e.target.value)}
-                      placeholder="Enter full name"
-                    />
-                  </div>
-                  <div className="grid gap-2">
-                    <Label htmlFor="email">Email *</Label>
-                    <Input
-                      id="email"
-                      type="email"
-                      value={newUserEmail}
-                      onChange={(e) => setNewUserEmail(e.target.value)}
-                      placeholder="Enter email address"
-                    />
-                  </div>
-                  <div className="grid gap-2">
-                    <Label htmlFor="password">Password *</Label>
-                    <Input
-                      id="password"
-                      type="password"
-                      value={newUserPassword}
-                      onChange={(e) => setNewUserPassword(e.target.value)}
-                      placeholder="Enter password"
-                    />
-                  </div>
-                  <div className="grid gap-2">
-                    <Label htmlFor="role">Role *</Label>
-                    <Select value={newUserRole} onValueChange={handleRoleChange}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select a role" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {availableRoles.map(role => (
-                          <SelectItem key={role} value={role}>
-                            <div className="flex items-center gap-2">
-                              {getRoleIcon(role)}
-                              {roleLabels[role]}
-                            </div>
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  
-                  {(newUserRole === 'super_admin' || newUserRole === 'admin') && (
-                    <div className="grid gap-2">
-                      <Label>Site Access</Label>
-                      <p className="text-sm text-muted-foreground bg-muted px-3 py-2 rounded-md">
-                        All Sites (full access)
-                      </p>
-                    </div>
-                  )}
-                  
-                  {(newUserRole === 'supervisor' || newUserRole === 'agent') && (
-                    <div className="grid gap-2">
-                      <Label htmlFor="site">Site *</Label>
-                      {isSupervisor ? (
-                        <p className="text-sm text-muted-foreground bg-muted px-3 py-2 rounded-md">
-                          {sites.find(s => s.id === currentUserSiteId)?.name || 'Your Site'}
-                        </p>
-                      ) : (
-                        <Select value={newUserSiteId} onValueChange={handleSiteChange}>
-                          <SelectTrigger>
-                            <SelectValue placeholder="Select a site" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {sites.map(site => (
-                              <SelectItem key={site.id} value={site.id}>
-                                {site.name}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      )}
-                    </div>
-                  )}
-
-                  {newUserRole === 'agent' && newUserSiteId && newUserSiteId !== 'none' && !loadingAgents && unlinkedAgents.length > 0 && (
-                    <div className="grid gap-2">
-                      <Label htmlFor="linkedAgent" className="flex items-center gap-2">
-                        <Link className="w-4 h-4" />
-                        Link to Existing Agent
-                        <span className="text-muted-foreground font-normal">(optional)</span>
-                      </Label>
-                      <Select value={linkedAgentId} onValueChange={setLinkedAgentId}>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select an agent to link" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="none">
-                            <span className="text-muted-foreground">Don't link (create new agent)</span>
-                          </SelectItem>
-                          {unlinkedAgents.map(agent => (
-                            <SelectItem key={agent.id} value={agent.id}>
-                              <div className="flex items-center justify-between gap-4">
-                                <span>{agent.name}</span>
-                                <span className="text-xs text-muted-foreground">
-                                  ({agent.bookingCount} booking{agent.bookingCount !== 1 ? 's' : ''})
-                                </span>
-                              </div>
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      {linkedAgentId && linkedAgentId !== 'none' && (
-                        <p className="text-xs text-accent">
-                          This user will inherit all bookings from the linked agent
-                        </p>
-                      )}
-                    </div>
-                  )}
-                </div>
-                <DialogFooter>
-                  <Button variant="outline" onClick={() => setIsDialogOpen(false)}>
-                    Cancel
-                  </Button>
-                  <Button onClick={handleCreateUser} disabled={isSubmitting}>
-                    {isSubmitting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-                    Create User
-                  </Button>
-                </DialogFooter>
-              </DialogContent>
-            </Dialog>
+            <Button 
+              className="gap-2"
+              onClick={() => setIsDialogOpen(true)}
+            >
+              <Plus className="w-4 h-4" />
+              Add User
+            </Button>
           </div>
 
           <div className="bg-card rounded-xl border border-border shadow-card overflow-hidden">
@@ -746,6 +611,20 @@ export default function UserManagement() {
                   <p className="text-muted-foreground">
                     {loading ? 'Loading...' : `${agentUsers.length} agents`}
                   </p>
+                  <Button 
+                    className="gap-2"
+                    onClick={() => {
+                      // Pre-select agent role and supervisor's site
+                      setNewUserRole('agent');
+                      if (isSupervisor && currentUserSiteId) {
+                        setNewUserSiteId(currentUserSiteId);
+                      }
+                      setIsDialogOpen(true);
+                    }}
+                  >
+                    <Plus className="w-4 h-4" />
+                    Add Agent
+                  </Button>
                 </div>
 
                 <div className="bg-card rounded-xl border border-border shadow-card overflow-hidden">
@@ -868,6 +747,144 @@ export default function UserManagement() {
           })()}
         </TabsContent>
       </Tabs>
+
+      {/* Create User Dialog */}
+      <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle>Create New User</DialogTitle>
+            <DialogDescription>
+              Add a new user to the system. They will receive login credentials.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="grid gap-2">
+              <Label htmlFor="name">Full Name *</Label>
+              <Input
+                id="name"
+                value={newUserName}
+                onChange={(e) => setNewUserName(e.target.value)}
+                placeholder="Enter full name"
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="email">Email *</Label>
+              <Input
+                id="email"
+                type="email"
+                value={newUserEmail}
+                onChange={(e) => setNewUserEmail(e.target.value)}
+                placeholder="Enter email address"
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="password">Password *</Label>
+              <Input
+                id="password"
+                type="password"
+                value={newUserPassword}
+                onChange={(e) => setNewUserPassword(e.target.value)}
+                placeholder="Enter password"
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="role">Role *</Label>
+              <Select value={newUserRole} onValueChange={handleRoleChange} disabled={isSupervisor}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select a role" />
+                </SelectTrigger>
+                <SelectContent>
+                  {availableRoles.map(role => (
+                    <SelectItem key={role} value={role}>
+                      <div className="flex items-center gap-2">
+                        {getRoleIcon(role)}
+                        {roleLabels[role]}
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            
+            {(newUserRole === 'super_admin' || newUserRole === 'admin') && (
+              <div className="grid gap-2">
+                <Label>Site Access</Label>
+                <p className="text-sm text-muted-foreground bg-muted px-3 py-2 rounded-md">
+                  All Sites (full access)
+                </p>
+              </div>
+            )}
+            
+            {(newUserRole === 'supervisor' || newUserRole === 'agent') && (
+              <div className="grid gap-2">
+                <Label htmlFor="site">Site *</Label>
+                {isSupervisor ? (
+                  <p className="text-sm text-muted-foreground bg-muted px-3 py-2 rounded-md">
+                    {sites.find(s => s.id === currentUserSiteId)?.name || 'Your Site'}
+                  </p>
+                ) : (
+                  <Select value={newUserSiteId} onValueChange={handleSiteChange}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select a site" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {sites.map(site => (
+                        <SelectItem key={site.id} value={site.id}>
+                          {site.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+              </div>
+            )}
+
+            {newUserRole === 'agent' && newUserSiteId && newUserSiteId !== 'none' && !loadingAgents && unlinkedAgents.length > 0 && (
+              <div className="grid gap-2">
+                <Label htmlFor="linkedAgent" className="flex items-center gap-2">
+                  <Link className="w-4 h-4" />
+                  Link to Existing Agent
+                  <span className="text-muted-foreground font-normal">(optional)</span>
+                </Label>
+                <Select value={linkedAgentId} onValueChange={setLinkedAgentId}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select an agent to link" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">
+                      <span className="text-muted-foreground">Don't link (create new agent)</span>
+                    </SelectItem>
+                    {unlinkedAgents.map(agent => (
+                      <SelectItem key={agent.id} value={agent.id}>
+                        <div className="flex items-center justify-between gap-4">
+                          <span>{agent.name}</span>
+                          <span className="text-xs text-muted-foreground">
+                            ({agent.bookingCount} booking{agent.bookingCount !== 1 ? 's' : ''})
+                          </span>
+                        </div>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {linkedAgentId && linkedAgentId !== 'none' && (
+                  <p className="text-xs text-accent">
+                    This user will inherit all bookings from the linked agent
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleCreateUser} disabled={isSubmitting}>
+              {isSubmitting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+              Create User
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Edit Agent Dialog */}
       <Dialog open={isEditAgentDialogOpen} onOpenChange={setIsEditAgentDialogOpen}>
