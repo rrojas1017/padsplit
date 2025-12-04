@@ -8,27 +8,32 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { useState } from 'react';
 
-const presets = [
+export type DateFilterValue = 'today' | 'yesterday' | '7d' | '30d' | 'month' | 'all';
+
+const presets: { label: string; value: DateFilterValue }[] = [
   { label: 'Today', value: 'today' },
   { label: 'Yesterday', value: 'yesterday' },
   { label: 'Last 7 days', value: '7d' },
   { label: 'Last 30 days', value: '30d' },
   { label: 'This month', value: 'month' },
+  { label: 'All Time', value: 'all' },
 ];
 
 interface DateRangeFilterProps {
-  onRangeChange?: (range: string) => void;
-  defaultValue?: string;
+  onRangeChange?: (range: DateFilterValue) => void;
+  defaultValue?: DateFilterValue;
+  includeAllTime?: boolean;
 }
 
-export function DateRangeFilter({ onRangeChange, defaultValue = 'today' }: DateRangeFilterProps) {
-  const [selected, setSelected] = useState(defaultValue);
+export function DateRangeFilter({ onRangeChange, defaultValue = 'today', includeAllTime = false }: DateRangeFilterProps) {
+  const [selected, setSelected] = useState<DateFilterValue>(defaultValue);
 
-  const handleSelect = (value: string) => {
+  const handleSelect = (value: DateFilterValue) => {
     setSelected(value);
     onRangeChange?.(value);
   };
 
+  const filteredPresets = includeAllTime ? presets : presets.filter(p => p.value !== 'all');
   const selectedLabel = presets.find(p => p.value === selected)?.label || 'Select range';
 
   return (
@@ -41,7 +46,7 @@ export function DateRangeFilter({ onRangeChange, defaultValue = 'today' }: DateR
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-48">
-        {presets.map((preset) => (
+        {filteredPresets.map((preset) => (
           <DropdownMenuItem
             key={preset.value}
             onClick={() => handleSelect(preset.value)}
