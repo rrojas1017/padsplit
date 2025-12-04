@@ -700,39 +700,33 @@ export default function UserManagement() {
                                   )}
                                 </td>
                                 <td className="py-4 px-4 text-right">
-                                  {linkedAgent ? (
-                                    <Button
-                                      variant="ghost"
-                                      size="icon"
-                                      onClick={() => handleEditAgent(linkedAgent)}
-                                    >
-                                      <Pencil className="w-4 h-4" />
-                                    </Button>
-                                  ) : (
-                                    <DropdownMenu>
-                                      <DropdownMenuTrigger asChild>
-                                        <Button variant="ghost" size="icon">
-                                          <MoreVertical className="w-4 h-4" />
-                                        </Button>
-                                      </DropdownMenuTrigger>
-                                      <DropdownMenuContent align="end">
-                                        <DropdownMenuItem>Edit User</DropdownMenuItem>
-                                        <DropdownMenuItem className="text-destructive">Deactivate</DropdownMenuItem>
-                                        {user.id !== currentUser?.id && !isSupervisor && (
-                                          <DropdownMenuItem 
-                                            className="text-destructive"
-                                            onClick={() => {
-                                              setUserToDelete(user);
-                                              setIsDeleteDialogOpen(true);
-                                            }}
-                                          >
-                                            <Trash2 className="w-4 h-4 mr-2" />
-                                            Delete User
-                                          </DropdownMenuItem>
-                                        )}
-                                      </DropdownMenuContent>
-                                    </DropdownMenu>
-                                  )}
+                                  <DropdownMenu>
+                                    <DropdownMenuTrigger asChild>
+                                      <Button variant="ghost" size="icon">
+                                        <MoreVertical className="w-4 h-4" />
+                                      </Button>
+                                    </DropdownMenuTrigger>
+                                    <DropdownMenuContent align="end">
+                                      {linkedAgent && (
+                                        <DropdownMenuItem onClick={() => handleEditAgent(linkedAgent)}>
+                                          <Pencil className="w-4 h-4 mr-2" />
+                                          Edit Agent
+                                        </DropdownMenuItem>
+                                      )}
+                                      {user.id !== currentUser?.id && !isSupervisor && (
+                                        <DropdownMenuItem 
+                                          className="text-destructive"
+                                          onClick={() => {
+                                            setUserToDelete(user);
+                                            setIsDeleteDialogOpen(true);
+                                          }}
+                                        >
+                                          <Trash2 className="w-4 h-4 mr-2" />
+                                          Delete User
+                                        </DropdownMenuItem>
+                                      )}
+                                    </DropdownMenuContent>
+                                  </DropdownMenu>
                                 </td>
                               </tr>
                             );
