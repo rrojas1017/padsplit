@@ -3,13 +3,15 @@ import { useBookings } from '@/contexts/BookingsContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { useAgents } from '@/contexts/AgentsContext';
 import { Button } from '@/components/ui/button';
-import { Download, Search, PlusCircle, Pencil, ChevronDown, Building2, User, MessageSquare, Tag, CheckCircle, RotateCcw, ArrowUp, ArrowDown, ArrowUpDown, X, ExternalLink, Phone, UserCircle } from 'lucide-react';
+import { Download, Search, PlusCircle, Pencil, ChevronDown, Building2, User, MessageSquare, Tag, CheckCircle, RotateCcw, ArrowUp, ArrowDown, ArrowUpDown, X, ExternalLink, Phone, UserCircle, Headphones, FileText, Loader2 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { format, startOfDay, endOfDay, isWithinInterval } from 'date-fns';
 import { cn } from '@/lib/utils';
 import { useNavigate } from 'react-router-dom';
 import { useState, useMemo, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
+import { TranscriptionModal } from '@/components/booking/TranscriptionModal';
+import { Booking } from '@/types';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -63,10 +65,14 @@ const communicationMethodOptions = [
 ];
 
 export default function Reports() {
-  const { bookings } = useBookings();
+  const { bookings, refreshBookings } = useBookings();
   const { user } = useAuth();
   const { agents } = useAgents();
   const navigate = useNavigate();
+
+  // Transcription modal state
+  const [selectedBooking, setSelectedBooking] = useState<Booking | null>(null);
+  const [showTranscriptModal, setShowTranscriptModal] = useState(false);
 
   // Sites from Supabase
   const [sites, setSites] = useState<Site[]>([]);
@@ -645,6 +651,29 @@ export default function Reports() {
                             <UserCircle className="h-4 w-4 text-blue-500 hover:text-blue-600 transition-colors" />
                           </a>
                         )}
+                        {/* Transcription Status Icon */}
+                        {booking.kixieLink && (
+                          <button
+                            onClick={() => {
+                              setSelectedBooking(booking);
+                              setShowTranscriptModal(true);
+                            }}
+                            title={
+                              booking.transcriptionStatus === 'completed' ? 'View Call Insights' :
+                              booking.transcriptionStatus === 'processing' ? 'Transcription in progress...' :
+                              'Transcribe Call'
+                            }
+                            className="hover:opacity-80 transition-opacity"
+                          >
+                            {booking.transcriptionStatus === 'completed' ? (
+                              <FileText className="h-4 w-4 text-purple-500" />
+                            ) : booking.transcriptionStatus === 'processing' ? (
+                              <Loader2 className="h-4 w-4 text-amber-500 animate-spin" />
+                            ) : (
+                              <Headphones className="h-4 w-4 text-muted-foreground hover:text-purple-500 transition-colors" />
+                            )}
+                          </button>
+                        )}
                       </div>
                     </td>
                     <td className="py-3 px-4">
@@ -694,6 +723,23 @@ export default function Reports() {
           </div>
         </div>
       </div>
+
+      {/* Transcription Modal */}
+      {selectedBooking && (
+        <TranscriptionModal
+          booking={selectedBooking}
+          isOpen={showTranscriptModal}
+          onClose={() => {
+            setShowTranscriptModal(false);
+            setSelectedBooking(null);
+          }}
+          onTranscriptionComplete={() => {
+            refreshBookings();
+            setShowTranscriptModal(false);
+            setSelectedBooking(null);
+          }}
+        />
+      )}
     </DashboardLayout>
   );
 }
