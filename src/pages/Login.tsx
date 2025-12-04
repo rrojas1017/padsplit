@@ -37,6 +37,8 @@ export default function Login() {
     const result = await login(email, password);
     
     if (result.success) {
+      // Small delay to ensure JWT propagation to RLS before fetching data
+      await new Promise(resolve => setTimeout(resolve, 150));
       navigate('/dashboard');
     } else {
       setError(result.error || 'Login failed');
