@@ -21,7 +21,7 @@ import AddBooking from "./pages/AddBooking";
 import EditBooking from "./pages/EditBooking";
 import Wallboard from "./pages/Wallboard";
 import UserManagement from "./pages/UserManagement";
-import AgentManagement from "./pages/AgentManagement";
+
 import DisplayLinks from "./pages/DisplayLinks";
 import PublicWallboard from "./pages/PublicWallboard";
 import AuditLog from "./pages/AuditLog";
@@ -95,11 +95,6 @@ const App = () => (
                 </ProtectedRoute>
               } />
 
-              <Route path="/agents" element={
-                <ProtectedRoute allowedRoles={['super_admin', 'admin']}>
-                  <AgentManagement />
-                </ProtectedRoute>
-              } />
 
               <Route path="/display-links" element={
                 <ProtectedRoute allowedRoles={['super_admin', 'admin']}>
