@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
@@ -10,6 +10,8 @@ import padsplitLogo from '@/assets/padsplit-logo.jpeg';
 import appendifyLogo from '@/assets/appendify-logo.png';
 import { useTheme } from '@/contexts/ThemeContext';
 import { Sun, Moon } from 'lucide-react';
+import { validatePassword, getPasswordErrorMessage } from '@/utils/passwordValidation';
+import { PasswordStrengthIndicator } from '@/components/PasswordStrengthIndicator';
 
 export default function Login() {
   const [email, setEmail] = useState('');
@@ -19,9 +21,12 @@ export default function Login() {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [hasTypedPassword, setHasTypedPassword] = useState(false);
   const { login, signup } = useAuth();
   const navigate = useNavigate();
   const { theme, toggleTheme } = useTheme();
+
+  const passwordStrength = useMemo(() => validatePassword(password), [password]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -46,8 +51,8 @@ export default function Login() {
     setSuccess('');
     setIsLoading(true);
 
-    if (password.length < 6) {
-      setError('Password must be at least 6 characters');
+    if (!passwordStrength.isValid) {
+      setError(getPasswordErrorMessage(passwordStrength.requirements));
       setIsLoading(false);
       return;
     }
@@ -59,11 +64,19 @@ export default function Login() {
       setEmail('');
       setPassword('');
       setName('');
+      setHasTypedPassword(false);
     } else {
       setError(result.error || 'Signup failed');
     }
     
     setIsLoading(false);
+  };
+
+  const handlePasswordChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setPassword(e.target.value);
+    if (!hasTypedPassword && e.target.value.length > 0) {
+      setHasTypedPassword(true);
+    }
   };
 
   return (
@@ -250,12 +263,11 @@ export default function Login() {
                     <Input
                       id="signup-password"
                       type={showPassword ? 'text' : 'password'}
-                      placeholder="Min 6 characters"
+                      placeholder="Create a strong password"
                       value={password}
-                      onChange={(e) => setPassword(e.target.value)}
+                      onChange={handlePasswordChange}
                       className="pl-10 pr-10"
                       required
-                      minLength={6}
                     />
                     <button
                       type="button"
@@ -265,9 +277,17 @@ export default function Login() {
                       {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                     </button>
                   </div>
+                  <PasswordStrengthIndicator 
+                    result={passwordStrength} 
+                    show={hasTypedPassword} 
+                  />
                 </div>
 
-                <Button type="submit" className="w-full" disabled={isLoading}>
+                <Button 
+                  type="submit" 
+                  className="w-full" 
+                  disabled={isLoading || (hasTypedPassword && !passwordStrength.isValid)}
+                >
                   {isLoading ? 'Creating account...' : 'Create Account'}
                 </Button>
               </form>
