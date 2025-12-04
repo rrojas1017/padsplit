@@ -26,6 +26,7 @@ import DisplayLinks from "./pages/DisplayLinks";
 import PublicWallboard from "./pages/PublicWallboard";
 import AuditLog from "./pages/AuditLog";
 import Settings from "./pages/Settings";
+import ImportBookings from "./pages/ImportBookings";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -117,6 +118,12 @@ const App = () => (
               <Route path="/settings" element={
                 <ProtectedRoute allowedRoles={['super_admin', 'admin']}>
                   <Settings />
+                </ProtectedRoute>
+              } />
+
+              <Route path="/import-bookings" element={
+                <ProtectedRoute allowedRoles={['super_admin', 'admin']}>
+                  <ImportBookings />
                 </ProtectedRoute>
               } />
               
