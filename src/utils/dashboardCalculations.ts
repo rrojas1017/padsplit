@@ -212,11 +212,14 @@ export const calculateLeaderboard = (
     });
   });
 
-  // Sort by bookings and assign ranks
-  leaderboardData.sort((a, b) => b.bookings - a.bookings);
-  leaderboardData.forEach((entry, index) => {
+  // Filter out agents with zero bookings, then sort and assign ranks
+  const agentsWithBookings = leaderboardData.filter(entry => entry.bookings > 0);
+  agentsWithBookings.sort((a, b) => b.bookings - a.bookings);
+  agentsWithBookings.forEach((entry, index) => {
     entry.rank = index + 1;
   });
+
+  return agentsWithBookings;
 
   return leaderboardData;
 };
