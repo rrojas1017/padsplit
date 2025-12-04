@@ -25,6 +25,12 @@ export function TranscriptionModal({ booking, isOpen, onClose, onTranscriptionCo
     if (!booking.kixieLink) return;
     
     setIsTranscribing(true);
+    
+    toast({
+      title: "Starting Transcription",
+      description: `Processing call for ${booking.memberName}...`,
+    });
+    
     try {
       const { data, error } = await supabase.functions.invoke('transcribe-call', {
         body: { 
