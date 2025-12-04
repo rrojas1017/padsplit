@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode, useRef } from 'react';
+import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { User, UserRole } from '@/types';
 import { supabase } from '@/integrations/supabase/client';
 import { Session, User as SupabaseUser } from '@supabase/supabase-js';
@@ -18,9 +18,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  
-  // Ref to track pending login resolver
-  const loginResolverRef = useRef<((success: boolean) => void) | null>(null);
 
   const fetchUserData = async (supabaseUser: SupabaseUser): Promise<boolean> => {
     try {
@@ -57,53 +54,43 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   useEffect(() => {
-    const isMountedRef = { current: true };
-    
+    let isMounted = true;
+
+    // Initialize: check for existing session on page load/refresh
+    const initAuth = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        
+        if (session?.user && isMounted) {
+          setSession(session);
+          await fetchUserData(session.user);
+        }
+      } catch (error) {
+        console.error('Auth init error:', error);
+      } finally {
+        if (isMounted) {
+          setIsLoading(false);
+        }
+      }
+    };
+
+    initAuth();
+
+    // Listen for auth changes (sign out from other tabs, token refresh)
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       (event, session) => {
-        console.log('Auth state change:', event, session?.user?.email);
-        
-        // Synchronous state updates only
-        setSession(session);
-        
-        if (event === 'INITIAL_SESSION') {
-          if (session?.user) {
-            const userToFetch = session.user;
-            // Defer to avoid Supabase deadlock
-            setTimeout(async () => {
-              await fetchUserData(userToFetch);
-              if (isMountedRef.current) {
-                setIsLoading(false);
-              }
-            }, 0);
-          } else {
-            setIsLoading(false);
-          }
-          return;
-        }
-        
-        if (event === 'SIGNED_IN' && session?.user) {
-          const userToFetch = session.user;
-          // Defer to avoid Supabase deadlock
-          setTimeout(async () => {
-            const success = await fetchUserData(userToFetch);
-            // Resolve pending login if any
-            if (loginResolverRef.current) {
-              loginResolverRef.current(success);
-              loginResolverRef.current = null;
-            }
-          }, 0);
-          return;
-        }
+        console.log('Auth state change:', event);
         
         if (event === 'SIGNED_OUT') {
+          setSession(null);
           setUser(null);
         }
         
         if (event === 'TOKEN_REFRESHED' && session?.user) {
-          const userToFetch = session.user;
+          setSession(session);
+          // Defer to avoid Supabase deadlock
           setTimeout(() => {
-            fetchUserData(userToFetch);
+            fetchUserData(session.user);
           }, 0);
         }
       }
@@ -124,7 +111,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     document.addEventListener('visibilitychange', handleVisibilityChange);
 
     return () => {
-      isMountedRef.current = false;
+      isMounted = false;
       subscription.unsubscribe();
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
@@ -141,35 +128,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return { success: false, error: error.message };
       }
 
-      // Wait for fetchUserData to complete via onAuthStateChange SIGNED_IN handler
-      const userFetched = await new Promise<boolean>((resolve) => {
-        loginResolverRef.current = resolve;
-        // Timeout after 10 seconds
-        setTimeout(() => {
-          if (loginResolverRef.current) {
-            console.warn('Login resolver timed out');
-            loginResolverRef.current(false);
-            loginResolverRef.current = null;
-          }
-        }, 10000);
-      });
+      if (!data.user) {
+        return { success: false, error: 'Login failed - no user returned' };
+      }
 
-      if (!userFetched) {
+      // Set session immediately
+      setSession(data.session);
+
+      // Fetch user data directly - simple sequential flow
+      const success = await fetchUserData(data.user);
+      
+      if (!success) {
         return { success: false, error: 'Failed to load user profile. Please try again.' };
       }
 
       // Log access (fire-and-forget)
-      if (data.user) {
-        supabase.from('access_logs').insert({
-          user_id: data.user.id,
-          user_name: data.user.email,
-          action: 'login',
-          resource: '/dashboard',
-        }).then(({ error }) => {
-          if (error) console.error('Failed to log login:', error);
-          else console.log('Login logged');
-        });
-      }
+      supabase.from('access_logs').insert({
+        user_id: data.user.id,
+        user_name: data.user.email,
+        action: 'login',
+        resource: '/dashboard',
+      }).then(({ error }) => {
+        if (error) console.error('Failed to log login:', error);
+      });
 
       return { success: true };
     } catch (error: any) {
