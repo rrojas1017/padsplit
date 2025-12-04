@@ -387,18 +387,22 @@ export default function UserManagement() {
       title="User Management" 
       subtitle="Manage users, roles, and agents"
     >
-      <Tabs defaultValue="users" className="w-full">
+      <Tabs defaultValue="non-agents" className="w-full">
         <TabsList className="mb-6">
-          <TabsTrigger value="users">Users</TabsTrigger>
+          <TabsTrigger value="non-agents">Non-Agents</TabsTrigger>
           <TabsTrigger value="agents">Agents</TabsTrigger>
         </TabsList>
 
-        {/* Users Tab */}
-        <TabsContent value="users">
-          <div className="flex items-center justify-between mb-6">
-            <p className="text-muted-foreground">
-              {loading ? 'Loading...' : `${users.length} users total`}
-            </p>
+        {/* Non-Agents Tab */}
+        <TabsContent value="non-agents">
+          {(() => {
+            const nonAgentUsers = users.filter(u => ['super_admin', 'admin', 'supervisor'].includes(u.role));
+            return (
+              <>
+                <div className="flex items-center justify-between mb-6">
+                  <p className="text-muted-foreground">
+                    {loading ? 'Loading...' : `${nonAgentUsers.length} administrators & supervisors`}
+                  </p>
             <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
               <DialogTrigger asChild>
                 <Button className="gap-2">
@@ -558,14 +562,14 @@ export default function UserManagement() {
                         Loading users...
                       </td>
                     </tr>
-                  ) : users.length === 0 ? (
+                  ) : nonAgentUsers.length === 0 ? (
                     <tr>
                       <td colSpan={6} className="py-8 text-center text-muted-foreground">
-                        No users found
+                        No administrators or supervisors found
                       </td>
                     </tr>
                   ) : (
-                    users.map((user) => (
+                    nonAgentUsers.map((user) => (
                       <tr key={user.id} className="hover:bg-muted/30 transition-colors">
                         <td className="py-4 px-4">
                           <div className="flex items-center gap-3">
@@ -626,94 +630,129 @@ export default function UserManagement() {
               </table>
             </div>
           </div>
+              </>
+            );
+          })()}
         </TabsContent>
 
         {/* Agents Tab */}
         <TabsContent value="agents">
-          <div className="flex items-center justify-between mb-6">
-            <p className="text-muted-foreground">
-              {agents.length} agents total
-            </p>
-          </div>
+          {(() => {
+            const agentUsers = users.filter(u => u.role === 'agent');
+            return (
+              <>
+                <div className="flex items-center justify-between mb-6">
+                  <p className="text-muted-foreground">
+                    {loading ? 'Loading...' : `${agentUsers.length} agents`}
+                  </p>
+                </div>
 
-          <div className="bg-card rounded-xl border border-border shadow-card overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead>
-                  <tr className="border-b border-border bg-muted/30">
-                    <th className="text-left py-3 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Agent</th>
-                    <th className="text-left py-3 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Site</th>
-                    <th className="text-left py-3 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Linked User</th>
-                    <th className="text-left py-3 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Status</th>
-                    <th className="text-right py-3 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border">
-                  {agents.length === 0 ? (
-                    <tr>
-                      <td colSpan={5} className="py-8 text-center text-muted-foreground">
-                        No agents found
-                      </td>
-                    </tr>
-                  ) : (
-                    agents.map((agent) => {
-                      const linkedUser = agent.userId ? linkedUsers[agent.userId] : null;
-                      return (
-                        <tr key={agent.id} className="hover:bg-muted/30 transition-colors">
-                          <td className="py-4 px-4">
-                            <div className="flex items-center gap-3">
-                              <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
-                                <span className="text-sm font-medium text-primary">
-                                  {agent.name.split(' ').map(n => n[0]).join('')}
-                                </span>
-                              </div>
-                              <span className="font-medium text-foreground">{agent.name}</span>
-                            </div>
-                          </td>
-                          <td className="py-4 px-4 text-sm text-muted-foreground">
-                            {agent.siteName}
-                          </td>
-                          <td className="py-4 px-4 text-sm">
-                            {linkedUser ? (
-                              <div className="flex flex-col">
-                                <span className="text-foreground">{linkedUser.name}</span>
-                                <span className="text-xs text-muted-foreground">{linkedUser.email}</span>
-                              </div>
-                            ) : (
-                              <span className="text-muted-foreground italic">Unlinked</span>
-                            )}
-                          </td>
-                          <td className="py-4 px-4">
-                            <div className="flex items-center gap-2">
-                              <Switch
-                                checked={agent.active}
-                                onCheckedChange={() => handleToggleAgentStatus(agent.id)}
-                              />
-                              <span className={cn(
-                                "text-xs font-medium",
-                                agent.active ? "text-success" : "text-muted-foreground"
-                              )}>
-                                {agent.active ? 'Active' : 'Inactive'}
-                              </span>
-                            </div>
-                          </td>
-                          <td className="py-4 px-4 text-right">
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => handleEditAgent(agent)}
-                            >
-                              <Pencil className="w-4 h-4" />
-                            </Button>
-                          </td>
+                <div className="bg-card rounded-xl border border-border shadow-card overflow-hidden">
+                  <div className="overflow-x-auto">
+                    <table className="w-full">
+                      <thead>
+                        <tr className="border-b border-border bg-muted/30">
+                          <th className="text-left py-3 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Agent</th>
+                          <th className="text-left py-3 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Email</th>
+                          <th className="text-left py-3 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Site</th>
+                          <th className="text-left py-3 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Status</th>
+                          <th className="text-right py-3 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Actions</th>
                         </tr>
-                      );
-                    })
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
+                      </thead>
+                      <tbody className="divide-y divide-border">
+                        {loading ? (
+                          <tr>
+                            <td colSpan={5} className="py-8 text-center text-muted-foreground">
+                              <Loader2 className="w-6 h-6 animate-spin mx-auto mb-2" />
+                              Loading agents...
+                            </td>
+                          </tr>
+                        ) : agentUsers.length === 0 ? (
+                          <tr>
+                            <td colSpan={5} className="py-8 text-center text-muted-foreground">
+                              No agents found
+                            </td>
+                          </tr>
+                        ) : (
+                          agentUsers.map((user) => {
+                            const linkedAgent = agents.find(a => a.userId === user.id);
+                            return (
+                              <tr key={user.id} className="hover:bg-muted/30 transition-colors">
+                                <td className="py-4 px-4">
+                                  <div className="flex items-center gap-3">
+                                    <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
+                                      <span className="text-sm font-medium text-primary">
+                                        {user.name?.split(' ').map(n => n[0]).join('') || '?'}
+                                      </span>
+                                    </div>
+                                    <span className="font-medium text-foreground">{user.name || 'Unknown'}</span>
+                                  </div>
+                                </td>
+                                <td className="py-4 px-4 text-sm text-muted-foreground">
+                                  {user.email}
+                                </td>
+                                <td className="py-4 px-4 text-sm text-muted-foreground">
+                                  {user.site_name || '-'}
+                                </td>
+                                <td className="py-4 px-4">
+                                  {linkedAgent ? (
+                                    <div className="flex items-center gap-2">
+                                      <Switch
+                                        checked={linkedAgent.active}
+                                        onCheckedChange={() => handleToggleAgentStatus(linkedAgent.id)}
+                                      />
+                                      <span className={cn(
+                                        "text-xs font-medium",
+                                        linkedAgent.active ? "text-success" : "text-muted-foreground"
+                                      )}>
+                                        {linkedAgent.active ? 'Active' : 'Inactive'}
+                                      </span>
+                                    </div>
+                                  ) : (
+                                    <span className={cn(
+                                      "px-2 py-1 rounded-full text-xs font-medium",
+                                      user.status === 'active' 
+                                        ? "bg-success/20 text-success" 
+                                        : "bg-muted text-muted-foreground"
+                                    )}>
+                                      {user.status}
+                                    </span>
+                                  )}
+                                </td>
+                                <td className="py-4 px-4 text-right">
+                                  {linkedAgent ? (
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      onClick={() => handleEditAgent(linkedAgent)}
+                                    >
+                                      <Pencil className="w-4 h-4" />
+                                    </Button>
+                                  ) : (
+                                    <DropdownMenu>
+                                      <DropdownMenuTrigger asChild>
+                                        <Button variant="ghost" size="icon">
+                                          <MoreVertical className="w-4 h-4" />
+                                        </Button>
+                                      </DropdownMenuTrigger>
+                                      <DropdownMenuContent align="end">
+                                        <DropdownMenuItem>Edit User</DropdownMenuItem>
+                                        <DropdownMenuItem className="text-destructive">Deactivate</DropdownMenuItem>
+                                      </DropdownMenuContent>
+                                    </DropdownMenu>
+                                  )}
+                                </td>
+                              </tr>
+                            );
+                          })
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </>
+            );
+          })()}
         </TabsContent>
       </Tabs>
 
