@@ -52,6 +52,41 @@ export type Database = {
           },
         ]
       }
+      agent_goals: {
+        Row: {
+          agent_id: string
+          created_at: string
+          daily_target: number
+          id: string
+          updated_at: string
+          weekly_target: number
+        }
+        Insert: {
+          agent_id: string
+          created_at?: string
+          daily_target?: number
+          id?: string
+          updated_at?: string
+          weekly_target?: number
+        }
+        Update: {
+          agent_id?: string
+          created_at?: string
+          daily_target?: number
+          id?: string
+          updated_at?: string
+          weekly_target?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "agent_goals_agent_id_fkey"
+            columns: ["agent_id"]
+            isOneToOne: true
+            referencedRelation: "agents"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       agents: {
         Row: {
           active: boolean
