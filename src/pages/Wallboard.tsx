@@ -1,18 +1,24 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { mockBookings, getLeaderboard, mockAgents } from '@/data/mockData';
+import { useBookings } from '@/contexts/BookingsContext';
+import { useAgents } from '@/contexts/AgentsContext';
+import { calculateLeaderboard } from '@/utils/dashboardCalculations';
 import { format, subDays } from 'date-fns';
 import { Trophy, TrendingUp, TrendingDown, RefreshCw, Users, Calendar, ArrowLeft, Sun, Moon } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import padsplitLogo from '@/assets/padsplit-logo.jpeg';
-import appendifyLogo from '@/assets/appendify-logo.png';
 import { useTheme } from '@/contexts/ThemeContext';
 import { Button } from '@/components/ui/button';
+import { Skeleton } from '@/components/ui/skeleton';
 
 export default function Wallboard() {
   const [time, setTime] = useState(new Date());
   const { theme, toggleTheme } = useTheme();
   const navigate = useNavigate();
+  const { bookings, isLoading: bookingsLoading } = useBookings();
+  const { agents, sites, isLoading: agentsLoading } = useAgents();
+  
+  const isLoading = bookingsLoading || agentsLoading;
   
   useEffect(() => {
     const timer = setInterval(() => setTime(new Date()), 1000);
@@ -22,23 +28,44 @@ export default function Wallboard() {
   const today = format(new Date(), 'yyyy-MM-dd');
   const yesterday = format(subDays(new Date(), 1), 'yyyy-MM-dd');
   
-  const todayBookings = mockBookings.filter(b => format(b.bookingDate, 'yyyy-MM-dd') === today);
-  const yesterdayBookings = mockBookings.filter(b => format(b.bookingDate, 'yyyy-MM-dd') === yesterday);
+  // Get site IDs from database
+  const vixicomSite = sites.find(s => s.name === 'Vixicom');
+  const padsplitSite = sites.find(s => s.name === 'PadSplit Internal');
+  
+  const todayBookings = bookings.filter(b => format(new Date(b.bookingDate), 'yyyy-MM-dd') === today);
+  const yesterdayBookings = bookings.filter(b => format(new Date(b.bookingDate), 'yyyy-MM-dd') === yesterday);
   
   const vixicomToday = todayBookings.filter(b => 
-    mockAgents.find(a => a.id === b.agentId)?.siteId === 'site-1'
+    agents.find(a => a.id === b.agentId)?.siteId === vixicomSite?.id
   ).length;
   
   const padsplitToday = todayBookings.filter(b => 
-    mockAgents.find(a => a.id === b.agentId)?.siteId === 'site-2'
+    agents.find(a => a.id === b.agentId)?.siteId === padsplitSite?.id
   ).length;
 
-  const leaderboard = getLeaderboard(mockBookings).slice(0, 10);
+  const leaderboard = calculateLeaderboard(bookings, agents).slice(0, 10);
 
   const change = todayBookings.length - yesterdayBookings.length;
   const changePercent = yesterdayBookings.length > 0 
     ? Math.round((change / yesterdayBookings.length) * 100) 
     : 0;
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-background p-6 lg:p-8">
+        <header className="flex items-center justify-between mb-8">
+          <Skeleton className="h-10 w-64" />
+          <Skeleton className="h-12 w-32" />
+        </header>
+        <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 mb-8">
+          {[...Array(4)].map((_, i) => (
+            <Skeleton key={i} className="h-40 rounded-2xl" />
+          ))}
+        </div>
+        <Skeleton className="h-96 rounded-2xl" />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-background p-6 lg:p-8">
@@ -133,49 +160,53 @@ export default function Wallboard() {
         </div>
         
         <div className="p-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
-            {leaderboard.map((entry, index) => (
-              <div
-                key={entry.agentId}
-                className={cn(
-                  "p-4 rounded-xl border transition-all",
-                  index === 0 && "bg-yellow-500/10 border-yellow-500/30",
-                  index === 1 && "bg-gray-400/10 border-gray-400/30",
-                  index === 2 && "bg-amber-600/10 border-amber-600/30",
-                  index > 2 && "bg-muted/30 border-border"
-                )}
-              >
-                <div className="flex items-center gap-3 mb-3">
-                  <div className={cn(
-                    "w-10 h-10 rounded-full flex items-center justify-center font-bold text-lg",
-                    index === 0 && "bg-yellow-500 text-yellow-950",
-                    index === 1 && "bg-gray-400 text-gray-950",
-                    index === 2 && "bg-amber-600 text-amber-950",
-                    index > 2 && "bg-muted text-muted-foreground"
-                  )}>
-                    {entry.rank}
+          {leaderboard.length === 0 ? (
+            <p className="text-center text-muted-foreground py-8">No performance data available.</p>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+              {leaderboard.map((entry, index) => (
+                <div
+                  key={entry.agentId}
+                  className={cn(
+                    "p-4 rounded-xl border transition-all",
+                    index === 0 && "bg-yellow-500/10 border-yellow-500/30",
+                    index === 1 && "bg-gray-400/10 border-gray-400/30",
+                    index === 2 && "bg-amber-600/10 border-amber-600/30",
+                    index > 2 && "bg-muted/30 border-border"
+                  )}
+                >
+                  <div className="flex items-center gap-3 mb-3">
+                    <div className={cn(
+                      "w-10 h-10 rounded-full flex items-center justify-center font-bold text-lg",
+                      index === 0 && "bg-yellow-500 text-yellow-950",
+                      index === 1 && "bg-gray-400 text-gray-950",
+                      index === 2 && "bg-amber-600 text-amber-950",
+                      index > 2 && "bg-muted text-muted-foreground"
+                    )}>
+                      {entry.rank}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-semibold text-foreground truncate">{entry.agentName}</p>
+                      <p className="text-xs text-muted-foreground">{entry.siteName}</p>
+                    </div>
                   </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="font-semibold text-foreground truncate">{entry.agentName}</p>
-                    <p className="text-xs text-muted-foreground">{entry.siteName}</p>
+                  <div className="flex items-end justify-between">
+                    <div>
+                      <p className="text-3xl font-bold text-foreground">{entry.bookings}</p>
+                      <p className="text-xs text-muted-foreground">bookings</p>
+                    </div>
+                    <div className={cn(
+                      "flex items-center gap-1 text-sm font-medium",
+                      entry.change >= 0 ? "text-success" : "text-destructive"
+                    )}>
+                      {entry.change >= 0 ? <TrendingUp className="w-4 h-4" /> : <TrendingDown className="w-4 h-4" />}
+                      {entry.change >= 0 ? '+' : ''}{entry.change}
+                    </div>
                   </div>
                 </div>
-                <div className="flex items-end justify-between">
-                  <div>
-                    <p className="text-3xl font-bold text-foreground">{entry.bookings}</p>
-                    <p className="text-xs text-muted-foreground">bookings</p>
-                  </div>
-                  <div className={cn(
-                    "flex items-center gap-1 text-sm font-medium",
-                    entry.change >= 0 ? "text-success" : "text-destructive"
-                  )}>
-                    {entry.change >= 0 ? <TrendingUp className="w-4 h-4" /> : <TrendingDown className="w-4 h-4" />}
-                    {entry.change >= 0 ? '+' : ''}{entry.change}
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 
