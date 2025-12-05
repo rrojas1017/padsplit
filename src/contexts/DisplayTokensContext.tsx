@@ -89,7 +89,6 @@ export function DisplayTokensProvider({ children }: { children: ReactNode }) {
 
       if (tokensError) {
         console.error('Error fetching tokens:', tokensError);
-        setIsLoading(false);
         return;
       }
 

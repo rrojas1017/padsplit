@@ -10,8 +10,7 @@ import {
   ChevronLeft,
   PlusCircle,
   Link2,
-  Upload,
-  GraduationCap
+  Upload
 } from 'lucide-react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
@@ -44,12 +43,6 @@ const menuItems = [
     label: 'Agent Leaderboard', 
     path: '/leaderboard',
     roles: ['super_admin', 'admin', 'supervisor'] 
-  },
-  {
-    icon: GraduationCap,
-    label: 'Coaching Hub',
-    path: '/coaching-hub',
-    roles: ['super_admin', 'admin', 'supervisor']
   },
   { 
     icon: FileText, 
