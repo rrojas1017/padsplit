@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
+import { usePageTracking } from '@/hooks/usePageTracking';
 import { Button } from '@/components/ui/button';
 import { Plus, MoreVertical, Shield, ShieldCheck, User, Crown, Loader2, Link, Pencil, Trash2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -57,6 +58,7 @@ interface UnlinkedAgent {
 }
 
 export default function UserManagement() {
+  usePageTracking('view_user_management');
   const [users, setUsers] = useState<UserWithRole[]>([]);
   const [sites, setSites] = useState<Site[]>([]);
   const [loading, setLoading] = useState(true);

@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
+import { usePageTracking } from '@/hooks/usePageTracking';
 import { LeaderboardTable } from '@/components/dashboard/LeaderboardTable';
 import { DateRangeFilter } from '@/components/dashboard/DateRangeFilter';
 import { SiteFilter } from '@/components/dashboard/SiteFilter';
@@ -9,6 +10,7 @@ import { calculateLeaderboard, DateRangeFilter as DateRangeFilterType } from '@/
 import { Skeleton } from '@/components/ui/skeleton';
 
 export default function Leaderboard() {
+  usePageTracking('view_leaderboard');
   const { bookings, isLoading: bookingsLoading } = useBookings();
   const { agents, isLoading: agentsLoading } = useAgents();
   const [dateRange, setDateRange] = useState<DateRangeFilterType>('7d');

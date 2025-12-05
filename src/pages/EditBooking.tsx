@@ -1,5 +1,6 @@
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Button } from '@/components/ui/button';
+import { usePageTracking } from '@/hooks/usePageTracking';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
@@ -30,6 +31,7 @@ const statuses: Booking['status'][] = ['Pending Move-In', 'Moved In', 'Member Re
 const commMethods: Booking['communicationMethod'][] = ['Phone', 'SMS', 'LC', 'Email'];
 
 export default function EditBooking() {
+  usePageTracking('view_edit_booking');
   const { id } = useParams<{ id: string }>();
   const { bookings, updateBooking, isLoading: bookingsLoading, refreshBookings } = useBookings();
   const { user } = useAuth();

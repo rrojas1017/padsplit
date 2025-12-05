@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { usePageTracking } from '@/hooks/usePageTracking';
 import { useBookings } from '@/contexts/BookingsContext';
 import { useAgents } from '@/contexts/AgentsContext';
 import { calculateLeaderboard } from '@/utils/dashboardCalculations';
@@ -12,6 +13,7 @@ import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 
 export default function Wallboard() {
+  usePageTracking('view_wallboard');
   const [time, setTime] = useState(new Date());
   const [lastRefresh, setLastRefresh] = useState(new Date());
   const [secondsUntilRefresh, setSecondsUntilRefresh] = useState(60);

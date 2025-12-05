@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
+import { usePageTracking } from '@/hooks/usePageTracking';
 import { supabase } from '@/integrations/supabase/client';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Button } from '@/components/ui/button';
@@ -40,6 +41,7 @@ interface MemberInsight {
 type DateRangeOption = 'last7days' | 'last30days' | 'thisMonth' | 'last3months' | 'allTime';
 
 const MemberInsights = () => {
+  usePageTracking('view_member_insights');
   const { user } = useAuth();
   const [insights, setInsights] = useState<MemberInsight[]>([]);
   const [selectedInsight, setSelectedInsight] = useState<MemberInsight | null>(null);

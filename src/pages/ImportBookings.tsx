@@ -1,6 +1,7 @@
 import { useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
+import { usePageTracking } from '@/hooks/usePageTracking';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -16,6 +17,7 @@ import { Upload, FileSpreadsheet, CheckCircle2, XCircle, AlertTriangle, Loader2,
 import { cn } from '@/lib/utils';
 
 export default function ImportBookings() {
+  usePageTracking('view_import');
   const navigate = useNavigate();
   const { toast } = useToast();
   const { agents } = useAgents();

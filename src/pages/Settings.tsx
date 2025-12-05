@@ -1,5 +1,6 @@
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Button } from '@/components/ui/button';
+import { usePageTracking } from '@/hooks/usePageTracking';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
@@ -15,6 +16,7 @@ import { ScriptList } from '@/components/ai-management/ScriptList';
 import { AutoTranscriptionSettings } from '@/components/ai-management/AutoTranscriptionSettings';
 
 export default function Settings() {
+  usePageTracking('view_settings');
   const { theme, toggleTheme } = useTheme();
   const { hasRole } = useAuth();
   

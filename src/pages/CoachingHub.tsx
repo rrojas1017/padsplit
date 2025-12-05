@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
+import { usePageTracking } from '@/hooks/usePageTracking';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
@@ -45,6 +46,7 @@ const RATING_COLORS = {
 };
 
 export default function CoachingHub() {
+  usePageTracking('view_coaching_hub');
   const { bookings } = useBookings();
   const { agents } = useAgents();
   const { user } = useAuth();
