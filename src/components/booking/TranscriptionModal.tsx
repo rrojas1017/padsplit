@@ -7,6 +7,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/component
 import { Loader2, ChevronDown, ChevronUp, Mic, AlertCircle, CheckCircle2, Clock, TrendingUp, MessageSquare, Target, AlertTriangle, Lightbulb, Smile, Meh, Frown, Star, Award, ThumbsUp, GraduationCap } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
+import { useAuth } from '@/contexts/AuthContext';
 import { Booking, CallKeyPoints, AgentFeedback } from '@/types';
 
 interface TranscriptionModalProps {
@@ -22,6 +23,7 @@ export function TranscriptionModal({ booking, isOpen, onClose, onTranscriptionCo
   const [showFullTranscript, setShowFullTranscript] = useState(false);
   const [currentStatus, setCurrentStatus] = useState(booking.transcriptionStatus);
   const { toast } = useToast();
+  const { user } = useAuth();
 
   // Real-time subscription for status updates
   useEffect(() => {
@@ -142,7 +144,23 @@ export function TranscriptionModal({ booking, isOpen, onClose, onTranscriptionCo
   const agentFeedback = booking.agentFeedback as AgentFeedback | null;
   const isProcessing = currentStatus === 'processing' || isTranscribing;
   const hasTranscription = currentStatus === 'completed' && booking.callSummary;
-  const showRegenerateButton = hasTranscription && !agentFeedback && !isRegenerating;
+  
+  // Only supervisors, admins, and super_admins can regenerate coaching
+  const canRegenerateCoaching = user && ['super_admin', 'admin', 'supervisor'].includes(user.role);
+  const showRegenerateButton = hasTranscription && !agentFeedback && !isRegenerating && canRegenerateCoaching;
+  
+  // Debug logging
+  console.log('TranscriptionModal Debug:', {
+    bookingId: booking.id,
+    memberName: booking.memberName,
+    currentStatus,
+    callSummary: !!booking.callSummary,
+    agentFeedback: booking.agentFeedback,
+    hasTranscription,
+    userRole: user?.role,
+    canRegenerateCoaching,
+    showRegenerateButton
+  });
 
   const formatDuration = (seconds?: number) => {
     if (!seconds) return null;

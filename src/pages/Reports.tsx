@@ -654,8 +654,12 @@ export default function Reports() {
                         {/* Transcription Status Icon */}
                         {booking.kixieLink && (
                           <button
-                            onClick={() => {
-                              setSelectedBooking(booking);
+                            onClick={async () => {
+                              // Force refresh bookings to get latest data before opening modal
+                              await refreshBookings();
+                              // Find the updated booking from refreshed data
+                              const updatedBooking = bookings.find(b => b.id === booking.id);
+                              setSelectedBooking(updatedBooking || booking);
                               setShowTranscriptModal(true);
                             }}
                             title={
