@@ -93,7 +93,7 @@ export default function AuditLog() {
           <table className="w-full">
             <thead>
               <tr className="border-b border-border bg-muted/30">
-                <th className="text-left py-3 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Timestamp</th>
+                <th className="text-left py-3 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Timestamp (EST)</th>
                 <th className="text-left py-3 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">User</th>
                 <th className="text-left py-3 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Action</th>
                 <th className="text-left py-3 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Resource</th>
@@ -111,7 +111,7 @@ export default function AuditLog() {
                 logs.map((log) => (
                   <tr key={log.id} className="hover:bg-muted/30 transition-colors">
                     <td className="py-3 px-4 text-sm text-foreground">
-                      {format(new Date(log.created_at), 'MMM d, yyyy HH:mm:ss')}
+                      {format(new Date(log.created_at), 'MMM d, yyyy HH:mm:ss')} EST
                     </td>
                     <td className="py-3 px-4 text-sm font-medium text-foreground">
                       {log.user_name || 'Unknown'}
