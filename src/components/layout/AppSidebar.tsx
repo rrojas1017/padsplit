@@ -12,7 +12,8 @@ import {
   Link2,
   Upload,
   GraduationCap,
-  Activity
+  Activity,
+  Lightbulb
 } from 'lucide-react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
@@ -63,6 +64,12 @@ const menuItems = [
     label: 'Coaching Hub', 
     path: '/coaching-hub',
     roles: ['super_admin', 'admin', 'supervisor'] 
+  },
+  {
+    icon: Lightbulb,
+    label: 'Member Insights',
+    path: '/member-insights',
+    roles: ['super_admin', 'admin']
   },
   {
     icon: Users, 
