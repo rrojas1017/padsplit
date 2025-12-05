@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
-import { Loader2, ChevronDown, ChevronUp, Mic, AlertCircle, CheckCircle2, Clock, TrendingUp, MessageSquare, Target, AlertTriangle, Lightbulb, Smile, Meh, Frown, Star, Award, ThumbsUp, GraduationCap } from 'lucide-react';
+import { Loader2, ChevronDown, ChevronUp, Mic, AlertCircle, CheckCircle2, Clock, TrendingUp, MessageSquare, Target, AlertTriangle, Lightbulb, Smile, Meh, Frown, Star, Award, ThumbsUp, GraduationCap, RefreshCw } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/contexts/AuthContext';
@@ -20,6 +20,7 @@ interface TranscriptionModalProps {
 export function TranscriptionModal({ booking, isOpen, onClose, onTranscriptionComplete }: TranscriptionModalProps) {
   const [isTranscribing, setIsTranscribing] = useState(false);
   const [isRegenerating, setIsRegenerating] = useState(false);
+  const [isReanalyzing, setIsReanalyzing] = useState(false);
   const [showFullTranscript, setShowFullTranscript] = useState(false);
   const [currentStatus, setCurrentStatus] = useState(booking.transcriptionStatus);
   const { toast } = useToast();
@@ -140,27 +141,70 @@ export function TranscriptionModal({ booking, isOpen, onClose, onTranscriptionCo
     }
   };
 
+  const handleReanalyzeCall = async () => {
+    setIsReanalyzing(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('reanalyze-call', {
+        body: { bookingId: booking.id }
+      });
+
+      if (error) throw error;
+
+      if (data?.success) {
+        toast({
+          title: "Call Re-Analyzed",
+          description: "Call insights and coaching have been regenerated with improved AI extraction.",
+        });
+        onTranscriptionComplete(); // Refresh booking data
+      } else {
+        throw new Error(data?.error || 'Failed to re-analyze call');
+      }
+    } catch (error) {
+      console.error('Re-analyze call error:', error);
+      toast({
+        title: "Failed to Re-Analyze",
+        description: error instanceof Error ? error.message : "An error occurred",
+        variant: "destructive",
+      });
+    } finally {
+      setIsReanalyzing(false);
+    }
+  };
+
+  // Check if analysis appears incomplete (signs of failed/partial AI extraction)
+  const hasIncompleteAnalysis = () => {
+    if (!hasTranscription) return false;
+    
+    const summary = booking.callSummary || '';
+    const kp = keyPoints;
+    
+    // Check for parsing failure message
+    if (summary.includes('parsing failed')) return true;
+    
+    // Check if summary is suspiciously short for a completed call
+    if (summary.length < 50 && booking.callDurationSeconds && booking.callDurationSeconds > 60) return true;
+    
+    // Check if all insight arrays are empty for a longer call
+    if (booking.callDurationSeconds && booking.callDurationSeconds > 120) {
+      const allEmpty = (!kp?.memberConcerns?.length && 
+                        !kp?.memberPreferences?.length && 
+                        !kp?.recommendedActions?.length && 
+                        !kp?.objections?.length);
+      if (allEmpty) return true;
+    }
+    
+    return false;
+  };
+
   const keyPoints = booking.callKeyPoints as CallKeyPoints | null;
   const agentFeedback = booking.agentFeedback as AgentFeedback | null;
   const isProcessing = currentStatus === 'processing' || isTranscribing;
   const hasTranscription = currentStatus === 'completed' && booking.callSummary;
   
-  // Only supervisors, admins, and super_admins can regenerate coaching
-  const canRegenerateCoaching = user && ['super_admin', 'admin', 'supervisor'].includes(user.role);
-  const showRegenerateButton = hasTranscription && !agentFeedback && !isRegenerating && canRegenerateCoaching;
-  
-  // Debug logging
-  console.log('TranscriptionModal Debug:', {
-    bookingId: booking.id,
-    memberName: booking.memberName,
-    currentStatus,
-    callSummary: !!booking.callSummary,
-    agentFeedback: booking.agentFeedback,
-    hasTranscription,
-    userRole: user?.role,
-    canRegenerateCoaching,
-    showRegenerateButton
-  });
+  // Only supervisors, admins, and super_admins can regenerate coaching or re-analyze
+  const canManageAnalysis = user && ['super_admin', 'admin', 'supervisor'].includes(user.role);
+  const showRegenerateButton = hasTranscription && !agentFeedback && !isRegenerating && !isReanalyzing && canManageAnalysis;
+  const showReanalyzeButton = hasTranscription && hasIncompleteAnalysis() && !isReanalyzing && !isRegenerating && canManageAnalysis;
 
   const formatDuration = (seconds?: number) => {
     if (!seconds) return null;
@@ -299,6 +343,35 @@ export function TranscriptionModal({ booking, isOpen, onClose, onTranscriptionCo
                   {booking.callSummary || keyPoints?.summary}
                 </p>
               </div>
+
+              {/* Re-Analyze Button - shows when analysis appears incomplete */}
+              {showReanalyzeButton && (
+                <div className="flex items-center gap-3 p-4 bg-warning/5 rounded-lg border border-warning/20">
+                  <RefreshCw className="h-5 w-5 text-warning" />
+                  <div className="flex-1">
+                    <p className="text-sm font-medium">Incomplete Analysis Detected</p>
+                    <p className="text-xs text-muted-foreground">Some insights may be missing. Re-analyze to extract more data.</p>
+                  </div>
+                  <Button 
+                    onClick={handleReanalyzeCall} 
+                    disabled={isReanalyzing}
+                    size="sm"
+                    variant="outline"
+                  >
+                    {isReanalyzing ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Analyzing...
+                      </>
+                    ) : (
+                      <>
+                        <RefreshCw className="mr-2 h-4 w-4" />
+                        Re-Analyze Call
+                      </>
+                    )}
+                  </Button>
+                </div>
+              )}
 
               {/* Regenerate Coaching Button - shows when transcription complete but no feedback */}
               {showRegenerateButton && (
