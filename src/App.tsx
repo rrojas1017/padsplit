@@ -30,6 +30,7 @@ import Settings from "./pages/Settings";
 import ImportBookings from "./pages/ImportBookings";
 import CoachingHub from "./pages/CoachingHub";
 import AgentStatus from "./pages/AgentStatus";
+import MemberInsights from "./pages/MemberInsights";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient(); // Initialize query client
@@ -135,6 +136,12 @@ const App = () => (
               <Route path="/agent-status" element={
                 <ProtectedRoute allowedRoles={['super_admin', 'admin', 'supervisor']}>
                   <AgentStatus />
+                </ProtectedRoute>
+              } />
+
+              <Route path="/member-insights" element={
+                <ProtectedRoute allowedRoles={['super_admin', 'admin']}>
+                  <MemberInsights />
                 </ProtectedRoute>
               } />
               

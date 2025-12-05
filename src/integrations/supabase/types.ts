@@ -514,6 +514,72 @@ export type Database = {
           },
         ]
       }
+      member_insights: {
+        Row: {
+          ai_recommendations: Json | null
+          analysis_period: string
+          created_at: string
+          created_by: string | null
+          date_range_end: string
+          date_range_start: string
+          id: string
+          market_breakdown: Json | null
+          member_journey_insights: Json | null
+          move_in_barriers: Json | null
+          objection_patterns: Json | null
+          pain_points: Json | null
+          payment_insights: Json | null
+          price_sensitivity: Json | null
+          property_preferences: Json | null
+          raw_analysis: string | null
+          sentiment_distribution: Json | null
+          total_calls_analyzed: number
+          transportation_insights: Json | null
+        }
+        Insert: {
+          ai_recommendations?: Json | null
+          analysis_period: string
+          created_at?: string
+          created_by?: string | null
+          date_range_end: string
+          date_range_start: string
+          id?: string
+          market_breakdown?: Json | null
+          member_journey_insights?: Json | null
+          move_in_barriers?: Json | null
+          objection_patterns?: Json | null
+          pain_points?: Json | null
+          payment_insights?: Json | null
+          price_sensitivity?: Json | null
+          property_preferences?: Json | null
+          raw_analysis?: string | null
+          sentiment_distribution?: Json | null
+          total_calls_analyzed?: number
+          transportation_insights?: Json | null
+        }
+        Update: {
+          ai_recommendations?: Json | null
+          analysis_period?: string
+          created_at?: string
+          created_by?: string | null
+          date_range_end?: string
+          date_range_start?: string
+          id?: string
+          market_breakdown?: Json | null
+          member_journey_insights?: Json | null
+          move_in_barriers?: Json | null
+          objection_patterns?: Json | null
+          pain_points?: Json | null
+          payment_insights?: Json | null
+          price_sensitivity?: Json | null
+          property_preferences?: Json | null
+          raw_analysis?: string | null
+          sentiment_distribution?: Json | null
+          total_calls_analyzed?: number
+          transportation_insights?: Json | null
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
           avatar_url: string | null
