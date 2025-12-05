@@ -18,6 +18,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isInitialized, setIsInitialized] = useState(false);
 
   const fetchUserData = async (supabaseUser: SupabaseUser): Promise<boolean> => {
     try {
@@ -70,6 +71,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       } finally {
         if (isMounted) {
           setIsLoading(false);
+          setIsInitialized(true);
         }
       }
     };
@@ -96,8 +98,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     );
 
-    // Handle visibility change (mobile tab resume)
+    // Handle visibility change (mobile tab resume) - only after initialization
     const handleVisibilityChange = () => {
+      // Skip if not yet initialized to prevent race conditions during app startup
+      if (!isInitialized) return;
+      
       if (document.visibilityState === 'visible') {
         supabase.auth.getSession().then(({ data: { session } }) => {
           if (session?.user) {
@@ -115,7 +120,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       subscription.unsubscribe();
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
-  }, []);
+  }, [isInitialized]);
 
   const login = async (email: string, password: string): Promise<{ success: boolean; error?: string }> => {
     try {

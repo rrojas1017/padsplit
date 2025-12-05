@@ -10,6 +10,7 @@ import { BookingsProvider } from "@/contexts/BookingsContext";
 import { AgentsProvider } from "@/contexts/AgentsContext";
 import { DisplayTokensProvider } from "@/contexts/DisplayTokensContext";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 
 import Index from "./pages/Index";
 import Login from "./pages/Login";
@@ -33,13 +34,14 @@ import NotFound from "./pages/NotFound";
 const queryClient = new QueryClient(); // Initialize query client
 
 const App = () => (
-  <QueryClientProvider client={queryClient}>
-    <ThemeProvider>
-      <AuthProvider>
-        <TooltipProvider>
-          <Toaster />
-          <Sonner />
-          <BrowserRouter>
+  <ErrorBoundary>
+    <QueryClientProvider client={queryClient}>
+      <ThemeProvider>
+        <AuthProvider>
+          <TooltipProvider>
+            <Toaster />
+            <Sonner />
+            <BrowserRouter>
             <SidebarProvider>
             <BookingsProvider>
             <AgentsProvider>
@@ -135,11 +137,12 @@ const App = () => (
             </AgentsProvider>
             </BookingsProvider>
             </SidebarProvider>
-          </BrowserRouter>
-        </TooltipProvider>
-      </AuthProvider>
-    </ThemeProvider>
-  </QueryClientProvider>
+            </BrowserRouter>
+          </TooltipProvider>
+        </AuthProvider>
+      </ThemeProvider>
+    </QueryClientProvider>
+  </ErrorBoundary>
 );
 
 export default App;
