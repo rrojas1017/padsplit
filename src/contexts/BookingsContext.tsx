@@ -2,6 +2,7 @@ import { createContext, useContext, useState, useEffect, ReactNode } from 'react
 import { Booking } from '@/types';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
+import { format } from 'date-fns';
 
 interface BookingsContextType {
   bookings: Booking[];
@@ -116,8 +117,8 @@ export function BookingsProvider({ children }: { children: ReactNode }) {
     const { data: userData } = await supabase.auth.getUser();
     
     const { error } = await supabase.from('bookings').insert({
-      move_in_date: booking.moveInDate.toISOString().split('T')[0],
-      booking_date: booking.bookingDate.toISOString().split('T')[0],
+      move_in_date: format(booking.moveInDate, 'yyyy-MM-dd'),
+      booking_date: format(booking.bookingDate, 'yyyy-MM-dd'),
       member_name: booking.memberName,
       booking_type: booking.bookingType,
       agent_id: booking.agentId,
@@ -144,8 +145,8 @@ export function BookingsProvider({ children }: { children: ReactNode }) {
   const updateBooking = async (id: string, updates: Partial<Booking>) => {
     const updateData: any = {};
     
-    if (updates.moveInDate) updateData.move_in_date = updates.moveInDate.toISOString().split('T')[0];
-    if (updates.bookingDate) updateData.booking_date = updates.bookingDate.toISOString().split('T')[0];
+    if (updates.moveInDate) updateData.move_in_date = format(updates.moveInDate, 'yyyy-MM-dd');
+    if (updates.bookingDate) updateData.booking_date = format(updates.bookingDate, 'yyyy-MM-dd');
     if (updates.memberName) updateData.member_name = updates.memberName;
     if (updates.bookingType) updateData.booking_type = updates.bookingType;
     if (updates.agentId) updateData.agent_id = updates.agentId;
