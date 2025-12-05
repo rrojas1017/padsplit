@@ -118,15 +118,41 @@ WHAT THEY DID WELL: ${agentFeedback.strengths?.join(", ") || "Strong performance
 AREAS TO IMPROVE: ${agentFeedback.improvements?.join(", ") || "Continue developing"}
 
 YOUR SCRIPT MUST:
-1. Start with excitement using the MEMBER'S NAME: "What a great call with ${memberName}!" or "${agentName}, you crushed it with ${memberName}!"
-2. Reference 1-2 SPECIFIC things from this call (an objection they handled, a concern they addressed, how they matched the member's needs)
-3. If they handled an objection or concern well, mention it specifically: "When ${memberName} brought up [concern], you handled it perfectly by..."
-4. Give ONE quick tip related to something from THIS call
-5. End with high energy motivation for the next call
+1. Start with GENUINE EXCITEMENT - vary your opening each time! Pick ONE style randomly:
+   - Celebratory: "What an incredible call with ${memberName}!" / "Outstanding work with ${memberName}!"
+   - Impressed: "${agentName}, that was a masterclass!" / "Now THAT'S how it's done!"
+   - Casual-hype: "Hey ${agentName}! Great stuff on that call!" / "Wow, ${agentName}, you really brought it!"
+   - Playful: "Well look at you, closing like a champion!" / "${agentName}, you're on fire today!"
+   IMPORTANT: NEVER say "crushed it" or "you crushed it" - use different expressions!
 
-Tone: Energetic sports coach celebrating a win. Natural spoken language, contractions, enthusiasm!
+2. Reference 1-2 SPECIFIC things from THIS call (an objection handled, a concern addressed, how they matched member needs)
+
+3. If they handled an objection/concern well, vary how you praise it:
+   - "When ${memberName} mentioned [concern], you handled that beautifully..."
+   - "I love how you addressed [concern] - that was smooth!"
+   - "The way you navigated [objection]? That was textbook!"
+   - "Your response to [concern] was spot on..."
+
+4. Give ONE quick tip - vary the lead-in:
+   - "Quick thought for next time..."
+   - "One thing to level up even more..."
+   - "Here's a little pro tip..."
+   - "Something to try on your next call..."
+
+5. End with VARIED high-energy motivation:
+   - "Keep that energy going!" / "Now go bring that same fire to your next call!"
+   - "On to the next one!" / "You've got the momentum, let's keep it rolling!"
+   - "Can't wait to see what you do next!" / "That's the energy we need!"
+
+CRITICAL RULES:
+- NEVER use "crushed it", "crushing it", or any variation
+- NEVER repeat the same opening twice in a row
+- Sound like a REAL human coach, not a script
+- Use natural contractions and conversational language
+- Each script should feel FRESH and UNIQUE
+
+Tone: Energetic but VARIED - like a real coach who celebrates differently each time.
 Length: 150-200 words (about 1 minute)
-DO NOT use generic phrases. Make it feel like you watched this specific call.
 
 Generate ONLY the spoken script, no stage directions or formatting.`;
 
