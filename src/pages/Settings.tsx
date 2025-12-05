@@ -10,6 +10,7 @@ import { Database, Bell, Moon, Sun, Upload, Key, FileText, Download, Brain, Phon
 import { generateRoleDocumentationPDF } from '@/utils/roleDocumentation';
 import { CallTypeList } from '@/components/ai-management/CallTypeList';
 import { KnowledgeList } from '@/components/ai-management/KnowledgeList';
+import { CallRulesList } from '@/components/ai-management/CallRulesList';
 
 export default function Settings() {
   const { theme, toggleTheme } = useTheme();
@@ -192,25 +193,14 @@ export default function Settings() {
 
               {/* Call Rules Section */}
               <div className="bg-card rounded-xl border border-border p-6 shadow-card">
-                <div className="flex items-center justify-between mb-6">
-                  <div className="flex items-center gap-3">
-                    <Shield className="w-5 h-5 text-accent" />
-                    <div>
-                      <h3 className="text-lg font-semibold text-foreground">Call Rules</h3>
-                      <p className="text-sm text-muted-foreground">Define evaluation criteria for each call type</p>
-                    </div>
+                <div className="flex items-center gap-3 mb-6">
+                  <Shield className="w-5 h-5 text-accent" />
+                  <div>
+                    <h3 className="text-lg font-semibold text-foreground">Call Rules</h3>
+                    <p className="text-sm text-muted-foreground">Define evaluation criteria for each call type</p>
                   </div>
-                  <Button size="sm" className="gap-2">
-                    <Shield className="w-4 h-4" />
-                    Add Rule
-                  </Button>
                 </div>
-                
-                <div className="text-center py-8 text-muted-foreground">
-                  <Shield className="w-12 h-12 mx-auto mb-3 opacity-50" />
-                  <p>No rules configured</p>
-                  <p className="text-sm">Add required, recommended, or prohibited actions for calls</p>
-                </div>
+                <CallRulesList />
               </div>
 
               {/* Script Templates Section */}
