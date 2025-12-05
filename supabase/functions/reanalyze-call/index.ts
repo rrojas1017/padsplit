@@ -7,8 +7,235 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// Improved prompt with examples and explicit instructions
-const buildAnalysisPrompt = (transcription: string) => `You are an expert at analyzing sales call transcriptions for PadSplit, a housing/rental service.
+// Types for call type configuration
+interface CallTypeConfig {
+  callType: {
+    name: string;
+    analysis_focus: string | null;
+    scoring_criteria: Record<string, number> | null;
+  } | null;
+  knowledge: Array<{
+    title: string;
+    content: string;
+    category: string;
+  }>;
+  rules: Array<{
+    rule_name: string;
+    rule_type: string;
+    rule_description: string | null;
+    ai_instruction: string | null;
+    weight: number;
+  }>;
+  script: {
+    name: string;
+    script_content: string;
+  } | null;
+}
+
+// Fetch call type configuration from database
+async function fetchCallTypeConfig(
+  supabase: any,
+  callTypeId: string | null
+): Promise<CallTypeConfig | null> {
+  if (!callTypeId) {
+    console.log('[Config] No call_type_id provided, using default prompt');
+    return null;
+  }
+
+  try {
+    // Fetch call type details
+    const { data: callType, error: callTypeError } = await supabase
+      .from('call_types')
+      .select('name, analysis_focus, scoring_criteria')
+      .eq('id', callTypeId)
+      .eq('is_active', true)
+      .maybeSingle();
+
+    if (callTypeError || !callType) {
+      console.log('[Config] Call type not found or inactive:', callTypeId);
+      return null;
+    }
+
+    // Fetch company knowledge for this call type
+    const { data: knowledge, error: knowledgeError } = await supabase
+      .from('company_knowledge')
+      .select('title, content, category')
+      .eq('is_active', true)
+      .contains('call_type_ids', [callTypeId])
+      .order('priority', { ascending: false });
+
+    if (knowledgeError) {
+      console.log('[Config] Error fetching knowledge:', knowledgeError);
+    }
+
+    // Fetch rules for this call type
+    const { data: rules, error: rulesError } = await supabase
+      .from('call_type_rules')
+      .select('rule_name, rule_type, rule_description, ai_instruction, weight')
+      .eq('call_type_id', callTypeId)
+      .eq('is_active', true)
+      .order('weight', { ascending: false });
+
+    if (rulesError) {
+      console.log('[Config] Error fetching rules:', rulesError);
+    }
+
+    // Fetch script template for this call type
+    const { data: script, error: scriptError } = await supabase
+      .from('script_templates')
+      .select('name, script_content')
+      .eq('call_type_id', callTypeId)
+      .eq('is_active', true)
+      .maybeSingle();
+
+    if (scriptError) {
+      console.log('[Config] Error fetching script:', scriptError);
+    }
+
+    console.log(`[Config] Loaded config for call type "${callType.name}":`, {
+      hasAnalysisFocus: !!callType.analysis_focus,
+      knowledgeCount: knowledge?.length || 0,
+      rulesCount: rules?.length || 0,
+      hasScript: !!script
+    });
+
+    return {
+      callType,
+      knowledge: knowledge || [],
+      rules: rules || [],
+      script: script || null
+    };
+  } catch (error) {
+    console.error('[Config] Error fetching call type config:', error);
+    return null;
+  }
+}
+
+// Build dynamic analysis prompt based on configuration
+function buildDynamicAnalysisPrompt(transcription: string, config: CallTypeConfig | null): string {
+  // Default prompt if no config
+  if (!config) {
+    return buildDefaultAnalysisPrompt(transcription);
+  }
+
+  const sections: string[] = [];
+
+  // Header with call type context
+  sections.push(`You are an expert at analyzing sales call transcriptions for PadSplit, a housing/rental service.
+This is a "${config.callType?.name || 'General'}" call type.`);
+
+  // Analysis focus from call type
+  if (config.callType?.analysis_focus) {
+    sections.push(`
+ANALYSIS FOCUS:
+${config.callType.analysis_focus}`);
+  }
+
+  // Company knowledge context
+  if (config.knowledge.length > 0) {
+    sections.push(`
+COMPANY KNOWLEDGE (use this context when analyzing):
+${config.knowledge.map(k => `
+[${k.category.toUpperCase()}] ${k.title}:
+${k.content}`).join('\n')}`);
+  }
+
+  // Evaluation rules grouped by type
+  const requiredRules = config.rules.filter(r => r.rule_type === 'required');
+  const recommendedRules = config.rules.filter(r => r.rule_type === 'recommended');
+  const prohibitedRules = config.rules.filter(r => r.rule_type === 'prohibited');
+
+  if (requiredRules.length > 0 || recommendedRules.length > 0 || prohibitedRules.length > 0) {
+    sections.push(`
+EVALUATION CRITERIA:`);
+
+    if (requiredRules.length > 0) {
+      sections.push(`
+REQUIRED (agent MUST do these - mark as improvement if missing):
+${requiredRules.map(r => `- ${r.rule_name}: ${r.ai_instruction || r.rule_description || ''}`).join('\n')}`);
+    }
+
+    if (recommendedRules.length > 0) {
+      sections.push(`
+RECOMMENDED (positive if done, note if missing):
+${recommendedRules.map(r => `- ${r.rule_name}: ${r.ai_instruction || r.rule_description || ''}`).join('\n')}`);
+    }
+
+    if (prohibitedRules.length > 0) {
+      sections.push(`
+PROHIBITED (flag as issue if detected):
+${prohibitedRules.map(r => `- ${r.rule_name}: ${r.ai_instruction || r.rule_description || ''}`).join('\n')}`);
+    }
+  }
+
+  // Script adherence if script exists
+  if (config.script) {
+    sections.push(`
+SCRIPT TEMPLATE (evaluate adherence):
+Script: "${config.script.name}"
+${config.script.script_content}
+
+Note: Agent should follow the general structure and key talking points. Minor deviations are acceptable if the conversation flows naturally.`);
+  }
+
+  // Core instructions
+  sections.push(`
+CRITICAL INSTRUCTIONS:
+1. Extract ALL relevant information, even minor mentions
+2. If the call is short or limited, still extract what you can
+3. NEVER return empty arrays if there's ANY relevant content
+4. For short calls (under 2 minutes), adapt your analysis to the available content
+5. Be specific - quote or paraphrase actual phrases from the call when possible
+6. Evaluate against the EVALUATION CRITERIA above when generating feedback
+
+TRANSCRIPTION:
+${transcription}`);
+
+  // Output format with custom scoring if defined
+  const scoringGuide = config.callType?.scoring_criteria 
+    ? `CUSTOM SCORING WEIGHTS:
+${Object.entries(config.callType.scoring_criteria).map(([key, weight]) => `- ${key}: weight ${weight}`).join('\n')}`
+    : `SCORING GUIDE (1-10):
+- 9-10: Exceptional, textbook execution
+- 7-8: Good, minor improvements possible  
+- 5-6: Average, noticeable gaps
+- 3-4: Below average, significant issues
+- 1-2: Poor, major problems`;
+
+  sections.push(`
+Return a JSON object with EXACTLY this structure (no markdown, just raw JSON):
+{
+  "summary": "A concise 2-3 sentence summary capturing the key points of this call. What was discussed? What was the outcome?",
+  "memberConcerns": ["List every concern, worry, hesitation, or question raised by the member"],
+  "memberPreferences": ["List ALL preferences mentioned: location, budget, timing, room type, amenities, etc."],
+  "recommendedActions": ["Specific follow-up actions for the agent"],
+  "objections": ["Any hesitations, pushback, or reasons the member gave for not committing"],
+  "moveInReadiness": "high | medium | low",
+  "callSentiment": "positive | neutral | negative",
+  "agentFeedback": {
+    "overallRating": "excellent | good | needs_improvement | poor",
+    "strengths": ["Specific things the agent did well, especially related to the evaluation criteria"],
+    "improvements": ["Areas to improve, especially missed required criteria or prohibited behaviors"],
+    "coachingTips": ["Actionable tips based on the evaluation criteria"],
+    "scores": {
+      "communication": 7,
+      "productKnowledge": 7,
+      "objectionHandling": 7,
+      "closingSkills": 7
+    }
+  }
+}
+
+${scoringGuide}
+
+IMPORTANT: Even for very short calls, provide meaningful analysis. Reference the evaluation criteria in your feedback.`);
+
+  return sections.join('\n');
+}
+
+// Default analysis prompt for calls without call type configuration
+function buildDefaultAnalysisPrompt(transcription: string): string {
+  return `You are an expert at analyzing sales call transcriptions for PadSplit, a housing/rental service.
 
 CRITICAL INSTRUCTIONS:
 1. Extract ALL relevant information, even minor mentions
@@ -51,11 +278,13 @@ SCORING GUIDE (1-10):
 - 1-2: Poor, major problems
 
 IMPORTANT: Even for very short calls, provide meaningful analysis. A 1-minute call checking availability still has extractable insights (member's location interest, timing, urgency level).`;
+}
 
 // Retry logic for AI calls
 async function callAIWithRetry(
   lovableApiKey: string, 
-  transcription: string, 
+  transcription: string,
+  config: CallTypeConfig | null,
   maxRetries = 2
 ): Promise<{ keyPoints: any; agentFeedback: any; summary: string }> {
   let lastError: Error | null = null;
@@ -64,7 +293,7 @@ async function callAIWithRetry(
     try {
       console.log(`[ReAnalyze] AI attempt ${attempt + 1}/${maxRetries + 1}`);
       
-      const prompt = buildAnalysisPrompt(transcription);
+      const prompt = buildDynamicAnalysisPrompt(transcription, config);
       
       const aiResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
         method: 'POST',
@@ -176,10 +405,10 @@ serve(async (req) => {
 
     console.log(`[ReAnalyze] Starting re-analysis for booking ${bookingId}`);
 
-    // Fetch the existing booking with transcription
+    // Fetch the existing booking with transcription and call_type_id
     const { data: booking, error: fetchError } = await supabase
       .from('bookings')
-      .select('id, call_transcription, transcription_status, call_duration_seconds')
+      .select('id, call_transcription, transcription_status, call_duration_seconds, call_type_id')
       .eq('id', bookingId)
       .single();
 
@@ -197,10 +426,14 @@ serve(async (req) => {
 
     console.log(`[ReAnalyze] Found transcription (${booking.call_transcription.length} chars, ${booking.call_duration_seconds}s duration)`);
 
-    // Re-analyze with improved prompt and retry logic
+    // Fetch call type configuration if available
+    const config = await fetchCallTypeConfig(supabase, booking.call_type_id);
+
+    // Re-analyze with dynamic prompt and retry logic
     const { keyPoints, agentFeedback, summary } = await callAIWithRetry(
       lovableApiKey,
-      booking.call_transcription
+      booking.call_transcription,
+      config
     );
 
     // Update the booking with new analysis
