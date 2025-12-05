@@ -6,6 +6,7 @@ import { Badge } from '@/components/ui/badge';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
+import { useAuth } from '@/contexts/AuthContext';
 import { 
   Mic, 
   Loader2, 
@@ -31,6 +32,10 @@ export function CallInsights({ booking, onTranscriptionComplete }: CallInsightsP
   const [isTranscribing, setIsTranscribing] = useState(false);
   const [isRegenerating, setIsRegenerating] = useState(false);
   const [isTranscriptionOpen, setIsTranscriptionOpen] = useState(false);
+  const { user } = useAuth();
+  
+  // Only supervisors, admins, and super_admins can regenerate coaching
+  const canRegenerateCoaching = user && ['super_admin', 'admin', 'supervisor'].includes(user.role);
 
   const handleTranscribe = async () => {
     if (!booking.kixieLink) {
@@ -291,7 +296,8 @@ export function CallInsights({ booking, onTranscriptionComplete }: CallInsightsP
           </div>
 
           {/* Regenerate Coaching Button - shows when transcription complete but no agent feedback */}
-          {booking.transcriptionStatus === 'completed' && !booking.agentFeedback && (
+          {/* Only supervisors, admins, and super_admins can generate coaching */}
+          {booking.transcriptionStatus === 'completed' && !booking.agentFeedback && canRegenerateCoaching && (
             <Card className="border-primary/30 bg-primary/5">
               <CardContent className="py-4">
                 <div className="flex items-center justify-between">
