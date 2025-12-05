@@ -29,7 +29,7 @@ import Settings from "./pages/Settings";
 import ImportBookings from "./pages/ImportBookings";
 import NotFound from "./pages/NotFound";
 
-const queryClient = new QueryClient();
+const queryClient = new QueryClient(); // Initialize query client
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
