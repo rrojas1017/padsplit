@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useRef, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { User, UserRole } from '@/types';
 import { supabase } from '@/integrations/supabase/client';
 import { Session, User as SupabaseUser } from '@supabase/supabase-js';
@@ -18,7 +18,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const isInitializedRef = useRef(false);
 
   const fetchUserData = async (supabaseUser: SupabaseUser): Promise<boolean> => {
     try {
@@ -57,7 +56,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     let isMounted = true;
 
-    // Initialize: check for existing session on page load/refresh
     const initAuth = async () => {
       try {
         const { data: { session } } = await supabase.auth.getSession();
@@ -71,14 +69,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       } finally {
         if (isMounted) {
           setIsLoading(false);
-          isInitializedRef.current = true;
         }
       }
     };
 
     initAuth();
 
-    // Listen for auth changes (sign out from other tabs, token refresh)
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       (event, session) => {
         console.log('Auth state change:', event);
@@ -90,7 +86,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         
         if (event === 'TOKEN_REFRESHED' && session?.user) {
           setSession(session);
-          // Defer to avoid Supabase deadlock
           setTimeout(() => {
             fetchUserData(session.user);
           }, 0);
@@ -98,11 +93,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     );
 
-    // Handle visibility change (mobile tab resume) - only after initialization
     const handleVisibilityChange = () => {
-      // Skip if not yet initialized to prevent race conditions during app startup
-      if (!isInitializedRef.current) return;
-      
       if (document.visibilityState === 'visible') {
         supabase.auth.getSession().then(({ data: { session } }) => {
           if (session?.user) {
@@ -137,17 +128,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return { success: false, error: 'Login failed - no user returned' };
       }
 
-      // Set session immediately
       setSession(data.session);
-
-      // Fetch user data directly - simple sequential flow
       const success = await fetchUserData(data.user);
       
       if (!success) {
         return { success: false, error: 'Failed to load user profile. Please try again.' };
       }
 
-      // Log access (fire-and-forget)
       supabase.from('access_logs').insert({
         user_id: data.user.id,
         user_name: data.user.email,
@@ -183,12 +170,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
 
       if (data.user) {
-        // Update profile with name
         await supabase.from('profiles')
           .update({ name })
           .eq('id', data.user.id);
           
-        // Assign default role (agent)
         await supabase.from('user_roles').insert({
           user_id: data.user.id,
           role: 'agent',
@@ -203,7 +188,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logout = async () => {
     if (user) {
-      // Fire-and-forget logout logging
       supabase.from('access_logs').insert({
         user_id: user.id,
         user_name: user.name,
