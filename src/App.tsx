@@ -16,6 +16,7 @@ import Login from "./pages/Login";
 import Dashboard from "./pages/Dashboard";
 import MyPerformance from "./pages/MyPerformance";
 import Leaderboard from "./pages/Leaderboard";
+import CoachingHub from "./pages/CoachingHub";
 import Reports from "./pages/Reports";
 import AddBooking from "./pages/AddBooking";
 import EditBooking from "./pages/EditBooking";
@@ -62,6 +63,12 @@ const App = () => (
               <Route path="/leaderboard" element={
                 <ProtectedRoute allowedRoles={['super_admin', 'admin', 'supervisor']}>
                   <Leaderboard />
+                </ProtectedRoute>
+              } />
+
+              <Route path="/coaching-hub" element={
+                <ProtectedRoute allowedRoles={['super_admin', 'admin', 'supervisor']}>
+                  <CoachingHub />
                 </ProtectedRoute>
               } />
               
