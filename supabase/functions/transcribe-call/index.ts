@@ -114,39 +114,49 @@ async function processTranscription(bookingId: string, kixieUrl: string) {
 
     // Step 3: Generate summary, key points, and agent feedback with Lovable AI
     console.log('[Background] Generating AI summary and agent feedback...');
-    const summaryPrompt = `You are an expert at analyzing sales call transcriptions for a housing/rental service called PadSplit. 
-    
-Analyze this call transcription and extract structured insights in JSON format.
+    const summaryPrompt = `You are an expert at analyzing sales call transcriptions for PadSplit, a housing/rental service.
+
+CRITICAL INSTRUCTIONS:
+1. Extract ALL relevant information, even minor mentions
+2. If the call is short or limited, still extract what you can
+3. NEVER return empty arrays if there's ANY relevant content
+4. For short calls (under 2 minutes), adapt your analysis to the available content
+5. Be specific - quote or paraphrase actual phrases from the call when possible
 
 TRANSCRIPTION:
 ${transcription}
 
-Return a JSON object with EXACTLY this structure (no markdown, just JSON):
+Return a JSON object with EXACTLY this structure (no markdown, just raw JSON):
 {
-  "summary": "A brief 2-3 sentence summary of the call",
-  "memberConcerns": ["Array of specific concerns or pain points mentioned by the member"],
-  "memberPreferences": ["Array of preferences mentioned (location, budget, room type, etc.)"],
-  "recommendedActions": ["Array of recommended follow-up actions for the agent"],
-  "objections": ["Array of any hesitations or objections raised"],
-  "moveInReadiness": "high" or "medium" or "low",
-  "callSentiment": "positive" or "neutral" or "negative",
+  "summary": "A concise 2-3 sentence summary capturing the key points of this call. What was discussed? What was the outcome?",
+  "memberConcerns": ["List every concern, worry, hesitation, or question raised by the member, even minor ones. Example: 'Worried about parking availability', 'Concerned about noise levels'"],
+  "memberPreferences": ["List ALL preferences mentioned: location, budget, timing, room type, amenities, etc. Example: 'Prefers ground floor', 'Budget under $800', 'Needs to move by next week'"],
+  "recommendedActions": ["Specific follow-up actions for the agent. Example: 'Send listing links for downtown properties', 'Follow up about move-in date confirmation', 'Schedule property tour'"],
+  "objections": ["Any hesitations, pushback, or reasons the member gave for not committing. Example: 'Wants to see other options first', 'Price is higher than expected'"],
+  "moveInReadiness": "high (ready to move within days, very motivated) | medium (interested but exploring options, flexible timeline) | low (just researching, no urgency)",
+  "callSentiment": "positive (member engaged, interested, good rapport) | neutral (standard business conversation) | negative (frustrated, disengaged, complaints)",
   "agentFeedback": {
-    "overallRating": "excellent" or "good" or "needs_improvement" or "poor",
-    "strengths": ["Array of things the agent did well on this call"],
-    "improvements": ["Array of specific areas where the agent could improve"],
-    "coachingTips": ["Array of actionable coaching tips for the agent based on this call"],
+    "overallRating": "excellent (exceeded expectations) | good (solid performance) | needs_improvement (missed opportunities) | poor (significant issues)",
+    "strengths": ["Specific things the agent did well. Quote exact moments when possible. Example: 'Great rapport building when discussing the member's job situation', 'Clearly explained the booking process'"],
+    "improvements": ["Specific areas to improve with examples. Example: 'Could have asked more qualifying questions about budget', 'Missed opportunity to address timeline concerns'"],
+    "coachingTips": ["Actionable tips. Example: 'Try using open-ended questions to uncover more preferences', 'When member mentions concerns, acknowledge them before moving on'"],
     "scores": {
-      "communication": 1-10 score for clarity, active listening, and rapport building,
-      "productKnowledge": 1-10 score for PadSplit knowledge and ability to answer questions,
-      "objectionHandling": 1-10 score for addressing concerns and objections effectively,
-      "closingSkills": 1-10 score for guiding the conversation toward booking/next steps
+      "communication": 7,
+      "productKnowledge": 7,
+      "objectionHandling": 7,
+      "closingSkills": 7
     }
   }
 }
 
-If a category has no relevant information, return an empty array [].
-Focus on actionable insights that will help with follow-up conversations.
-For agent feedback, be specific and constructive - mention exact phrases or moments from the call when possible.`;
+SCORING GUIDE (1-10):
+- 9-10: Exceptional, textbook execution
+- 7-8: Good, minor improvements possible  
+- 5-6: Average, noticeable gaps
+- 3-4: Below average, significant issues
+- 1-2: Poor, major problems
+
+IMPORTANT: Even for very short calls, provide meaningful analysis. A 1-minute call checking availability still has extractable insights (member's location interest, timing, urgency level).`;
 
     const aiResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
       method: 'POST',
