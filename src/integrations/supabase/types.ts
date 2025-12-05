@@ -831,7 +831,6 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      can_view_booking: { Args: { booking_agent_id: string }; Returns: boolean }
       get_agent_user_ids_for_site: {
         Args: { _site_id: string }
         Returns: string[]

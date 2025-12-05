@@ -29,6 +29,3 @@ verify_jwt = true
 
 [functions.generate-coaching-audio]
 verify_jwt = true
-
-[functions.preview-voice]
-verify_jwt = true
