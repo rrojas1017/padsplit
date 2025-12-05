@@ -8,6 +8,7 @@ import { useTheme } from '@/contexts/ThemeContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { Database, Bell, Moon, Sun, Upload, Key, FileText, Download, Brain, Phone, BookOpen, Shield, ScrollText } from 'lucide-react';
 import { generateRoleDocumentationPDF } from '@/utils/roleDocumentation';
+import { CallTypeList } from '@/components/ai-management/CallTypeList';
 
 export default function Settings() {
   const { theme, toggleTheme } = useTheme();
@@ -169,25 +170,11 @@ export default function Settings() {
             <TabsContent value="ai" className="space-y-6">
               {/* Call Types Section */}
               <div className="bg-card rounded-xl border border-border p-6 shadow-card">
-                <div className="flex items-center justify-between mb-6">
-                  <div className="flex items-center gap-3">
-                    <Phone className="w-5 h-5 text-accent" />
-                    <div>
-                      <h3 className="text-lg font-semibold text-foreground">Call Types</h3>
-                      <p className="text-sm text-muted-foreground">Define different call categories for AI analysis</p>
-                    </div>
-                  </div>
-                  <Button size="sm" className="gap-2">
-                    <Phone className="w-4 h-4" />
-                    Add Call Type
-                  </Button>
+                <div className="flex items-center gap-3 mb-6">
+                  <Phone className="w-5 h-5 text-accent" />
+                  <h3 className="text-lg font-semibold text-foreground">Call Types</h3>
                 </div>
-                
-                <div className="text-center py-8 text-muted-foreground">
-                  <Phone className="w-12 h-12 mx-auto mb-3 opacity-50" />
-                  <p>No call types configured yet</p>
-                  <p className="text-sm">The system will use default analysis settings</p>
-                </div>
+                <CallTypeList />
               </div>
 
               {/* Company Knowledge Section */}
