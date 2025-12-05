@@ -69,7 +69,8 @@ export function CoachingAudioPlayer({
         } else {
           toast.success('Coaching audio ready! 🎧');
         }
-        onAudioGenerated?.();
+        // Don't call onAudioGenerated - Supabase realtime handles updates
+        // This prevents double refresh and blank screen
       } else {
         // If regeneration failed, allow retry
         if (isRegenerate) setHasRegenerated(false);
