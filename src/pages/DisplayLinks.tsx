@@ -141,7 +141,8 @@ export default function DisplayLinks() {
   };
 
   // Calculate totals
-  const totalViews = tokens.reduce((sum, t) => sum + t.viewCount, 0);
+  const totalSessions = tokens.reduce((sum, t) => sum + t.sessionCount, 0);
+  const todaySessions = tokens.reduce((sum, t) => sum + t.todaySessions, 0);
   const totalUniqueViewers = tokens.reduce((sum, t) => sum + t.uniqueViewers, 0);
   const activeLinks = tokens.filter(t => !t.expiresAt || t.expiresAt > new Date()).length;
 
@@ -149,7 +150,7 @@ export default function DisplayLinks() {
     <DashboardLayout title="Display Links" subtitle="Generate shareable wallboard links for TVs and displays">
       <div className="space-y-6">
         {/* Stats Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
           <div className="bg-card rounded-xl border border-border p-4">
             <div className="text-sm text-muted-foreground">Total Links</div>
             <div className="text-2xl font-bold">{tokens.length}</div>
@@ -159,10 +160,17 @@ export default function DisplayLinks() {
             <div className="text-2xl font-bold text-green-500">{activeLinks}</div>
           </div>
           <div className="bg-card rounded-xl border border-border p-4">
-            <div className="text-sm text-muted-foreground">Total Views</div>
+            <div className="text-sm text-muted-foreground">Total Sessions</div>
             <div className="text-2xl font-bold flex items-center gap-2">
               <Eye className="w-5 h-5 text-muted-foreground" />
-              {totalViews}
+              {totalSessions}
+            </div>
+          </div>
+          <div className="bg-card rounded-xl border border-border p-4">
+            <div className="text-sm text-muted-foreground">Today's Sessions</div>
+            <div className="text-2xl font-bold flex items-center gap-2">
+              <Clock className="w-5 h-5 text-muted-foreground" />
+              {todaySessions}
             </div>
           </div>
           <div className="bg-card rounded-xl border border-border p-4">
@@ -284,8 +292,8 @@ export default function DisplayLinks() {
                   <TableHead>Name</TableHead>
                   <TableHead>Created By</TableHead>
                   <TableHead>Site Filter</TableHead>
-                  <TableHead className="text-center">Views</TableHead>
-                  <TableHead className="text-center">Unique</TableHead>
+                  <TableHead className="text-center">Sessions</TableHead>
+                  <TableHead className="text-center">Today</TableHead>
                   <TableHead>Device</TableHead>
                   <TableHead>Last Viewed</TableHead>
                   <TableHead>Expires</TableHead>
@@ -315,13 +323,13 @@ export default function DisplayLinks() {
                       <TableCell className="text-center">
                         <Badge variant="secondary" className="gap-1">
                           <Eye className="w-3 h-3" />
-                          {token.viewCount}
+                          {token.sessionCount}
                         </Badge>
                       </TableCell>
                       <TableCell className="text-center">
                         <Badge variant="outline" className="gap-1">
-                          <Users className="w-3 h-3" />
-                          {token.uniqueViewers}
+                          <Clock className="w-3 h-3" />
+                          {token.todaySessions}
                         </Badge>
                       </TableCell>
                       <TableCell>
@@ -402,10 +410,14 @@ export default function DisplayLinks() {
             {detailToken && (
               <div className="space-y-6">
                 {/* Summary Stats */}
-                <div className="grid grid-cols-3 gap-4">
+                <div className="grid grid-cols-4 gap-4">
                   <div className="bg-muted/50 rounded-lg p-3 text-center">
-                    <div className="text-2xl font-bold">{detailToken.viewCount}</div>
-                    <div className="text-xs text-muted-foreground">Total Views</div>
+                    <div className="text-2xl font-bold">{detailToken.sessionCount}</div>
+                    <div className="text-xs text-muted-foreground">Total Sessions</div>
+                  </div>
+                  <div className="bg-muted/50 rounded-lg p-3 text-center">
+                    <div className="text-2xl font-bold">{detailToken.todaySessions}</div>
+                    <div className="text-xs text-muted-foreground">Today's Sessions</div>
                   </div>
                   <div className="bg-muted/50 rounded-lg p-3 text-center">
                     <div className="text-2xl font-bold">{detailToken.uniqueViewers}</div>
