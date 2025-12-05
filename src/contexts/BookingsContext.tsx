@@ -66,6 +66,7 @@ export function BookingsProvider({ children }: { children: ReactNode }) {
         // Coaching audio fields
         coachingAudioUrl: b.coaching_audio_url || undefined,
         coachingAudioGeneratedAt: b.coaching_audio_generated_at ? new Date(b.coaching_audio_generated_at) : undefined,
+        coachingAudioRegeneratedAt: b.coaching_audio_regenerated_at ? new Date(b.coaching_audio_regenerated_at) : undefined,
       }));
 
       setBookings(transformedBookings);
