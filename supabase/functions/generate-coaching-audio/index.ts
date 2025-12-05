@@ -26,7 +26,10 @@ serve(async (req) => {
   }
 
   try {
-    const { bookingId, isRegenerate } = await req.json();
+    const body = await req.json();
+    const { bookingId, isRegenerate } = body;
+    
+    console.log("Received request:", { bookingId, isRegenerate, body });
 
     if (!bookingId) {
       throw new Error("Booking ID is required");
@@ -206,9 +209,12 @@ Generate ONLY the spoken script, no stage directions or formatting.`;
     };
     
     // If this is a regeneration, mark it so regenerate button disappears
-    if (isRegenerate) {
+    if (isRegenerate === true) {
+      console.log("Setting coaching_audio_regenerated_at timestamp for regeneration");
       updatePayload.coaching_audio_regenerated_at = new Date().toISOString();
     }
+    
+    console.log("Update payload:", JSON.stringify(updatePayload).substring(0, 200) + "...");
     
     const { error: updateError } = await supabase
       .from("bookings")
@@ -220,7 +226,7 @@ Generate ONLY the spoken script, no stage directions or formatting.`;
       throw new Error("Failed to save coaching audio");
     }
 
-    console.log("Coaching audio generated and saved successfully");
+    console.log("Coaching audio generated and saved successfully, isRegenerate:", isRegenerate);
 
     return new Response(
       JSON.stringify({

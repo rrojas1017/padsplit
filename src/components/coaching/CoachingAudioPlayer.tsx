@@ -35,37 +35,50 @@ export function CoachingAudioPlayer({
   }, [audioUrl]);
 
   const handleGenerateAudio = async (isRegenerate = false) => {
+    if (isGenerating) return; // Prevent double-clicks
+    
     setIsGenerating(true);
+    
+    // For regeneration: pause audio but DON'T clear URL to prevent flash
     if (isRegenerate) {
-      setCurrentAudioUrl(null);
       if (audioRef.current) {
         audioRef.current.pause();
         setIsPlaying(false);
         setProgress(0);
       }
+      // Immediately hide regenerate button to prevent double-clicks
+      setHasRegenerated(true);
       toast.info('Regenerating with personalized feedback...');
     }
+    
     try {
+      console.log('Calling generate-coaching-audio with:', { bookingId, isRegenerate });
+      
       const { data, error } = await supabase.functions.invoke('generate-coaching-audio', {
         body: { bookingId, isRegenerate },
       });
+
+      console.log('Response from generate-coaching-audio:', { data, error });
 
       if (error) throw error;
 
       if (data?.success && data?.audioUrl) {
         setCurrentAudioUrl(data.audioUrl);
         if (isRegenerate) {
-          setHasRegenerated(true); // Hide regenerate button immediately
           toast.success('Personalized coaching updated! ✨');
         } else {
           toast.success('Coaching audio ready! 🎧');
         }
         onAudioGenerated?.();
       } else {
+        // If regeneration failed, allow retry
+        if (isRegenerate) setHasRegenerated(false);
         throw new Error(data?.error || 'Failed to generate audio');
       }
     } catch (error) {
       console.error('Audio generation error:', error);
+      // If regeneration failed, allow retry
+      if (isRegenerate) setHasRegenerated(false);
       toast.error(error instanceof Error ? error.message : 'Failed to generate coaching audio');
     } finally {
       setIsGenerating(false);
