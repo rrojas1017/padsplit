@@ -7,13 +7,14 @@ import { Switch } from '@/components/ui/switch';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useAuth } from '@/contexts/AuthContext';
-import { Database, Bell, Moon, Sun, Upload, Key, FileText, Download, Brain, Phone, BookOpen, Shield, ScrollText, Zap } from 'lucide-react';
+import { Database, Bell, Moon, Sun, Upload, Key, FileText, Download, Brain, Phone, BookOpen, Shield, ScrollText, Zap, Mic } from 'lucide-react';
 import { generateRoleDocumentationPDF } from '@/utils/roleDocumentation';
 import { CallTypeList } from '@/components/ai-management/CallTypeList';
 import { KnowledgeList } from '@/components/ai-management/KnowledgeList';
 import { CallRulesList } from '@/components/ai-management/CallRulesList';
 import { ScriptList } from '@/components/ai-management/ScriptList';
 import { AutoTranscriptionSettings } from '@/components/ai-management/AutoTranscriptionSettings';
+import { VoiceCoachingSettings } from '@/components/ai-management/VoiceCoachingSettings';
 
 export default function Settings() {
   usePageTracking('view_settings');
@@ -176,6 +177,9 @@ export default function Settings() {
             <TabsContent value="ai" className="space-y-6">
               {/* Auto-Transcription Settings */}
               <AutoTranscriptionSettings />
+
+              {/* Voice Coaching Settings */}
+              <VoiceCoachingSettings />
 
               {/* Call Types Section */}
               <div className="bg-card rounded-xl border border-border p-6 shadow-card">
