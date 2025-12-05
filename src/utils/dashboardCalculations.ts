@@ -40,11 +40,13 @@ const getBookingsBySite = (bookings: Booking[], agents: Agent[], siteName: strin
   return bookings.filter(b => siteAgentIds.includes(b.agentId));
 };
 
-export type DateRangeFilter = 'today' | 'yesterday' | '7d' | '30d' | 'month';
+export type DateRangeFilter = 'today' | 'yesterday' | '7d' | '30d' | 'month' | 'all';
 
 export const getDateRangeFromFilter = (filter: DateRangeFilter): { start: Date; end: Date } => {
   const today = startOfDay(new Date());
   switch (filter) {
+    case 'all':
+      return { start: new Date('2020-01-01'), end: today };
     case 'yesterday':
       return { start: subDays(today, 1), end: subDays(today, 1) };
     case '7d':
