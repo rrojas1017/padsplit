@@ -9,6 +9,7 @@ import { Progress } from '@/components/ui/progress';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { useToast } from '@/hooks/use-toast';
 import { useAgents } from '@/contexts/AgentsContext';
+import { supabase } from '@/integrations/supabase/client';
 import { useBookings } from '@/contexts/BookingsContext';
 import { parseExcelFile, ParsedBooking, ParseResult, SheetInfo } from '@/utils/excelParser';
 import { Upload, FileSpreadsheet, CheckCircle2, XCircle, AlertTriangle, Loader2, ExternalLink } from 'lucide-react';
@@ -25,7 +26,7 @@ export default function ImportBookings() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
   const [importProgress, setImportProgress] = useState(0);
-  const [importResults, setImportResults] = useState<{ success: number; failed: number } | null>(null);
+  const [importResults, setImportResults] = useState<{ success: number; failed: number; skipped: number } | null>(null);
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -134,6 +135,7 @@ export default function ImportBookings() {
     setImportProgress(0);
     let success = 0;
     let failed = 0;
+    let skipped = 0;
 
     for (let i = 0; i < validBookings.length; i++) {
       const booking = validBookings[i];
@@ -141,6 +143,22 @@ export default function ImportBookings() {
 
       if (!agentId) {
         failed++;
+        setImportProgress(Math.round(((i + 1) / validBookings.length) * 100));
+        continue;
+      }
+
+      // Check for duplicate before inserting
+      const { data: existingBookings } = await supabase
+        .from('bookings')
+        .select('id')
+        .eq('member_name', booking.memberName)
+        .eq('agent_id', agentId)
+        .eq('booking_date', booking.bookingDate)
+        .limit(1);
+
+      if (existingBookings && existingBookings.length > 0) {
+        skipped++;
+        setImportProgress(Math.round(((i + 1) / validBookings.length) * 100));
         continue;
       }
 
@@ -172,11 +190,16 @@ export default function ImportBookings() {
     }
 
     setIsImporting(false);
-    setImportResults({ success, failed });
+    setImportResults({ success, failed, skipped });
+
+    const messages = [];
+    if (success > 0) messages.push(`${success} imported`);
+    if (skipped > 0) messages.push(`${skipped} skipped (duplicates)`);
+    if (failed > 0) messages.push(`${failed} failed`);
 
     toast({
       title: 'Import complete',
-      description: `Successfully imported ${success} bookings${failed > 0 ? `, ${failed} failed` : ''}`,
+      description: messages.join(', '),
       variant: failed > 0 ? 'destructive' : 'default',
     });
   };
@@ -336,14 +359,22 @@ export default function ImportBookings() {
 
                 {importResults && (
                   <div className="mb-6 p-4 rounded-lg bg-muted/50">
-                    <div className="flex items-center gap-4">
-                      <CheckCircle2 className="w-5 h-5 text-green-600" />
-                      <span>{importResults.success} bookings imported successfully</span>
+                    <div className="flex items-center gap-4 flex-wrap">
+                      <div className="flex items-center gap-2">
+                        <CheckCircle2 className="w-5 h-5 text-green-600" />
+                        <span>{importResults.success} imported</span>
+                      </div>
+                      {importResults.skipped > 0 && (
+                        <div className="flex items-center gap-2">
+                          <AlertTriangle className="w-5 h-5 text-amber-500" />
+                          <span>{importResults.skipped} skipped (duplicates)</span>
+                        </div>
+                      )}
                       {importResults.failed > 0 && (
-                        <>
+                        <div className="flex items-center gap-2">
                           <XCircle className="w-5 h-5 text-destructive" />
                           <span>{importResults.failed} failed</span>
-                        </>
+                        </div>
                       )}
                     </div>
                     <Button 
