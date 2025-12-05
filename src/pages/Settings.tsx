@@ -9,6 +9,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { Database, Bell, Moon, Sun, Upload, Key, FileText, Download, Brain, Phone, BookOpen, Shield, ScrollText } from 'lucide-react';
 import { generateRoleDocumentationPDF } from '@/utils/roleDocumentation';
 import { CallTypeList } from '@/components/ai-management/CallTypeList';
+import { KnowledgeList } from '@/components/ai-management/KnowledgeList';
 
 export default function Settings() {
   const { theme, toggleTheme } = useTheme();
@@ -179,25 +180,14 @@ export default function Settings() {
 
               {/* Company Knowledge Section */}
               <div className="bg-card rounded-xl border border-border p-6 shadow-card">
-                <div className="flex items-center justify-between mb-6">
-                  <div className="flex items-center gap-3">
-                    <BookOpen className="w-5 h-5 text-accent" />
-                    <div>
-                      <h3 className="text-lg font-semibold text-foreground">Company Knowledge</h3>
-                      <p className="text-sm text-muted-foreground">Add context for AI to better understand your business</p>
-                    </div>
+                <div className="flex items-center gap-3 mb-6">
+                  <BookOpen className="w-5 h-5 text-accent" />
+                  <div>
+                    <h3 className="text-lg font-semibold text-foreground">Company Knowledge</h3>
+                    <p className="text-sm text-muted-foreground">Add context for AI to better understand your business</p>
                   </div>
-                  <Button size="sm" className="gap-2">
-                    <BookOpen className="w-4 h-4" />
-                    Add Knowledge
-                  </Button>
                 </div>
-                
-                <div className="text-center py-8 text-muted-foreground">
-                  <BookOpen className="w-12 h-12 mx-auto mb-3 opacity-50" />
-                  <p>No knowledge entries added</p>
-                  <p className="text-sm">Add product info, policies, or FAQs for better AI insights</p>
-                </div>
+                <KnowledgeList />
               </div>
 
               {/* Call Rules Section */}
