@@ -159,11 +159,16 @@ Generate ONLY the spoken script, no stage directions or notes.`;
       throw new Error("Failed to generate audio from ElevenLabs");
     }
 
-    // Convert audio to base64
+    // Convert audio to base64 using chunked encoding to avoid stack overflow
     const audioArrayBuffer = await ttsResponse.arrayBuffer();
-    const audioBase64 = btoa(
-      String.fromCharCode(...new Uint8Array(audioArrayBuffer))
-    );
+    const bytes = new Uint8Array(audioArrayBuffer);
+    let binary = '';
+    const chunkSize = 8192; // Process in 8KB chunks to avoid stack overflow
+    for (let i = 0; i < bytes.length; i += chunkSize) {
+      const chunk = bytes.subarray(i, i + chunkSize);
+      binary += String.fromCharCode(...chunk);
+    }
+    const audioBase64 = btoa(binary);
 
     // Create data URL for audio
     const audioDataUrl = `data:audio/mpeg;base64,${audioBase64}`;
