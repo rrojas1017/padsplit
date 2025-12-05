@@ -37,6 +37,8 @@ interface ScreenResolution {
 
 interface DisplayTokenWithStats extends DisplayToken {
   viewCount: number;
+  sessionCount: number;
+  todaySessions: number;
   uniqueViewers: number;
   lastViewedAt: Date | null;
   createdByName: string | null;
@@ -46,6 +48,58 @@ interface DisplayTokenWithStats extends DisplayToken {
   browserStats: BrowserStats;
   topResolutions: ScreenResolution[];
   recentViews: ViewRecord[];
+}
+
+// Session threshold: 5 minutes (views within 5 min of each other from same source = same session)
+const SESSION_GAP_MS = 5 * 60 * 1000;
+
+function calculateSessions(views: ViewRecord[]): { total: number; today: number } {
+  if (views.length === 0) return { total: 0, today: 0 };
+  
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  
+  // Group views by fingerprint (IP + user_agent)
+  const fingerprints = new Map<string, ViewRecord[]>();
+  
+  for (const view of views) {
+    const fingerprint = `${view.ip_address || 'unknown'}_${view.user_agent || 'unknown'}`;
+    const existing = fingerprints.get(fingerprint) || [];
+    existing.push(view);
+    fingerprints.set(fingerprint, existing);
+  }
+  
+  let totalSessions = 0;
+  let todaySessions = 0;
+  
+  for (const [, groupViews] of fingerprints) {
+    // Sort by time ascending
+    const sorted = groupViews.sort((a, b) => 
+      new Date(a.viewed_at).getTime() - new Date(b.viewed_at).getTime()
+    );
+    
+    let sessionStart: Date | null = null;
+    let lastViewTime: Date | null = null;
+    
+    for (const view of sorted) {
+      const viewTime = new Date(view.viewed_at);
+      
+      if (!lastViewTime || viewTime.getTime() - lastViewTime.getTime() > SESSION_GAP_MS) {
+        // New session
+        totalSessions++;
+        sessionStart = viewTime;
+        
+        // Check if this session started today
+        if (sessionStart >= today) {
+          todaySessions++;
+        }
+      }
+      
+      lastViewTime = viewTime;
+    }
+  }
+  
+  return { total: totalSessions, today: todaySessions };
 }
 
 interface DisplayTokensContextType {
@@ -102,9 +156,21 @@ export function DisplayTokensProvider({ children }: { children: ReactNode }) {
         console.error('Error fetching view stats:', viewsError);
       }
 
+      // Group all views by token for session calculation
+      const viewsByToken = new Map<string, ViewRecord[]>();
+      if (viewStats) {
+        for (const view of viewStats) {
+          const existing = viewsByToken.get(view.token_id) || [];
+          existing.push(view);
+          viewsByToken.set(view.token_id, existing);
+        }
+      }
+
       // Aggregate view stats per token
       const viewStatsMap = new Map<string, {
         count: number;
+        sessionCount: number;
+        todaySessions: number;
         lastViewed: Date | null;
         uniqueIPs: Set<string>;
         deviceStats: DeviceStats;
@@ -161,8 +227,13 @@ export function DisplayTokensProvider({ children }: { children: ReactNode }) {
               resolutions.set(`${view.screen_width}x${view.screen_height}`, 1);
             }
             
+            const tokenViews = viewsByToken.get(view.token_id) || [];
+            const sessions = calculateSessions(tokenViews);
+            
             viewStatsMap.set(view.token_id, {
               count: 1,
+              sessionCount: sessions.total,
+              todaySessions: sessions.today,
               lastViewed: viewedAt,
               uniqueIPs: new Set(view.ip_address ? [view.ip_address] : []),
               deviceStats,
@@ -176,8 +247,13 @@ export function DisplayTokensProvider({ children }: { children: ReactNode }) {
 
       const transformedTokens: DisplayTokenWithStats[] = (tokensData || []).map((t: any) => {
         const stats = viewStatsMap.get(t.id);
+        const tokenViews = viewsByToken.get(t.id) || [];
+        const sessions = calculateSessions(tokenViews);
+        
         const defaultStats = {
           count: 0,
+          sessionCount: 0,
+          todaySessions: 0,
           lastViewed: null,
           uniqueIPs: new Set<string>(),
           deviceStats: { desktop: 0, mobile: 0, tablet: 0, tv: 0, unknown: 0 },
@@ -211,6 +287,8 @@ export function DisplayTokensProvider({ children }: { children: ReactNode }) {
           expiresAt: t.expires_at ? new Date(t.expires_at) : undefined,
           siteFilter: t.site_filter || undefined,
           viewCount: tokenStats.count,
+          sessionCount: sessions.total,
+          todaySessions: sessions.today,
           uniqueViewers: tokenStats.uniqueIPs.size,
           lastViewedAt: tokenStats.lastViewed,
           createdByName: t.profiles?.name || null,
