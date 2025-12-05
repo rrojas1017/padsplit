@@ -6,11 +6,13 @@ import { DateRangeFilter, DateFilterValue } from '@/components/dashboard/DateRan
 import { useAuth } from '@/contexts/AuthContext';
 import { useBookings } from '@/contexts/BookingsContext';
 import { useAgents } from '@/contexts/AgentsContext';
-import { CalendarDays, TrendingUp, Clock, CheckCircle2, Trophy, GraduationCap, ThumbsUp, Lightbulb, Star } from 'lucide-react';
+import { CalendarDays, TrendingUp, Clock, CheckCircle2, Trophy, GraduationCap, ThumbsUp, Lightbulb, Star, Headphones } from 'lucide-react';
 import { format, subDays, startOfMonth, startOfDay, endOfDay } from 'date-fns';
 import { Area, AreaChart, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { Skeleton } from '@/components/ui/skeleton';
 import { AgentFeedback } from '@/types';
+import { CoachingAudioPlayer } from '@/components/coaching/CoachingAudioPlayer';
+import { useBookings as useBookingsRefresh } from '@/contexts/BookingsContext';
 
 // Helper to get date range from filter
 function getDateRangeFromFilter(filter: DateFilterValue): { start: Date; end: Date } {
@@ -325,18 +327,30 @@ export default function MyPerformance() {
             ) : (
               periodBookings.slice(0, 5).map((booking) => (
                 <div key={booking.id} className="p-3 rounded-lg bg-muted/50 border border-border">
-                  <p className="font-medium text-foreground text-sm">{booking.memberName}</p>
-                  <div className="flex items-center justify-between mt-1">
-                    <span className="text-xs text-muted-foreground">
-                      {booking.marketCity}, {booking.marketState}
-                    </span>
-                    <span className={`text-xs px-2 py-0.5 rounded-full ${
-                      booking.status === 'Moved In' ? 'bg-success/20 text-success' :
-                      booking.status === 'Pending Move-In' ? 'bg-warning/20 text-warning' :
-                      'bg-muted text-muted-foreground'
-                    }`}>
-                      {booking.status}
-                    </span>
+                  <div className="flex items-start justify-between">
+                    <div className="flex-1">
+                      <p className="font-medium text-foreground text-sm">{booking.memberName}</p>
+                      <div className="flex items-center justify-between mt-1">
+                        <span className="text-xs text-muted-foreground">
+                          {booking.marketCity}, {booking.marketState}
+                        </span>
+                        <span className={`text-xs px-2 py-0.5 rounded-full ${
+                          booking.status === 'Moved In' ? 'bg-success/20 text-success' :
+                          booking.status === 'Pending Move-In' ? 'bg-warning/20 text-warning' :
+                          'bg-muted text-muted-foreground'
+                        }`}>
+                          {booking.status}
+                        </span>
+                      </div>
+                    </div>
+                    {booking.agentFeedback && (
+                      <CoachingAudioPlayer
+                        bookingId={booking.id}
+                        audioUrl={booking.coachingAudioUrl}
+                        variant="button"
+                        className="ml-2"
+                      />
+                    )}
                   </div>
                 </div>
               ))
@@ -344,6 +358,35 @@ export default function MyPerformance() {
           </div>
         </div>
       </div>
+
+      {/* Latest Coaching Audio - Prominent Card */}
+      {myAgent && (() => {
+        const latestWithFeedback = periodBookings.find(b => b.agentFeedback);
+        if (!latestWithFeedback) return null;
+
+        return (
+          <div className="mb-6 animate-slide-up" style={{ animationDelay: '350ms' }}>
+            <div className="bg-card rounded-xl p-6 border border-accent/30 shadow-card">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-10 h-10 rounded-full bg-accent/20 flex items-center justify-center">
+                  <Headphones className="w-5 h-5 text-accent" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-semibold text-foreground">Your Latest Coaching</h3>
+                  <p className="text-sm text-muted-foreground">
+                    {latestWithFeedback.memberName} • {latestWithFeedback.marketCity}
+                  </p>
+                </div>
+              </div>
+              <CoachingAudioPlayer
+                bookingId={latestWithFeedback.id}
+                audioUrl={latestWithFeedback.coachingAudioUrl}
+                variant="card"
+              />
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Coaching Insights Section */}
       {myAgent && (() => {

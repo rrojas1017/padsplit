@@ -7,6 +7,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/component
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { useAuth } from '@/contexts/AuthContext';
+import { CoachingAudioPlayer } from '@/components/coaching/CoachingAudioPlayer';
 import { 
   Mic, 
   Loader2, 
@@ -20,7 +21,8 @@ import {
   ListTodo,
   AlertTriangle,
   Target,
-  GraduationCap
+  GraduationCap,
+  Volume2
 } from 'lucide-react';
 
 interface CallInsightsProps {
@@ -294,6 +296,31 @@ export function CallInsights({ booking, onTranscriptionComplete }: CallInsightsP
               </Card>
             )}
           </div>
+
+          {/* Coaching Audio Player - shows when agent feedback exists */}
+          {booking.agentFeedback && (
+            <Card className="border-accent/30 bg-gradient-to-r from-accent/10 to-accent/5">
+              <CardContent className="py-4">
+                <div className="flex items-center gap-3 mb-3">
+                  <Volume2 className="h-5 w-5 text-accent" />
+                  <div>
+                    <p className="text-sm font-medium">Personalized Audio Coaching</p>
+                    <p className="text-xs text-muted-foreground">
+                      {booking.coachingAudioUrl 
+                        ? 'Listen to your motivational feedback!' 
+                        : 'Get an enthusiastic audio summary of your performance'}
+                    </p>
+                  </div>
+                </div>
+                <CoachingAudioPlayer
+                  bookingId={booking.id}
+                  audioUrl={booking.coachingAudioUrl}
+                  onAudioGenerated={onTranscriptionComplete}
+                  variant="card"
+                />
+              </CardContent>
+            </Card>
+          )}
 
           {/* Regenerate Coaching Button - shows when transcription complete but no agent feedback */}
           {/* Only supervisors, admins, and super_admins can generate coaching */}

@@ -26,3 +26,6 @@ verify_jwt = true
 
 [functions.analyze-member-insights]
 verify_jwt = true
+
+[functions.generate-coaching-audio]
+verify_jwt = true
