@@ -193,11 +193,22 @@ export const calculateLeaderboard = (
     const pending = agentBookingsList.filter(b => b.status === 'Pending Move-In').length;
     const rejected = agentBookingsList.filter(b => b.status === 'Member Rejected').length;
 
-    // Calculate change based on filter
-    const today = new Date();
-    const todayBookings = filterBookingsByDate(agentBookingsList, today).length;
-    const yesterdayBookings = filterBookingsByDate(agentBookingsList, subDays(today, 1)).length;
-    const change = todayBookings - yesterdayBookings;
+    // Calculate change: current period vs previous equivalent period
+    const periodDays = Math.max(1, Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1);
+    const prevEnd = subDays(start, 1);
+    const prevStart = subDays(prevEnd, periodDays - 1);
+
+    // Current period bookings count (from agentBookingsList which is already filtered)
+    const currentPeriodBookings = agentBookingsList.length;
+
+    // Previous period bookings for this agent
+    const previousPeriodBookings = filterBookingsByDateRange(
+      bookings.filter(b => b.agentId === agent.id), 
+      prevStart, 
+      prevEnd
+    ).length;
+
+    const change = currentPeriodBookings - previousPeriodBookings;
 
     leaderboardData.push({
       rank: 0,
@@ -220,8 +231,6 @@ export const calculateLeaderboard = (
   });
 
   return agentsWithBookings;
-
-  return leaderboardData;
 };
 
 export const calculateMarketData = (
