@@ -18,6 +18,7 @@ interface TranscriptionModalProps {
 
 export function TranscriptionModal({ booking, isOpen, onClose, onTranscriptionComplete }: TranscriptionModalProps) {
   const [isTranscribing, setIsTranscribing] = useState(false);
+  const [isRegenerating, setIsRegenerating] = useState(false);
   const [showFullTranscript, setShowFullTranscript] = useState(false);
   const [currentStatus, setCurrentStatus] = useState(booking.transcriptionStatus);
   const { toast } = useToast();
@@ -107,10 +108,41 @@ export function TranscriptionModal({ booking, isOpen, onClose, onTranscriptionCo
     }
   };
 
+  const handleRegenerateCoaching = async () => {
+    setIsRegenerating(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('regenerate-coaching', {
+        body: { bookingId: booking.id }
+      });
+
+      if (error) throw error;
+
+      if (data?.success) {
+        toast({
+          title: "Coaching Regenerated",
+          description: "Agent feedback has been updated.",
+        });
+        onTranscriptionComplete(); // Refresh booking data
+      } else {
+        throw new Error(data?.error || 'Failed to regenerate coaching');
+      }
+    } catch (error) {
+      console.error('Regenerate coaching error:', error);
+      toast({
+        title: "Failed to Regenerate Coaching",
+        description: error instanceof Error ? error.message : "An error occurred",
+        variant: "destructive",
+      });
+    } finally {
+      setIsRegenerating(false);
+    }
+  };
+
   const keyPoints = booking.callKeyPoints as CallKeyPoints | null;
   const agentFeedback = booking.agentFeedback as AgentFeedback | null;
   const isProcessing = currentStatus === 'processing' || isTranscribing;
   const hasTranscription = currentStatus === 'completed' && booking.callSummary;
+  const showRegenerateButton = hasTranscription && !agentFeedback && !isRegenerating;
 
   const formatDuration = (seconds?: number) => {
     if (!seconds) return null;
@@ -249,6 +281,34 @@ export function TranscriptionModal({ booking, isOpen, onClose, onTranscriptionCo
                   {booking.callSummary || keyPoints?.summary}
                 </p>
               </div>
+
+              {/* Regenerate Coaching Button - shows when transcription complete but no feedback */}
+              {showRegenerateButton && (
+                <div className="flex items-center gap-3 p-4 bg-primary/5 rounded-lg border border-primary/20">
+                  <GraduationCap className="h-5 w-5 text-primary" />
+                  <div className="flex-1">
+                    <p className="text-sm font-medium">Coaching Insights Missing</p>
+                    <p className="text-xs text-muted-foreground">This call was transcribed before coaching analysis was available.</p>
+                  </div>
+                  <Button 
+                    onClick={handleRegenerateCoaching} 
+                    disabled={isRegenerating}
+                    size="sm"
+                  >
+                    {isRegenerating ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Generating...
+                      </>
+                    ) : (
+                      <>
+                        <GraduationCap className="mr-2 h-4 w-4" />
+                        Generate Coaching
+                      </>
+                    )}
+                  </Button>
+                </div>
+              )}
 
               {/* Key Insights Grid */}
               <div className="grid md:grid-cols-2 gap-4">
