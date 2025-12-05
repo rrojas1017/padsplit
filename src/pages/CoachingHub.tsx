@@ -16,7 +16,8 @@ import {
   getCommonImprovements,
   getAgentCoachingStats,
   getAgentDetailedFeedback,
-  calculateScoresTrend
+  calculateScoresTrend,
+  calculateAgentScoresTrend
 } from '@/utils/coachingCalculations';
 import { 
   PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend,
@@ -91,6 +92,11 @@ export default function CoachingHub() {
   const selectedAgentFeedback = useMemo(() => {
     if (!selectedAgentId) return [];
     return getAgentDetailedFeedback(dateFilteredBookings, selectedAgentId);
+  }, [selectedAgentId, dateFilteredBookings]);
+
+  const selectedAgentTrendData = useMemo(() => {
+    if (!selectedAgentId) return [];
+    return calculateAgentScoresTrend(dateFilteredBookings, selectedAgentId);
   }, [selectedAgentId, dateFilteredBookings]);
 
   const pieData = [
@@ -420,6 +426,76 @@ export default function CoachingHub() {
                     <p className="text-xs text-muted-foreground">Closing Skills</p>
                   </div>
                 </div>
+
+                {/* Agent Performance Trend */}
+                {selectedAgentTrendData.length > 1 && (
+                  <div>
+                    <h4 className="font-medium text-foreground mb-2 flex items-center gap-2">
+                      <TrendingUp className="w-4 h-4 text-primary" /> Performance Trend
+                    </h4>
+                    <div className="h-[200px] bg-muted/30 rounded-lg p-2">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <LineChart data={selectedAgentTrendData} margin={{ top: 5, right: 10, left: -10, bottom: 5 }}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
+                          <XAxis 
+                            dataKey="dateLabel" 
+                            tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 10 }}
+                            axisLine={{ stroke: 'hsl(var(--border))' }}
+                            tickLine={false}
+                          />
+                          <YAxis 
+                            domain={[0, 10]} 
+                            tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 10 }}
+                            axisLine={{ stroke: 'hsl(var(--border))' }}
+                            tickLine={false}
+                          />
+                          <Tooltip 
+                            contentStyle={{ 
+                              backgroundColor: 'hsl(var(--card))', 
+                              border: '1px solid hsl(var(--border))',
+                              borderRadius: '8px',
+                              fontSize: '12px'
+                            }}
+                            labelStyle={{ color: 'hsl(var(--foreground))' }}
+                            formatter={(value: number, name: string) => [value.toFixed(1), name]}
+                          />
+                          <Line 
+                            type="monotone" 
+                            dataKey="communication" 
+                            name="Communication" 
+                            stroke="hsl(210, 100%, 50%)" 
+                            strokeWidth={2}
+                            dot={{ fill: 'hsl(210, 100%, 50%)', strokeWidth: 0, r: 2 }}
+                          />
+                          <Line 
+                            type="monotone" 
+                            dataKey="productKnowledge" 
+                            name="Product Knowledge" 
+                            stroke="hsl(142, 76%, 36%)" 
+                            strokeWidth={2}
+                            dot={{ fill: 'hsl(142, 76%, 36%)', strokeWidth: 0, r: 2 }}
+                          />
+                          <Line 
+                            type="monotone" 
+                            dataKey="objectionHandling" 
+                            name="Objection Handling" 
+                            stroke="hsl(45, 93%, 47%)" 
+                            strokeWidth={2}
+                            dot={{ fill: 'hsl(45, 93%, 47%)', strokeWidth: 0, r: 2 }}
+                          />
+                          <Line 
+                            type="monotone" 
+                            dataKey="closingSkills" 
+                            name="Closing Skills" 
+                            stroke="hsl(262, 83%, 58%)" 
+                            strokeWidth={2}
+                            dot={{ fill: 'hsl(262, 83%, 58%)', strokeWidth: 0, r: 2 }}
+                          />
+                        </LineChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </div>
+                )}
 
                 {/* Strengths & Improvements */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

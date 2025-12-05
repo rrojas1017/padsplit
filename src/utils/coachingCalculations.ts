@@ -286,3 +286,8 @@ export function calculateScoresTrend(bookings: Booking[]): ScoreTrendDataPoint[]
     })
     .sort((a, b) => a.date.localeCompare(b.date));
 }
+
+export function calculateAgentScoresTrend(bookings: Booking[], agentId: string): ScoreTrendDataPoint[] {
+  const agentBookings = bookings.filter(b => b.agentId === agentId);
+  return calculateScoresTrend(agentBookings);
+}
