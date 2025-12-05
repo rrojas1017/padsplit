@@ -93,23 +93,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     );
 
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible') {
-        supabase.auth.getSession().then(({ data: { session } }) => {
-          if (session?.user) {
-            setSession(session);
-            fetchUserData(session.user);
-          }
-        });
-      }
-    };
-
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-
     return () => {
       isMounted = false;
       subscription.unsubscribe();
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
   }, []);
 
