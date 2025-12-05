@@ -30,7 +30,8 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { useDisplayTokens } from '@/contexts/DisplayTokensContext';
 import { useAgents } from '@/contexts/AgentsContext';
-import { PlusCircle, Copy, Trash2, CalendarIcon, ExternalLink, Eye, RefreshCw } from 'lucide-react';
+import { useAuth } from '@/contexts/AuthContext';
+import { PlusCircle, Copy, Trash2, CalendarIcon, ExternalLink, Eye, RefreshCw, Monitor, Smartphone, Tablet, Tv, Users, BarChart3, Globe, Clock } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 import { format, formatDistanceToNow } from 'date-fns';
 import { cn } from '@/lib/utils';
@@ -45,17 +46,30 @@ const getBaseUrl = () => {
   return window.location.origin;
 };
 
+const DeviceIcon = ({ type }: { type: string }) => {
+  switch (type) {
+    case 'mobile': return <Smartphone className="w-4 h-4" />;
+    case 'tablet': return <Tablet className="w-4 h-4" />;
+    case 'tv': return <Tv className="w-4 h-4" />;
+    default: return <Monitor className="w-4 h-4" />;
+  }
+};
+
 export default function DisplayLinks() {
   const { tokens, addToken, deleteToken, refreshTokens, isLoading } = useDisplayTokens();
   const { sites } = useAgents();
+  const { user } = useAuth();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [detailToken, setDetailToken] = useState<typeof tokens[0] | null>(null);
   
   // Form state
   const [name, setName] = useState('');
   const [siteFilter, setSiteFilter] = useState<string>('');
   const [expiresAt, setExpiresAt] = useState<Date | undefined>();
+
+  const isSuperAdmin = user?.role === 'super_admin';
 
   const resetForm = () => {
     setName('');
@@ -128,13 +142,14 @@ export default function DisplayLinks() {
 
   // Calculate totals
   const totalViews = tokens.reduce((sum, t) => sum + t.viewCount, 0);
+  const totalUniqueViewers = tokens.reduce((sum, t) => sum + t.uniqueViewers, 0);
   const activeLinks = tokens.filter(t => !t.expiresAt || t.expiresAt > new Date()).length;
 
   return (
     <DashboardLayout title="Display Links" subtitle="Generate shareable wallboard links for TVs and displays">
       <div className="space-y-6">
         {/* Stats Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <div className="bg-card rounded-xl border border-border p-4">
             <div className="text-sm text-muted-foreground">Total Links</div>
             <div className="text-2xl font-bold">{tokens.length}</div>
@@ -148,6 +163,13 @@ export default function DisplayLinks() {
             <div className="text-2xl font-bold flex items-center gap-2">
               <Eye className="w-5 h-5 text-muted-foreground" />
               {totalViews}
+            </div>
+          </div>
+          <div className="bg-card rounded-xl border border-border p-4">
+            <div className="text-sm text-muted-foreground">Unique Viewers</div>
+            <div className="text-2xl font-bold flex items-center gap-2">
+              <Users className="w-5 h-5 text-muted-foreground" />
+              {totalUniqueViewers}
             </div>
           </div>
         </div>
@@ -263,8 +285,9 @@ export default function DisplayLinks() {
                   <TableHead>Created By</TableHead>
                   <TableHead>Site Filter</TableHead>
                   <TableHead className="text-center">Views</TableHead>
+                  <TableHead className="text-center">Unique</TableHead>
+                  <TableHead>Device</TableHead>
                   <TableHead>Last Viewed</TableHead>
-                  <TableHead>Created</TableHead>
                   <TableHead>Expires</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
@@ -295,6 +318,18 @@ export default function DisplayLinks() {
                           {token.viewCount}
                         </Badge>
                       </TableCell>
+                      <TableCell className="text-center">
+                        <Badge variant="outline" className="gap-1">
+                          <Users className="w-3 h-3" />
+                          {token.uniqueViewers}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-1 text-muted-foreground">
+                          <DeviceIcon type={token.primaryDevice} />
+                          <span className="text-xs capitalize">{token.primaryDevice}</span>
+                        </div>
+                      </TableCell>
                       <TableCell>
                         {token.lastViewedAt ? (
                           <span className="text-sm text-muted-foreground">
@@ -304,12 +339,21 @@ export default function DisplayLinks() {
                           <span className="text-sm text-muted-foreground">Never</span>
                         )}
                       </TableCell>
-                      <TableCell>{format(token.createdAt, 'MMM d, yyyy')}</TableCell>
                       <TableCell>
                         {token.expiresAt ? format(token.expiresAt, 'MMM d, yyyy') : 'Never'}
                       </TableCell>
                       <TableCell className="text-right">
-                        <div className="flex justify-end gap-2">
+                        <div className="flex justify-end gap-1">
+                          {isSuperAdmin && (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => setDetailToken(token)}
+                              title="View details"
+                            >
+                              <BarChart3 className="w-4 h-4" />
+                            </Button>
+                          )}
                           <Button
                             variant="ghost"
                             size="icon"
@@ -344,6 +388,114 @@ export default function DisplayLinks() {
             </Table>
           </div>
         )}
+
+        {/* Detail Modal */}
+        <Dialog open={!!detailToken} onOpenChange={(open) => !open && setDetailToken(null)}>
+          <DialogContent className="max-w-2xl">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <BarChart3 className="w-5 h-5" />
+                {detailToken?.name} - Usage Analytics
+              </DialogTitle>
+            </DialogHeader>
+            
+            {detailToken && (
+              <div className="space-y-6">
+                {/* Summary Stats */}
+                <div className="grid grid-cols-3 gap-4">
+                  <div className="bg-muted/50 rounded-lg p-3 text-center">
+                    <div className="text-2xl font-bold">{detailToken.viewCount}</div>
+                    <div className="text-xs text-muted-foreground">Total Views</div>
+                  </div>
+                  <div className="bg-muted/50 rounded-lg p-3 text-center">
+                    <div className="text-2xl font-bold">{detailToken.uniqueViewers}</div>
+                    <div className="text-xs text-muted-foreground">Unique Viewers</div>
+                  </div>
+                  <div className="bg-muted/50 rounded-lg p-3 text-center">
+                    <div className="text-2xl font-bold capitalize">{detailToken.primaryDevice}</div>
+                    <div className="text-xs text-muted-foreground">Primary Device</div>
+                  </div>
+                </div>
+
+                {/* Device Breakdown */}
+                <div>
+                  <h4 className="text-sm font-semibold mb-3 flex items-center gap-2">
+                    <Monitor className="w-4 h-4" /> Device Distribution
+                  </h4>
+                  <div className="grid grid-cols-5 gap-2">
+                    {Object.entries(detailToken.deviceStats).map(([device, count]) => (
+                      <div key={device} className="bg-muted/30 rounded-lg p-2 text-center">
+                        <DeviceIcon type={device} />
+                        <div className="text-lg font-semibold mt-1">{count}</div>
+                        <div className="text-xs text-muted-foreground capitalize">{device}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Browser Breakdown */}
+                <div>
+                  <h4 className="text-sm font-semibold mb-3 flex items-center gap-2">
+                    <Globe className="w-4 h-4" /> Browser Distribution
+                  </h4>
+                  <div className="flex flex-wrap gap-2">
+                    {Object.entries(detailToken.browserStats)
+                      .sort((a, b) => b[1] - a[1])
+                      .map(([browser, count]) => (
+                        <Badge key={browser} variant="outline" className="gap-1">
+                          {browser}: {count}
+                        </Badge>
+                      ))}
+                  </div>
+                </div>
+
+                {/* Screen Resolutions */}
+                {detailToken.topResolutions.length > 0 && (
+                  <div>
+                    <h4 className="text-sm font-semibold mb-3 flex items-center gap-2">
+                      <Monitor className="w-4 h-4" /> Top Screen Resolutions
+                    </h4>
+                    <div className="flex flex-wrap gap-2">
+                      {detailToken.topResolutions.map(({ resolution, count }) => (
+                        <Badge key={resolution} variant="secondary" className="gap-1">
+                          {resolution}: {count}
+                        </Badge>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Recent Activity */}
+                {detailToken.recentViews.length > 0 && (
+                  <div>
+                    <h4 className="text-sm font-semibold mb-3 flex items-center gap-2">
+                      <Clock className="w-4 h-4" /> Recent Activity
+                    </h4>
+                    <div className="max-h-48 overflow-y-auto space-y-2">
+                      {detailToken.recentViews.slice(0, 10).map((view, idx) => (
+                        <div key={idx} className="flex items-center justify-between text-sm bg-muted/30 rounded-lg px-3 py-2">
+                          <div className="flex items-center gap-3">
+                            <DeviceIcon type={view.device_type || 'desktop'} />
+                            <span className="text-muted-foreground">{view.browser || 'Unknown'}</span>
+                            <span className="text-muted-foreground">{view.operating_system || 'Unknown'}</span>
+                            {view.screen_width && view.screen_height && (
+                              <span className="text-xs text-muted-foreground">
+                                {view.screen_width}x{view.screen_height}
+                              </span>
+                            )}
+                          </div>
+                          <span className="text-xs text-muted-foreground">
+                            {formatDistanceToNow(new Date(view.viewed_at), { addSuffix: true })}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </DialogContent>
+        </Dialog>
       </div>
     </DashboardLayout>
   );

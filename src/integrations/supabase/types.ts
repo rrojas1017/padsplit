@@ -236,22 +236,46 @@ export type Database = {
       }
       display_token_views: {
         Row: {
+          browser: string | null
+          device_type: string | null
           id: string
           ip_address: string | null
+          language: string | null
+          operating_system: string | null
+          referrer: string | null
+          screen_height: number | null
+          screen_width: number | null
+          timezone: string | null
           token_id: string
           user_agent: string | null
           viewed_at: string
         }
         Insert: {
+          browser?: string | null
+          device_type?: string | null
           id?: string
           ip_address?: string | null
+          language?: string | null
+          operating_system?: string | null
+          referrer?: string | null
+          screen_height?: number | null
+          screen_width?: number | null
+          timezone?: string | null
           token_id: string
           user_agent?: string | null
           viewed_at?: string
         }
         Update: {
+          browser?: string | null
+          device_type?: string | null
           id?: string
           ip_address?: string | null
+          language?: string | null
+          operating_system?: string | null
+          referrer?: string | null
+          screen_height?: number | null
+          screen_width?: number | null
+          timezone?: string | null
           token_id?: string
           user_agent?: string | null
           viewed_at?: string

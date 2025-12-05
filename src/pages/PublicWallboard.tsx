@@ -41,8 +41,19 @@ export default function PublicWallboard() {
 
     try {
       console.log('Fetching wallboard data...');
+      
+      // Collect client-side context data
+      const clientContext = {
+        token,
+        screenWidth: typeof window !== 'undefined' ? window.screen.width : null,
+        screenHeight: typeof window !== 'undefined' ? window.screen.height : null,
+        referrer: typeof document !== 'undefined' ? document.referrer || null : null,
+        language: typeof navigator !== 'undefined' ? navigator.language : null,
+        timezone: typeof Intl !== 'undefined' ? Intl.DateTimeFormat().resolvedOptions().timeZone : null
+      };
+      
       const { data, error } = await supabase.functions.invoke('get-wallboard-data', {
-        body: { token }
+        body: clientContext
       });
 
       if (error) {
