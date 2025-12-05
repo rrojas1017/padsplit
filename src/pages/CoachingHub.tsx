@@ -15,9 +15,13 @@ import {
   getCommonStrengths, 
   getCommonImprovements,
   getAgentCoachingStats,
-  getAgentDetailedFeedback
+  getAgentDetailedFeedback,
+  calculateScoresTrend
 } from '@/utils/coachingCalculations';
-import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from 'recharts';
+import { 
+  PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend,
+  LineChart, Line, XAxis, YAxis, CartesianGrid
+} from 'recharts';
 import { 
   MessageSquare, 
   BookOpen, 
@@ -77,6 +81,7 @@ export default function CoachingHub() {
   const commonStrengths = useMemo(() => getCommonStrengths(dateFilteredBookings), [dateFilteredBookings]);
   const commonImprovements = useMemo(() => getCommonImprovements(dateFilteredBookings), [dateFilteredBookings]);
   const agentStats = useMemo(() => getAgentCoachingStats(dateFilteredBookings, filteredAgents), [dateFilteredBookings, filteredAgents]);
+  const scoreTrendData = useMemo(() => calculateScoresTrend(dateFilteredBookings), [dateFilteredBookings]);
 
   const selectedAgentStats = useMemo(() => {
     if (!selectedAgentId) return null;
@@ -155,6 +160,81 @@ export default function CoachingHub() {
                 </Card>
               ))}
             </div>
+
+            {/* Team Performance Trend Chart */}
+            {scoreTrendData.length > 1 && (
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <TrendingUp className="w-5 h-5 text-primary" />
+                    Team Performance Trend
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="h-[300px]">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <LineChart data={scoreTrendData} margin={{ top: 5, right: 30, left: 0, bottom: 5 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
+                        <XAxis 
+                          dataKey="dateLabel" 
+                          tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 12 }}
+                          axisLine={{ stroke: 'hsl(var(--border))' }}
+                          tickLine={false}
+                        />
+                        <YAxis 
+                          domain={[0, 10]} 
+                          tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 12 }}
+                          axisLine={{ stroke: 'hsl(var(--border))' }}
+                          tickLine={false}
+                        />
+                        <Tooltip 
+                          contentStyle={{ 
+                            backgroundColor: 'hsl(var(--card))', 
+                            border: '1px solid hsl(var(--border))',
+                            borderRadius: '8px'
+                          }}
+                          labelStyle={{ color: 'hsl(var(--foreground))' }}
+                          formatter={(value: number, name: string) => [value.toFixed(1), name]}
+                        />
+                        <Legend />
+                        <Line 
+                          type="monotone" 
+                          dataKey="communication" 
+                          name="Communication" 
+                          stroke="hsl(210, 100%, 50%)" 
+                          strokeWidth={2}
+                          dot={{ fill: 'hsl(210, 100%, 50%)', strokeWidth: 0, r: 3 }}
+                        />
+                        <Line 
+                          type="monotone" 
+                          dataKey="productKnowledge" 
+                          name="Product Knowledge" 
+                          stroke="hsl(142, 76%, 36%)" 
+                          strokeWidth={2}
+                          dot={{ fill: 'hsl(142, 76%, 36%)', strokeWidth: 0, r: 3 }}
+                        />
+                        <Line 
+                          type="monotone" 
+                          dataKey="objectionHandling" 
+                          name="Objection Handling" 
+                          stroke="hsl(45, 93%, 47%)" 
+                          strokeWidth={2}
+                          dot={{ fill: 'hsl(45, 93%, 47%)', strokeWidth: 0, r: 3 }}
+                        />
+                        <Line 
+                          type="monotone" 
+                          dataKey="closingSkills" 
+                          name="Closing Skills" 
+                          stroke="hsl(262, 83%, 58%)" 
+                          strokeWidth={2}
+                          dot={{ fill: 'hsl(262, 83%, 58%)', strokeWidth: 0, r: 3 }}
+                        />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
 
             {/* Rating Distribution & Common Patterns */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
