@@ -317,6 +317,7 @@ export function CallInsights({ booking, onTranscriptionComplete }: CallInsightsP
                   audioUrl={booking.coachingAudioUrl}
                   onAudioGenerated={onTranscriptionComplete}
                   variant="card"
+                  canRegenerate={!booking.coachingAudioRegeneratedAt}
                 />
               </CardContent>
             </Card>

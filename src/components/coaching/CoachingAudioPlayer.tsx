@@ -11,7 +11,7 @@ interface CoachingAudioPlayerProps {
   onAudioGenerated?: () => void;
   variant?: 'button' | 'inline' | 'card';
   className?: string;
-  showRegenerate?: boolean;
+  canRegenerate?: boolean; // Controls if regenerate button shows (based on one-time limit)
 }
 
 export function CoachingAudioPlayer({
@@ -20,9 +20,10 @@ export function CoachingAudioPlayer({
   onAudioGenerated,
   variant = 'button',
   className,
-  showRegenerate = true,
+  canRegenerate = false,
 }: CoachingAudioPlayerProps) {
   const [isGenerating, setIsGenerating] = useState(false);
+  const [hasRegenerated, setHasRegenerated] = useState(false); // Local state to hide button immediately
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentAudioUrl, setCurrentAudioUrl] = useState<string | null>(audioUrl || null);
   const [progress, setProgress] = useState(0);
@@ -46,14 +47,19 @@ export function CoachingAudioPlayer({
     }
     try {
       const { data, error } = await supabase.functions.invoke('generate-coaching-audio', {
-        body: { bookingId },
+        body: { bookingId, isRegenerate },
       });
 
       if (error) throw error;
 
       if (data?.success && data?.audioUrl) {
         setCurrentAudioUrl(data.audioUrl);
-        toast.success(isRegenerate ? 'New personalized coaching ready! 🎧' : 'Coaching audio ready! 🎧');
+        if (isRegenerate) {
+          setHasRegenerated(true); // Hide regenerate button immediately
+          toast.success('Personalized coaching updated! ✨');
+        } else {
+          toast.success('Coaching audio ready! 🎧');
+        }
         onAudioGenerated?.();
       } else {
         throw new Error(data?.error || 'Failed to generate audio');
@@ -65,6 +71,9 @@ export function CoachingAudioPlayer({
       setIsGenerating(false);
     }
   };
+
+  // Determine if regenerate button should show
+  const showRegenerateButton = canRegenerate && !hasRegenerated;
 
   const handlePlayPause = () => {
     if (!audioRef.current) return;
@@ -193,7 +202,7 @@ export function CoachingAudioPlayer({
                 <span className="text-xs text-muted-foreground">
                   {formatTime(duration)}
                 </span>
-                {showRegenerate && (
+                {showRegenerateButton && (
                   <button
                     onClick={() => handleGenerateAudio(true)}
                     disabled={isGenerating}
@@ -237,7 +246,7 @@ export function CoachingAudioPlayer({
           <span className="text-xs text-muted-foreground min-w-[40px]">
             {formatTime(audioRef.current?.currentTime || 0)}
           </span>
-          {showRegenerate && (
+          {showRegenerateButton && (
             <button
               onClick={() => handleGenerateAudio(true)}
               disabled={isGenerating}
@@ -274,7 +283,7 @@ export function CoachingAudioPlayer({
               </>
             )}
           </Button>
-          {showRegenerate && (
+          {showRegenerateButton && (
             <Button
               onClick={() => handleGenerateAudio(true)}
               disabled={isGenerating}

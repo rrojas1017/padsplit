@@ -26,7 +26,7 @@ serve(async (req) => {
   }
 
   try {
-    const { bookingId } = await req.json();
+    const { bookingId, isRegenerate } = await req.json();
 
     if (!bookingId) {
       throw new Error("Booking ID is required");
@@ -199,13 +199,20 @@ Generate ONLY the spoken script, no stage directions or formatting.`;
     // Create data URL for audio
     const audioDataUrl = `data:audio/mpeg;base64,${audioBase64}`;
 
-    // Step 3: Update booking with audio URL
+    // Step 3: Update booking with audio URL (and regeneration timestamp if regenerating)
+    const updatePayload: Record<string, unknown> = {
+      coaching_audio_url: audioDataUrl,
+      coaching_audio_generated_at: new Date().toISOString(),
+    };
+    
+    // If this is a regeneration, mark it so regenerate button disappears
+    if (isRegenerate) {
+      updatePayload.coaching_audio_regenerated_at = new Date().toISOString();
+    }
+    
     const { error: updateError } = await supabase
       .from("bookings")
-      .update({
-        coaching_audio_url: audioDataUrl,
-        coaching_audio_generated_at: new Date().toISOString(),
-      })
+      .update(updatePayload)
       .eq("id", bookingId);
 
     if (updateError) {

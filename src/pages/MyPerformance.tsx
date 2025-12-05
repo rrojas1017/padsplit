@@ -349,6 +349,7 @@ export default function MyPerformance() {
                         audioUrl={booking.coachingAudioUrl}
                         variant="button"
                         className="ml-2"
+                        canRegenerate={!booking.coachingAudioRegeneratedAt}
                       />
                     )}
                   </div>
@@ -382,6 +383,7 @@ export default function MyPerformance() {
                 bookingId={latestWithFeedback.id}
                 audioUrl={latestWithFeedback.coachingAudioUrl}
                 variant="card"
+                canRegenerate={!latestWithFeedback.coachingAudioRegeneratedAt}
               />
             </div>
           </div>
