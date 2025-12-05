@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
+import { usePageTracking } from '@/hooks/usePageTracking';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
@@ -24,6 +25,7 @@ interface ProfileInfo {
 const STALE_THRESHOLD_MINUTES = 2; // Consider session stale if no activity for 2 minutes
 
 export default function AgentStatus() {
+  usePageTracking('view_agent_status');
   const { user, hasRole } = useAuth();
   const { sessions, isLoading: sessionsLoading } = useAgentStatus();
   const { agents } = useAgents();

@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
+import { usePageTracking } from '@/hooks/usePageTracking';
 import { KPICard } from '@/components/dashboard/KPICard';
 import { BookingsChart } from '@/components/dashboard/BookingsChart';
 import { LeaderboardTable } from '@/components/dashboard/LeaderboardTable';
@@ -15,6 +16,7 @@ import { calculateKPIData, calculateChartData, calculateLeaderboard, calculateMa
 import { Skeleton } from '@/components/ui/skeleton';
 
 export default function Dashboard() {
+  usePageTracking('view_dashboard');
   const { user } = useAuth();
   const { bookings, isLoading: bookingsLoading } = useBookings();
   const { agents, isLoading: agentsLoading } = useAgents();

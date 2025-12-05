@@ -1,5 +1,6 @@
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { useBookings } from '@/contexts/BookingsContext';
+import { usePageTracking } from '@/hooks/usePageTracking';
 import { useAuth } from '@/contexts/AuthContext';
 import { useAgents } from '@/contexts/AgentsContext';
 import { Button } from '@/components/ui/button';
@@ -65,6 +66,7 @@ const communicationMethodOptions = [
 ];
 
 export default function Reports() {
+  usePageTracking('view_reports');
   const { bookings, refreshBookings } = useBookings();
   const { user } = useAuth();
   const { agents } = useAgents();

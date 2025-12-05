@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
+import { usePageTracking } from '@/hooks/usePageTracking';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -56,6 +57,7 @@ const DeviceIcon = ({ type }: { type: string }) => {
 };
 
 export default function DisplayLinks() {
+  usePageTracking('view_display_links');
   const { tokens, addToken, deleteToken, refreshTokens, isLoading } = useDisplayTokens();
   const { sites } = useAgents();
   const { user } = useAuth();

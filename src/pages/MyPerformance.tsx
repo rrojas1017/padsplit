@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
+import { usePageTracking } from '@/hooks/usePageTracking';
 import { KPICard } from '@/components/dashboard/KPICard';
 import { DateRangeFilter, DateFilterValue } from '@/components/dashboard/DateRangeFilter';
 import { useAuth } from '@/contexts/AuthContext';
@@ -75,6 +76,7 @@ function getFilterLabel(filter: DateFilterValue): string {
 }
 
 export default function MyPerformance() {
+  usePageTracking('view_my_performance');
   const { user } = useAuth();
   const { bookings, isLoading: bookingsLoading } = useBookings();
   const { agents, isLoading: agentsLoading } = useAgents();
