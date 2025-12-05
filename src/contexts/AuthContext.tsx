@@ -110,7 +110,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // Initialize: check for existing session on page load/refresh
     const initAuth = async () => {
       try {
-        const { data: { session } } = await supabase.auth.getSession();
+        // Add timeout for session check to prevent infinite loading on slow DB
+        const timeoutPromise = new Promise<{ data: { session: null } }>((resolve) => 
+          setTimeout(() => {
+            console.warn('Auth session check timed out after 5 seconds');
+            resolve({ data: { session: null } });
+          }, 5000)
+        );
+        
+        const sessionPromise = supabase.auth.getSession();
+        const { data: { session } } = await Promise.race([sessionPromise, timeoutPromise]);
         
         if (session?.user && isMounted) {
           setSession(session);
