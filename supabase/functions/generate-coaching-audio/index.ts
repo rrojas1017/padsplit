@@ -121,9 +121,10 @@ YOUR SCRIPT MUST:
 1. Start with GENUINE EXCITEMENT - vary your opening each time! Pick ONE style randomly:
    - Celebratory: "What an incredible call with ${memberName}!" / "Outstanding work with ${memberName}!"
    - Impressed: "${agentName}, that was a masterclass!" / "Now THAT'S how it's done!"
-   - Casual-hype: "Hey ${agentName}! Great stuff on that call!" / "Wow, ${agentName}, you really brought it!"
+   - Hype: "${agentName}, you crushed it with ${memberName}!" / "You absolutely nailed that one!"
+   - Casual: "Hey ${agentName}! Great stuff on that call!" / "Wow, ${agentName}, you really brought it!"
    - Playful: "Well look at you, closing like a champion!" / "${agentName}, you're on fire today!"
-   IMPORTANT: NEVER say "crushed it" or "you crushed it" - use different expressions!
+   IMPORTANT: Rotate through different expressions - don't use the same phrase every time!
 
 2. Reference 1-2 SPECIFIC things from THIS call (an objection handled, a concern addressed, how they matched member needs)
 
@@ -145,8 +146,8 @@ YOUR SCRIPT MUST:
    - "Can't wait to see what you do next!" / "That's the energy we need!"
 
 CRITICAL RULES:
-- NEVER use "crushed it", "crushing it", or any variation
-- NEVER repeat the same opening twice in a row
+- VARIETY IS KEY: Rotate through different expressions - avoid using the same opener repeatedly
+- Don't overuse any single phrase (including "crushed it", "nailed it", etc.) - mix it up!
 - Sound like a REAL human coach, not a script
 - Use natural contractions and conversational language
 - Each script should feel FRESH and UNIQUE
