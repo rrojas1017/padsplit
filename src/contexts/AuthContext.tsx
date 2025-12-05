@@ -114,7 +114,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         
         if (session?.user && isMounted) {
           setSession(session);
-          await fetchUserData(session.user);
+          const success = await fetchUserData(session.user);
+          
+          // Start agent session for existing logged-in users
+          if (success) {
+            const { data: roleData } = await supabase
+              .from('user_roles')
+              .select('role')
+              .eq('user_id', session.user.id)
+              .maybeSingle();
+            
+            startAgentSession(session.user.id, roleData?.role || 'agent');
+          }
         }
       } catch (error) {
         console.error('Auth init error:', error);
