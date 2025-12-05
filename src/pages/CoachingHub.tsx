@@ -7,6 +7,8 @@ import { Progress } from '@/components/ui/progress';
 import { useBookings } from '@/contexts/BookingsContext';
 import { useAgents } from '@/contexts/AgentsContext';
 import { useAuth } from '@/contexts/AuthContext';
+import { DateRangeFilter, DateFilterValue } from '@/components/dashboard/DateRangeFilter';
+import { getDateRangeFromFilter, DateRangeFilter as DateRangeFilterType } from '@/utils/dashboardCalculations';
 import { 
   calculateTeamAverageScores, 
   calculateRatingDistribution, 
@@ -27,7 +29,7 @@ import {
   User,
   Phone
 } from 'lucide-react';
-import { format } from 'date-fns';
+import { format, startOfDay } from 'date-fns';
 
 const RATING_COLORS = {
   excellent: 'hsl(var(--chart-1))',
@@ -41,6 +43,7 @@ export default function CoachingHub() {
   const { agents } = useAgents();
   const { user } = useAuth();
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
+  const [dateRange, setDateRange] = useState<DateRangeFilterType>('all');
 
   // Filter agents by site for supervisors
   const filteredAgents = useMemo(() => {
@@ -56,11 +59,24 @@ export default function CoachingHub() {
     return bookings.filter(b => agentIds.has(b.agentId));
   }, [bookings, filteredAgents]);
 
-  const teamScores = useMemo(() => calculateTeamAverageScores(filteredBookings), [filteredBookings]);
-  const ratingDistribution = useMemo(() => calculateRatingDistribution(filteredBookings), [filteredBookings]);
-  const commonStrengths = useMemo(() => getCommonStrengths(filteredBookings), [filteredBookings]);
-  const commonImprovements = useMemo(() => getCommonImprovements(filteredBookings), [filteredBookings]);
-  const agentStats = useMemo(() => getAgentCoachingStats(filteredBookings, filteredAgents), [filteredBookings, filteredAgents]);
+  // Apply date filtering
+  const dateFilteredBookings = useMemo(() => {
+    if (dateRange === 'all') return filteredBookings;
+    
+    const { start, end } = getDateRangeFromFilter(dateRange);
+    return filteredBookings.filter(b => {
+      const bookingDate = b.bookingDate instanceof Date 
+        ? startOfDay(b.bookingDate)
+        : startOfDay(new Date(b.bookingDate + 'T00:00:00'));
+      return bookingDate >= startOfDay(start) && bookingDate <= startOfDay(end);
+    });
+  }, [filteredBookings, dateRange]);
+
+  const teamScores = useMemo(() => calculateTeamAverageScores(dateFilteredBookings), [dateFilteredBookings]);
+  const ratingDistribution = useMemo(() => calculateRatingDistribution(dateFilteredBookings), [dateFilteredBookings]);
+  const commonStrengths = useMemo(() => getCommonStrengths(dateFilteredBookings), [dateFilteredBookings]);
+  const commonImprovements = useMemo(() => getCommonImprovements(dateFilteredBookings), [dateFilteredBookings]);
+  const agentStats = useMemo(() => getAgentCoachingStats(dateFilteredBookings, filteredAgents), [dateFilteredBookings, filteredAgents]);
 
   const selectedAgentStats = useMemo(() => {
     if (!selectedAgentId) return null;
@@ -69,8 +85,8 @@ export default function CoachingHub() {
 
   const selectedAgentFeedback = useMemo(() => {
     if (!selectedAgentId) return [];
-    return getAgentDetailedFeedback(filteredBookings, selectedAgentId);
-  }, [selectedAgentId, filteredBookings]);
+    return getAgentDetailedFeedback(dateFilteredBookings, selectedAgentId);
+  }, [selectedAgentId, dateFilteredBookings]);
 
   const pieData = [
     { name: 'Excellent', value: ratingDistribution.excellent, color: RATING_COLORS.excellent },
@@ -99,6 +115,18 @@ export default function CoachingHub() {
   return (
     <DashboardLayout title="Coaching Hub" subtitle="AI-powered coaching insights for your team">
       <div className="space-y-6">
+
+        {/* Header with Date Filter */}
+        <div className="flex items-center justify-between">
+          <DateRangeFilter 
+            onRangeChange={(range) => setDateRange(range as DateRangeFilterType)} 
+            defaultValue="all"
+            includeAllTime={true}
+          />
+          <div className="text-sm text-muted-foreground">
+            {teamScores.totalCalls} calls analyzed
+          </div>
+        </div>
 
         {teamScores.totalCalls === 0 ? (
           <Card>
