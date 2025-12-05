@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
@@ -6,7 +6,7 @@ import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Mic, X, Plus, Save, Loader2 } from 'lucide-react';
+import { Mic, X, Plus, Save, Loader2, Volume2, Square } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 
@@ -50,6 +50,50 @@ export function VoiceCoachingSettings() {
   const [newExpression, setNewExpression] = useState('');
   const [newEmphasize, setNewEmphasize] = useState('');
   const [newNeverMention, setNewNeverMention] = useState('');
+  const [isPreviewLoading, setIsPreviewLoading] = useState(false);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+
+  const handlePreviewVoice = async () => {
+    // If already playing, stop
+    if (isPlaying && audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current.currentTime = 0;
+      setIsPlaying(false);
+      return;
+    }
+
+    setIsPreviewLoading(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('preview-voice', {
+        body: { voice_id: settings.voice_id },
+      });
+
+      if (error) throw error;
+      if (!data?.audioUrl) throw new Error('No audio returned');
+
+      // Create audio element and play
+      const audio = new Audio(data.audioUrl);
+      audioRef.current = audio;
+      
+      audio.onended = () => {
+        setIsPlaying(false);
+      };
+      
+      audio.onerror = () => {
+        toast.error('Failed to play audio');
+        setIsPlaying(false);
+      };
+
+      await audio.play();
+      setIsPlaying(true);
+    } catch (error: any) {
+      console.error('Preview voice error:', error);
+      toast.error('Failed to preview voice');
+    } finally {
+      setIsPreviewLoading(false);
+    }
+  };
 
   useEffect(() => {
     fetchSettings();
@@ -218,26 +262,51 @@ export function VoiceCoachingSettings() {
         {/* Voice Selection */}
         <div className="space-y-2">
           <Label>Voice</Label>
-          <Select
-            value={settings.voice_id}
-            onValueChange={(value) => setSettings(prev => ({ ...prev, voice_id: value }))}
-          >
-            <SelectTrigger>
-              <SelectValue>
-                {selectedVoice ? `${selectedVoice.name} - ${selectedVoice.description}` : 'Select voice'}
-              </SelectValue>
-            </SelectTrigger>
-            <SelectContent>
-              {VOICE_OPTIONS.map((voice) => (
-                <SelectItem key={voice.id} value={voice.id}>
-                  <div>
-                    <span className="font-medium">{voice.name}</span>
-                    <span className="text-muted-foreground ml-2 text-xs">{voice.description}</span>
-                  </div>
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <div className="flex gap-2">
+            <Select
+              value={settings.voice_id}
+              onValueChange={(value) => {
+                setSettings(prev => ({ ...prev, voice_id: value }));
+                // Stop any playing audio when voice changes
+                if (audioRef.current) {
+                  audioRef.current.pause();
+                  audioRef.current.currentTime = 0;
+                  setIsPlaying(false);
+                }
+              }}
+            >
+              <SelectTrigger className="flex-1">
+                <SelectValue>
+                  {selectedVoice ? `${selectedVoice.name} - ${selectedVoice.description}` : 'Select voice'}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                {VOICE_OPTIONS.map((voice) => (
+                  <SelectItem key={voice.id} value={voice.id}>
+                    <div>
+                      <span className="font-medium">{voice.name}</span>
+                      <span className="text-muted-foreground ml-2 text-xs">{voice.description}</span>
+                    </div>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Button
+              variant="outline"
+              onClick={handlePreviewVoice}
+              disabled={isPreviewLoading}
+              className="shrink-0"
+            >
+              {isPreviewLoading ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : isPlaying ? (
+                <Square className="h-4 w-4" />
+              ) : (
+                <Volume2 className="h-4 w-4" />
+              )}
+              <span className="ml-2">{isPlaying ? 'Stop' : 'Preview'}</span>
+            </Button>
+          </div>
         </div>
 
         {/* Custom Expressions */}
