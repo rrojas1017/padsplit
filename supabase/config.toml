@@ -20,3 +20,6 @@ verify_jwt = true
 
 [functions.reanalyze-call]
 verify_jwt = true
+
+[functions.check-auto-transcription]
+verify_jwt = true

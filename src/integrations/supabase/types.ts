@@ -620,6 +620,80 @@ export type Database = {
         }
         Relationships: []
       }
+      transcription_auto_rules: {
+        Row: {
+          agent_id: string | null
+          auto_coaching: boolean
+          auto_transcribe: boolean
+          call_type_id: string | null
+          created_at: string
+          created_by: string | null
+          id: string
+          is_active: boolean
+          priority: number
+          rule_type: string
+          site_id: string | null
+          updated_at: string
+        }
+        Insert: {
+          agent_id?: string | null
+          auto_coaching?: boolean
+          auto_transcribe?: boolean
+          call_type_id?: string | null
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          is_active?: boolean
+          priority?: number
+          rule_type: string
+          site_id?: string | null
+          updated_at?: string
+        }
+        Update: {
+          agent_id?: string | null
+          auto_coaching?: boolean
+          auto_transcribe?: boolean
+          call_type_id?: string | null
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          is_active?: boolean
+          priority?: number
+          rule_type?: string
+          site_id?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "transcription_auto_rules_agent_id_fkey"
+            columns: ["agent_id"]
+            isOneToOne: false
+            referencedRelation: "agents"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "transcription_auto_rules_call_type_id_fkey"
+            columns: ["call_type_id"]
+            isOneToOne: false
+            referencedRelation: "call_types"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "transcription_auto_rules_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "transcription_auto_rules_site_id_fkey"
+            columns: ["site_id"]
+            isOneToOne: false
+            referencedRelation: "sites"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       user_roles: {
         Row: {
           id: string

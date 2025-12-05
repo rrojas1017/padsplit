@@ -6,12 +6,14 @@ import { Switch } from '@/components/ui/switch';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useAuth } from '@/contexts/AuthContext';
-import { Database, Bell, Moon, Sun, Upload, Key, FileText, Download, Brain, Phone, BookOpen, Shield, ScrollText } from 'lucide-react';
+import { Database, Bell, Moon, Sun, Upload, Key, FileText, Download, Brain, Phone, BookOpen, Shield, ScrollText, Zap } from 'lucide-react';
 import { generateRoleDocumentationPDF } from '@/utils/roleDocumentation';
 import { CallTypeList } from '@/components/ai-management/CallTypeList';
 import { KnowledgeList } from '@/components/ai-management/KnowledgeList';
 import { CallRulesList } from '@/components/ai-management/CallRulesList';
 import { ScriptList } from '@/components/ai-management/ScriptList';
+import { AutoTranscriptionSettings } from '@/components/ai-management/AutoTranscriptionSettings';
+
 export default function Settings() {
   const { theme, toggleTheme } = useTheme();
   const { hasRole } = useAuth();
@@ -170,6 +172,9 @@ export default function Settings() {
           {/* AI Management Tab - Only for Admin/Super Admin */}
           {canAccessAIManagement && (
             <TabsContent value="ai" className="space-y-6">
+              {/* Auto-Transcription Settings */}
+              <AutoTranscriptionSettings />
+
               {/* Call Types Section */}
               <div className="bg-card rounded-xl border border-border p-6 shadow-card">
                 <div className="flex items-center gap-3 mb-6">

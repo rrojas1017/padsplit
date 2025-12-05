@@ -7,7 +7,7 @@ import { format } from 'date-fns';
 interface BookingsContextType {
   bookings: Booking[];
   isLoading: boolean;
-  addBooking: (booking: Omit<Booking, 'id'>) => Promise<void>;
+  addBooking: (booking: Omit<Booking, 'id'>) => Promise<string | null>;
   updateBooking: (id: string, booking: Partial<Booking>) => Promise<void>;
   deleteBooking: (id: string) => Promise<void>;
   refreshBookings: () => Promise<void>;
@@ -113,10 +113,32 @@ export function BookingsProvider({ children }: { children: ReactNode }) {
     };
   }, [user, authLoading]);
 
-  const addBooking = async (booking: Omit<Booking, 'id'>) => {
+  const triggerAutoTranscription = async (bookingId: string) => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) return;
+
+      // Fire-and-forget - don't await, don't block
+      supabase.functions.invoke('check-auto-transcription', {
+        body: { bookingId }
+      }).then(({ error }) => {
+        if (error) {
+          console.log('[Auto-transcription] Check skipped or failed:', error.message);
+        } else {
+          console.log('[Auto-transcription] Check completed for booking:', bookingId);
+        }
+      }).catch(() => {
+        // Silently ignore errors - auto-transcription is optional
+      });
+    } catch (error) {
+      // Silently ignore errors - auto-transcription is optional
+    }
+  };
+
+  const addBooking = async (booking: Omit<Booking, 'id'>): Promise<string | null> => {
     const { data: userData } = await supabase.auth.getUser();
     
-    const { error } = await supabase.from('bookings').insert({
+    const { data, error } = await supabase.from('bookings').insert({
       move_in_date: format(booking.moveInDate, 'yyyy-MM-dd'),
       booking_date: format(booking.bookingDate, 'yyyy-MM-dd'),
       member_name: booking.memberName,
@@ -132,14 +154,22 @@ export function BookingsProvider({ children }: { children: ReactNode }) {
       admin_profile_link: booking.adminProfileLink || null,
       move_in_day_reach_out: booking.moveInDayReachOut || false,
       created_by: userData.user?.id || null,
-    });
+    }).select('id').single();
 
     if (error) {
       console.error('Error adding booking:', error);
       throw error;
     }
 
+    const bookingId = data?.id || null;
+
+    // Trigger auto-transcription check if booking has kixie link
+    if (bookingId && booking.kixieLink) {
+      triggerAutoTranscription(bookingId);
+    }
+
     await fetchBookings();
+    return bookingId;
   };
 
   const updateBooking = async (id: string, updates: Partial<Booking>) => {
@@ -168,6 +198,11 @@ export function BookingsProvider({ children }: { children: ReactNode }) {
     if (error) {
       console.error('Error updating booking:', error);
       throw error;
+    }
+
+    // Trigger auto-transcription check if kixieLink was added/updated
+    if (updates.kixieLink) {
+      triggerAutoTranscription(id);
     }
 
     await fetchBookings();
