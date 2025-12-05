@@ -27,6 +27,7 @@ import PublicWallboard from "./pages/PublicWallboard";
 import AuditLog from "./pages/AuditLog";
 import Settings from "./pages/Settings";
 import ImportBookings from "./pages/ImportBookings";
+import CoachingHub from "./pages/CoachingHub";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient(); // Initialize query client
@@ -119,6 +120,12 @@ const App = () => (
               <Route path="/import-bookings" element={
                 <ProtectedRoute allowedRoles={['super_admin', 'admin']}>
                   <ImportBookings />
+                </ProtectedRoute>
+              } />
+
+              <Route path="/coaching-hub" element={
+                <ProtectedRoute allowedRoles={['super_admin', 'admin', 'supervisor']}>
+                  <CoachingHub />
                 </ProtectedRoute>
               } />
               
