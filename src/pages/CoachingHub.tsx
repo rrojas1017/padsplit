@@ -20,9 +20,10 @@ import {
   calculateAgentScoresTrend
 } from '@/utils/coachingCalculations';
 import { 
-  PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend,
+  PieChart, Pie, Cell, ResponsiveContainer, Tooltip as RechartsTooltip, Legend,
   LineChart, Line, XAxis, YAxis, CartesianGrid
 } from 'recharts';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { 
   MessageSquare, 
   BookOpen, 
@@ -193,7 +194,7 @@ export default function CoachingHub() {
                           axisLine={{ stroke: 'hsl(var(--border))' }}
                           tickLine={false}
                         />
-                        <Tooltip 
+                        <RechartsTooltip 
                           contentStyle={{ 
                             backgroundColor: 'hsl(var(--card))', 
                             border: '1px solid hsl(var(--border))',
@@ -266,7 +267,7 @@ export default function CoachingHub() {
                             <Cell key={`cell-${index}`} fill={entry.color} />
                           ))}
                         </Pie>
-                        <Tooltip />
+                        <RechartsTooltip />
                         <Legend />
                       </PieChart>
                     </ResponsiveContainer>
@@ -291,9 +292,18 @@ export default function CoachingHub() {
                   ) : (
                     <ul className="space-y-2">
                       {commonStrengths.map((item, index) => (
-                        <li key={index} className="flex items-center justify-between text-sm">
-                          <span className="text-foreground capitalize truncate flex-1">{item.strength}</span>
-                          <Badge variant="secondary" className="ml-2">{item.count}</Badge>
+                        <li key={index} className="flex items-start justify-between text-sm gap-2">
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <span className="text-foreground capitalize line-clamp-2 flex-1 break-words cursor-help">
+                                {item.strength}
+                              </span>
+                            </TooltipTrigger>
+                            <TooltipContent side="top" className="max-w-xs">
+                              <p>{item.strength}</p>
+                            </TooltipContent>
+                          </Tooltip>
+                          <Badge variant="secondary" className="shrink-0">{item.count}</Badge>
                         </li>
                       ))}
                     </ul>
@@ -315,9 +325,18 @@ export default function CoachingHub() {
                   ) : (
                     <ul className="space-y-2">
                       {commonImprovements.map((item, index) => (
-                        <li key={index} className="flex items-center justify-between text-sm">
-                          <span className="text-foreground capitalize truncate flex-1">{item.improvement}</span>
-                          <Badge variant="outline" className="ml-2">{item.count}</Badge>
+                        <li key={index} className="flex items-start justify-between text-sm gap-2">
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <span className="text-foreground capitalize line-clamp-2 flex-1 break-words cursor-help">
+                                {item.improvement}
+                              </span>
+                            </TooltipTrigger>
+                            <TooltipContent side="top" className="max-w-xs">
+                              <p>{item.improvement}</p>
+                            </TooltipContent>
+                          </Tooltip>
+                          <Badge variant="outline" className="shrink-0">{item.count}</Badge>
                         </li>
                       ))}
                     </ul>
@@ -449,7 +468,7 @@ export default function CoachingHub() {
                             axisLine={{ stroke: 'hsl(var(--border))' }}
                             tickLine={false}
                           />
-                          <Tooltip 
+                          <RechartsTooltip 
                             contentStyle={{ 
                               backgroundColor: 'hsl(var(--card))', 
                               border: '1px solid hsl(var(--border))',
