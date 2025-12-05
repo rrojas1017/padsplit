@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
-import { Headphones, Play, Pause, Loader2, Volume2 } from 'lucide-react';
+import { Headphones, Play, Pause, Loader2, Volume2, RefreshCw } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface CoachingAudioPlayerProps {
@@ -11,6 +11,7 @@ interface CoachingAudioPlayerProps {
   onAudioGenerated?: () => void;
   variant?: 'button' | 'inline' | 'card';
   className?: string;
+  showRegenerate?: boolean;
 }
 
 export function CoachingAudioPlayer({
@@ -19,6 +20,7 @@ export function CoachingAudioPlayer({
   onAudioGenerated,
   variant = 'button',
   className,
+  showRegenerate = true,
 }: CoachingAudioPlayerProps) {
   const [isGenerating, setIsGenerating] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -31,8 +33,17 @@ export function CoachingAudioPlayer({
     setCurrentAudioUrl(audioUrl || null);
   }, [audioUrl]);
 
-  const handleGenerateAudio = async () => {
+  const handleGenerateAudio = async (isRegenerate = false) => {
     setIsGenerating(true);
+    if (isRegenerate) {
+      setCurrentAudioUrl(null);
+      if (audioRef.current) {
+        audioRef.current.pause();
+        setIsPlaying(false);
+        setProgress(0);
+      }
+      toast.info('Regenerating with personalized feedback...');
+    }
     try {
       const { data, error } = await supabase.functions.invoke('generate-coaching-audio', {
         body: { bookingId },
@@ -42,7 +53,7 @@ export function CoachingAudioPlayer({
 
       if (data?.success && data?.audioUrl) {
         setCurrentAudioUrl(data.audioUrl);
-        toast.success('Coaching audio ready! 🎧');
+        toast.success(isRegenerate ? 'New personalized coaching ready! 🎧' : 'Coaching audio ready! 🎧');
         onAudioGenerated?.();
       } else {
         throw new Error(data?.error || 'Failed to generate audio');
@@ -94,7 +105,7 @@ export function CoachingAudioPlayer({
     if (variant === 'button') {
       return (
         <Button
-          onClick={handleGenerateAudio}
+          onClick={() => handleGenerateAudio(false)}
           disabled={isGenerating}
           size="sm"
           variant="outline"
@@ -117,7 +128,7 @@ export function CoachingAudioPlayer({
 
     return (
       <div 
-        onClick={!isGenerating ? handleGenerateAudio : undefined}
+        onClick={!isGenerating ? () => handleGenerateAudio(false) : undefined}
         className={cn(
           "flex items-center gap-3 p-3 rounded-lg border border-primary/30 bg-primary/5 cursor-pointer hover:bg-primary/10 transition-colors",
           isGenerating && "cursor-wait",
@@ -160,9 +171,12 @@ export function CoachingAudioPlayer({
         <div className="flex items-center gap-4 p-4 rounded-lg border border-accent/30 bg-gradient-to-r from-accent/10 to-accent/5">
           <button
             onClick={handlePlayPause}
-            className="w-12 h-12 rounded-full bg-accent flex items-center justify-center hover:bg-accent/80 transition-colors"
+            disabled={isGenerating}
+            className="w-12 h-12 rounded-full bg-accent flex items-center justify-center hover:bg-accent/80 transition-colors disabled:opacity-50"
           >
-            {isPlaying ? (
+            {isGenerating ? (
+              <Loader2 className="h-6 w-6 text-accent-foreground animate-spin" />
+            ) : isPlaying ? (
               <Pause className="h-6 w-6 text-accent-foreground" />
             ) : (
               <Play className="h-6 w-6 text-accent-foreground ml-0.5" />
@@ -175,9 +189,21 @@ export function CoachingAudioPlayer({
                 <Volume2 className="h-4 w-4 text-accent" />
                 Your Coaching Feedback
               </span>
-              <span className="text-xs text-muted-foreground">
-                {formatTime(duration)}
-              </span>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-muted-foreground">
+                  {formatTime(duration)}
+                </span>
+                {showRegenerate && (
+                  <button
+                    onClick={() => handleGenerateAudio(true)}
+                    disabled={isGenerating}
+                    className="p-1 rounded hover:bg-accent/20 transition-colors disabled:opacity-50"
+                    title="Regenerate with personalized feedback"
+                  >
+                    <RefreshCw className={cn("h-3.5 w-3.5 text-muted-foreground hover:text-accent", isGenerating && "animate-spin")} />
+                  </button>
+                )}
+              </div>
             </div>
             <div className="w-full bg-muted rounded-full h-2">
               <div
@@ -191,9 +217,12 @@ export function CoachingAudioPlayer({
         <div className="flex items-center gap-3 p-2 rounded-lg bg-muted/50">
           <button
             onClick={handlePlayPause}
-            className="w-8 h-8 rounded-full bg-accent flex items-center justify-center hover:bg-accent/80 transition-colors"
+            disabled={isGenerating}
+            className="w-8 h-8 rounded-full bg-accent flex items-center justify-center hover:bg-accent/80 transition-colors disabled:opacity-50"
           >
-            {isPlaying ? (
+            {isGenerating ? (
+              <Loader2 className="h-4 w-4 text-accent-foreground animate-spin" />
+            ) : isPlaying ? (
               <Pause className="h-4 w-4 text-accent-foreground" />
             ) : (
               <Play className="h-4 w-4 text-accent-foreground ml-0.5" />
@@ -208,26 +237,56 @@ export function CoachingAudioPlayer({
           <span className="text-xs text-muted-foreground min-w-[40px]">
             {formatTime(audioRef.current?.currentTime || 0)}
           </span>
+          {showRegenerate && (
+            <button
+              onClick={() => handleGenerateAudio(true)}
+              disabled={isGenerating}
+              className="p-1 rounded hover:bg-muted transition-colors disabled:opacity-50"
+              title="Regenerate"
+            >
+              <RefreshCw className={cn("h-3.5 w-3.5 text-muted-foreground hover:text-foreground", isGenerating && "animate-spin")} />
+            </button>
+          )}
         </div>
       ) : (
-        <Button
-          onClick={handlePlayPause}
-          size="sm"
-          variant="outline"
-          className={cn("gap-2", isPlaying && "bg-accent/20")}
-        >
-          {isPlaying ? (
-            <>
-              <Pause className="h-4 w-4" />
-              Pause
-            </>
-          ) : (
-            <>
-              <Play className="h-4 w-4" />
-              Play Coaching
-            </>
+        <div className="flex items-center gap-2">
+          <Button
+            onClick={handlePlayPause}
+            disabled={isGenerating}
+            size="sm"
+            variant="outline"
+            className={cn("gap-2", isPlaying && "bg-accent/20")}
+          >
+            {isGenerating ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Generating...
+              </>
+            ) : isPlaying ? (
+              <>
+                <Pause className="h-4 w-4" />
+                Pause
+              </>
+            ) : (
+              <>
+                <Play className="h-4 w-4" />
+                Play Coaching
+              </>
+            )}
+          </Button>
+          {showRegenerate && (
+            <Button
+              onClick={() => handleGenerateAudio(true)}
+              disabled={isGenerating}
+              size="sm"
+              variant="ghost"
+              className="px-2"
+              title="Regenerate with personalized feedback"
+            >
+              <RefreshCw className={cn("h-4 w-4", isGenerating && "animate-spin")} />
+            </Button>
           )}
-        </Button>
+        </div>
       )}
     </div>
   );
