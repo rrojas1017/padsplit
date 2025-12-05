@@ -19,6 +19,7 @@ export default function Dashboard() {
   const { bookings, isLoading: bookingsLoading } = useBookings();
   const { agents, isLoading: agentsLoading } = useAgents();
   const [dateRange, setDateRange] = useState<DateRangeFilterType>('today');
+  const [selectedSiteId, setSelectedSiteId] = useState<string | null>(null);
 
   // Redirect agents to their performance page
   if (user?.role === 'agent') {
@@ -27,12 +28,21 @@ export default function Dashboard() {
 
   const isLoading = bookingsLoading || agentsLoading;
 
+  // Filter by selected site
+  const filteredAgents = selectedSiteId 
+    ? agents.filter(a => a.siteId === selectedSiteId)
+    : agents;
+
+  const filteredBookings = selectedSiteId
+    ? bookings.filter(b => filteredAgents.some(a => a.id === b.agentId))
+    : bookings;
+
   // Calculate real data from Supabase with date filter
-  const kpiData = calculateKPIData(bookings, agents, dateRange);
-  const chartData = calculateChartData(bookings, agents, dateRange);
-  const leaderboard = calculateLeaderboard(bookings, agents, dateRange);
-  const marketData = calculateMarketData(bookings, dateRange);
-  const insights = calculateInsightsData(bookings, agents);
+  const kpiData = calculateKPIData(filteredBookings, filteredAgents, dateRange);
+  const chartData = calculateChartData(filteredBookings, filteredAgents, dateRange);
+  const leaderboard = calculateLeaderboard(filteredBookings, filteredAgents, dateRange);
+  const marketData = calculateMarketData(filteredBookings, dateRange);
+  const insights = calculateInsightsData(filteredBookings, filteredAgents);
 
   const kpiIcons = [
     <CalendarDays className="w-5 h-5" />,
@@ -77,7 +87,7 @@ export default function Dashboard() {
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-3">
           <DateRangeFilter onRangeChange={(range) => setDateRange(range as DateRangeFilterType)} />
-          <SiteFilter />
+          <SiteFilter onSiteChange={setSelectedSiteId} />
         </div>
         <div className="text-sm text-muted-foreground">
           Last updated: <span className="text-foreground font-medium">{new Date().toLocaleTimeString()}</span>
