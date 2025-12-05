@@ -6,24 +6,6 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-interface BookingWithAgent {
-  id: string;
-  kixie_link: string | null;
-  transcription_status: string | null;
-  agent_id: string;
-  call_type_id: string | null;
-  agents: { id: string; site_id: string } | null;
-}
-
-interface BookingRaw {
-  id: string;
-  kixie_link: string | null;
-  transcription_status: string | null;
-  agent_id: string;
-  call_type_id: string | null;
-  agents: { id: string; site_id: string } | null;
-}
-
 serve(async (req) => {
   // Handle CORS preflight
   if (req.method === 'OPTIONS') {
@@ -58,7 +40,7 @@ serve(async (req) => {
         agents(id, site_id)
       `)
       .eq('id', bookingId)
-      .single();
+      .maybeSingle();
 
     if (bookingError || !booking) {
       console.log(`[check-auto-transcription] Booking not found: ${bookingId}`);
@@ -68,10 +50,18 @@ serve(async (req) => {
       );
     }
 
-    const typedBooking = booking as BookingWithAgent;
+    // Extract fields - Supabase returns agents as object for single FK
+    const bookingData = booking as unknown as {
+      id: string;
+      kixie_link: string | null;
+      transcription_status: string | null;
+      agent_id: string;
+      call_type_id: string | null;
+      agents: { id: string; site_id: string } | null;
+    };
 
     // Check if booking has kixie_link and hasn't been transcribed
-    if (!typedBooking.kixie_link) {
+    if (!bookingData.kixie_link) {
       console.log(`[check-auto-transcription] No kixie_link for booking ${bookingId}`);
       return new Response(
         JSON.stringify({ triggered: false, reason: 'No kixie_link' }),
@@ -79,8 +69,8 @@ serve(async (req) => {
       );
     }
 
-    if (typedBooking.transcription_status && typedBooking.transcription_status !== 'failed') {
-      console.log(`[check-auto-transcription] Already transcribed or processing: ${typedBooking.transcription_status}`);
+    if (bookingData.transcription_status && bookingData.transcription_status !== 'failed') {
+      console.log(`[check-auto-transcription] Already transcribed or processing: ${bookingData.transcription_status}`);
       return new Response(
         JSON.stringify({ triggered: false, reason: 'Already transcribed or processing' }),
         { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -114,15 +104,15 @@ serve(async (req) => {
     let matchedRule = null;
 
     // Check agent-specific rules first
-    const agentRule = rules.find(r => r.rule_type === 'agent' && r.agent_id === typedBooking.agent_id);
+    const agentRule = rules.find(r => r.rule_type === 'agent' && r.agent_id === bookingData.agent_id);
     if (agentRule) {
       matchedRule = agentRule;
       console.log(`[check-auto-transcription] Matched agent rule: ${agentRule.id}`);
     }
 
     // Check call_type-specific rules
-    if (!matchedRule && typedBooking.call_type_id) {
-      const callTypeRule = rules.find(r => r.rule_type === 'call_type' && r.call_type_id === typedBooking.call_type_id);
+    if (!matchedRule && bookingData.call_type_id) {
+      const callTypeRule = rules.find(r => r.rule_type === 'call_type' && r.call_type_id === bookingData.call_type_id);
       if (callTypeRule) {
         matchedRule = callTypeRule;
         console.log(`[check-auto-transcription] Matched call_type rule: ${callTypeRule.id}`);
@@ -130,8 +120,8 @@ serve(async (req) => {
     }
 
     // Check site-specific rules
-    if (!matchedRule && typedBooking.agents?.site_id) {
-      const siteRule = rules.find(r => r.rule_type === 'site' && r.site_id === typedBooking.agents?.site_id);
+    if (!matchedRule && bookingData.agents?.site_id) {
+      const siteRule = rules.find(r => r.rule_type === 'site' && r.site_id === bookingData.agents?.site_id);
       if (siteRule) {
         matchedRule = siteRule;
         console.log(`[check-auto-transcription] Matched site rule: ${siteRule.id}`);
@@ -173,8 +163,8 @@ serve(async (req) => {
         'Authorization': `Bearer ${supabaseServiceKey}`,
       },
       body: JSON.stringify({
-        bookingId: typedBooking.id,
-        kixieUrl: typedBooking.kixie_link,
+        bookingId: bookingData.id,
+        kixieUrl: bookingData.kixie_link,
       }),
     });
 
