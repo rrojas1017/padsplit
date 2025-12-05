@@ -6,6 +6,43 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+// Parse user agent to extract device info
+function parseUserAgent(ua: string | null): { deviceType: string; os: string; browser: string } {
+  if (!ua) return { deviceType: 'unknown', os: 'unknown', browser: 'unknown' };
+  
+  const uaLower = ua.toLowerCase();
+  
+  // Device type detection
+  let deviceType = 'desktop';
+  if (/mobile|android|iphone|ipod|blackberry|iemobile|opera mini/i.test(uaLower)) {
+    deviceType = 'mobile';
+  } else if (/tablet|ipad|playbook|silk/i.test(uaLower)) {
+    deviceType = 'tablet';
+  } else if (/smart-tv|smarttv|googletv|appletv|hbbtv|pov_tv|netcast/i.test(uaLower)) {
+    deviceType = 'tv';
+  }
+  
+  // OS detection
+  let os = 'unknown';
+  if (/windows nt/i.test(ua)) os = 'Windows';
+  else if (/macintosh|mac os x/i.test(ua)) os = 'macOS';
+  else if (/linux/i.test(ua) && !/android/i.test(ua)) os = 'Linux';
+  else if (/android/i.test(ua)) os = 'Android';
+  else if (/iphone|ipad|ipod/i.test(ua)) os = 'iOS';
+  else if (/chrome os/i.test(ua)) os = 'Chrome OS';
+  
+  // Browser detection
+  let browser = 'unknown';
+  if (/edg\//i.test(ua)) browser = 'Edge';
+  else if (/opr\//i.test(ua) || /opera/i.test(ua)) browser = 'Opera';
+  else if (/chrome/i.test(ua) && !/edg/i.test(ua)) browser = 'Chrome';
+  else if (/safari/i.test(ua) && !/chrome/i.test(ua)) browser = 'Safari';
+  else if (/firefox/i.test(ua)) browser = 'Firefox';
+  else if (/msie|trident/i.test(ua)) browser = 'Internet Explorer';
+  
+  return { deviceType, os, browser };
+}
+
 serve(async (req) => {
   // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
@@ -13,7 +50,7 @@ serve(async (req) => {
   }
 
   try {
-    const { token } = await req.json();
+    const { token, screenWidth, screenHeight, referrer, language, timezone } = await req.json();
     
     if (!token) {
       return new Response(
@@ -55,22 +92,34 @@ serve(async (req) => {
 
     console.log('Token validated, logging view and fetching data...');
 
-    // Log the view - fire and forget, don't block the response
+    // Parse user agent for device info
+    const userAgent = req.headers.get('user-agent') || null;
+    const { deviceType, os, browser } = parseUserAgent(userAgent);
+    
+    // Get IP address
     const ipAddress = req.headers.get('x-forwarded-for') || 
                       req.headers.get('cf-connecting-ip') || 
                       req.headers.get('x-real-ip') || 
                       null;
-    const userAgent = req.headers.get('user-agent') || null;
     
+    // Log the view with enhanced data - fire and forget
     supabase.from('display_token_views').insert({
       token_id: tokenData.id,
       ip_address: ipAddress,
-      user_agent: userAgent
+      user_agent: userAgent,
+      device_type: deviceType,
+      operating_system: os,
+      browser: browser,
+      screen_width: screenWidth || null,
+      screen_height: screenHeight || null,
+      referrer: referrer || null,
+      language: language || null,
+      timezone: timezone || null
     }).then(({ error }) => {
       if (error) {
         console.error('Error logging view:', error);
       } else {
-        console.log('View logged successfully');
+        console.log(`View logged: ${deviceType} / ${os} / ${browser} / ${screenWidth}x${screenHeight}`);
       }
     });
 
