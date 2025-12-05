@@ -187,6 +187,7 @@ export type Database = {
           call_key_points: Json | null
           call_summary: string | null
           call_transcription: string | null
+          call_type_id: string | null
           communication_method: string | null
           created_at: string
           created_by: string | null
@@ -214,6 +215,7 @@ export type Database = {
           call_key_points?: Json | null
           call_summary?: string | null
           call_transcription?: string | null
+          call_type_id?: string | null
           communication_method?: string | null
           created_at?: string
           created_by?: string | null
@@ -241,6 +243,7 @@ export type Database = {
           call_key_points?: Json | null
           call_summary?: string | null
           call_transcription?: string | null
+          call_type_id?: string | null
           communication_method?: string | null
           created_at?: string
           created_by?: string | null
@@ -267,6 +270,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "bookings_call_type_id_fkey"
+            columns: ["call_type_id"]
+            isOneToOne: false
+            referencedRelation: "call_types"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "bookings_created_by_fkey"
             columns: ["created_by"]
             isOneToOne: false
@@ -274,6 +284,134 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      call_type_rules: {
+        Row: {
+          ai_instruction: string | null
+          call_type_id: string | null
+          created_at: string | null
+          id: string
+          is_active: boolean | null
+          rule_description: string | null
+          rule_name: string
+          rule_type: string
+          updated_at: string | null
+          weight: number | null
+        }
+        Insert: {
+          ai_instruction?: string | null
+          call_type_id?: string | null
+          created_at?: string | null
+          id?: string
+          is_active?: boolean | null
+          rule_description?: string | null
+          rule_name: string
+          rule_type: string
+          updated_at?: string | null
+          weight?: number | null
+        }
+        Update: {
+          ai_instruction?: string | null
+          call_type_id?: string | null
+          created_at?: string | null
+          id?: string
+          is_active?: boolean | null
+          rule_description?: string | null
+          rule_name?: string
+          rule_type?: string
+          updated_at?: string | null
+          weight?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "call_type_rules_call_type_id_fkey"
+            columns: ["call_type_id"]
+            isOneToOne: false
+            referencedRelation: "call_types"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      call_types: {
+        Row: {
+          analysis_focus: string | null
+          created_at: string | null
+          created_by: string | null
+          description: string | null
+          icon: string | null
+          id: string
+          is_active: boolean | null
+          is_default: boolean | null
+          name: string
+          scoring_criteria: Json | null
+          updated_at: string | null
+        }
+        Insert: {
+          analysis_focus?: string | null
+          created_at?: string | null
+          created_by?: string | null
+          description?: string | null
+          icon?: string | null
+          id?: string
+          is_active?: boolean | null
+          is_default?: boolean | null
+          name: string
+          scoring_criteria?: Json | null
+          updated_at?: string | null
+        }
+        Update: {
+          analysis_focus?: string | null
+          created_at?: string | null
+          created_by?: string | null
+          description?: string | null
+          icon?: string | null
+          id?: string
+          is_active?: boolean | null
+          is_default?: boolean | null
+          name?: string
+          scoring_criteria?: Json | null
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
+      company_knowledge: {
+        Row: {
+          call_type_ids: string[] | null
+          category: string
+          content: string
+          created_at: string | null
+          created_by: string | null
+          id: string
+          is_active: boolean | null
+          priority: number | null
+          title: string
+          updated_at: string | null
+        }
+        Insert: {
+          call_type_ids?: string[] | null
+          category: string
+          content: string
+          created_at?: string | null
+          created_by?: string | null
+          id?: string
+          is_active?: boolean | null
+          priority?: number | null
+          title: string
+          updated_at?: string | null
+        }
+        Update: {
+          call_type_ids?: string[] | null
+          category?: string
+          content?: string
+          created_at?: string | null
+          created_by?: string | null
+          id?: string
+          is_active?: boolean | null
+          priority?: number | null
+          title?: string
+          updated_at?: string | null
+        }
+        Relationships: []
       }
       display_token_views: {
         Row: {
@@ -413,6 +551,50 @@ export type Database = {
             columns: ["site_id"]
             isOneToOne: false
             referencedRelation: "sites"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      script_templates: {
+        Row: {
+          call_type_id: string | null
+          created_at: string | null
+          created_by: string | null
+          id: string
+          is_active: boolean | null
+          name: string
+          script_content: string
+          sections: Json | null
+          updated_at: string | null
+        }
+        Insert: {
+          call_type_id?: string | null
+          created_at?: string | null
+          created_by?: string | null
+          id?: string
+          is_active?: boolean | null
+          name: string
+          script_content: string
+          sections?: Json | null
+          updated_at?: string | null
+        }
+        Update: {
+          call_type_id?: string | null
+          created_at?: string | null
+          created_by?: string | null
+          id?: string
+          is_active?: boolean | null
+          name?: string
+          script_content?: string
+          sections?: Json | null
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "script_templates_call_type_id_fkey"
+            columns: ["call_type_id"]
+            isOneToOne: false
+            referencedRelation: "call_types"
             referencedColumns: ["id"]
           },
         ]
