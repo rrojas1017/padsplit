@@ -14,6 +14,7 @@ import {
 import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { useBookings } from '@/contexts/BookingsContext';
+import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { useAgents } from '@/contexts/AgentsContext';
 import { Booking } from '@/types';
@@ -48,6 +49,7 @@ export default function AddBooking() {
   const [kixieLink, setKixieLink] = useState('');
   const [adminProfileLink, setAdminProfileLink] = useState('');
   const [moveInDayReachOut, setMoveInDayReachOut] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Filter agents based on user role
   const availableAgents = (() => {
@@ -70,8 +72,10 @@ export default function AddBooking() {
     }
   }, [availableAgents, agentId]);
 
-  const handleSubmit = (e: React.FormEvent, addAnother: boolean = false) => {
+  const handleSubmit = async (e: React.FormEvent, addAnother: boolean = false) => {
     e.preventDefault();
+
+    if (isSubmitting) return;
 
     if (!memberName.trim()) {
       toast({ title: 'Error', description: 'Member name is required', variant: 'destructive' });
@@ -91,45 +95,70 @@ export default function AddBooking() {
     }
 
     const selectedAgent = agents.find(a => a.id === agentId);
-
     if (!selectedAgent) return;
 
-    addBooking({
-      bookingDate,
-      moveInDate,
-      memberName: memberName.trim(),
-      bookingType,
-      agentId,
-      agentName: selectedAgent.name,
-      marketCity: marketCity.trim(),
-      marketState: marketState.trim().toUpperCase(),
-      communicationMethod,
-      status,
-      notes: notes.trim() || undefined,
-      hubspotLink: hubspotLink.trim() || undefined,
-      kixieLink: kixieLink.trim() || undefined,
-      adminProfileLink: adminProfileLink.trim() || undefined,
-      moveInDayReachOut,
-    });
+    setIsSubmitting(true);
 
-    toast({
-      title: 'Booking Added',
-      description: `Successfully added booking for ${memberName}`,
-    });
+    try {
+      // Check for duplicate booking (same member, agent, and booking date)
+      const bookingDateStr = format(bookingDate, 'yyyy-MM-dd');
+      const { data: existingBookings } = await supabase
+        .from('bookings')
+        .select('id')
+        .eq('member_name', memberName.trim())
+        .eq('agent_id', agentId)
+        .eq('booking_date', bookingDateStr);
 
-    if (addAnother) {
-      // Reset form for another entry
-      setMemberName('');
-      setMoveInDate(undefined);
-      setMarketCity('');
-      setMarketState('');
-      setNotes('');
-      setHubspotLink('');
-      setKixieLink('');
-      setAdminProfileLink('');
-      setMoveInDayReachOut(false);
-    } else {
-      navigate('/reports');
+      if (existingBookings && existingBookings.length > 0) {
+        const confirmed = window.confirm(
+          `A booking for "${memberName.trim()}" by ${selectedAgent.name} on ${format(bookingDate, 'PPP')} already exists. Are you sure you want to create another one?`
+        );
+        if (!confirmed) {
+          setIsSubmitting(false);
+          return;
+        }
+      }
+
+      await addBooking({
+        bookingDate,
+        moveInDate,
+        memberName: memberName.trim(),
+        bookingType,
+        agentId,
+        agentName: selectedAgent.name,
+        marketCity: marketCity.trim(),
+        marketState: marketState.trim().toUpperCase(),
+        communicationMethod,
+        status,
+        notes: notes.trim() || undefined,
+        hubspotLink: hubspotLink.trim() || undefined,
+        kixieLink: kixieLink.trim() || undefined,
+        adminProfileLink: adminProfileLink.trim() || undefined,
+        moveInDayReachOut,
+      });
+
+      toast({
+        title: 'Booking Added',
+        description: `Successfully added booking for ${memberName}`,
+      });
+
+      if (addAnother) {
+        setMemberName('');
+        setMoveInDate(undefined);
+        setMarketCity('');
+        setMarketState('');
+        setNotes('');
+        setHubspotLink('');
+        setKixieLink('');
+        setAdminProfileLink('');
+        setMoveInDayReachOut(false);
+      } else {
+        navigate('/reports');
+      }
+    } catch (error) {
+      toast({ title: 'Error', description: 'Failed to add booking', variant: 'destructive' });
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -370,18 +399,19 @@ export default function AddBooking() {
 
           {/* Actions */}
           <div className="flex flex-col sm:flex-row gap-3 pt-2">
-            <Button type="submit" className="gap-2">
+            <Button type="submit" className="gap-2" disabled={isSubmitting}>
               <Save className="w-4 h-4" />
-              Save & View Reports
+              {isSubmitting ? 'Saving...' : 'Save & View Reports'}
             </Button>
             <Button
               type="button"
               variant="outline"
               className="gap-2"
+              disabled={isSubmitting}
               onClick={(e) => handleSubmit(e, true)}
             >
               <PlusCircle className="w-4 h-4" />
-              Save & Add Another
+              {isSubmitting ? 'Saving...' : 'Save & Add Another'}
             </Button>
           </div>
         </form>
