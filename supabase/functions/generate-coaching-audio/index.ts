@@ -47,10 +47,10 @@ serve(async (req) => {
 
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    // Fetch booking with agent feedback
+    // Fetch booking with agent feedback and call details
     const { data: booking, error: bookingError } = await supabase
       .from("bookings")
-      .select("id, member_name, agent_feedback, agent_id")
+      .select("id, member_name, agent_feedback, agent_id, call_summary, call_key_points")
       .eq("id", bookingId)
       .single();
 
@@ -71,35 +71,61 @@ serve(async (req) => {
 
     const agentFeedback = booking.agent_feedback as AgentFeedback;
     const agentName = agent?.name || "Agent";
+    const memberName = booking.member_name || "the member";
+    const callSummary = booking.call_summary || "";
+    const callKeyPoints = booking.call_key_points as {
+      memberConcerns?: string[];
+      memberPreferences?: string[];
+      recommendedActions?: string[];
+      objections?: string[];
+      moveInReadiness?: { score?: number; assessment?: string };
+      sentiment?: string;
+    } | null;
 
-    console.log(`Generating coaching audio for agent: ${agentName}`);
+    console.log(`Generating personalized coaching audio for agent: ${agentName}, member: ${memberName}`);
 
-    // Step 1: Generate motivational script using Lovable AI
+    // Extract call-specific details
+    const concerns = callKeyPoints?.memberConcerns?.slice(0, 2).join(", ") || "";
+    const objections = callKeyPoints?.objections?.slice(0, 2).join(", ") || "";
+    const preferences = callKeyPoints?.memberPreferences?.slice(0, 2).join(", ") || "";
+    const sentiment = callKeyPoints?.sentiment || "positive";
+
+    // Step 1: Generate personalized motivational script using Lovable AI
     const scriptPrompt = `You are an enthusiastic motivational coach delivering personalized feedback to a sales agent who just completed a booking.
 
-Create a ~60 second spoken script that:
-1. Opens with congratulations and energy (celebrate the win!)
-2. Highlights 2-3 specific strengths from their call
-3. Gives ONE actionable tip for improvement (framed positively)
-4. Briefly mentions their scores in a motivating way
-5. Ends with motivation to crush their next call
+Create a ~60 second spoken script that is SPECIFIC to THIS call. Reference the member by name and mention actual moments from the conversation.
 
-Tone: Upbeat, supportive, like a sports coach after a good play. Use natural spoken language.
-Length: 150-200 words (about 1 minute when spoken)
-Important: Write this as if you're speaking directly to them. Use "you" and their name.
+CALL DETAILS:
+- Agent Name: ${agentName}
+- Member Name: ${memberName}
+- Call Summary: ${callSummary || "Successful booking call"}
+- Member's Concerns: ${concerns || "None mentioned"}
+- Objections Handled: ${objections || "None"}
+- What Member Wanted: ${preferences || "Standard preferences"}
+- Call Sentiment: ${sentiment}
 
-Agent Name: ${agentName}
-Overall Rating: ${agentFeedback.overallRating}
-Strengths: ${agentFeedback.strengths?.join(", ") || "Strong performance"}
-Areas for Growth: ${agentFeedback.improvements?.join(", ") || "Continue developing"}
-Coaching Tips: ${agentFeedback.coachingTips?.join(", ") || "Keep up the great work"}
-Scores:
+PERFORMANCE SCORES:
+- Overall Rating: ${agentFeedback.overallRating}
 - Communication: ${agentFeedback.scores?.communication || 7}/10
 - Product Knowledge: ${agentFeedback.scores?.productKnowledge || 7}/10
 - Objection Handling: ${agentFeedback.scores?.objectionHandling || 7}/10
 - Closing Skills: ${agentFeedback.scores?.closingSkills || 7}/10
 
-Generate ONLY the spoken script, no stage directions or notes.`;
+WHAT THEY DID WELL: ${agentFeedback.strengths?.join(", ") || "Strong performance"}
+AREAS TO IMPROVE: ${agentFeedback.improvements?.join(", ") || "Continue developing"}
+
+YOUR SCRIPT MUST:
+1. Start with excitement using the MEMBER'S NAME: "What a great call with ${memberName}!" or "${agentName}, you crushed it with ${memberName}!"
+2. Reference 1-2 SPECIFIC things from this call (an objection they handled, a concern they addressed, how they matched the member's needs)
+3. If they handled an objection or concern well, mention it specifically: "When ${memberName} brought up [concern], you handled it perfectly by..."
+4. Give ONE quick tip related to something from THIS call
+5. End with high energy motivation for the next call
+
+Tone: Energetic sports coach celebrating a win. Natural spoken language, contractions, enthusiasm!
+Length: 150-200 words (about 1 minute)
+DO NOT use generic phrases. Make it feel like you watched this specific call.
+
+Generate ONLY the spoken script, no stage directions or formatting.`;
 
     const aiResponse = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",
