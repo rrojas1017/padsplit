@@ -5,9 +5,10 @@ import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Lightbulb, RefreshCw, Loader2 } from 'lucide-react';
+import { Lightbulb, RefreshCw, Loader2, Download } from 'lucide-react';
 import { toast } from 'sonner';
 import { format, subDays, startOfMonth } from 'date-fns';
+import { generateMemberInsightsPDF } from '@/utils/memberInsightsPDF';
 import InsightsSummaryCards from '@/components/member-insights/InsightsSummaryCards';
 import PainPointsPanel from '@/components/member-insights/PainPointsPanel';
 import ObjectionsChart from '@/components/member-insights/ObjectionsChart';
@@ -188,6 +189,15 @@ const MemberInsights = () => {
                   Run Analysis
                 </>
               )}
+            </Button>
+
+            <Button 
+              variant="outline" 
+              onClick={() => selectedInsight && generateMemberInsightsPDF(selectedInsight)}
+              disabled={!selectedInsight}
+            >
+              <Download className="h-4 w-4 mr-2" />
+              Export PDF
             </Button>
           </div>
         </div>
