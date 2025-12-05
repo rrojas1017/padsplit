@@ -14,3 +14,6 @@ verify_jwt = false
 
 [functions.transcribe-call]
 verify_jwt = true
+
+[functions.regenerate-coaching]
+verify_jwt = true

@@ -18,7 +18,8 @@ import {
   Lightbulb,
   ListTodo,
   AlertTriangle,
-  Target
+  Target,
+  GraduationCap
 } from 'lucide-react';
 
 interface CallInsightsProps {
@@ -28,6 +29,7 @@ interface CallInsightsProps {
 
 export function CallInsights({ booking, onTranscriptionComplete }: CallInsightsProps) {
   const [isTranscribing, setIsTranscribing] = useState(false);
+  const [isRegenerating, setIsRegenerating] = useState(false);
   const [isTranscriptionOpen, setIsTranscriptionOpen] = useState(false);
 
   const handleTranscribe = async () => {
@@ -60,6 +62,29 @@ export function CallInsights({ booking, onTranscriptionComplete }: CallInsightsP
       toast.error(error instanceof Error ? error.message : 'Failed to transcribe call');
     } finally {
       setIsTranscribing(false);
+    }
+  };
+
+  const handleRegenerateCoaching = async () => {
+    setIsRegenerating(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('regenerate-coaching', {
+        body: { bookingId: booking.id }
+      });
+
+      if (error) throw error;
+
+      if (data?.success) {
+        toast.success('Coaching feedback regenerated successfully');
+        onTranscriptionComplete();
+      } else {
+        throw new Error(data?.error || 'Failed to regenerate coaching');
+      }
+    } catch (error) {
+      console.error('Regenerate coaching error:', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to regenerate coaching');
+    } finally {
+      setIsRegenerating(false);
     }
   };
 
@@ -264,6 +289,40 @@ export function CallInsights({ booking, onTranscriptionComplete }: CallInsightsP
               </Card>
             )}
           </div>
+
+          {/* Regenerate Coaching Button - shows when transcription complete but no agent feedback */}
+          {booking.transcriptionStatus === 'completed' && !booking.agentFeedback && (
+            <Card className="border-primary/30 bg-primary/5">
+              <CardContent className="py-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <GraduationCap className="h-5 w-5 text-primary" />
+                    <div>
+                      <p className="text-sm font-medium">Coaching Insights Missing</p>
+                      <p className="text-xs text-muted-foreground">This call was transcribed before coaching analysis was available.</p>
+                    </div>
+                  </div>
+                  <Button 
+                    onClick={handleRegenerateCoaching} 
+                    disabled={isRegenerating}
+                    size="sm"
+                  >
+                    {isRegenerating ? (
+                      <>
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        Generating...
+                      </>
+                    ) : (
+                      <>
+                        <GraduationCap className="h-4 w-4 mr-2" />
+                        Generate Coaching
+                      </>
+                    )}
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          )}
 
           {/* Full Transcription (Collapsible) */}
           {booking.callTranscription && (
