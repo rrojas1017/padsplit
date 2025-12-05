@@ -20,9 +20,9 @@ export function BookingsProvider({ children }: { children: ReactNode }) {
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
-  const fetchBookings = async () => {
+  const fetchBookings = async (showLoading = true) => {
     try {
-      setIsLoading(true);
+      if (showLoading) setIsLoading(true);
       const { data, error } = await supabase
         .from('bookings')
         .select(`
@@ -99,14 +99,14 @@ export function BookingsProvider({ children }: { children: ReactNode }) {
       fetchBookings();
     }, 500);
 
-    // Set up realtime subscription
+    // Set up realtime subscription - use silent refresh (no loading skeleton)
     const channel = supabase
       .channel('bookings-changes')
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'bookings' },
         () => {
-          fetchBookings();
+          fetchBookings(false); // Silent background refresh
         }
       )
       .subscribe();
@@ -224,7 +224,7 @@ export function BookingsProvider({ children }: { children: ReactNode }) {
   };
 
   const refreshBookings = async () => {
-    await fetchBookings();
+    await fetchBookings(false); // Silent refresh without loading skeleton
   };
 
   return (
