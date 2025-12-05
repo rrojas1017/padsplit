@@ -63,6 +63,9 @@ export function BookingsProvider({ children }: { children: ReactNode }) {
         transcribedAt: b.transcribed_at ? new Date(b.transcribed_at) : undefined,
         callDurationSeconds: b.call_duration_seconds || undefined,
         agentFeedback: b.agent_feedback || undefined,
+        // Coaching audio fields
+        coachingAudioUrl: b.coaching_audio_url || undefined,
+        coachingAudioGeneratedAt: b.coaching_audio_generated_at ? new Date(b.coaching_audio_generated_at) : undefined,
       }));
 
       setBookings(transformedBookings);

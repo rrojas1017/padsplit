@@ -77,6 +77,9 @@ export interface Booking {
   callDurationSeconds?: number;
   // Agent feedback from transcription analysis
   agentFeedback?: AgentFeedback;
+  // Coaching audio fields
+  coachingAudioUrl?: string;
+  coachingAudioGeneratedAt?: Date;
 }
 
 export interface DailyMetrics {
