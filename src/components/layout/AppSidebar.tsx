@@ -11,7 +11,8 @@ import {
   PlusCircle,
   Link2,
   Upload,
-  GraduationCap
+  GraduationCap,
+  Activity
 } from 'lucide-react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
@@ -68,6 +69,12 @@ const menuItems = [
     label: 'User Management', 
     path: '/users',
     roles: ['super_admin', 'admin', 'supervisor'] 
+  },
+  {
+    icon: Activity,
+    label: 'Agent Status',
+    path: '/agent-status',
+    roles: ['super_admin', 'admin', 'supervisor']
   },
   {
     icon: Link2,

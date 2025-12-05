@@ -9,6 +9,7 @@ import { SidebarProvider } from "@/contexts/SidebarContext";
 import { BookingsProvider } from "@/contexts/BookingsContext";
 import { AgentsProvider } from "@/contexts/AgentsContext";
 import { DisplayTokensProvider } from "@/contexts/DisplayTokensContext";
+import { AgentStatusProvider } from "@/contexts/AgentStatusContext";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 
 import Index from "./pages/Index";
@@ -28,6 +29,7 @@ import AuditLog from "./pages/AuditLog";
 import Settings from "./pages/Settings";
 import ImportBookings from "./pages/ImportBookings";
 import CoachingHub from "./pages/CoachingHub";
+import AgentStatus from "./pages/AgentStatus";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient(); // Initialize query client
@@ -44,6 +46,7 @@ const App = () => (
             <BookingsProvider>
             <AgentsProvider>
             <DisplayTokensProvider>
+            <AgentStatusProvider>
             <Routes>
               <Route path="/" element={<Index />} />
               <Route path="/login" element={<Login />} />
@@ -128,9 +131,16 @@ const App = () => (
                   <CoachingHub />
                 </ProtectedRoute>
               } />
+
+              <Route path="/agent-status" element={
+                <ProtectedRoute allowedRoles={['super_admin', 'admin', 'supervisor']}>
+                  <AgentStatus />
+                </ProtectedRoute>
+              } />
               
               <Route path="*" element={<NotFound />} />
             </Routes>
+            </AgentStatusProvider>
             </DisplayTokensProvider>
             </AgentsProvider>
             </BookingsProvider>

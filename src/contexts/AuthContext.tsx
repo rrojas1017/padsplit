@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, ReactNode, useCallback } from 'react';
 import { User, UserRole } from '@/types';
 import { supabase } from '@/integrations/supabase/client';
 import { Session, User as SupabaseUser } from '@supabase/supabase-js';
@@ -11,6 +11,57 @@ interface AuthContextType {
   logout: () => void;
   hasRole: (roles: UserRole[]) => boolean;
 }
+
+// Session management functions (defined outside component to avoid re-creation)
+const startAgentSession = async (userId: string, userRole: string) => {
+  try {
+    // Mark any existing active sessions as inactive
+    await supabase
+      .from('agent_sessions')
+      .update({ is_active: false, logout_time: new Date().toISOString() })
+      .eq('user_id', userId)
+      .eq('is_active', true);
+
+    // Get agent_id if user is an agent
+    let agentId = null;
+    if (userRole === 'agent') {
+      const { data: agentData } = await supabase
+        .from('agents')
+        .select('id')
+        .eq('user_id', userId)
+        .maybeSingle();
+      agentId = agentData?.id || null;
+    }
+
+    // Create new session
+    await supabase
+      .from('agent_sessions')
+      .insert({
+        user_id: userId,
+        agent_id: agentId,
+        login_time: new Date().toISOString(),
+        last_activity: new Date().toISOString(),
+        is_active: true,
+      });
+  } catch (error) {
+    console.error('Error starting agent session:', error);
+  }
+};
+
+const endAgentSession = async (userId: string) => {
+  try {
+    await supabase
+      .from('agent_sessions')
+      .update({
+        is_active: false,
+        logout_time: new Date().toISOString(),
+      })
+      .eq('user_id', userId)
+      .eq('is_active', true);
+  } catch (error) {
+    console.error('Error ending agent session:', error);
+  }
+};
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
@@ -142,6 +193,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return { success: false, error: 'Failed to load user profile. Please try again.' };
       }
 
+      // Get user role for session tracking
+      const { data: roleData } = await supabase
+        .from('user_roles')
+        .select('role')
+        .eq('user_id', data.user.id)
+        .maybeSingle();
+
+      // Start agent session (fire-and-forget)
+      startAgentSession(data.user.id, roleData?.role || 'agent');
+
       // Log access (fire-and-forget)
       supabase.from('access_logs').insert({
         user_id: data.user.id,
@@ -198,6 +259,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logout = async () => {
     if (user) {
+      // End agent session (fire-and-forget)
+      endAgentSession(user.id);
+
       // Fire-and-forget logout logging
       supabase.from('access_logs').insert({
         user_id: user.id,

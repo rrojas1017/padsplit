@@ -87,6 +87,47 @@ export type Database = {
           },
         ]
       }
+      agent_sessions: {
+        Row: {
+          agent_id: string | null
+          created_at: string | null
+          id: string
+          is_active: boolean | null
+          last_activity: string
+          login_time: string
+          logout_time: string | null
+          user_id: string
+        }
+        Insert: {
+          agent_id?: string | null
+          created_at?: string | null
+          id?: string
+          is_active?: boolean | null
+          last_activity?: string
+          login_time?: string
+          logout_time?: string | null
+          user_id: string
+        }
+        Update: {
+          agent_id?: string | null
+          created_at?: string | null
+          id?: string
+          is_active?: boolean | null
+          last_activity?: string
+          login_time?: string
+          logout_time?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "agent_sessions_agent_id_fkey"
+            columns: ["agent_id"]
+            isOneToOne: false
+            referencedRelation: "agents"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       agents: {
         Row: {
           active: boolean
