@@ -1,4 +1,5 @@
 import { Booking, Agent, AgentFeedback } from '@/types';
+import { format } from 'date-fns';
 
 interface TeamScores {
   communication: number;
@@ -31,6 +32,16 @@ interface AgentCoachingStats {
   recentStrengths: string[];
   recentImprovements: string[];
   recentTips: string[];
+}
+
+export interface ScoreTrendDataPoint {
+  date: string;
+  dateLabel: string;
+  communication: number;
+  productKnowledge: number;
+  objectionHandling: number;
+  closingSkills: number;
+  callCount: number;
 }
 
 export function getBookingsWithFeedback(bookings: Booking[]): Booking[] {
@@ -226,4 +237,52 @@ export function getAgentDetailedFeedback(bookings: Booking[], agentId: string): 
       feedback: b.agentFeedback as AgentFeedback,
     }))
     .sort((a, b) => new Date(b.booking.bookingDate).getTime() - new Date(a.booking.bookingDate).getTime());
+}
+
+export function calculateScoresTrend(bookings: Booking[]): ScoreTrendDataPoint[] {
+  const feedbackBookings = getBookingsWithFeedback(bookings);
+  
+  if (feedbackBookings.length === 0) return [];
+
+  // Group by date
+  const dateGroups: Record<string, Booking[]> = {};
+  feedbackBookings.forEach(b => {
+    const bookingDate = b.bookingDate instanceof Date 
+      ? b.bookingDate 
+      : new Date(b.bookingDate + 'T00:00:00');
+    const dateKey = format(bookingDate, 'yyyy-MM-dd');
+    if (!dateGroups[dateKey]) dateGroups[dateKey] = [];
+    dateGroups[dateKey].push(b);
+  });
+
+  // Calculate average scores for each date
+  return Object.entries(dateGroups)
+    .map(([date, dayBookings]) => {
+      let communication = 0;
+      let productKnowledge = 0;
+      let objectionHandling = 0;
+      let closingSkills = 0;
+
+      dayBookings.forEach(b => {
+        const feedback = b.agentFeedback as AgentFeedback;
+        if (feedback?.scores) {
+          communication += feedback.scores.communication || 0;
+          productKnowledge += feedback.scores.productKnowledge || 0;
+          objectionHandling += feedback.scores.objectionHandling || 0;
+          closingSkills += feedback.scores.closingSkills || 0;
+        }
+      });
+
+      const count = dayBookings.length;
+      return {
+        date,
+        dateLabel: format(new Date(date + 'T00:00:00'), 'MMM d'),
+        communication: Math.round((communication / count) * 10) / 10,
+        productKnowledge: Math.round((productKnowledge / count) * 10) / 10,
+        objectionHandling: Math.round((objectionHandling / count) * 10) / 10,
+        closingSkills: Math.round((closingSkills / count) * 10) / 10,
+        callCount: count,
+      };
+    })
+    .sort((a, b) => a.date.localeCompare(b.date));
 }
