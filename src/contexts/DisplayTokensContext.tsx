@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { DisplayToken } from '@/types';
 import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from '@/contexts/AuthContext';
 
 interface ViewRecord {
   id: string;
@@ -70,10 +71,17 @@ function generateToken(): string {
 }
 
 export function DisplayTokensProvider({ children }: { children: ReactNode }) {
+  const { user, isLoading: authLoading } = useAuth();
   const [tokens, setTokens] = useState<DisplayTokenWithStats[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   const fetchTokens = async () => {
+    // Don't fetch if not authenticated
+    if (!user) {
+      setTokens([]);
+      setIsLoading(false);
+      return;
+    }
     try {
       // Fetch tokens with creator profile info
       const { data: tokensData, error: tokensError } = await supabase
@@ -232,8 +240,16 @@ export function DisplayTokensProvider({ children }: { children: ReactNode }) {
   };
 
   useEffect(() => {
-    fetchTokens();
-  }, []);
+    // Only fetch when auth is ready and user is logged in
+    if (!authLoading) {
+      if (user) {
+        fetchTokens();
+      } else {
+        setTokens([]);
+        setIsLoading(false);
+      }
+    }
+  }, [user, authLoading]);
 
   const addToken = async (tokenData: Omit<DisplayToken, 'id' | 'token' | 'createdAt'>): Promise<DisplayToken> => {
     const { data: userData } = await supabase.auth.getUser();
