@@ -189,7 +189,9 @@ export default function MyQA() {
             </CardContent>
           </Card>
         )}
-          
+
+        {/* Stats Badge */}
+        <div className="flex items-center gap-2">
           <Badge variant="outline" className="gap-1">
             <Target className="w-3 h-3" />
             {stats.totalCalls} Scored Calls
