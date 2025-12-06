@@ -12,6 +12,10 @@ export interface CoachingBooking {
   memberName: string;
   transcriptionStatus: string;
   agentFeedback: AgentFeedback;
+  coachingAudioUrl?: string | null;
+  coachingAudioListenedAt?: string | null;
+  coachingAudioGeneratedAt?: string | null;
+  coachingAudioRegeneratedAt?: string | null;
 }
 
 export interface CoachingBookingWithAudio extends CoachingBooking {
@@ -80,7 +84,7 @@ export function useCoachingData(options: UseCoachingDataOptions = {}) {
           filteredData = filteredData.filter((item: any) => item.bookings.agent_id === agentId);
         }
 
-        // Map to CoachingBooking format
+        // Map to CoachingBooking format (always include audio data)
         const mappedData: CoachingBooking[] = filteredData.map((item: any) => {
           const booking = item.bookings;
           const agent = agents.find(a => a.id === booking.agent_id);
@@ -93,6 +97,10 @@ export function useCoachingData(options: UseCoachingDataOptions = {}) {
             memberName: booking.member_name || 'Unknown Member',
             transcriptionStatus: booking.transcription_status || 'completed',
             agentFeedback: item.agent_feedback as AgentFeedback,
+            coachingAudioUrl: item.coaching_audio_url,
+            coachingAudioListenedAt: item.coaching_audio_listened_at,
+            coachingAudioGeneratedAt: item.coaching_audio_generated_at,
+            coachingAudioRegeneratedAt: item.coaching_audio_regenerated_at,
           };
         });
 
