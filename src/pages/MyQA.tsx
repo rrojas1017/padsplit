@@ -5,12 +5,16 @@ import { useAgents } from '@/contexts/AgentsContext';
 import { useQAData, calculateQAStats, QABooking } from '@/hooks/useQAData';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { ClipboardCheck, TrendingUp, TrendingDown, Calendar, Target, Award, BarChart3 } from 'lucide-react';
+import { Skeleton } from '@/components/ui/skeleton';
+import { Progress } from '@/components/ui/progress';
+import { 
+  ClipboardCheck, TrendingUp, Calendar, Target, Award, BarChart3, 
+  Trophy, Star, AlertTriangle, CheckCircle2, Sparkles, ArrowUp, ArrowDown
+} from 'lucide-react';
 import { useState, useMemo } from 'react';
-import { format, isWithinInterval, startOfDay, endOfDay, subDays, startOfWeek, startOfMonth } from 'date-fns';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Cell } from 'recharts';
+import { format, isWithinInterval, startOfDay, endOfDay, startOfWeek, startOfMonth } from 'date-fns';
+import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, BarChart, Bar, Cell, Area, AreaChart } from 'recharts';
 
 type DateRange = 'today' | 'week' | 'month' | 'all';
 
@@ -91,24 +95,62 @@ export default function MyQA() {
     }));
   }, [rubric, stats.categoryAverages]);
 
+  // Find best and worst categories
+  const bestCategory = categoryData.length > 0 
+    ? categoryData.reduce((best, cat) => cat.percentage > best.percentage ? cat : best, categoryData[0])
+    : null;
+  const worstCategory = categoryData.length > 0 
+    ? categoryData.reduce((worst, cat) => cat.percentage < worst.percentage ? cat : worst, categoryData[0])
+    : null;
+
   const getScoreColor = (percentage: number) => {
     if (percentage >= 85) return 'text-success';
     if (percentage >= 70) return 'text-accent';
     return 'text-destructive';
   };
 
-  const getScoreBadge = (percentage: number) => {
-    if (percentage >= 90) return { label: 'Excellent', variant: 'default' as const };
-    if (percentage >= 80) return { label: 'Good', variant: 'secondary' as const };
-    if (percentage >= 70) return { label: 'Average', variant: 'outline' as const };
-    return { label: 'Needs Work', variant: 'destructive' as const };
+  const getScoreBgColor = (percentage: number) => {
+    if (percentage >= 85) return 'bg-success/20 border-success/30';
+    if (percentage >= 70) return 'bg-accent/20 border-accent/30';
+    return 'bg-destructive/20 border-destructive/30';
   };
 
+  const getScoreBadge = (percentage: number) => {
+    if (percentage >= 90) return { label: 'Excellent', variant: 'default' as const, icon: Trophy };
+    if (percentage >= 80) return { label: 'Good', variant: 'secondary' as const, icon: Star };
+    if (percentage >= 70) return { label: 'Average', variant: 'outline' as const, icon: CheckCircle2 };
+    return { label: 'Needs Work', variant: 'destructive' as const, icon: AlertTriangle };
+  };
+
+  const getProgressColor = (percentage: number) => {
+    if (percentage >= 85) return 'bg-success';
+    if (percentage >= 70) return 'bg-accent';
+    return 'bg-destructive';
+  };
+
+  // Loading State with Skeletons
   if (isLoading) {
     return (
-      <DashboardLayout title="My QA Scores" subtitle="Loading your quality scores...">
-        <div className="flex items-center justify-center h-64">
-          <div className="animate-pulse text-muted-foreground">Loading QA data...</div>
+      <DashboardLayout title="My QA Scores" subtitle="Quality assurance scores for your calls">
+        <div className="space-y-6">
+          {/* Hero Skeleton */}
+          <Skeleton className="h-48 w-full rounded-2xl" />
+          
+          {/* KPI Cards Skeleton */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            {[1, 2, 3, 4].map(i => (
+              <Skeleton key={i} className="h-28 rounded-xl" />
+            ))}
+          </div>
+          
+          {/* Charts Skeleton */}
+          <div className="grid md:grid-cols-2 gap-6">
+            <Skeleton className="h-72 rounded-xl" />
+            <Skeleton className="h-72 rounded-xl" />
+          </div>
+          
+          {/* List Skeleton */}
+          <Skeleton className="h-64 rounded-xl" />
         </div>
       </DashboardLayout>
     );
@@ -117,15 +159,23 @@ export default function MyQA() {
   if (!myAgent) {
     return (
       <DashboardLayout title="My QA Scores" subtitle="Quality assurance scores for your calls">
-        <Card>
-          <CardContent className="py-12 text-center">
-            <ClipboardCheck className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
-            <p className="text-muted-foreground">No agent profile found for your account.</p>
+        <Card className="border-dashed shadow-card">
+          <CardContent className="py-16 text-center">
+            <div className="w-20 h-20 mx-auto mb-6 rounded-full bg-muted/50 flex items-center justify-center">
+              <ClipboardCheck className="w-10 h-10 text-muted-foreground" />
+            </div>
+            <h3 className="text-xl font-semibold mb-2">No Agent Profile Found</h3>
+            <p className="text-muted-foreground max-w-sm mx-auto">
+              Your account isn't linked to an agent profile yet. Contact your supervisor to set this up.
+            </p>
           </CardContent>
         </Card>
       </DashboardLayout>
     );
   }
+
+  const scoreBadgeInfo = getScoreBadge(stats.avgPercentage);
+  const ScoreBadgeIcon = scoreBadgeInfo.icon;
 
   return (
     <DashboardLayout 
@@ -134,11 +184,11 @@ export default function MyQA() {
     >
       <div className="space-y-6">
         {/* Period Selector */}
-        <div className="flex justify-between items-center">
+        <div className="flex flex-wrap justify-between items-center gap-3">
           <div className="flex items-center gap-2">
             <Calendar className="w-4 h-4 text-muted-foreground" />
             <Select value={dateRange} onValueChange={(v) => setDateRange(v as DateRange)}>
-              <SelectTrigger className="w-[180px]">
+              <SelectTrigger className="w-[150px]">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -149,177 +199,307 @@ export default function MyQA() {
               </SelectContent>
             </Select>
           </div>
-          <Badge variant="outline" className="gap-1">
-            <Target className="w-3 h-3" />
+          <Badge variant="secondary" className="gap-1.5 py-1.5 px-3">
+            <Target className="w-3.5 h-3.5" />
             {stats.totalCalls} Scored Calls
           </Badge>
         </div>
-
-        {/* Main Score Card */}
-        <Card className="bg-gradient-to-br from-primary/10 to-primary/5 border-primary/20">
-          <CardContent className="py-8">
-            <div className="flex flex-col md:flex-row items-center justify-between gap-6">
-              <div className="text-center md:text-left">
-                <p className="text-sm text-muted-foreground mb-1">Your QA Score</p>
-                <div className="flex items-baseline gap-2">
-                  <span className={`text-5xl font-bold ${getScoreColor(stats.avgPercentage)}`}>
-                    {stats.avgPercentage.toFixed(1)}%
-                  </span>
-                  <span className="text-muted-foreground text-lg">
-                    ({stats.avgTotal.toFixed(1)}/{stats.maxTotal} pts)
-                  </span>
-                </div>
-                {stats.totalCalls > 0 && (
-                  <Badge {...getScoreBadge(stats.avgPercentage)} className="mt-3">
-                    {getScoreBadge(stats.avgPercentage).label}
-                  </Badge>
-                )}
+        {/* Hero Score Banner */}
+        <div 
+          className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-primary/15 via-primary/5 to-accent/10 border border-primary/20 p-8 animate-fade-in"
+        >
+          {/* Background decoration */}
+          <div className="absolute top-0 right-0 w-64 h-64 bg-gradient-to-bl from-accent/20 to-transparent rounded-full blur-3xl -translate-y-1/2 translate-x-1/2" />
+          <div className="absolute bottom-0 left-0 w-48 h-48 bg-gradient-to-tr from-primary/15 to-transparent rounded-full blur-2xl translate-y-1/2 -translate-x-1/4" />
+          
+          <div className="relative flex flex-col md:flex-row items-center justify-between gap-6">
+            <div className="text-center md:text-left">
+              <div className="flex items-center gap-2 mb-2">
+                <Sparkles className="w-4 h-4 text-accent" />
+                <p className="text-sm font-medium text-muted-foreground uppercase tracking-wider">Your QA Score</p>
               </div>
-              <div className="flex items-center gap-4">
-                <Award className={`w-16 h-16 ${getScoreColor(stats.avgPercentage)}`} />
+              
+              {stats.totalCalls > 0 ? (
+                <>
+                  <div className="flex items-baseline gap-3 mb-3">
+                    <span className={`text-6xl md:text-7xl font-bold tracking-tight ${getScoreColor(stats.avgPercentage)}`}>
+                      {stats.avgPercentage.toFixed(0)}
+                    </span>
+                    <span className="text-3xl text-muted-foreground font-light">%</span>
+                  </div>
+                  <p className="text-muted-foreground mb-4">
+                    {stats.avgTotal.toFixed(1)} / {stats.maxTotal} points average
+                  </p>
+                  <Badge 
+                    variant={scoreBadgeInfo.variant} 
+                    className="gap-1.5 px-4 py-1.5 text-sm font-medium"
+                  >
+                    <ScoreBadgeIcon className="w-4 h-4" />
+                    {scoreBadgeInfo.label}
+                  </Badge>
+                </>
+              ) : (
+                <div className="space-y-3">
+                  <p className="text-2xl font-medium text-muted-foreground">No scores yet</p>
+                  <p className="text-sm text-muted-foreground/70">Complete calls to see your QA scores</p>
+                </div>
+              )}
+            </div>
+            
+            <div className="flex-shrink-0">
+              <div className={`w-28 h-28 rounded-full flex items-center justify-center ${
+                stats.totalCalls > 0 ? getScoreBgColor(stats.avgPercentage) : 'bg-muted/30'
+              } border-2 transition-all duration-500`}>
+                <Award className={`w-14 h-14 ${stats.totalCalls > 0 ? getScoreColor(stats.avgPercentage) : 'text-muted-foreground/50'}`} />
               </div>
             </div>
-          </CardContent>
-        </Card>
+          </div>
+        </div>
 
-        {/* Category Breakdown */}
-        {categoryData.length > 0 && stats.totalCalls > 0 && (
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-lg">
+        {/* KPI Cards Row */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          {/* Average Score */}
+          <Card className="shadow-card border-border/50 animate-fade-in" style={{ animationDelay: '0.1s' }}>
+            <CardContent className="p-4">
+              <div className="flex items-start justify-between mb-2">
+                <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
+                  <Target className="w-5 h-5 text-primary" />
+                </div>
+              </div>
+              <p className="text-2xl font-bold">{stats.avgPercentage.toFixed(0)}%</p>
+              <p className="text-xs text-muted-foreground mt-1">Average Score</p>
+            </CardContent>
+          </Card>
+          
+          {/* Total Calls */}
+          <Card className="shadow-card border-border/50 animate-fade-in" style={{ animationDelay: '0.15s' }}>
+            <CardContent className="p-4">
+              <div className="flex items-start justify-between mb-2">
+                <div className="w-10 h-10 rounded-lg bg-accent/10 flex items-center justify-center">
+                  <ClipboardCheck className="w-5 h-5 text-accent" />
+                </div>
+              </div>
+              <p className="text-2xl font-bold">{stats.totalCalls}</p>
+              <p className="text-xs text-muted-foreground mt-1">Scored Calls</p>
+            </CardContent>
+          </Card>
+          
+          {/* Best Category */}
+          <Card className="shadow-card border-border/50 animate-fade-in" style={{ animationDelay: '0.2s' }}>
+            <CardContent className="p-4">
+              <div className="flex items-start justify-between mb-2">
+                <div className="w-10 h-10 rounded-lg bg-success/10 flex items-center justify-center">
+                  <ArrowUp className="w-5 h-5 text-success" />
+                </div>
+              </div>
+              <p className="text-lg font-bold truncate">{bestCategory?.name || '—'}</p>
+              <p className="text-xs text-muted-foreground mt-1">
+                Best Category {bestCategory ? `(${bestCategory.percentage}%)` : ''}
+              </p>
+            </CardContent>
+          </Card>
+          
+          {/* Improvement Area */}
+          <Card className="shadow-card border-border/50 animate-fade-in" style={{ animationDelay: '0.25s' }}>
+            <CardContent className="p-4">
+              <div className="flex items-start justify-between mb-2">
+                <div className="w-10 h-10 rounded-lg bg-amber-500/10 flex items-center justify-center">
+                  <ArrowDown className="w-5 h-5 text-amber-500" />
+                </div>
+              </div>
+              <p className="text-lg font-bold truncate">{worstCategory?.name || '—'}</p>
+              <p className="text-xs text-muted-foreground mt-1">
+                Focus Area {worstCategory ? `(${worstCategory.percentage}%)` : ''}
+              </p>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Charts Row */}
+        <div className="grid md:grid-cols-2 gap-6">
+          {/* Category Breakdown */}
+          <Card className="shadow-card animate-fade-in" style={{ animationDelay: '0.3s' }}>
+            <CardHeader className="pb-2">
+              <CardTitle className="flex items-center gap-2 text-base font-semibold">
                 <BarChart3 className="w-5 h-5 text-accent" />
                 Score by Category
               </CardTitle>
             </CardHeader>
-            <CardContent>
-              <div className="h-64">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={categoryData} layout="vertical" margin={{ left: 20, right: 20 }}>
-                    <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
-                    <XAxis type="number" domain={[0, 100]} tickFormatter={(v) => `${v}%`} />
-                    <YAxis 
-                      type="category" 
-                      dataKey="name" 
-                      width={100}
-                      tick={{ fontSize: 12 }}
-                    />
-                    <Tooltip 
-                      content={({ active, payload }) => {
-                        if (active && payload?.[0]) {
-                          const data = payload[0].payload;
-                          return (
-                            <div className="bg-popover border border-border p-3 rounded-lg shadow-lg">
-                              <p className="font-medium text-sm">{data.fullName}</p>
-                              <p className="text-accent">{data.score}/{data.max} pts ({data.percentage}%)</p>
-                            </div>
-                          );
-                        }
-                        return null;
-                      }}
-                    />
-                    <Bar dataKey="percentage" radius={[0, 4, 4, 0]}>
-                      {categoryData.map((entry, index) => (
-                        <Cell 
-                          key={index} 
-                          fill={entry.percentage >= 85 ? 'hsl(var(--success))' : 
-                                entry.percentage >= 70 ? 'hsl(var(--accent))' : 
-                                'hsl(var(--destructive))'} 
+            <CardContent className="pt-0">
+              {categoryData.length > 0 && stats.totalCalls > 0 ? (
+                <div className="space-y-4">
+                  {categoryData.map((cat, idx) => (
+                    <div key={cat.name} className="space-y-2">
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="font-medium truncate max-w-[60%]">{cat.fullName}</span>
+                        <span className={`font-semibold ${getScoreColor(cat.percentage)}`}>
+                          {cat.percentage}%
+                        </span>
+                      </div>
+                      <div className="h-2.5 bg-muted rounded-full overflow-hidden">
+                        <div 
+                          className={`h-full rounded-full transition-all duration-700 ${getProgressColor(cat.percentage)}`}
+                          style={{ 
+                            width: `${cat.percentage}%`,
+                            animationDelay: `${idx * 0.1}s`
+                          }}
                         />
-                      ))}
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        {cat.score} / {cat.max} points
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="h-48 flex items-center justify-center text-muted-foreground text-sm">
+                  No category data available
+                </div>
+              )}
             </CardContent>
           </Card>
-        )}
 
-        {/* Trend Chart */}
-        {trendData.length > 1 && (
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-lg">
+          {/* Score Trend Chart */}
+          <Card className="shadow-card animate-fade-in" style={{ animationDelay: '0.35s' }}>
+            <CardHeader className="pb-2">
+              <CardTitle className="flex items-center gap-2 text-base font-semibold">
                 <TrendingUp className="w-5 h-5 text-accent" />
                 Score Trend
               </CardTitle>
             </CardHeader>
-            <CardContent>
-              <div className="h-48">
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={trendData}>
-                    <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
-                    <XAxis dataKey="date" tick={{ fontSize: 12 }} />
-                    <YAxis domain={[0, 100]} tickFormatter={(v) => `${v}%`} />
-                    <Tooltip 
-                      content={({ active, payload }) => {
-                        if (active && payload?.[0]) {
-                          return (
-                            <div className="bg-popover border border-border p-2 rounded-lg shadow-lg">
-                              <p className="font-medium">{payload[0].payload.date}</p>
-                              <p className="text-accent">{payload[0].value}%</p>
-                            </div>
-                          );
-                        }
-                        return null;
-                      }}
-                    />
-                    <Line 
-                      type="monotone" 
-                      dataKey="percentage" 
-                      stroke="hsl(var(--primary))" 
-                      strokeWidth={2}
-                      dot={{ fill: 'hsl(var(--primary))' }}
-                    />
-                  </LineChart>
-                </ResponsiveContainer>
-              </div>
+            <CardContent className="pt-0">
+              {trendData.length > 1 ? (
+                <div className="h-56">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <AreaChart data={trendData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                      <defs>
+                        <linearGradient id="qaScoreGradient" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="0%" stopColor="hsl(var(--primary))" stopOpacity={0.3} />
+                          <stop offset="100%" stopColor="hsl(var(--primary))" stopOpacity={0} />
+                        </linearGradient>
+                      </defs>
+                      <XAxis 
+                        dataKey="date" 
+                        tick={{ fontSize: 11 }} 
+                        axisLine={false}
+                        tickLine={false}
+                        dy={10}
+                      />
+                      <YAxis 
+                        domain={[0, 100]} 
+                        tick={{ fontSize: 11 }}
+                        axisLine={false}
+                        tickLine={false}
+                        tickFormatter={(v) => `${v}%`}
+                      />
+                      <Tooltip 
+                        content={({ active, payload }) => {
+                          if (active && payload?.[0]) {
+                            return (
+                              <div className="bg-popover/95 backdrop-blur-sm border border-border p-3 rounded-xl shadow-lg">
+                                <p className="font-medium text-sm">{payload[0].payload.date}</p>
+                                <p className="text-primary text-lg font-bold">{payload[0].value}%</p>
+                              </div>
+                            );
+                          }
+                          return null;
+                        }}
+                      />
+                      <Area 
+                        type="monotone" 
+                        dataKey="percentage" 
+                        stroke="hsl(var(--primary))" 
+                        strokeWidth={2.5}
+                        fill="url(#qaScoreGradient)"
+                      />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                </div>
+              ) : (
+                <div className="h-56 flex flex-col items-center justify-center text-muted-foreground">
+                  <TrendingUp className="w-10 h-10 mb-3 opacity-30" />
+                  <p className="text-sm">Need 2+ days of data for trends</p>
+                </div>
+              )}
             </CardContent>
           </Card>
-        )}
+        </div>
 
-        {/* Recent Calls */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-lg">
+        {/* Recent QA Scores */}
+        <Card className="shadow-card animate-fade-in" style={{ animationDelay: '0.4s' }}>
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2 text-base font-semibold">
               <ClipboardCheck className="w-5 h-5 text-accent" />
               Recent QA Scores
             </CardTitle>
           </CardHeader>
-          <CardContent>
+          <CardContent className="pt-0">
             {filteredBookings.length === 0 ? (
-              <div className="text-center py-8 text-muted-foreground">
-                <ClipboardCheck className="w-12 h-12 mx-auto mb-4 opacity-50" />
-                <p>No QA scores available for this period.</p>
-                <p className="text-sm mt-1">Scores are generated after call transcription.</p>
+              <div className="text-center py-12">
+                <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-muted/50 flex items-center justify-center">
+                  <ClipboardCheck className="w-8 h-8 text-muted-foreground/50" />
+                </div>
+                <h4 className="font-medium mb-1">No QA Scores Yet</h4>
+                <p className="text-sm text-muted-foreground max-w-xs mx-auto">
+                  Scores are generated after your calls are transcribed and analyzed.
+                </p>
               </div>
             ) : (
-              <div className="space-y-3 max-h-[400px] overflow-y-auto">
+              <div className="space-y-2 max-h-[400px] overflow-y-auto pr-1">
                 {filteredBookings
                   .sort((a, b) => new Date(b.bookingDate).getTime() - new Date(a.bookingDate).getTime())
-                  .map(booking => (
+                  .map((booking, idx) => (
                     <div 
                       key={booking.id}
-                      className="flex items-center justify-between p-3 rounded-lg bg-muted/50 hover:bg-muted transition-colors"
+                      className="group flex items-center justify-between p-4 rounded-xl border border-border/50 bg-card hover:bg-muted/30 hover:border-border transition-all duration-200 cursor-default animate-fade-in"
+                      style={{ animationDelay: `${0.05 * idx}s` }}
                     >
-                      <div>
-                        <p className="font-medium">{booking.memberName}</p>
-                        <p className="text-sm text-muted-foreground">
-                          {format(new Date(booking.bookingDate + 'T00:00:00'), 'MMM d, yyyy')}
-                          {booking.marketCity && ` • ${booking.marketCity}, ${booking.marketState}`}
-                        </p>
-                      </div>
-                      <div className="text-right">
-                        {booking.qaScores ? (
-                          <>
-                            <span className={`text-lg font-bold ${getScoreColor(booking.qaScores.percentage)}`}>
+                      <div className="flex items-center gap-4 min-w-0">
+                        {/* Score Circle */}
+                        <div className={`flex-shrink-0 w-12 h-12 rounded-full flex items-center justify-center text-sm font-bold ${
+                          booking.qaScores 
+                            ? getScoreBgColor(booking.qaScores.percentage) 
+                            : 'bg-muted border-muted'
+                        } border-2`}>
+                          {booking.qaScores ? (
+                            <span className={getScoreColor(booking.qaScores.percentage)}>
                               {booking.qaScores.percentage}%
                             </span>
-                            <p className="text-xs text-muted-foreground">
-                              {booking.qaScores.total}/{booking.qaScores.maxTotal} pts
-                            </p>
+                          ) : (
+                            <span className="text-muted-foreground text-xs">—</span>
+                          )}
+                        </div>
+                        
+                        <div className="min-w-0">
+                          <p className="font-medium truncate">{booking.memberName}</p>
+                          <p className="text-sm text-muted-foreground truncate">
+                            {format(new Date(booking.bookingDate + 'T00:00:00'), 'MMM d, yyyy')}
+                            {booking.marketCity && (
+                              <span className="hidden sm:inline"> • {booking.marketCity}, {booking.marketState}</span>
+                            )}
+                          </p>
+                        </div>
+                      </div>
+                      
+                      <div className="flex items-center gap-3">
+                        {booking.qaScores ? (
+                          <>
+                            <div className="hidden sm:block text-right">
+                              <p className="text-xs text-muted-foreground">
+                                {booking.qaScores.total}/{booking.qaScores.maxTotal} pts
+                              </p>
+                            </div>
+                            <Badge 
+                              variant={getScoreBadge(booking.qaScores.percentage).variant}
+                              className="hidden md:inline-flex"
+                            >
+                              {getScoreBadge(booking.qaScores.percentage).label}
+                            </Badge>
                           </>
                         ) : (
-                          <Badge variant="outline">Pending</Badge>
+                          <Badge variant="outline" className="text-muted-foreground">
+                            Pending
+                          </Badge>
                         )}
                       </div>
                     </div>
