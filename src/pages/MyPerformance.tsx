@@ -7,7 +7,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useBookings } from '@/contexts/BookingsContext';
 import { useAgents } from '@/contexts/AgentsContext';
 import { useCoachingData, CoachingBookingWithAudio } from '@/hooks/useCoachingData';
-import { CalendarDays, TrendingUp, Clock, CheckCircle2, Trophy, GraduationCap, ThumbsUp, Lightbulb, Star, Headphones, Timer } from 'lucide-react';
+import { CalendarDays, TrendingUp, Clock, CheckCircle2, Trophy, GraduationCap, ThumbsUp, Lightbulb, Star, Headphones, Timer, Check, Info } from 'lucide-react';
 import { format, subDays, startOfMonth, startOfDay, endOfDay, differenceInDays } from 'date-fns';
 import { Area, AreaChart, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer } from 'recharts';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -351,6 +351,14 @@ export default function MyPerformance() {
               </span>
             )}
           </h3>
+          
+          {/* Jeff the Coach disclaimer */}
+          <div className="flex items-center gap-2 p-3 rounded-lg bg-muted/50 border border-border mb-4">
+            <Info className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+            <p className="text-xs text-muted-foreground">
+              <span className="font-medium">Note:</span> Jeff the Coach might occasionally mispronounce some names — we apologize in advance! 😊
+            </p>
+          </div>
           <div className="space-y-3 max-h-[400px] overflow-y-auto">
             {periodBookings.length === 0 ? (
               <p className="text-muted-foreground text-sm">No bookings {periodLabel}. Keep going!</p>
@@ -363,34 +371,33 @@ export default function MyPerformance() {
                 
                 return (
                   <div key={booking.id} className="p-3 rounded-lg bg-muted/50 border border-border">
-                    <div className="flex items-start justify-between">
-                      <div className="flex-1">
-                        <p className="font-medium text-foreground text-sm">{booking.memberName}</p>
-                        <div className="flex items-center justify-between mt-1">
-                          <span className="text-xs text-muted-foreground">
-                            {booking.marketCity}, {booking.marketState}
-                          </span>
-                          <span className={`text-xs px-2 py-0.5 rounded-full ${
-                            booking.status === 'Moved In' ? 'bg-success/20 text-success' :
-                            booking.status === 'Pending Move-In' ? 'bg-warning/20 text-warning' :
-                            'bg-muted text-muted-foreground'
-                          }`}>
-                            {booking.status}
-                          </span>
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <p className="font-medium text-foreground text-sm truncate">{booking.memberName}</p>
+                          {coachingData?.coachingAudioListenedAt && (
+                            <span className="text-xs text-success flex items-center gap-0.5 flex-shrink-0">
+                              <Check className="h-3 w-3" />
+                              Listened
+                            </span>
+                          )}
                         </div>
+                        <span className="text-xs text-muted-foreground">
+                          {booking.marketCity}, {booking.marketState}
+                        </span>
                       </div>
                       {coachingLoading ? (
-                        <span className="text-xs text-muted-foreground italic ml-2">Loading...</span>
+                        <span className="text-xs text-muted-foreground italic">Loading...</span>
                       ) : coachingData ? (
                         <CoachingAudioPlayer
                           bookingId={booking.id}
                           audioUrl={coachingData.coachingAudioUrl || undefined}
                           variant="button"
-                          className="ml-2"
                           canRegenerate={!!coachingData.coachingAudioUrl && !coachingData.coachingAudioRegeneratedAt}
+                          listenedAt={coachingData.coachingAudioListenedAt}
                         />
                       ) : (
-                        <span className="text-xs text-muted-foreground italic ml-2">No coaching yet</span>
+                        <span className="text-xs text-muted-foreground italic">No coaching yet</span>
                       )}
                     </div>
                   </div>

@@ -18,6 +18,7 @@ export interface CoachingBookingWithAudio extends CoachingBooking {
   coachingAudioUrl: string | null;
   coachingAudioRegeneratedAt: string | null;
   coachingAudioGeneratedAt: string | null;
+  coachingAudioListenedAt: string | null;
   marketCity: string | null;
   marketState: string | null;
 }
@@ -51,6 +52,7 @@ export function useCoachingData(options: UseCoachingDataOptions = {}) {
             coaching_audio_url,
             coaching_audio_regenerated_at,
             coaching_audio_generated_at,
+            coaching_audio_listened_at,
             bookings!inner (
               id,
               booking_date,
@@ -113,6 +115,7 @@ export function useCoachingData(options: UseCoachingDataOptions = {}) {
               coachingAudioUrl: item.coaching_audio_url,
               coachingAudioRegeneratedAt: item.coaching_audio_regenerated_at,
               coachingAudioGeneratedAt: item.coaching_audio_generated_at,
+              coachingAudioListenedAt: item.coaching_audio_listened_at,
               marketCity: booking.market_city,
               marketState: booking.market_state,
             };
