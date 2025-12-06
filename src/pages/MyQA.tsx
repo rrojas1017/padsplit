@@ -37,9 +37,6 @@ export default function MyQA() {
     agentId: myAgent?.id
   });
 
-  // Get latest QA coaching
-  const latestCoaching = qaCoachingBookings.find(b => b.qaScores);
-
   // Filter by date range
   const filteredBookings = useMemo(() => {
     if (dateRange === 'all') return qaBookings;
@@ -66,6 +63,28 @@ export default function MyQA() {
       return isWithinInterval(bookingDate, { start: startDate, end: endOfDay(now) });
     });
   }, [qaBookings, dateRange]);
+
+  // Calculate top and lowest scored bookings
+  const { topScoredBooking, lowestScoredBooking } = useMemo(() => {
+    const scoredBookings = filteredBookings.filter(b => b.qaScores?.percentage !== undefined);
+    if (scoredBookings.length === 0) return { topScoredBooking: null, lowestScoredBooking: null };
+    
+    const sorted = [...scoredBookings].sort((a, b) => 
+      (b.qaScores?.percentage || 0) - (a.qaScores?.percentage || 0)
+    );
+    
+    const top = sorted[0];
+    const lowest = sorted[sorted.length - 1];
+    
+    // Match to coaching data
+    const topCoaching = qaCoachingBookings.find(c => c.bookingId === top.id);
+    const lowestCoaching = qaCoachingBookings.find(c => c.bookingId === lowest.id);
+    
+    return {
+      topScoredBooking: top ? { ...top, coaching: topCoaching } : null,
+      lowestScoredBooking: lowest && lowest.id !== top?.id ? { ...lowest, coaching: lowestCoaching } : null,
+    };
+  }, [filteredBookings, qaCoachingBookings]);
 
   const stats = calculateQAStats(filteredBookings, rubric);
 
@@ -170,24 +189,82 @@ export default function MyQA() {
           </Select>
         </div>
 
-        {/* Katty's QA Coaching Section */}
-        {latestCoaching && (
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-lg flex items-center gap-2">
-                <span className="text-pink-500">🎙️</span> Your Latest QA Coaching from Katty
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <QACoachingAudioPlayer
-                bookingId={latestCoaching.bookingId}
-                audioUrl={latestCoaching.qaCoachingAudioUrl}
-                listenedAt={latestCoaching.qaCoachingAudioListenedAt}
-                qaScore={latestCoaching.qaScores?.percentage}
-                canRegenerate={true}
-              />
-            </CardContent>
-          </Card>
+        {/* Top & Lowest Scored Calls Section */}
+        {topScoredBooking && (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* Top Scored Call */}
+            <Card className="border-success/30 bg-success/5">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <Trophy className="w-5 h-5 text-success" />
+                  Your Best Call
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="font-medium">{topScoredBooking.memberName}</p>
+                    <p className="text-sm text-muted-foreground">
+                      {format(new Date(topScoredBooking.bookingDate + 'T00:00:00'), 'MMM d, yyyy')}
+                      {topScoredBooking.marketCity && ` • ${topScoredBooking.marketCity}`}
+                    </p>
+                  </div>
+                  <Badge className="text-lg px-4 py-2 bg-success/20 text-success border-success/30" variant="outline">
+                    {topScoredBooking.qaScores?.percentage || 0}%
+                  </Badge>
+                </div>
+                <QACoachingAudioPlayer
+                  bookingId={topScoredBooking.id}
+                  audioUrl={topScoredBooking.coaching?.qaCoachingAudioUrl || null}
+                  listenedAt={topScoredBooking.coaching?.qaCoachingAudioListenedAt || null}
+                  qaScore={topScoredBooking.qaScores?.percentage}
+                  canRegenerate={true}
+                  variant="button"
+                />
+              </CardContent>
+            </Card>
+
+            {/* Lowest Scored Call - Only show if different from top */}
+            {lowestScoredBooking && (
+              <Card className="border-amber-500/30 bg-amber-500/5">
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-lg flex items-center gap-2">
+                    <Target className="w-5 h-5 text-amber-500" />
+                    Focus Call
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="font-medium">{lowestScoredBooking.memberName}</p>
+                      <p className="text-sm text-muted-foreground">
+                        {format(new Date(lowestScoredBooking.bookingDate + 'T00:00:00'), 'MMM d, yyyy')}
+                        {lowestScoredBooking.marketCity && ` • ${lowestScoredBooking.marketCity}`}
+                      </p>
+                    </div>
+                    <Badge 
+                      className={`text-lg px-4 py-2 ${
+                        (lowestScoredBooking.qaScores?.percentage || 0) >= 70 
+                          ? 'bg-accent/20 text-accent border-accent/30'
+                          : 'bg-amber-500/20 text-amber-500 border-amber-500/30'
+                      }`} 
+                      variant="outline"
+                    >
+                      {lowestScoredBooking.qaScores?.percentage || 0}%
+                    </Badge>
+                  </div>
+                  <QACoachingAudioPlayer
+                    bookingId={lowestScoredBooking.id}
+                    audioUrl={lowestScoredBooking.coaching?.qaCoachingAudioUrl || null}
+                    listenedAt={lowestScoredBooking.coaching?.qaCoachingAudioListenedAt || null}
+                    qaScore={lowestScoredBooking.qaScores?.percentage}
+                    canRegenerate={true}
+                    variant="button"
+                  />
+                </CardContent>
+              </Card>
+            )}
+          </div>
         )}
 
         {/* Stats Badge */}
