@@ -653,15 +653,12 @@ export default function Reports() {
                             <UserCircle className="h-4 w-4 text-blue-500 hover:text-blue-600 transition-colors" />
                           </a>
                         )}
-                        {/* Transcription Status Icon */}
+                        {/* Transcription Status Icon - Instant click, no blocking refresh */}
                         {booking.kixieLink && (
                           <button
-                            onClick={async () => {
-                              // Force refresh bookings to get latest data before opening modal
-                              await refreshBookings();
-                              // Find the updated booking from refreshed data
-                              const updatedBooking = bookings.find(b => b.id === booking.id);
-                              setSelectedBooking(updatedBooking || booking);
+                            onClick={() => {
+                              // Open modal immediately with current data
+                              setSelectedBooking(booking);
                               setShowTranscriptModal(true);
                             }}
                             title={
@@ -730,7 +727,7 @@ export default function Reports() {
         </div>
       </div>
 
-      {/* Transcription Modal */}
+      {/* Transcription Modal - uses realtime subscription for updates */}
       {selectedBooking && (
         <TranscriptionModal
           booking={selectedBooking}
@@ -740,9 +737,8 @@ export default function Reports() {
             setSelectedBooking(null);
           }}
           onTranscriptionComplete={() => {
-            refreshBookings();
-            setShowTranscriptModal(false);
-            setSelectedBooking(null);
+            // Background refresh, no need to close modal
+            refreshBookings(false);
           }}
         />
       )}
