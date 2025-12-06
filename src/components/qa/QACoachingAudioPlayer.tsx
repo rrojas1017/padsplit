@@ -147,11 +147,27 @@ export const QACoachingAudioPlayer: React.FC<QACoachingAudioPlayerProps> = ({
                 <Play className="h-4 w-4" />
               )}
             </Button>
-            {hasListened && (
+          {hasListened && (
               <Badge variant="outline" className="bg-green-500/10 text-green-600 border-green-500/20 text-xs">
                 <CheckCircle className="h-3 w-3 mr-1" />
                 Listened
               </Badge>
+            )}
+            {canRegenerate && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleGenerateAudio}
+                disabled={isGenerating}
+                className="h-8 w-8 p-0"
+                title="Regenerate with Katty's improved coaching"
+              >
+                {isGenerating ? (
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                ) : (
+                  <RotateCcw className="h-3 w-3" />
+                )}
+              </Button>
             )}
           </>
         ) : canRegenerate ? (
