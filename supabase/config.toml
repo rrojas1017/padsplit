@@ -47,3 +47,6 @@ verify_jwt = true
 
 [functions.batch-generate-qa-coaching]
 verify_jwt = false
+
+[functions.batch-reanalyze-member-details]
+verify_jwt = false
