@@ -70,19 +70,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  const fetchUserData = async (supabaseUser: SupabaseUser): Promise<boolean> => {
+  const fetchUserData = async (supabaseUser: SupabaseUser, retryCount = 0): Promise<boolean> => {
+    const maxRetries = 3;
+    const retryDelay = 1000; // 1 second between retries
+    
     try {
-      const { data: profile } = await supabase
+      const { data: profile, error: profileError } = await supabase
         .from('profiles')
         .select('*')
         .eq('id', supabaseUser.id)
         .maybeSingle();
 
-      const { data: roleData } = await supabase
+      if (profileError) {
+        throw profileError;
+      }
+
+      const { data: roleData, error: roleError } = await supabase
         .from('user_roles')
         .select('role')
         .eq('user_id', supabaseUser.id)
         .maybeSingle();
+
+      if (roleError) {
+        throw roleError;
+      }
 
       if (profile) {
         const userData: User = {
@@ -98,8 +109,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return true;
       }
       return false;
-    } catch (error) {
-      console.error('Error fetching user data:', error);
+    } catch (error: any) {
+      console.error(`Error fetching user data (attempt ${retryCount + 1}/${maxRetries}):`, error);
+      
+      // Retry on timeout or network errors
+      if (retryCount < maxRetries - 1) {
+        console.log(`Retrying in ${retryDelay}ms...`);
+        await new Promise(resolve => setTimeout(resolve, retryDelay));
+        return fetchUserData(supabaseUser, retryCount + 1);
+      }
+      
       return false;
     }
   };

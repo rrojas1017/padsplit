@@ -787,11 +787,51 @@ export type Database = {
         }
         Relationships: []
       }
+      voice_coaching_settings: {
+        Row: {
+          always_emphasize: string[] | null
+          coaching_tone: string
+          created_at: string
+          created_by: string | null
+          custom_expressions: string[] | null
+          id: string
+          is_active: boolean
+          never_mention: string[] | null
+          updated_at: string
+          voice_id: string
+        }
+        Insert: {
+          always_emphasize?: string[] | null
+          coaching_tone?: string
+          created_at?: string
+          created_by?: string | null
+          custom_expressions?: string[] | null
+          id?: string
+          is_active?: boolean
+          never_mention?: string[] | null
+          updated_at?: string
+          voice_id?: string
+        }
+        Update: {
+          always_emphasize?: string[] | null
+          coaching_tone?: string
+          created_at?: string
+          created_by?: string | null
+          custom_expressions?: string[] | null
+          id?: string
+          is_active?: boolean
+          never_mention?: string[] | null
+          updated_at?: string
+          voice_id?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
+      can_view_booking: { Args: { booking_agent_id: string }; Returns: boolean }
       get_agent_user_ids_for_site: {
         Args: { _site_id: string }
         Returns: string[]

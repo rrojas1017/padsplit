@@ -22,17 +22,22 @@ export function AgentsProvider({ children }: { children: ReactNode }) {
   const [isLoading, setIsLoading] = useState(true);
 
   const fetchSites = async () => {
-    const { data, error } = await supabase
-      .from('sites')
-      .select('*')
-      .order('name');
+    try {
+      const { data, error } = await supabase
+        .from('sites')
+        .select('*')
+        .order('name')
+        .limit(100);
 
-    if (error) {
+      if (error) {
+        console.error('Error fetching sites:', error);
+        return;
+      }
+
+      setSites(data || []);
+    } catch (error) {
       console.error('Error fetching sites:', error);
-      return;
     }
-
-    setSites(data || []);
   };
 
   const fetchAgents = async () => {
@@ -44,7 +49,8 @@ export function AgentsProvider({ children }: { children: ReactNode }) {
           *,
           sites(name)
         `)
-        .order('name');
+        .order('name')
+        .limit(500);
 
       if (error) {
         console.error('Error fetching agents:', error);
