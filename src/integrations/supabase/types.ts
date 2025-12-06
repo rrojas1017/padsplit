@@ -189,6 +189,9 @@ export type Database = {
           coaching_audio_url: string | null
           created_at: string | null
           id: string
+          qa_coaching_audio_generated_at: string | null
+          qa_coaching_audio_listened_at: string | null
+          qa_coaching_audio_url: string | null
           qa_scores: Json | null
           updated_at: string | null
         }
@@ -204,6 +207,9 @@ export type Database = {
           coaching_audio_url?: string | null
           created_at?: string | null
           id?: string
+          qa_coaching_audio_generated_at?: string | null
+          qa_coaching_audio_listened_at?: string | null
+          qa_coaching_audio_url?: string | null
           qa_scores?: Json | null
           updated_at?: string | null
         }
@@ -219,6 +225,9 @@ export type Database = {
           coaching_audio_url?: string | null
           created_at?: string | null
           id?: string
+          qa_coaching_audio_generated_at?: string | null
+          qa_coaching_audio_listened_at?: string | null
+          qa_coaching_audio_url?: string | null
           qa_scores?: Json | null
           updated_at?: string | null
         }
@@ -688,6 +697,48 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      qa_coaching_settings: {
+        Row: {
+          always_emphasize: string[] | null
+          coaching_tone: string
+          created_at: string | null
+          created_by: string | null
+          custom_expressions: string[] | null
+          id: string
+          is_active: boolean | null
+          max_audio_length_seconds: number
+          never_mention: string[] | null
+          updated_at: string | null
+          voice_id: string
+        }
+        Insert: {
+          always_emphasize?: string[] | null
+          coaching_tone?: string
+          created_at?: string | null
+          created_by?: string | null
+          custom_expressions?: string[] | null
+          id?: string
+          is_active?: boolean | null
+          max_audio_length_seconds?: number
+          never_mention?: string[] | null
+          updated_at?: string | null
+          voice_id?: string
+        }
+        Update: {
+          always_emphasize?: string[] | null
+          coaching_tone?: string
+          created_at?: string | null
+          created_by?: string | null
+          custom_expressions?: string[] | null
+          id?: string
+          is_active?: boolean | null
+          max_audio_length_seconds?: number
+          never_mention?: string[] | null
+          updated_at?: string | null
+          voice_id?: string
+        }
+        Relationships: []
       }
       qa_settings: {
         Row: {

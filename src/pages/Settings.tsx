@@ -15,6 +15,7 @@ import { CallRulesList } from '@/components/ai-management/CallRulesList';
 import { ScriptList } from '@/components/ai-management/ScriptList';
 import { AutoTranscriptionSettings } from '@/components/ai-management/AutoTranscriptionSettings';
 import { QARubricSettings } from '@/components/ai-management/QARubricSettings';
+import { KattyQASettings } from '@/components/ai-management/KattyQASettings';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { useState } from 'react';
@@ -302,6 +303,9 @@ export default function Settings() {
                 </div>
                 <QARubricSettings />
               </div>
+
+              {/* Katty QA Voice Settings */}
+              <KattyQASettings />
 
               {/* Info Box */}
               <div className="bg-primary/5 border border-primary/20 rounded-xl p-4">

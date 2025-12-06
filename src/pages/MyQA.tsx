@@ -3,6 +3,8 @@ import { usePageTracking } from '@/hooks/usePageTracking';
 import { useAuth } from '@/contexts/AuthContext';
 import { useAgents } from '@/contexts/AgentsContext';
 import { useQAData, calculateQAStats } from '@/hooks/useQAData';
+import { useQACoachingData } from '@/hooks/useQACoachingData';
+import { QACoachingAudioPlayer } from '@/components/qa/QACoachingAudioPlayer';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -29,6 +31,14 @@ export default function MyQA() {
     agentId: myAgent?.id,
     includeUnscored: false 
   });
+
+  // Get QA coaching data
+  const { qaCoachingBookings, isLoading: isCoachingLoading } = useQACoachingData({
+    agentId: myAgent?.id
+  });
+
+  // Get latest QA coaching
+  const latestCoaching = qaCoachingBookings.find(b => b.qaScores);
 
   // Filter by date range
   const filteredBookings = useMemo(() => {
@@ -158,6 +168,27 @@ export default function MyQA() {
               <SelectItem value="all">All Time</SelectItem>
             </SelectContent>
           </Select>
+        </div>
+
+        {/* Katty's QA Coaching Section */}
+        {latestCoaching && (
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-lg flex items-center gap-2">
+                <span className="text-pink-500">🎙️</span> Your Latest QA Coaching from Katty
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <QACoachingAudioPlayer
+                bookingId={latestCoaching.bookingId}
+                audioUrl={latestCoaching.qaCoachingAudioUrl}
+                listenedAt={latestCoaching.qaCoachingAudioListenedAt}
+                qaScore={latestCoaching.qaScores?.percentage}
+                canRegenerate={false}
+              />
+            </CardContent>
+          </Card>
+        )}
           
           <Badge variant="outline" className="gap-1">
             <Target className="w-3 h-3" />
