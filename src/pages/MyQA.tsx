@@ -184,7 +184,7 @@ export default function MyQA() {
                 audioUrl={latestCoaching.qaCoachingAudioUrl}
                 listenedAt={latestCoaching.qaCoachingAudioListenedAt}
                 qaScore={latestCoaching.qaScores?.percentage}
-                canRegenerate={false}
+                canRegenerate={true}
               />
             </CardContent>
           </Card>
