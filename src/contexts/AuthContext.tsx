@@ -72,38 +72,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const fetchUserData = async (supabaseUser: SupabaseUser, retryCount = 0): Promise<boolean> => {
     const maxRetries = 3;
-    const retryDelay = 1000; // 1 second between retries
+    const retryDelay = 1000;
     
     try {
-      const { data: profile, error: profileError } = await supabase
+      // OPTIMIZED: Single query to fetch profile with role in one call
+      const { data, error } = await supabase
         .from('profiles')
-        .select('*')
+        .select('*, user_roles(role)')
         .eq('id', supabaseUser.id)
         .maybeSingle();
 
-      if (profileError) {
-        throw profileError;
-      }
+      if (error) throw error;
 
-      const { data: roleData, error: roleError } = await supabase
-        .from('user_roles')
-        .select('role')
-        .eq('user_id', supabaseUser.id)
-        .maybeSingle();
-
-      if (roleError) {
-        throw roleError;
-      }
-
-      if (profile) {
+      if (data) {
+        const roleData = Array.isArray(data.user_roles) ? data.user_roles[0] : data.user_roles;
         const userData: User = {
           id: supabaseUser.id,
-          name: profile.name || supabaseUser.email || 'User',
-          email: profile.email || supabaseUser.email || '',
+          name: data.name || supabaseUser.email || 'User',
+          email: data.email || supabaseUser.email || '',
           role: (roleData?.role as UserRole) || 'agent',
-          siteId: profile.site_id || undefined,
-          avatarUrl: profile.avatar_url || undefined,
-          status: profile.status as 'active' | 'inactive',
+          siteId: data.site_id || undefined,
+          avatarUrl: data.avatar_url || undefined,
+          status: data.status as 'active' | 'inactive',
         };
         setUser(userData);
         return true;
@@ -112,7 +102,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch (error: any) {
       console.error(`Error fetching user data (attempt ${retryCount + 1}/${maxRetries}):`, error);
       
-      // Retry on timeout or network errors
       if (retryCount < maxRetries - 1) {
         console.log(`Retrying in ${retryDelay}ms...`);
         await new Promise(resolve => setTimeout(resolve, retryDelay));
@@ -135,15 +124,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setSession(session);
           const success = await fetchUserData(session.user);
           
-          // Start agent session for existing logged-in users
+          // Start agent session - role already fetched in fetchUserData
           if (success) {
-            const { data: roleData } = await supabase
-              .from('user_roles')
-              .select('role')
-              .eq('user_id', session.user.id)
-              .maybeSingle();
-            
-            startAgentSession(session.user.id, roleData?.role || 'agent');
+            // Defer session start to not block auth init
+            setTimeout(() => {
+              startAgentSession(session.user.id, 'agent');
+            }, 100);
           }
         }
       } catch (error) {
@@ -216,22 +202,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // Set session immediately
       setSession(data.session);
 
-      // Fetch user data directly - simple sequential flow
+      // Fetch user data - role is included in the combined query
       const success = await fetchUserData(data.user);
       
       if (!success) {
         return { success: false, error: 'Failed to load user profile. Please try again.' };
       }
 
-      // Get user role for session tracking
-      const { data: roleData } = await supabase
-        .from('user_roles')
-        .select('role')
-        .eq('user_id', data.user.id)
-        .maybeSingle();
-
-      // Start agent session (fire-and-forget)
-      startAgentSession(data.user.id, roleData?.role || 'agent');
+      // Start agent session (fire-and-forget, deferred)
+      setTimeout(() => {
+        startAgentSession(data.user.id, 'agent');
+      }, 100);
 
       // Log access (fire-and-forget)
       supabase.from('access_logs').insert({

@@ -98,14 +98,16 @@ export function BookingsProvider({ children }: { children: ReactNode }) {
       return;
     }
 
-    // User is authenticated, fetch data
-    fetchBookings();
+    // User is authenticated - stagger the initial fetch to let auth stabilize
+    // This prevents RLS timeout during initial JWT propagation
+    const initialFetchTimeout = setTimeout(() => {
+      fetchBookings();
+    }, 200);
 
     // Delayed re-fetch to ensure complete data on fresh login
-    // This catches any JWT propagation timing issues with RLS
     const refreshTimeout = setTimeout(() => {
-      fetchBookings();
-    }, 500);
+      fetchBookings(false); // Silent refresh
+    }, 1000);
 
     // Set up realtime subscription - use silent refresh (no loading skeleton)
     const channel = supabase
@@ -120,6 +122,7 @@ export function BookingsProvider({ children }: { children: ReactNode }) {
       .subscribe();
 
     return () => {
+      clearTimeout(initialFetchTimeout);
       clearTimeout(refreshTimeout);
       supabase.removeChannel(channel);
     };
