@@ -544,25 +544,46 @@ async function processTranscription(bookingId: string, kixieUrl: string) {
       summary = keyPoints.summary;
     }
 
-    // Step 4: Update the booking with transcription data and agent feedback
-    console.log('[Background] Updating booking with transcription data and agent feedback...');
-    const { error: updateError } = await supabase
+    // Step 4: Update the booking status and insert transcription data to separate table
+    console.log('[Background] Updating booking status and inserting transcription data...');
+    
+    // First update the booking status (light data stays in bookings table)
+    const { error: bookingUpdateError } = await supabase
       .from('bookings')
       .update({
-        call_transcription: transcription,
-        call_summary: summary,
-        call_key_points: keyPoints,
-        call_duration_seconds: callDurationSeconds,
         transcription_status: 'completed',
         transcribed_at: new Date().toISOString(),
-        agent_feedback: agentFeedback,
+        call_duration_seconds: callDurationSeconds,
       })
       .eq('id', bookingId);
 
-    if (updateError) {
-      console.error('[Background] Update error:', updateError);
-      throw new Error(`Failed to update booking: ${updateError.message}`);
+    if (bookingUpdateError) {
+      console.error('[Background] Booking update error:', bookingUpdateError);
+      throw new Error(`Failed to update booking: ${bookingUpdateError.message}`);
     }
+
+    // Then upsert the heavy data to booking_transcriptions table
+    const { error: transcriptionError } = await supabase
+      .from('booking_transcriptions')
+      .upsert({
+        booking_id: bookingId,
+        call_transcription: transcription,
+        call_summary: summary,
+        call_key_points: keyPoints,
+        agent_feedback: agentFeedback,
+        updated_at: new Date().toISOString(),
+      }, {
+        onConflict: 'booking_id'
+      });
+
+    if (transcriptionError) {
+      console.error('[Background] Transcription insert error:', transcriptionError);
+      throw new Error(`Failed to save transcription: ${transcriptionError.message}`);
+    }
+
+    // Clear timeout on success
+    clearTimeout(timeoutId);
+    console.log(`[Background] Transcription completed successfully for booking ${bookingId}`);
 
     // Clear timeout on success
     clearTimeout(timeoutId);

@@ -176,6 +176,56 @@ export type Database = {
           },
         ]
       }
+      booking_transcriptions: {
+        Row: {
+          agent_feedback: Json | null
+          booking_id: string
+          call_key_points: Json | null
+          call_summary: string | null
+          call_transcription: string | null
+          coaching_audio_generated_at: string | null
+          coaching_audio_regenerated_at: string | null
+          coaching_audio_url: string | null
+          created_at: string | null
+          id: string
+          updated_at: string | null
+        }
+        Insert: {
+          agent_feedback?: Json | null
+          booking_id: string
+          call_key_points?: Json | null
+          call_summary?: string | null
+          call_transcription?: string | null
+          coaching_audio_generated_at?: string | null
+          coaching_audio_regenerated_at?: string | null
+          coaching_audio_url?: string | null
+          created_at?: string | null
+          id?: string
+          updated_at?: string | null
+        }
+        Update: {
+          agent_feedback?: Json | null
+          booking_id?: string
+          call_key_points?: Json | null
+          call_summary?: string | null
+          call_transcription?: string | null
+          coaching_audio_generated_at?: string | null
+          coaching_audio_regenerated_at?: string | null
+          coaching_audio_url?: string | null
+          created_at?: string | null
+          id?: string
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "booking_transcriptions_booking_id_fkey"
+            columns: ["booking_id"]
+            isOneToOne: true
+            referencedRelation: "bookings"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       bookings: {
         Row: {
           admin_profile_link: string | null
@@ -839,6 +889,8 @@ export type Database = {
         Args: { _site_id: string }
         Returns: string[]
       }
+      get_my_role: { Args: never; Returns: string }
+      get_my_site_id: { Args: never; Returns: string }
       get_user_role: {
         Args: { _user_id: string }
         Returns: Database["public"]["Enums"]["app_role"]

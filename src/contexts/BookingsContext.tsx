@@ -47,18 +47,17 @@ export function BookingsProvider({ children }: { children: ReactNode }) {
       const dateLimit = format(ninetyDaysAgo, 'yyyy-MM-dd');
       
       const result = await deduplicatedQuery('bookings-fetch', async () => {
-        // OPTIMIZED: Exclude heavy JSONB columns (call_transcription, call_key_points, agent_feedback)
-        // These are loaded on-demand when user opens transcription modal
+        // OPTIMIZED: Heavy columns now in booking_transcriptions table
+        // Only fetch light columns from bookings - transcription data loaded on-demand
         const { data, error } = await supabase
           .from('bookings')
           .select(`
             id, member_name, booking_date, move_in_date, agent_id, status,
             booking_type, market_city, market_state, communication_method,
             notes, hubspot_link, kixie_link, admin_profile_link, move_in_day_reach_out,
-            created_by, created_at, call_summary,
+            created_by, created_at,
             transcription_status, transcription_error_message, transcribed_at, 
-            call_duration_seconds, coaching_audio_url, 
-            coaching_audio_generated_at, coaching_audio_regenerated_at, call_type_id
+            call_duration_seconds, call_type_id
           `)
           .gte('booking_date', dateLimit)
           .order('booking_date', { ascending: false })
@@ -94,18 +93,18 @@ export function BookingsProvider({ children }: { children: ReactNode }) {
         moveInDayReachOut: b.move_in_day_reach_out || false,
         createdBy: b.created_by || undefined,
         createdAt: b.created_at ? new Date(b.created_at) : undefined,
-        // Heavy JSONB columns excluded - loaded on-demand
+        // Heavy columns now in booking_transcriptions table - loaded on-demand via useBookingDetails hook
         callTranscription: undefined,
-        callSummary: b.call_summary || undefined,
+        callSummary: undefined,
         callKeyPoints: undefined,
         transcriptionStatus: b.transcription_status || undefined,
         transcriptionErrorMessage: b.transcription_error_message || undefined,
         transcribedAt: b.transcribed_at ? new Date(b.transcribed_at) : undefined,
         callDurationSeconds: b.call_duration_seconds || undefined,
         agentFeedback: undefined,
-        coachingAudioUrl: b.coaching_audio_url || undefined,
-        coachingAudioGeneratedAt: b.coaching_audio_generated_at ? new Date(b.coaching_audio_generated_at) : undefined,
-        coachingAudioRegeneratedAt: b.coaching_audio_regenerated_at ? new Date(b.coaching_audio_regenerated_at) : undefined,
+        coachingAudioUrl: undefined,
+        coachingAudioGeneratedAt: undefined,
+        coachingAudioRegeneratedAt: undefined,
         callTypeId: b.call_type_id || undefined,
       }));
 

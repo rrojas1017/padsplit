@@ -405,10 +405,10 @@ serve(async (req) => {
 
     console.log(`[ReAnalyze] Starting re-analysis for booking ${bookingId}`);
 
-    // Fetch the existing booking with transcription and call_type_id
+    // Fetch the existing booking status and call_type_id
     const { data: booking, error: fetchError } = await supabase
       .from('bookings')
-      .select('id, call_transcription, transcription_status, call_duration_seconds, call_type_id')
+      .select('id, transcription_status, call_duration_seconds, call_type_id')
       .eq('id', bookingId)
       .single();
 
@@ -416,15 +416,22 @@ serve(async (req) => {
       throw new Error(`Booking not found: ${fetchError?.message || 'Unknown error'}`);
     }
 
-    if (!booking.call_transcription) {
-      throw new Error('No transcription found. Please transcribe the call first.');
-    }
-
     if (booking.transcription_status !== 'completed') {
       throw new Error('Transcription is not completed yet.');
     }
 
-    console.log(`[ReAnalyze] Found transcription (${booking.call_transcription.length} chars, ${booking.call_duration_seconds}s duration)`);
+    // Fetch transcription from booking_transcriptions table
+    const { data: transcriptionData, error: transcriptionError } = await supabase
+      .from('booking_transcriptions')
+      .select('call_transcription')
+      .eq('booking_id', bookingId)
+      .single();
+
+    if (transcriptionError || !transcriptionData?.call_transcription) {
+      throw new Error('No transcription found. Please transcribe the call first.');
+    }
+
+    console.log(`[ReAnalyze] Found transcription (${transcriptionData.call_transcription.length} chars, ${booking.call_duration_seconds}s duration)`);
 
     // Fetch call type configuration if available
     const config = await fetchCallTypeConfig(supabase, booking.call_type_id);
@@ -432,20 +439,21 @@ serve(async (req) => {
     // Re-analyze with dynamic prompt and retry logic
     const { keyPoints, agentFeedback, summary } = await callAIWithRetry(
       lovableApiKey,
-      booking.call_transcription,
+      transcriptionData.call_transcription,
       config
     );
 
-    // Update the booking with new analysis
-    console.log('[ReAnalyze] Updating booking with new analysis...');
+    // Update booking_transcriptions with new analysis
+    console.log('[ReAnalyze] Updating booking_transcriptions with new analysis...');
     const { error: updateError } = await supabase
-      .from('bookings')
+      .from('booking_transcriptions')
       .update({
         call_summary: summary,
         call_key_points: keyPoints,
         agent_feedback: agentFeedback,
+        updated_at: new Date().toISOString(),
       })
-      .eq('id', bookingId);
+      .eq('booking_id', bookingId);
 
     if (updateError) {
       console.error('[ReAnalyze] Update error:', updateError);
