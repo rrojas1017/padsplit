@@ -35,3 +35,9 @@ verify_jwt = false
 
 [functions.cleanup-coaching-audio]
 verify_jwt = false
+
+[functions.generate-qa-scores]
+verify_jwt = true
+
+[functions.batch-generate-qa-scores]
+verify_jwt = true

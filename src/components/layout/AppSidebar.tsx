@@ -15,7 +15,8 @@ import {
   GraduationCap,
   Activity,
   Lightbulb,
-  Wrench
+  Wrench,
+  ClipboardCheck
 } from 'lucide-react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
@@ -53,6 +54,13 @@ const menuItems: MenuItem[] = [
     group: 'core'
   },
   {
+    icon: ClipboardCheck,
+    label: 'My QA',
+    path: '/my-qa',
+    roles: ['agent'],
+    group: 'core'
+  },
+  {
     icon: PlusCircle,
     label: 'Add Booking',
     path: '/add-booking',
@@ -84,6 +92,13 @@ const menuItems: MenuItem[] = [
     icon: GraduationCap, 
     label: 'Coaching Hub', 
     path: '/coaching-hub',
+    roles: ['super_admin', 'admin', 'supervisor'],
+    group: 'core'
+  },
+  {
+    icon: ClipboardCheck,
+    label: 'QA Dashboard',
+    path: '/qa-dashboard',
     roles: ['super_admin', 'admin', 'supervisor'],
     group: 'core'
   },
