@@ -83,13 +83,13 @@ serve(async (req) => {
     const qaScores = transcription.qa_scores as QAScores;
 
     // Fetch active QA rubric
-    const { data: qaSettings, error: qaSettingsError } = await supabase
+    const { data: qaSettings } = await supabase
       .from('qa_settings')
       .select('*')
       .eq('is_active', true)
-      .single();
+      .maybeSingle();
 
-    if (qaSettingsError || !qaSettings) {
+    if (!qaSettings) {
       console.log('No active QA rubric found, using default categories');
     }
 
