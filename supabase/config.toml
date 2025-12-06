@@ -41,3 +41,9 @@ verify_jwt = true
 
 [functions.batch-generate-qa-scores]
 verify_jwt = false
+
+[functions.generate-qa-coaching-audio]
+verify_jwt = true
+
+[functions.batch-generate-qa-coaching]
+verify_jwt = false
