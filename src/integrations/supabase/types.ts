@@ -189,6 +189,7 @@ export type Database = {
           coaching_audio_url: string | null
           created_at: string | null
           id: string
+          qa_scores: Json | null
           updated_at: string | null
         }
         Insert: {
@@ -203,6 +204,7 @@ export type Database = {
           coaching_audio_url?: string | null
           created_at?: string | null
           id?: string
+          qa_scores?: Json | null
           updated_at?: string | null
         }
         Update: {
@@ -217,6 +219,7 @@ export type Database = {
           coaching_audio_url?: string | null
           created_at?: string | null
           id?: string
+          qa_scores?: Json | null
           updated_at?: string | null
         }
         Relationships: [
@@ -685,6 +688,36 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      qa_settings: {
+        Row: {
+          categories: Json
+          created_at: string | null
+          created_by: string | null
+          id: string
+          is_active: boolean | null
+          name: string
+          updated_at: string | null
+        }
+        Insert: {
+          categories: Json
+          created_at?: string | null
+          created_by?: string | null
+          id?: string
+          is_active?: boolean | null
+          name?: string
+          updated_at?: string | null
+        }
+        Update: {
+          categories?: Json
+          created_at?: string | null
+          created_by?: string | null
+          id?: string
+          is_active?: boolean | null
+          name?: string
+          updated_at?: string | null
+        }
+        Relationships: []
       }
       script_templates: {
         Row: {
