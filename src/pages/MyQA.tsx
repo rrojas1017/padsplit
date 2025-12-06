@@ -97,9 +97,9 @@ export default function MyQA() {
     const top = sorted[0];
     const lowest = sorted[sorted.length - 1];
     
-    // Match to coaching data
-    const topCoaching = qaCoachingBookings.find(c => c.bookingId === top.id);
-    const lowestCoaching = qaCoachingBookings.find(c => c.bookingId === lowest.id);
+    // Match to coaching data (use bookingId, not transcription id)
+    const topCoaching = qaCoachingBookings.find(c => c.bookingId === top.bookingId);
+    const lowestCoaching = qaCoachingBookings.find(c => c.bookingId === lowest.bookingId);
     
     // Get weakest category for lowest scored booking
     const weakestCat = lowest && lowest.id !== top?.id ? getWeakestCategory(lowest) : null;
@@ -239,7 +239,7 @@ export default function MyQA() {
                   </Badge>
                 </div>
                 <QACoachingAudioPlayer
-                  bookingId={topScoredBooking.id}
+                  bookingId={topScoredBooking.bookingId}
                   audioUrl={topScoredBooking.coaching?.qaCoachingAudioUrl || null}
                   listenedAt={topScoredBooking.coaching?.qaCoachingAudioListenedAt || null}
                   qaScore={topScoredBooking.qaScores?.percentage}
@@ -288,7 +288,7 @@ export default function MyQA() {
                     </div>
                   )}
                   <QACoachingAudioPlayer
-                    bookingId={lowestScoredBooking.id}
+                    bookingId={lowestScoredBooking.bookingId}
                     audioUrl={lowestScoredBooking.coaching?.qaCoachingAudioUrl || null}
                     listenedAt={lowestScoredBooking.coaching?.qaCoachingAudioListenedAt || null}
                     qaScore={lowestScoredBooking.qaScores?.percentage}
@@ -388,7 +388,7 @@ export default function MyQA() {
             ) : (
               <div className="space-y-3 max-h-[500px] overflow-y-auto">
                 {filteredBookings.map((booking) => {
-                  const matchingCoaching = qaCoachingBookings.find(c => c.bookingId === booking.id);
+                  const matchingCoaching = qaCoachingBookings.find(c => c.bookingId === booking.bookingId);
                   const scorePercentage = booking.qaScores?.percentage || 0;
                   const hasListened = !!matchingCoaching?.qaCoachingAudioListenedAt;
                   
