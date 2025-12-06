@@ -355,11 +355,8 @@ export default function MyPerformance() {
             {periodBookings.length === 0 ? (
               <p className="text-muted-foreground text-sm">No bookings {periodLabel}. Keep going!</p>
             ) : (
-              (dateFilter === 'today' 
-                ? [...periodBookings].sort((a, b) => 
-                    (b.createdAt?.getTime() || 0) - (a.createdAt?.getTime() || 0)
-                  )
-                : periodBookings.slice(0, 5)
+              [...periodBookings].sort((a, b) => 
+                (b.createdAt?.getTime() || 0) - (a.createdAt?.getTime() || 0)
               ).map((booking) => {
                 // Find coaching data for this booking from the dedicated hook
                 const coachingData = coachingBookingsWithAudio.find(c => c.id === booking.id);
@@ -406,7 +403,7 @@ export default function MyPerformance() {
       {myAgent && (() => {
         // Use coaching data from dedicated hook
         const latestWithFeedback = coachingBookingsWithAudio
-          .filter(c => c.bookingDate >= periodStart && c.bookingDate <= periodEnd)
+          .filter(c => c.bookingDate >= periodStart && c.bookingDate <= periodEnd && c.coachingAudioUrl)
           .sort((a, b) => b.bookingDate.getTime() - a.bookingDate.getTime())[0];
         
         if (!latestWithFeedback) return null;
