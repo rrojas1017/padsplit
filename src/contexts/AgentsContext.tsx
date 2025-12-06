@@ -1,7 +1,8 @@
-import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { createContext, useContext, useState, useEffect, useRef, useCallback, ReactNode } from 'react';
 import { Agent } from '@/types';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
+import { deduplicatedQuery, debounce } from '@/utils/databaseCircuitBreaker';
 
 interface AgentsContextType {
   agents: Agent[];
@@ -20,44 +21,70 @@ export function AgentsProvider({ children }: { children: ReactNode }) {
   const [agents, setAgents] = useState<Agent[]>([]);
   const [sites, setSites] = useState<{ id: string; name: string; type: string }[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const lastFetchRef = useRef<number>(0);
+  const fetchInProgressRef = useRef<boolean>(false);
 
-  const fetchSites = async () => {
+  const fetchSites = useCallback(async () => {
     try {
-      const { data, error } = await supabase
-        .from('sites')
-        .select('*')
-        .order('name')
-        .limit(100);
+      const result = await deduplicatedQuery('sites-fetch', async () => {
+        const { data, error } = await supabase
+          .from('sites')
+          .select('*')
+          .order('name')
+          .limit(100);
 
-      if (error) {
-        console.error('Error fetching sites:', error);
-        return;
+        if (error) throw error;
+        return data;
+      });
+
+      if (result) {
+        setSites(result);
       }
-
-      setSites(data || []);
     } catch (error) {
       console.error('Error fetching sites:', error);
     }
-  };
+  }, []);
 
-  const fetchAgents = async () => {
+  const fetchAgents = useCallback(async () => {
+    // Prevent concurrent fetches
+    if (fetchInProgressRef.current) {
+      console.log('[AgentsContext] Fetch already in progress, skipping');
+      return;
+    }
+
+    // Rate limit: minimum 5 seconds between fetches
+    const now = Date.now();
+    if (now - lastFetchRef.current < 5000) {
+      console.log('[AgentsContext] Rate limited, skipping fetch');
+      return;
+    }
+
     try {
+      fetchInProgressRef.current = true;
       setIsLoading(true);
-      const { data, error } = await supabase
-        .from('agents')
-        .select(`
-          *,
-          sites(name)
-        `)
-        .order('name')
-        .limit(500);
+      
+      const result = await deduplicatedQuery('agents-fetch', async () => {
+        const { data, error } = await supabase
+          .from('agents')
+          .select(`
+            id, name, site_id, active, avatar_url, user_id,
+            sites(name)
+          `)
+          .order('name')
+          .limit(500);
 
-      if (error) {
-        console.error('Error fetching agents:', error);
+        if (error) throw error;
+        return data;
+      });
+
+      if (!result) {
+        // Circuit breaker blocked the query
         return;
       }
 
-      const transformedAgents: Agent[] = (data || []).map((a: any) => ({
+      lastFetchRef.current = Date.now();
+
+      const transformedAgents: Agent[] = (result || []).map((a: any) => ({
         id: a.id,
         userId: a.user_id || undefined,
         name: a.name,
@@ -71,17 +98,20 @@ export function AgentsProvider({ children }: { children: ReactNode }) {
     } catch (error) {
       console.error('Error fetching agents:', error);
     } finally {
+      fetchInProgressRef.current = false;
       setIsLoading(false);
     }
-  };
+  }, []);
+
+  // Debounced version for realtime updates
+  const debouncedFetchAgents = useCallback(
+    debounce(() => fetchAgents(), 2000),
+    [fetchAgents]
+  );
 
   useEffect(() => {
-    // Wait for auth to be ready
-    if (authLoading) {
-      return;
-    }
+    if (authLoading) return;
 
-    // If no user, clear data
     if (!user) {
       setAgents([]);
       setSites([]);
@@ -93,14 +123,14 @@ export function AgentsProvider({ children }: { children: ReactNode }) {
     fetchSites();
     fetchAgents();
 
-    // Set up realtime subscription
+    // Set up realtime subscription with debounced handler
     const channel = supabase
       .channel('agents-changes')
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'agents' },
         () => {
-          fetchAgents();
+          debouncedFetchAgents();
         }
       )
       .subscribe();
@@ -108,7 +138,7 @@ export function AgentsProvider({ children }: { children: ReactNode }) {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [user, authLoading]);
+  }, [user, authLoading, fetchSites, fetchAgents, debouncedFetchAgents]);
 
   const addAgent = async (agentData: Omit<Agent, 'id'>) => {
     const { error } = await supabase.from('agents').insert({
