@@ -47,21 +47,22 @@ export function BookingsProvider({ children }: { children: ReactNode }) {
       const dateLimit = format(ninetyDaysAgo, 'yyyy-MM-dd');
       
       const result = await deduplicatedQuery('bookings-fetch', async () => {
-        // Simplified query - fetch agent info from AgentsContext instead
+        // OPTIMIZED: Exclude heavy JSONB columns (call_transcription, call_key_points, agent_feedback)
+        // These are loaded on-demand when user opens transcription modal
         const { data, error } = await supabase
           .from('bookings')
           .select(`
             id, member_name, booking_date, move_in_date, agent_id, status,
             booking_type, market_city, market_state, communication_method,
             notes, hubspot_link, kixie_link, admin_profile_link, move_in_day_reach_out,
-            created_by, created_at, call_transcription, call_summary, call_key_points,
+            created_by, created_at, call_summary,
             transcription_status, transcription_error_message, transcribed_at, 
-            call_duration_seconds, agent_feedback, coaching_audio_url, 
-            coaching_audio_generated_at, coaching_audio_regenerated_at
+            call_duration_seconds, coaching_audio_url, 
+            coaching_audio_generated_at, coaching_audio_regenerated_at, call_type_id
           `)
           .gte('booking_date', dateLimit)
           .order('booking_date', { ascending: false })
-          .limit(1000);
+          .limit(500);
 
         if (error) throw error;
         return data;
@@ -93,17 +94,19 @@ export function BookingsProvider({ children }: { children: ReactNode }) {
         moveInDayReachOut: b.move_in_day_reach_out || false,
         createdBy: b.created_by || undefined,
         createdAt: b.created_at ? new Date(b.created_at) : undefined,
-        callTranscription: b.call_transcription || undefined,
+        // Heavy JSONB columns excluded - loaded on-demand
+        callTranscription: undefined,
         callSummary: b.call_summary || undefined,
-        callKeyPoints: b.call_key_points || undefined,
+        callKeyPoints: undefined,
         transcriptionStatus: b.transcription_status || undefined,
         transcriptionErrorMessage: b.transcription_error_message || undefined,
         transcribedAt: b.transcribed_at ? new Date(b.transcribed_at) : undefined,
         callDurationSeconds: b.call_duration_seconds || undefined,
-        agentFeedback: b.agent_feedback || undefined,
+        agentFeedback: undefined,
         coachingAudioUrl: b.coaching_audio_url || undefined,
         coachingAudioGeneratedAt: b.coaching_audio_generated_at ? new Date(b.coaching_audio_generated_at) : undefined,
         coachingAudioRegeneratedAt: b.coaching_audio_regenerated_at ? new Date(b.coaching_audio_regenerated_at) : undefined,
+        callTypeId: b.call_type_id || undefined,
       }));
 
       setBookings(transformedBookings);
