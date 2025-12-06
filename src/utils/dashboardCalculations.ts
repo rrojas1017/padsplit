@@ -281,6 +281,9 @@ export const calculateInsightsData = (
   bookings: Booking[],
   agents: Agent[]
 ): InsightsData => {
+  // Helper to get agent name from agents array
+  const getAgentName = (agentId: string): string => 
+    agents.find(a => a.id === agentId)?.name || 'Unknown Agent';
   const now = new Date();
   const currentHour = now.getHours();
   const currentMinutes = now.getMinutes();
@@ -331,7 +334,8 @@ export const calculateInsightsData = (
   // Weekly Top Performer
   const agentCounts = new Map<string, { name: string; count: number }>();
   weekBookings.forEach(b => {
-    const existing = agentCounts.get(b.agentId) || { name: b.agentName, count: 0 };
+    const agentName = getAgentName(b.agentId);
+    const existing = agentCounts.get(b.agentId) || { name: agentName, count: 0 };
     agentCounts.set(b.agentId, { name: existing.name, count: existing.count + 1 });
   });
   const sortedAgents = Array.from(agentCounts.values()).sort((a, b) => b.count - a.count);

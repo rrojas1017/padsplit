@@ -13,6 +13,7 @@ import { useState, useMemo, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { TranscriptionModal } from '@/components/booking/TranscriptionModal';
 import { Booking } from '@/types';
+import { getAgentName } from '@/utils/agentUtils';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -223,8 +224,9 @@ export default function Reports() {
       // Search filter
       if (searchQuery) {
         const query = searchQuery.toLowerCase();
+        const agentName = getAgentName(agents, booking.agentId);
         const matchesMember = booking.memberName.toLowerCase().includes(query);
-        const matchesAgent = booking.agentName.toLowerCase().includes(query);
+        const matchesAgent = agentName.toLowerCase().includes(query);
         const matchesCity = booking.marketCity?.toLowerCase().includes(query);
         const matchesState = booking.marketState?.toLowerCase().includes(query);
         if (!matchesMember && !matchesAgent && !matchesCity && !matchesState) return false;
@@ -244,7 +246,7 @@ export default function Reports() {
       case 'memberName':
         return booking.memberName.toLowerCase();
       case 'agentName':
-        return booking.agentName.toLowerCase();
+        return getAgentName(agents, booking.agentId).toLowerCase();
       case 'market':
         return `${booking.marketCity || ''} ${booking.marketState || ''}`.toLowerCase();
       case 'bookingType':
@@ -315,7 +317,7 @@ export default function Reports() {
       format(booking.bookingDate, 'yyyy-MM-dd'),
       format(booking.moveInDate, 'yyyy-MM-dd'),
       booking.memberName,
-      booking.agentName,
+      getAgentName(agents, booking.agentId),
       booking.marketCity || '',
       booking.marketState || '',
       booking.bookingType,
@@ -617,7 +619,7 @@ export default function Reports() {
                       {booking.memberName}
                     </td>
                     <td className="py-3 px-4 text-sm text-foreground">
-                      {booking.agentName}
+                      {getAgentName(agents, booking.agentId)}
                     </td>
                     <td className="py-3 px-4 text-sm text-muted-foreground">
                       {booking.marketCity}, {booking.marketState}
