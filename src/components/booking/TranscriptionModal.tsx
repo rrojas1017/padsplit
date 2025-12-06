@@ -9,7 +9,8 @@ import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/contexts/AuthContext';
 import { useBookingDetails } from '@/hooks/useBookingDetails';
-import { Booking, CallKeyPoints, AgentFeedback } from '@/types';
+import { Booking, CallKeyPoints, AgentFeedback, MemberDetails } from '@/types';
+import { MemberDetailsCard } from './MemberDetailsCard';
 
 interface TranscriptionModalProps {
   booking: Booking;
@@ -453,6 +454,14 @@ export function TranscriptionModal({ booking, isOpen, onClose, onTranscriptionCo
                   {callSummary || keyPoints?.summary}
                 </p>
               </div>
+
+              {/* Member Details Card - extracted contact/booking info */}
+              {keyPoints?.memberDetails && (
+                <MemberDetailsCard 
+                  memberDetails={keyPoints.memberDetails} 
+                  memberName={booking.memberName}
+                />
+              )}
 
               {/* Re-Analyze Button - shows when analysis appears incomplete */}
               {showReanalyzeButton && (

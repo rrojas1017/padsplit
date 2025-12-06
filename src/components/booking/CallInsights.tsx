@@ -9,6 +9,7 @@ import { toast } from 'sonner';
 import { useAuth } from '@/contexts/AuthContext';
 import { useBookingDetails } from '@/hooks/useBookingDetails';
 import { CoachingAudioPlayer } from '@/components/coaching/CoachingAudioPlayer';
+import { MemberDetailsCard } from './MemberDetailsCard';
 import { 
   Mic, Loader2, CheckCircle, XCircle, ChevronDown, ChevronUp,
   AlertCircle, Heart, Lightbulb, ListTodo, AlertTriangle,
@@ -127,6 +128,14 @@ export function CallInsights({ booking, onTranscriptionComplete }: CallInsightsP
               </div>
             </CardContent>
           </Card>
+
+          {/* Member Details Card */}
+          {callKeyPoints?.memberDetails && (
+            <MemberDetailsCard 
+              memberDetails={callKeyPoints.memberDetails}
+              memberName={booking.memberName}
+            />
+          )}
 
           {agentFeedback && (
             <Card className="border-accent/30 bg-accent/5">

@@ -26,6 +26,19 @@ export interface Agent {
   avatarUrl?: string;
 }
 
+export interface MemberDetails {
+  firstName?: string | null;
+  lastName?: string | null;
+  phoneNumber?: string | null;
+  email?: string | null;
+  householdSize?: number | null;
+  weeklyBudget?: number | null;
+  moveInDate?: string | null;
+  commitmentWeeks?: number | null;
+  preferredPaymentMethod?: string | null;
+  propertyAddress?: string | null;
+}
+
 export interface CallKeyPoints {
   summary: string;
   memberConcerns: string[];
@@ -34,6 +47,7 @@ export interface CallKeyPoints {
   objections: string[];
   moveInReadiness: 'high' | 'medium' | 'low';
   callSentiment: 'positive' | 'neutral' | 'negative';
+  memberDetails?: MemberDetails;
 }
 
 export interface AgentFeedback {
