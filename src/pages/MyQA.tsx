@@ -2,19 +2,18 @@ import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { usePageTracking } from '@/hooks/usePageTracking';
 import { useAuth } from '@/contexts/AuthContext';
 import { useAgents } from '@/contexts/AgentsContext';
-import { useQAData, calculateQAStats, QABooking } from '@/hooks/useQAData';
+import { useQAData, calculateQAStats } from '@/hooks/useQAData';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Skeleton } from '@/components/ui/skeleton';
-import { Progress } from '@/components/ui/progress';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { 
   ClipboardCheck, TrendingUp, Calendar, Target, Award, BarChart3, 
-  Trophy, Star, AlertTriangle, CheckCircle2, Sparkles, ArrowUp, ArrowDown
+  Trophy, ArrowUp, ArrowDown
 } from 'lucide-react';
 import { useState, useMemo } from 'react';
 import { format, isWithinInterval, startOfDay, endOfDay, startOfWeek, startOfMonth } from 'date-fns';
-import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, BarChart, Bar, Cell, Area, AreaChart } from 'recharts';
+import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Cell } from 'recharts';
 
 type DateRange = 'today' | 'week' | 'month' | 'all';
 
@@ -80,6 +79,7 @@ export default function MyQA() {
     return Object.entries(dailyData).map(([date, data]) => ({
       date: format(new Date(date + 'T00:00:00'), 'MMM d'),
       percentage: Math.round(data.total / data.count),
+      calls: data.count,
     }));
   }, [filteredBookings]);
 
@@ -89,7 +89,7 @@ export default function MyQA() {
     return rubric.categories.map(cat => ({
       name: cat.name.split(' ').slice(0, 2).join(' '),
       fullName: cat.name,
-      score: Math.round((stats.categoryAverages[cat.name] || 0) * 10) / 10,
+      avgScore: Math.round((stats.categoryAverages[cat.name] || 0) * 10) / 10,
       max: cat.maxPoints,
       percentage: Math.round(((stats.categoryAverages[cat.name] || 0) / cat.maxPoints) * 100),
     }));
@@ -109,48 +109,12 @@ export default function MyQA() {
     return 'text-destructive';
   };
 
-  const getScoreBgColor = (percentage: number) => {
-    if (percentage >= 85) return 'bg-success/20 border-success/30';
-    if (percentage >= 70) return 'bg-accent/20 border-accent/30';
-    return 'bg-destructive/20 border-destructive/30';
-  };
-
-  const getScoreBadge = (percentage: number) => {
-    if (percentage >= 90) return { label: 'Excellent', variant: 'default' as const, icon: Trophy };
-    if (percentage >= 80) return { label: 'Good', variant: 'secondary' as const, icon: Star };
-    if (percentage >= 70) return { label: 'Average', variant: 'outline' as const, icon: CheckCircle2 };
-    return { label: 'Needs Work', variant: 'destructive' as const, icon: AlertTriangle };
-  };
-
-  const getProgressColor = (percentage: number) => {
-    if (percentage >= 85) return 'bg-success';
-    if (percentage >= 70) return 'bg-accent';
-    return 'bg-destructive';
-  };
-
-  // Loading State with Skeletons
+  // Loading State - Simple like QADashboard
   if (isLoading) {
     return (
-      <DashboardLayout title="My QA Scores" subtitle="Quality assurance scores for your calls">
-        <div className="space-y-6">
-          {/* Hero Skeleton */}
-          <Skeleton className="h-48 w-full rounded-2xl" />
-          
-          {/* KPI Cards Skeleton */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            {[1, 2, 3, 4].map(i => (
-              <Skeleton key={i} className="h-28 rounded-xl" />
-            ))}
-          </div>
-          
-          {/* Charts Skeleton */}
-          <div className="grid md:grid-cols-2 gap-6">
-            <Skeleton className="h-72 rounded-xl" />
-            <Skeleton className="h-72 rounded-xl" />
-          </div>
-          
-          {/* List Skeleton */}
-          <Skeleton className="h-64 rounded-xl" />
+      <DashboardLayout title="My QA Scores" subtitle="Loading your quality scores...">
+        <div className="flex items-center justify-center h-64">
+          <div className="animate-pulse text-muted-foreground">Loading QA data...</div>
         </div>
       </DashboardLayout>
     );
@@ -159,7 +123,7 @@ export default function MyQA() {
   if (!myAgent) {
     return (
       <DashboardLayout title="My QA Scores" subtitle="Quality assurance scores for your calls">
-        <Card className="border-dashed shadow-card">
+        <Card className="border-dashed">
           <CardContent className="py-16 text-center">
             <div className="w-20 h-20 mx-auto mb-6 rounded-full bg-muted/50 flex items-center justify-center">
               <ClipboardCheck className="w-10 h-10 text-muted-foreground" />
@@ -174,348 +138,255 @@ export default function MyQA() {
     );
   }
 
-  const scoreBadgeInfo = getScoreBadge(stats.avgPercentage);
-  const ScoreBadgeIcon = scoreBadgeInfo.icon;
-
   return (
     <DashboardLayout 
       title="My QA Scores" 
       subtitle="Quality assurance scores for your calls"
     >
       <div className="space-y-6">
-        {/* Period Selector */}
-        <div className="flex flex-wrap justify-between items-center gap-3">
-          <div className="flex items-center gap-2">
-            <Calendar className="w-4 h-4 text-muted-foreground" />
-            <Select value={dateRange} onValueChange={(v) => setDateRange(v as DateRange)}>
-              <SelectTrigger className="w-[150px]">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="today">Today</SelectItem>
-                <SelectItem value="week">This Week</SelectItem>
-                <SelectItem value="month">This Month</SelectItem>
-                <SelectItem value="all">All Time</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          <Badge variant="secondary" className="gap-1.5 py-1.5 px-3">
-            <Target className="w-3.5 h-3.5" />
+        {/* Controls */}
+        <div className="flex flex-wrap justify-between items-center gap-4">
+          <Select value={dateRange} onValueChange={(v) => setDateRange(v as DateRange)}>
+            <SelectTrigger className="w-[140px]">
+              <Calendar className="w-4 h-4 mr-2" />
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="today">Today</SelectItem>
+              <SelectItem value="week">This Week</SelectItem>
+              <SelectItem value="month">This Month</SelectItem>
+              <SelectItem value="all">All Time</SelectItem>
+            </SelectContent>
+          </Select>
+          
+          <Badge variant="outline" className="gap-1">
+            <Target className="w-3 h-3" />
             {stats.totalCalls} Scored Calls
           </Badge>
         </div>
-        {/* Hero Score Banner */}
-        <div 
-          className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-primary/15 via-primary/5 to-accent/10 border border-primary/20 p-8 animate-fade-in"
-        >
-          {/* Background decoration */}
-          <div className="absolute top-0 right-0 w-64 h-64 bg-gradient-to-bl from-accent/20 to-transparent rounded-full blur-3xl -translate-y-1/2 translate-x-1/2" />
-          <div className="absolute bottom-0 left-0 w-48 h-48 bg-gradient-to-tr from-primary/15 to-transparent rounded-full blur-2xl translate-y-1/2 -translate-x-1/4" />
-          
-          <div className="relative flex flex-col md:flex-row items-center justify-between gap-6">
-            <div className="text-center md:text-left">
-              <div className="flex items-center gap-2 mb-2">
-                <Sparkles className="w-4 h-4 text-accent" />
-                <p className="text-sm font-medium text-muted-foreground uppercase tracking-wider">Your QA Score</p>
-              </div>
-              
-              {stats.totalCalls > 0 ? (
-                <>
-                  <div className="flex items-baseline gap-3 mb-3">
-                    <span className={`text-6xl md:text-7xl font-bold tracking-tight ${getScoreColor(stats.avgPercentage)}`}>
-                      {stats.avgPercentage.toFixed(0)}
-                    </span>
-                    <span className="text-3xl text-muted-foreground font-light">%</span>
-                  </div>
-                  <p className="text-muted-foreground mb-4">
-                    {stats.avgTotal.toFixed(1)} / {stats.maxTotal} points average
+
+        {/* Overview Cards - Match QADashboard style */}
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <Card className="bg-gradient-to-br from-primary/10 to-primary/5 border-primary/20">
+            <CardContent className="pt-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-muted-foreground">Your QA Score</p>
+                  <p className={`text-3xl font-bold ${getScoreColor(stats.avgPercentage)}`}>
+                    {stats.avgPercentage.toFixed(1)}%
                   </p>
-                  <Badge 
-                    variant={scoreBadgeInfo.variant} 
-                    className="gap-1.5 px-4 py-1.5 text-sm font-medium"
-                  >
-                    <ScoreBadgeIcon className="w-4 h-4" />
-                    {scoreBadgeInfo.label}
-                  </Badge>
-                </>
+                </div>
+                <Award className={`w-10 h-10 ${getScoreColor(stats.avgPercentage)}`} />
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardContent className="pt-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-muted-foreground">Avg Points</p>
+                  <p className="text-3xl font-bold text-foreground">
+                    {stats.avgTotal.toFixed(1)}<span className="text-lg text-muted-foreground">/{stats.maxTotal}</span>
+                  </p>
+                </div>
+                <Target className="w-10 h-10 text-accent" />
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardContent className="pt-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-muted-foreground">Best Category</p>
+                  <p className="text-xl font-bold text-foreground truncate">{bestCategory?.name || '—'}</p>
+                  {bestCategory && <p className="text-xs text-success">{bestCategory.percentage}%</p>}
+                </div>
+                <ArrowUp className="w-10 h-10 text-success" />
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardContent className="pt-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-muted-foreground">Focus Area</p>
+                  <p className="text-xl font-bold text-foreground truncate">{worstCategory?.name || '—'}</p>
+                  {worstCategory && <p className="text-xs text-amber-500">{worstCategory.percentage}%</p>}
+                </div>
+                <ArrowDown className="w-10 h-10 text-amber-500" />
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* Recent Scores Table */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-lg">
+                <Trophy className="w-5 h-5 text-accent" />
+                Recent QA Scores
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {filteredBookings.length === 0 ? (
+                <p className="text-center text-muted-foreground py-8">No scored calls yet</p>
               ) : (
-                <div className="space-y-3">
-                  <p className="text-2xl font-medium text-muted-foreground">No scores yet</p>
-                  <p className="text-sm text-muted-foreground/70">Complete calls to see your QA scores</p>
-                </div>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Date</TableHead>
+                      <TableHead>Member</TableHead>
+                      <TableHead className="text-right">Score</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {filteredBookings.slice(0, 10).map((booking) => (
+                      <TableRow key={booking.id}>
+                        <TableCell className="text-muted-foreground">
+                          {format(new Date(booking.bookingDate + 'T00:00:00'), 'MMM d')}
+                        </TableCell>
+                        <TableCell className="font-medium">{booking.memberName}</TableCell>
+                        <TableCell className="text-right">
+                          <span className={`font-bold ${getScoreColor(booking.qaScores?.percentage || 0)}`}>
+                            {booking.qaScores?.percentage || 0}%
+                          </span>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
               )}
-            </div>
-            
-            <div className="flex-shrink-0">
-              <div className={`w-28 h-28 rounded-full flex items-center justify-center ${
-                stats.totalCalls > 0 ? getScoreBgColor(stats.avgPercentage) : 'bg-muted/30'
-              } border-2 transition-all duration-500`}>
-                <Award className={`w-14 h-14 ${stats.totalCalls > 0 ? getScoreColor(stats.avgPercentage) : 'text-muted-foreground/50'}`} />
-              </div>
-            </div>
-          </div>
-        </div>
+            </CardContent>
+          </Card>
 
-        {/* KPI Cards Row */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          {/* Average Score */}
-          <Card className="shadow-card border-border/50 animate-fade-in" style={{ animationDelay: '0.1s' }}>
-            <CardContent className="p-4">
-              <div className="flex items-start justify-between mb-2">
-                <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
-                  <Target className="w-5 h-5 text-primary" />
-                </div>
-              </div>
-              <p className="text-2xl font-bold">{stats.avgPercentage.toFixed(0)}%</p>
-              <p className="text-xs text-muted-foreground mt-1">Average Score</p>
-            </CardContent>
-          </Card>
-          
-          {/* Total Calls */}
-          <Card className="shadow-card border-border/50 animate-fade-in" style={{ animationDelay: '0.15s' }}>
-            <CardContent className="p-4">
-              <div className="flex items-start justify-between mb-2">
-                <div className="w-10 h-10 rounded-lg bg-accent/10 flex items-center justify-center">
-                  <ClipboardCheck className="w-5 h-5 text-accent" />
-                </div>
-              </div>
-              <p className="text-2xl font-bold">{stats.totalCalls}</p>
-              <p className="text-xs text-muted-foreground mt-1">Scored Calls</p>
-            </CardContent>
-          </Card>
-          
-          {/* Best Category */}
-          <Card className="shadow-card border-border/50 animate-fade-in" style={{ animationDelay: '0.2s' }}>
-            <CardContent className="p-4">
-              <div className="flex items-start justify-between mb-2">
-                <div className="w-10 h-10 rounded-lg bg-success/10 flex items-center justify-center">
-                  <ArrowUp className="w-5 h-5 text-success" />
-                </div>
-              </div>
-              <p className="text-lg font-bold truncate">{bestCategory?.name || '—'}</p>
-              <p className="text-xs text-muted-foreground mt-1">
-                Best Category {bestCategory ? `(${bestCategory.percentage}%)` : ''}
-              </p>
-            </CardContent>
-          </Card>
-          
-          {/* Improvement Area */}
-          <Card className="shadow-card border-border/50 animate-fade-in" style={{ animationDelay: '0.25s' }}>
-            <CardContent className="p-4">
-              <div className="flex items-start justify-between mb-2">
-                <div className="w-10 h-10 rounded-lg bg-amber-500/10 flex items-center justify-center">
-                  <ArrowDown className="w-5 h-5 text-amber-500" />
-                </div>
-              </div>
-              <p className="text-lg font-bold truncate">{worstCategory?.name || '—'}</p>
-              <p className="text-xs text-muted-foreground mt-1">
-                Focus Area {worstCategory ? `(${worstCategory.percentage}%)` : ''}
-              </p>
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Charts Row */}
-        <div className="grid md:grid-cols-2 gap-6">
           {/* Category Breakdown */}
-          <Card className="shadow-card animate-fade-in" style={{ animationDelay: '0.3s' }}>
-            <CardHeader className="pb-2">
-              <CardTitle className="flex items-center gap-2 text-base font-semibold">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-lg">
                 <BarChart3 className="w-5 h-5 text-accent" />
-                Score by Category
+                Category Performance
               </CardTitle>
             </CardHeader>
-            <CardContent className="pt-0">
-              {categoryData.length > 0 && stats.totalCalls > 0 ? (
-                <div className="space-y-4">
-                  {categoryData.map((cat, idx) => (
-                    <div key={cat.name} className="space-y-2">
-                      <div className="flex items-center justify-between text-sm">
-                        <span className="font-medium truncate max-w-[60%]">{cat.fullName}</span>
-                        <span className={`font-semibold ${getScoreColor(cat.percentage)}`}>
-                          {cat.percentage}%
-                        </span>
-                      </div>
-                      <div className="h-2.5 bg-muted rounded-full overflow-hidden">
-                        <div 
-                          className={`h-full rounded-full transition-all duration-700 ${getProgressColor(cat.percentage)}`}
-                          style={{ 
-                            width: `${cat.percentage}%`,
-                            animationDelay: `${idx * 0.1}s`
-                          }}
-                        />
-                      </div>
-                      <p className="text-xs text-muted-foreground">
-                        {cat.score} / {cat.max} points
-                      </p>
-                    </div>
-                  ))}
-                </div>
+            <CardContent>
+              {categoryData.length === 0 || stats.totalCalls === 0 ? (
+                <p className="text-center text-muted-foreground py-8">No data available</p>
               ) : (
-                <div className="h-48 flex items-center justify-center text-muted-foreground text-sm">
-                  No category data available
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
-          {/* Score Trend Chart */}
-          <Card className="shadow-card animate-fade-in" style={{ animationDelay: '0.35s' }}>
-            <CardHeader className="pb-2">
-              <CardTitle className="flex items-center gap-2 text-base font-semibold">
-                <TrendingUp className="w-5 h-5 text-accent" />
-                Score Trend
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="pt-0">
-              {trendData.length > 1 ? (
-                <div className="h-56">
+                <div className="h-64">
                   <ResponsiveContainer width="100%" height="100%">
-                    <AreaChart data={trendData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                      <defs>
-                        <linearGradient id="myQaScoreGradient" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="0%" stopColor="hsl(var(--accent))" stopOpacity={0.4} />
-                          <stop offset="50%" stopColor="hsl(var(--accent))" stopOpacity={0.15} />
-                          <stop offset="100%" stopColor="hsl(var(--accent))" stopOpacity={0.02} />
-                        </linearGradient>
-                      </defs>
-                      <XAxis 
-                        dataKey="date" 
-                        tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 11 }} 
-                        axisLine={false}
-                        tickLine={false}
-                        dy={10}
-                      />
+                    <BarChart data={categoryData} layout="vertical" margin={{ left: 10, right: 20 }}>
+                      <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
+                      <XAxis type="number" domain={[0, 100]} tickFormatter={(v) => `${v}%`} />
                       <YAxis 
-                        domain={[0, 100]} 
-                        tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 11 }}
-                        axisLine={false}
-                        tickLine={false}
-                        tickFormatter={(v) => `${v}%`}
-                        width={40}
+                        type="category" 
+                        dataKey="name" 
+                        width={90}
+                        tick={{ fontSize: 11 }}
                       />
                       <Tooltip 
                         content={({ active, payload }) => {
                           if (active && payload?.[0]) {
-                            const percentage = payload[0].value as number;
+                            const data = payload[0].payload;
                             return (
-                              <div className="bg-popover/95 backdrop-blur-md border border-border/50 px-4 py-3 rounded-xl shadow-xl">
-                                <p className="font-semibold text-sm text-foreground">{payload[0].payload.date}</p>
-                                <div className="flex items-baseline gap-1 mt-1">
-                                  <span className={`text-lg font-bold ${getScoreColor(percentage)}`}>{percentage}%</span>
-                                  <span className="text-xs text-muted-foreground">avg score</span>
-                                </div>
+                              <div className="bg-popover border border-border p-3 rounded-lg shadow-lg">
+                                <p className="font-medium text-sm">{data.fullName}</p>
+                                <p className="text-accent">{data.avgScore}/{data.max} pts ({data.percentage}%)</p>
                               </div>
                             );
                           }
                           return null;
                         }}
                       />
-                      <Area 
-                        type="monotone" 
-                        dataKey="percentage" 
-                        stroke="hsl(var(--accent))" 
-                        strokeWidth={2.5}
-                        fill="url(#myQaScoreGradient)" 
-                        dot={{ fill: 'hsl(var(--accent))', r: 4, strokeWidth: 2, stroke: 'hsl(var(--background))' }}
-                        activeDot={{ r: 7, strokeWidth: 3, fill: 'hsl(var(--accent))', stroke: 'hsl(var(--background))' }}
-                      />
-                    </AreaChart>
+                      <Bar dataKey="percentage" radius={[0, 4, 4, 0]}>
+                        {categoryData.map((entry, index) => (
+                          <Cell 
+                            key={index} 
+                            fill={entry.percentage >= 85 ? 'hsl(var(--success))' : 
+                                  entry.percentage >= 70 ? 'hsl(var(--accent))' : 
+                                  'hsl(var(--destructive))'} 
+                          />
+                        ))}
+                      </Bar>
+                    </BarChart>
                   </ResponsiveContainer>
-                </div>
-              ) : (
-                <div className="h-56 flex flex-col items-center justify-center text-muted-foreground">
-                  <TrendingUp className="w-10 h-10 mb-3 opacity-30" />
-                  <p className="text-sm">Need 2+ days of data for trends</p>
                 </div>
               )}
             </CardContent>
           </Card>
         </div>
 
-        {/* Recent QA Scores */}
-        <Card className="shadow-card animate-fade-in" style={{ animationDelay: '0.4s' }}>
-          <CardHeader className="pb-3">
-            <CardTitle className="flex items-center gap-2 text-base font-semibold">
-              <ClipboardCheck className="w-5 h-5 text-accent" />
-              Recent QA Scores
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="pt-0">
-            {filteredBookings.length === 0 ? (
-              <div className="text-center py-12">
-                <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-muted/50 flex items-center justify-center">
-                  <ClipboardCheck className="w-8 h-8 text-muted-foreground/50" />
-                </div>
-                <h4 className="font-medium mb-1">No QA Scores Yet</h4>
-                <p className="text-sm text-muted-foreground max-w-xs mx-auto">
-                  Scores are generated after your calls are transcribed and analyzed.
-                </p>
-              </div>
-            ) : (
-              <div className="space-y-2 max-h-[400px] overflow-y-auto pr-1">
-                {filteredBookings
-                  .sort((a, b) => new Date(b.bookingDate).getTime() - new Date(a.bookingDate).getTime())
-                  .map((booking, idx) => (
-                    <div 
-                      key={booking.id}
-                      className="group flex items-center justify-between p-4 rounded-xl border border-border/50 bg-card hover:bg-muted/30 hover:border-border transition-all duration-200 cursor-default animate-fade-in"
-                      style={{ animationDelay: `${0.05 * idx}s` }}
-                    >
-                      <div className="flex items-center gap-4 min-w-0">
-                        {/* Score Circle */}
-                        <div className={`flex-shrink-0 w-12 h-12 rounded-full flex items-center justify-center text-sm font-bold ${
-                          booking.qaScores 
-                            ? getScoreBgColor(booking.qaScores.percentage) 
-                            : 'bg-muted border-muted'
-                        } border-2`}>
-                          {booking.qaScores ? (
-                            <span className={getScoreColor(booking.qaScores.percentage)}>
-                              {booking.qaScores.percentage}%
-                            </span>
-                          ) : (
-                            <span className="text-muted-foreground text-xs">—</span>
-                          )}
-                        </div>
-                        
-                        <div className="min-w-0">
-                          <p className="font-medium truncate">{booking.memberName}</p>
-                          <p className="text-sm text-muted-foreground truncate">
-                            {format(new Date(booking.bookingDate + 'T00:00:00'), 'MMM d, yyyy')}
-                            {booking.marketCity && (
-                              <span className="hidden sm:inline"> • {booking.marketCity}, {booking.marketState}</span>
-                            )}
-                          </p>
-                        </div>
-                      </div>
-                      
-                      <div className="flex items-center gap-3">
-                        {booking.qaScores ? (
-                          <>
-                            <div className="hidden sm:block text-right">
-                              <p className="text-xs text-muted-foreground">
-                                {booking.qaScores.total}/{booking.qaScores.maxTotal} pts
-                              </p>
+        {/* Trend Chart */}
+        {trendData.length > 1 && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-lg">
+                <TrendingUp className="w-5 h-5 text-accent" />
+                Score Trend Over Time
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="h-64">
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={trendData} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
+                    <defs>
+                      <linearGradient id="myQaScoreGradient" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor="hsl(var(--accent))" stopOpacity={0.4} />
+                        <stop offset="50%" stopColor="hsl(var(--accent))" stopOpacity={0.15} />
+                        <stop offset="100%" stopColor="hsl(var(--accent))" stopOpacity={0.02} />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
+                    <XAxis 
+                      dataKey="date" 
+                      tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 12 }}
+                      axisLine={false}
+                      tickLine={false}
+                      dy={10}
+                    />
+                    <YAxis 
+                      domain={[0, 100]} 
+                      tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 12 }}
+                      axisLine={false}
+                      tickLine={false}
+                      tickFormatter={(v) => `${v}%`}
+                      width={45}
+                    />
+                    <Tooltip 
+                      content={({ active, payload }) => {
+                        if (active && payload?.[0]) {
+                          const percentage = payload[0].value as number;
+                          return (
+                            <div className="bg-popover/95 backdrop-blur-md border border-border/50 px-4 py-3 rounded-xl shadow-xl">
+                              <p className="font-semibold text-sm text-foreground">{payload[0].payload.date}</p>
+                              <div className="flex items-baseline gap-1 mt-1">
+                                <span className={`text-lg font-bold ${getScoreColor(percentage)}`}>{percentage}%</span>
+                                <span className="text-xs text-muted-foreground">avg score</span>
+                              </div>
+                              <p className="text-xs text-muted-foreground mt-1">{payload[0].payload.calls} calls scored</p>
                             </div>
-                            <Badge 
-                              variant={getScoreBadge(booking.qaScores.percentage).variant}
-                              className="hidden md:inline-flex"
-                            >
-                              {getScoreBadge(booking.qaScores.percentage).label}
-                            </Badge>
-                          </>
-                        ) : (
-                          <Badge variant="outline" className="text-muted-foreground">
-                            Pending
-                          </Badge>
-                        )}
-                      </div>
-                    </div>
-                  ))}
+                          );
+                        }
+                        return null;
+                      }}
+                    />
+                    <Area 
+                      type="monotone" 
+                      dataKey="percentage" 
+                      stroke="hsl(var(--accent))" 
+                      strokeWidth={2.5}
+                      fill="url(#myQaScoreGradient)" 
+                      dot={{ fill: 'hsl(var(--accent))', r: 4, strokeWidth: 2, stroke: 'hsl(var(--background))' }}
+                      activeDot={{ r: 6, strokeWidth: 0, fill: 'hsl(var(--accent))' }}
+                    />
+                  </AreaChart>
+                </ResponsiveContainer>
               </div>
-            )}
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
+        )}
       </div>
     </DashboardLayout>
   );
