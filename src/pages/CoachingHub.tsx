@@ -397,8 +397,8 @@ export default function CoachingHub() {
             )}
 
             {/* Rolling Info Banner */}
-            <div className="relative overflow-hidden rounded-lg bg-gradient-to-r from-primary/10 via-accent/10 to-primary/10 border border-primary/20 mb-4">
-              <div className="flex animate-marquee hover-pause whitespace-nowrap py-3 px-4">
+            <div className="relative overflow-hidden rounded-lg bg-gradient-to-r from-primary/10 via-accent/10 to-primary/10 border border-primary/20 mb-4 w-full h-12">
+              <div className="absolute flex animate-marquee hover-pause whitespace-nowrap py-3 px-4">
                 {/* Content repeated twice for seamless loop */}
                 <div className="flex items-center gap-4 mx-8">
                   <Headphones className="w-5 h-5 text-primary flex-shrink-0" />
