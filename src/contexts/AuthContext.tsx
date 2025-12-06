@@ -70,46 +70,84 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
+  // Exponential backoff delays: 500ms, 1s, 2s, 4s
+  const getRetryDelay = (attempt: number): number => {
+    const delays = [500, 1000, 2000, 4000];
+    return delays[attempt] || delays[delays.length - 1];
+  };
+
   const fetchUserData = async (supabaseUser: SupabaseUser, retryCount = 0): Promise<boolean> => {
-    const maxRetries = 3;
-    const retryDelay = 1000;
+    const maxRetries = 5;
     
     try {
-      // OPTIMIZED: Single query to fetch profile with role in one call
-      const { data, error } = await supabase
+      // SPLIT QUERIES: Simpler RLS evaluation, better reliability
+      // Query 1: Fetch profile (simple RLS: id = auth.uid())
+      const { data: profileData, error: profileError } = await supabase
         .from('profiles')
-        .select('*, user_roles(role)')
+        .select('*')
         .eq('id', supabaseUser.id)
         .maybeSingle();
 
-      if (error) throw error;
+      if (profileError) {
+        console.error('Profile fetch error:', profileError);
+        throw profileError;
+      }
 
-      if (data) {
-        const roleData = Array.isArray(data.user_roles) ? data.user_roles[0] : data.user_roles;
+      // Query 2: Fetch role separately (simple RLS: user_id = auth.uid())
+      const { data: roleData, error: roleError } = await supabase
+        .from('user_roles')
+        .select('role')
+        .eq('user_id', supabaseUser.id)
+        .maybeSingle();
+
+      if (roleError) {
+        console.error('Role fetch error:', roleError);
+        throw roleError;
+      }
+
+      if (profileData) {
         const userData: User = {
           id: supabaseUser.id,
-          name: data.name || supabaseUser.email || 'User',
-          email: data.email || supabaseUser.email || '',
+          name: profileData.name || supabaseUser.email || 'User',
+          email: profileData.email || supabaseUser.email || '',
           role: (roleData?.role as UserRole) || 'agent',
-          siteId: data.site_id || undefined,
-          avatarUrl: data.avatar_url || undefined,
-          status: data.status as 'active' | 'inactive',
+          siteId: profileData.site_id || undefined,
+          avatarUrl: profileData.avatar_url || undefined,
+          status: profileData.status as 'active' | 'inactive',
         };
         setUser(userData);
         return true;
       }
       return false;
     } catch (error: any) {
+      const delay = getRetryDelay(retryCount);
       console.error(`Error fetching user data (attempt ${retryCount + 1}/${maxRetries}):`, error);
       
       if (retryCount < maxRetries - 1) {
-        console.log(`Retrying in ${retryDelay}ms...`);
-        await new Promise(resolve => setTimeout(resolve, retryDelay));
+        console.log(`Retrying in ${delay}ms...`);
+        await new Promise(resolve => setTimeout(resolve, delay));
         return fetchUserData(supabaseUser, retryCount + 1);
       }
       
       return false;
     }
+  };
+
+  // Fallback: Set minimal user data from auth when profile fetch fails
+  const setMinimalUser = (supabaseUser: SupabaseUser) => {
+    const minimalUser: User = {
+      id: supabaseUser.id,
+      name: supabaseUser.email?.split('@')[0] || 'User',
+      email: supabaseUser.email || '',
+      role: 'agent', // Default role
+      status: 'active',
+    };
+    setUser(minimalUser);
+    
+    // Try to fetch complete profile in background
+    setTimeout(() => {
+      fetchUserData(supabaseUser);
+    }, 2000);
   };
 
   useEffect(() => {
@@ -202,11 +240,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // Set session immediately
       setSession(data.session);
 
-      // Fetch user data - role is included in the combined query
+      // Fetch user data with improved retry logic
       const success = await fetchUserData(data.user);
       
       if (!success) {
-        return { success: false, error: 'Failed to load user profile. Please try again.' };
+        // FALLBACK: Allow login with minimal data, fetch complete profile in background
+        console.warn('Profile fetch failed, using fallback minimal user data');
+        setMinimalUser(data.user);
       }
 
       // Start agent session (fire-and-forget, deferred)
