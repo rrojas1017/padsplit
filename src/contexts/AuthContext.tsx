@@ -197,14 +197,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         
         if (session?.user && isMounted) {
           setSession(session);
-          // Fire-and-forget: don't block loading for profile fetch
-          fetchUserData(session.user).then(success => {
-            if (success && isMounted) {
+          // CRITICAL: Wait for user data to be fetched before setting isLoading = false
+          const success = await fetchUserData(session.user);
+          if (isMounted) {
+            if (success) {
               setTimeout(() => {
                 startAgentSession(session.user.id, 'agent');
               }, 100);
+            } else {
+              // Fallback: set minimal user so we don't redirect to login
+              setMinimalUser(session.user);
             }
-          });
+            setIsLoading(false);
+          }
+        } else if (isMounted) {
+          // No session, set loading to false
+          setIsLoading(false);
         }
       } catch (error: any) {
         console.error('Auth init error:', error);
@@ -213,7 +221,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (errorMessage.includes('refresh token') || errorMessage.includes('invalid')) {
           clearAuthStorage();
         }
-      } finally {
         if (isMounted) {
           setIsLoading(false);
         }
@@ -232,19 +239,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setUser(null);
         }
         
-        // Handle token refresh errors (e.g., invalid refresh token after hard refresh)
-        if (event === 'TOKEN_REFRESHED') {
-          if (session?.user) {
-            setSession(session);
-            // Defer to avoid Supabase deadlock
-            setTimeout(() => {
-              fetchUserData(session.user);
-            }, 0);
-          }
+        // Handle SIGNED_IN event for session restoration (fires on refresh with valid session)
+        if (event === 'SIGNED_IN' && session?.user) {
+          setSession(session);
+          // Defer to avoid Supabase deadlock
+          setTimeout(() => {
+            fetchUserData(session.user);
+          }, 0);
         }
-
-        // Handle initial session restoration on page load
-        if (event === 'INITIAL_SESSION' && session?.user) {
+        
+        // Handle token refresh
+        if (event === 'TOKEN_REFRESHED' && session?.user) {
           setSession(session);
           setTimeout(() => {
             fetchUserData(session.user);
