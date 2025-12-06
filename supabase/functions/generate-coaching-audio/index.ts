@@ -19,15 +19,6 @@ interface AgentFeedback {
   };
 }
 
-interface VoiceSettings {
-  coaching_tone: string;
-  custom_expressions: string[];
-  always_emphasize: string[];
-  never_mention: string[];
-  voice_id: string;
-  is_active: boolean;
-}
-
 serve(async (req) => {
   // Handle CORS preflight
   if (req.method === "OPTIONS") {
@@ -59,29 +50,10 @@ serve(async (req) => {
 
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    // Fetch voice coaching settings
-    const { data: voiceSettings } = await supabase
-      .from("voice_coaching_settings")
-      .select("*")
-      .eq("is_active", true)
-      .limit(1)
-      .single();
-
-    const settings: VoiceSettings | null = voiceSettings ? {
-      coaching_tone: voiceSettings.coaching_tone || 'energetic',
-      custom_expressions: voiceSettings.custom_expressions || [],
-      always_emphasize: voiceSettings.always_emphasize || [],
-      never_mention: voiceSettings.never_mention || [],
-      voice_id: voiceSettings.voice_id || 'nPczCjzI2devNBz1zQrb',
-      is_active: voiceSettings.is_active,
-    } : null;
-
-    console.log("Voice settings loaded:", settings ? "Custom settings active" : "Using defaults");
-
-    // Fetch booking with agent feedback and call details (including call_type_id)
+    // Fetch booking with agent feedback and call details
     const { data: booking, error: bookingError } = await supabase
       .from("bookings")
-      .select("id, member_name, agent_feedback, agent_id, call_summary, call_key_points, call_type_id")
+      .select("id, member_name, agent_feedback, agent_id, call_summary, call_key_points")
       .eq("id", bookingId)
       .single();
 
@@ -100,17 +72,6 @@ serve(async (req) => {
       .eq("id", booking.agent_id)
       .single();
 
-    // Fetch call type name if exists
-    let callTypeName = "";
-    if (booking.call_type_id) {
-      const { data: callType } = await supabase
-        .from("call_types")
-        .select("name")
-        .eq("id", booking.call_type_id)
-        .single();
-      callTypeName = callType?.name || "";
-    }
-
     const agentFeedback = booking.agent_feedback as AgentFeedback;
     const agentName = agent?.name || "Agent";
     const memberName = booking.member_name || "the member";
@@ -124,7 +85,7 @@ serve(async (req) => {
       sentiment?: string;
     } | null;
 
-    console.log(`Generating personalized coaching audio for agent: ${agentName}, member: ${memberName}, call type: ${callTypeName || 'default'}`);
+    console.log(`Generating personalized coaching audio for agent: ${agentName}, member: ${memberName}`);
 
     // Extract call-specific details
     const concerns = callKeyPoints?.memberConcerns?.slice(0, 2).join(", ") || "";
@@ -132,69 +93,8 @@ serve(async (req) => {
     const preferences = callKeyPoints?.memberPreferences?.slice(0, 2).join(", ") || "";
     const sentiment = callKeyPoints?.sentiment || "positive";
 
-    // Build dynamic prompt based on settings
-    const buildPrompt = () => {
-      // Tone instructions based on settings
-      let toneInstructions = "";
-      if (settings?.coaching_tone === 'professional') {
-        toneInstructions = `
-Tone: Professional and structured - like a seasoned mentor giving thoughtful feedback.
-- Use calm, measured delivery
-- Be encouraging but not over-the-top
-- Focus on constructive insights
-- Sound polished and confident`;
-      } else if (settings?.coaching_tone === 'friendly') {
-        toneInstructions = `
-Tone: Friendly and casual - like a supportive teammate who's genuinely happy for you.
-- Keep it conversational and warm
-- Use natural, everyday language
-- Be genuine, not performative
-- Sound like you're chatting with a friend`;
-      } else {
-        // Default: energetic
-        toneInstructions = `
-Tone: Energetic and enthusiastic - like a coach who just watched you score the winning goal.
-- High energy, genuine excitement
-- Celebratory and motivating
-- Sound like you truly mean it
-- Keep the momentum going`;
-      }
-
-      // Custom expressions section
-      let expressionsSection = "";
-      if (settings?.custom_expressions && settings.custom_expressions.length > 0) {
-        expressionsSection = `
-CUSTOM OPENING EXPRESSIONS TO USE:
-${settings.custom_expressions.map(e => `- "${e}"`).join('\n')}
-Mix these with the standard openings for variety.`;
-      }
-
-      // Always emphasize section
-      let emphasizeSection = "";
-      if (settings?.always_emphasize && settings.always_emphasize.length > 0) {
-        emphasizeSection = `
-ALWAYS WEAVE IN (when relevant to the call):
-${settings.always_emphasize.map(e => `- ${e}`).join('\n')}`;
-      }
-
-      // Never mention section
-      let neverMentionSection = "";
-      const neverMention = settings?.never_mention || [];
-      const allExclusions = [...neverMention];
-      if (allExclusions.length > 0) {
-        neverMentionSection = `
-NEVER USE THESE WORDS/PHRASES:
-${allExclusions.map(e => `- "${e}"`).join('\n')}`;
-      }
-
-      // Call type context
-      let callTypeContext = "";
-      if (callTypeName) {
-        callTypeContext = `
-CALL TYPE: This was a "${callTypeName}" call - reference this naturally if appropriate.`;
-      }
-
-      return `You are an enthusiastic motivational coach delivering personalized feedback to a sales agent who just completed a booking.
+    // Step 1: Generate personalized motivational script using Lovable AI
+    const scriptPrompt = `You are an enthusiastic motivational coach delivering personalized feedback to a sales agent who just completed a booking.
 
 Create a ~60 second spoken script that is SPECIFIC to THIS call. Reference the member by name and mention actual moments from the conversation.
 
@@ -206,7 +106,6 @@ CALL DETAILS:
 - Objections Handled: ${objections || "None"}
 - What Member Wanted: ${preferences || "Standard preferences"}
 - Call Sentiment: ${sentiment}
-${callTypeContext}
 
 PERFORMANCE SCORES:
 - Overall Rating: ${agentFeedback.overallRating}
@@ -217,15 +116,12 @@ PERFORMANCE SCORES:
 
 WHAT THEY DID WELL: ${agentFeedback.strengths?.join(", ") || "Strong performance"}
 AREAS TO IMPROVE: ${agentFeedback.improvements?.join(", ") || "Continue developing"}
-${expressionsSection}
-${emphasizeSection}
-${neverMentionSection}
 
 YOUR SCRIPT MUST:
 1. Start with GENUINE EXCITEMENT - vary your opening each time! Pick ONE style randomly:
    - Celebratory: "What an incredible call with ${memberName}!" / "Outstanding work with ${memberName}!"
    - Impressed: "${agentName}, that was a masterclass!" / "Now THAT'S how it's done!"
-   - Hype: "${agentName}, you absolutely nailed that one!" / "That was textbook, ${agentName}!"
+   - Hype: "${agentName}, you crushed it with ${memberName}!" / "You absolutely nailed that one!"
    - Casual: "Hey ${agentName}! Great stuff on that call!" / "Wow, ${agentName}, you really brought it!"
    - Playful: "Well look at you, closing like a champion!" / "${agentName}, you're on fire today!"
    IMPORTANT: Rotate through different expressions - don't use the same phrase every time!
@@ -251,18 +147,15 @@ YOUR SCRIPT MUST:
 
 CRITICAL RULES:
 - VARIETY IS KEY: Rotate through different expressions - avoid using the same opener repeatedly
-- Don't overuse any single phrase - mix it up!
+- Don't overuse any single phrase (including "crushed it", "nailed it", etc.) - mix it up!
 - Sound like a REAL human coach, not a script
 - Use natural contractions and conversational language
 - Each script should feel FRESH and UNIQUE
-${toneInstructions}
 
+Tone: Energetic but VARIED - like a real coach who celebrates differently each time.
 Length: 150-200 words (about 1 minute)
 
 Generate ONLY the spoken script, no stage directions or formatting.`;
-    };
-
-    const scriptPrompt = buildPrompt();
 
     const aiResponse = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",
@@ -294,9 +187,9 @@ Generate ONLY the spoken script, no stage directions or formatting.`;
 
     console.log("Generated script:", coachingScript.substring(0, 100) + "...");
 
-    // Use custom voice ID from settings or default to Brian
-    const voiceId = settings?.voice_id || "nPczCjzI2devNBz1zQrb";
-    console.log("Using voice ID:", voiceId);
+    // Step 2: Convert script to audio using ElevenLabs
+    // Using "Brian" voice - energetic male coach
+    const voiceId = "nPczCjzI2devNBz1zQrb";
 
     const ttsResponse = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
       method: "POST",
@@ -336,7 +229,7 @@ Generate ONLY the spoken script, no stage directions or formatting.`;
     // Create data URL for audio
     const audioDataUrl = `data:audio/mpeg;base64,${audioBase64}`;
 
-    // Update booking with audio URL (and regeneration timestamp if regenerating)
+    // Step 3: Update booking with audio URL (and regeneration timestamp if regenerating)
     const updatePayload: Record<string, unknown> = {
       coaching_audio_url: audioDataUrl,
       coaching_audio_generated_at: new Date().toISOString(),
