@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
-import { Loader2, ChevronDown, ChevronUp, Mic, AlertCircle, CheckCircle2, Clock, TrendingUp, MessageSquare, Target, AlertTriangle, Lightbulb, Smile, Meh, Frown, Star, Award, ThumbsUp, GraduationCap, RefreshCw } from 'lucide-react';
+import { Loader2, ChevronDown, ChevronUp, Mic, AlertCircle, CheckCircle2, Clock, TrendingUp, MessageSquare, Target, AlertTriangle, Lightbulb, Smile, Meh, Frown, Star, Award, ThumbsUp, GraduationCap, RefreshCw, Ban } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/contexts/AuthContext';
@@ -21,8 +21,10 @@ export function TranscriptionModal({ booking, isOpen, onClose, onTranscriptionCo
   const [isTranscribing, setIsTranscribing] = useState(false);
   const [isRegenerating, setIsRegenerating] = useState(false);
   const [isReanalyzing, setIsReanalyzing] = useState(false);
+  const [isMarkingUnavailable, setIsMarkingUnavailable] = useState(false);
   const [showFullTranscript, setShowFullTranscript] = useState(false);
   const [currentStatus, setCurrentStatus] = useState(booking.transcriptionStatus);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const { toast } = useToast();
   const { user } = useAuth();
 
@@ -32,6 +34,7 @@ export function TranscriptionModal({ booking, isOpen, onClose, onTranscriptionCo
     
     // Sync with prop
     setCurrentStatus(booking.transcriptionStatus);
+    setErrorMessage(booking.transcriptionErrorMessage || null);
     
     // Subscribe to changes for this booking
     const channel = supabase
@@ -47,7 +50,9 @@ export function TranscriptionModal({ booking, isOpen, onClose, onTranscriptionCo
         (payload) => {
           console.log('Booking update received:', payload);
           const newStatus = payload.new.transcription_status;
+          const newErrorMessage = payload.new.transcription_error_message;
           setCurrentStatus(newStatus);
+          setErrorMessage(newErrorMessage || null);
           
           if (newStatus === 'completed') {
             toast({
@@ -59,10 +64,13 @@ export function TranscriptionModal({ booking, isOpen, onClose, onTranscriptionCo
           } else if (newStatus === 'failed') {
             toast({
               title: "Transcription Failed",
-              description: "There was an error processing the call.",
+              description: newErrorMessage || "There was an error processing the call.",
               variant: "destructive",
             });
             setIsTranscribing(false);
+          } else if (newStatus === 'unavailable') {
+            setIsMarkingUnavailable(false);
+            onTranscriptionComplete();
           }
         }
       )
@@ -76,7 +84,8 @@ export function TranscriptionModal({ booking, isOpen, onClose, onTranscriptionCo
   // Sync status when booking prop updates
   useEffect(() => {
     setCurrentStatus(booking.transcriptionStatus);
-  }, [booking.transcriptionStatus]);
+    setErrorMessage(booking.transcriptionErrorMessage || null);
+  }, [booking.transcriptionStatus, booking.transcriptionErrorMessage]);
 
   const handleTranscribe = async () => {
     if (!booking.kixieLink) return;
@@ -171,6 +180,36 @@ export function TranscriptionModal({ booking, isOpen, onClose, onTranscriptionCo
     }
   };
 
+  const handleMarkUnavailable = async () => {
+    setIsMarkingUnavailable(true);
+    try {
+      const { error } = await supabase
+        .from('bookings')
+        .update({ 
+          transcription_status: 'unavailable',
+          transcription_error_message: 'Audio recording marked as unavailable by admin'
+        })
+        .eq('id', booking.id);
+
+      if (error) throw error;
+
+      toast({
+        title: "Marked as Unavailable",
+        description: "Recording has been marked as unavailable.",
+      });
+      onTranscriptionComplete();
+    } catch (error) {
+      console.error('Mark unavailable error:', error);
+      toast({
+        title: "Failed to Update",
+        description: error instanceof Error ? error.message : "An error occurred",
+        variant: "destructive",
+      });
+    } finally {
+      setIsMarkingUnavailable(false);
+    }
+  };
+
   // Check if analysis appears incomplete (signs of failed/partial AI extraction)
   const hasIncompleteAnalysis = () => {
     if (!hasTranscription) return false;
@@ -200,11 +239,13 @@ export function TranscriptionModal({ booking, isOpen, onClose, onTranscriptionCo
   const agentFeedback = booking.agentFeedback as AgentFeedback | null;
   const isProcessing = currentStatus === 'processing' || isTranscribing;
   const hasTranscription = currentStatus === 'completed' && booking.callSummary;
+  const isUnavailable = currentStatus === 'unavailable';
   
   // Only supervisors, admins, and super_admins can regenerate coaching or re-analyze
   const canManageAnalysis = user && ['super_admin', 'admin', 'supervisor'].includes(user.role);
   const showRegenerateButton = hasTranscription && !agentFeedback && !isRegenerating && !isReanalyzing && canManageAnalysis;
   const showReanalyzeButton = hasTranscription && hasIncompleteAnalysis() && !isReanalyzing && !isRegenerating && canManageAnalysis;
+  const showMarkUnavailableButton = currentStatus === 'failed' && canManageAnalysis && !isMarkingUnavailable;
 
   const formatDuration = (seconds?: number) => {
     if (!seconds) return null;
@@ -275,12 +316,42 @@ export function TranscriptionModal({ booking, isOpen, onClose, onTranscriptionCo
                 <>
                   <AlertCircle className="h-12 w-12 text-destructive mb-4" />
                   <p className="text-lg font-medium">Transcription Failed</p>
-                  <p className="text-sm text-muted-foreground mt-1 mb-4">
-                    There was an error processing this call recording
+                  {errorMessage ? (
+                    <p className="text-sm text-muted-foreground mt-1 mb-4 max-w-md text-center">
+                      {errorMessage}
+                    </p>
+                  ) : (
+                    <p className="text-sm text-muted-foreground mt-1 mb-4">
+                      There was an error processing this call recording
+                    </p>
+                  )}
+                  <div className="flex gap-2">
+                    <Button onClick={handleTranscribe} disabled={isTranscribing}>
+                      Try Again
+                    </Button>
+                    {showMarkUnavailableButton && (
+                      <Button 
+                        variant="outline" 
+                        onClick={handleMarkUnavailable}
+                        disabled={isMarkingUnavailable}
+                      >
+                        {isMarkingUnavailable ? (
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        ) : (
+                          <Ban className="mr-2 h-4 w-4" />
+                        )}
+                        Mark Unavailable
+                      </Button>
+                    )}
+                  </div>
+                </>
+              ) : isUnavailable ? (
+                <>
+                  <Ban className="h-12 w-12 text-muted-foreground mb-4" />
+                  <p className="text-lg font-medium">Recording Unavailable</p>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    This recording has been marked as unavailable
                   </p>
-                  <Button onClick={handleTranscribe} disabled={isTranscribing}>
-                    Try Again
-                  </Button>
                 </>
               ) : (
                 <>

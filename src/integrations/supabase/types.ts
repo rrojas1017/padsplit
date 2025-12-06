@@ -205,6 +205,7 @@ export type Database = {
           notes: string | null
           status: string
           transcribed_at: string | null
+          transcription_error_message: string | null
           transcription_status: string | null
           updated_at: string
         }
@@ -236,6 +237,7 @@ export type Database = {
           notes?: string | null
           status?: string
           transcribed_at?: string | null
+          transcription_error_message?: string | null
           transcription_status?: string | null
           updated_at?: string
         }
@@ -267,6 +269,7 @@ export type Database = {
           notes?: string | null
           status?: string
           transcribed_at?: string | null
+          transcription_error_message?: string | null
           transcription_status?: string | null
           updated_at?: string
         }
