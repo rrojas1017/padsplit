@@ -156,19 +156,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // Initialize: check for existing session on page load/refresh
     const initAuth = async () => {
       try {
-        const { data: { session } } = await supabase.auth.getSession();
+        // Add timeout to prevent hanging if Supabase is slow
+        const sessionPromise = supabase.auth.getSession();
+        const timeoutPromise = new Promise<{ data: { session: null }, error: null }>((resolve) => {
+          setTimeout(() => resolve({ data: { session: null }, error: null }), 5000);
+        });
+        
+        const { data: { session } } = await Promise.race([sessionPromise, timeoutPromise]);
         
         if (session?.user && isMounted) {
           setSession(session);
-          const success = await fetchUserData(session.user);
-          
-          // Start agent session - role already fetched in fetchUserData
-          if (success) {
-            // Defer session start to not block auth init
-            setTimeout(() => {
-              startAgentSession(session.user.id, 'agent');
-            }, 100);
-          }
+          // Fire-and-forget: don't block loading for profile fetch
+          fetchUserData(session.user).then(success => {
+            if (success && isMounted) {
+              setTimeout(() => {
+                startAgentSession(session.user.id, 'agent');
+              }, 100);
+            }
+          });
         }
       } catch (error) {
         console.error('Auth init error:', error);
