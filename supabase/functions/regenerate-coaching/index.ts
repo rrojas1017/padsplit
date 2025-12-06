@@ -276,10 +276,10 @@ serve(async (req) => {
 
     console.log(`Regenerating coaching for booking ${bookingId}`);
 
-    // Fetch the existing booking with transcription and call_type_id
+    // Fetch the existing booking with transcription status and call_type_id
     const { data: booking, error: fetchError } = await supabase
       .from('bookings')
-      .select('id, call_transcription, transcription_status, call_type_id')
+      .select('id, transcription_status, call_type_id')
       .eq('id', bookingId)
       .single();
 
@@ -287,12 +287,19 @@ serve(async (req) => {
       throw new Error(`Booking not found: ${fetchError?.message || 'Unknown error'}`);
     }
 
-    if (!booking.call_transcription) {
-      throw new Error('No transcription found for this booking. Please transcribe the call first.');
-    }
-
     if (booking.transcription_status !== 'completed') {
       throw new Error('Transcription is not completed yet.');
+    }
+
+    // Fetch transcription from booking_transcriptions table
+    const { data: transcriptionData, error: transcriptionError } = await supabase
+      .from('booking_transcriptions')
+      .select('call_transcription')
+      .eq('booking_id', bookingId)
+      .single();
+
+    if (transcriptionError || !transcriptionData?.call_transcription) {
+      throw new Error('No transcription found for this booking. Please transcribe the call first.');
     }
 
     // Fetch call type configuration if available
@@ -300,7 +307,7 @@ serve(async (req) => {
 
     // Generate agent feedback with dynamic prompt
     console.log('Generating AI agent feedback...');
-    const feedbackPrompt = buildDynamicCoachingPrompt(booking.call_transcription, config);
+    const feedbackPrompt = buildDynamicCoachingPrompt(transcriptionData.call_transcription, config);
 
     const aiResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
       method: 'POST',
@@ -352,14 +359,15 @@ serve(async (req) => {
       throw new Error('AI did not return valid agent feedback');
     }
 
-    // Update the booking with agent feedback
-    console.log('Updating booking with agent feedback...');
+    // Update booking_transcriptions with agent feedback
+    console.log('Updating booking_transcriptions with agent feedback...');
     const { error: updateError } = await supabase
-      .from('bookings')
+      .from('booking_transcriptions')
       .update({
         agent_feedback: agentFeedback,
+        updated_at: new Date().toISOString(),
       })
-      .eq('id', bookingId);
+      .eq('booking_id', bookingId);
 
     if (updateError) {
       console.error('Update error:', updateError);

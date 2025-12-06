@@ -3,11 +3,15 @@ import { supabase } from '@/integrations/supabase/client';
 
 interface BookingDetails {
   callTranscription?: string;
+  callSummary?: string;
   callKeyPoints?: any;
   agentFeedback?: any;
+  coachingAudioUrl?: string;
+  coachingAudioGeneratedAt?: Date;
+  coachingAudioRegeneratedAt?: Date;
 }
 
-// On-demand loading of heavy JSONB columns to reduce initial page load
+// On-demand loading of heavy data from booking_transcriptions table
 export function useBookingDetails() {
   const [loadingId, setLoadingId] = useState<string | null>(null);
   const [detailsCache, setDetailsCache] = useState<Record<string, BookingDetails>>({});
@@ -21,18 +25,30 @@ export function useBookingDetails() {
     setLoadingId(bookingId);
     
     try {
+      // Fetch from the new booking_transcriptions table
       const { data, error } = await supabase
-        .from('bookings')
-        .select('call_transcription, call_key_points, agent_feedback')
-        .eq('id', bookingId)
-        .single();
+        .from('booking_transcriptions')
+        .select('call_transcription, call_summary, call_key_points, agent_feedback, coaching_audio_url, coaching_audio_generated_at, coaching_audio_regenerated_at')
+        .eq('booking_id', bookingId)
+        .maybeSingle();
 
       if (error) throw error;
 
+      // If no record exists in booking_transcriptions, return empty details
+      if (!data) {
+        const emptyDetails: BookingDetails = {};
+        setDetailsCache(prev => ({ ...prev, [bookingId]: emptyDetails }));
+        return emptyDetails;
+      }
+
       const details: BookingDetails = {
-        callTranscription: data?.call_transcription || undefined,
-        callKeyPoints: data?.call_key_points || undefined,
-        agentFeedback: data?.agent_feedback || undefined,
+        callTranscription: data.call_transcription || undefined,
+        callSummary: data.call_summary || undefined,
+        callKeyPoints: data.call_key_points || undefined,
+        agentFeedback: data.agent_feedback || undefined,
+        coachingAudioUrl: data.coaching_audio_url || undefined,
+        coachingAudioGeneratedAt: data.coaching_audio_generated_at ? new Date(data.coaching_audio_generated_at) : undefined,
+        coachingAudioRegeneratedAt: data.coaching_audio_regenerated_at ? new Date(data.coaching_audio_regenerated_at) : undefined,
       };
 
       // Cache the result
@@ -47,8 +63,16 @@ export function useBookingDetails() {
     }
   }, [detailsCache]);
 
-  const clearCache = useCallback(() => {
-    setDetailsCache({});
+  const clearCache = useCallback((bookingId?: string) => {
+    if (bookingId) {
+      setDetailsCache(prev => {
+        const newCache = { ...prev };
+        delete newCache[bookingId];
+        return newCache;
+      });
+    } else {
+      setDetailsCache({});
+    }
   }, []);
 
   return {
@@ -56,5 +80,6 @@ export function useBookingDetails() {
     isLoadingDetails: loadingId !== null,
     loadingBookingId: loadingId,
     clearCache,
+    detailsCache,
   };
 }

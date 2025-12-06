@@ -8,6 +8,7 @@ import { Loader2, ChevronDown, ChevronUp, Mic, AlertCircle, CheckCircle2, Clock,
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/contexts/AuthContext';
+import { useBookingDetails } from '@/hooks/useBookingDetails';
 import { Booking, CallKeyPoints, AgentFeedback } from '@/types';
 
 interface TranscriptionModalProps {
@@ -27,6 +28,33 @@ export function TranscriptionModal({ booking, isOpen, onClose, onTranscriptionCo
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const { toast } = useToast();
   const { user } = useAuth();
+  
+  // On-demand loading of heavy transcription data
+  const { fetchBookingDetails, isLoadingDetails, clearCache, detailsCache } = useBookingDetails();
+  const [loadedDetails, setLoadedDetails] = useState<{
+    callTranscription?: string;
+    callSummary?: string;
+    callKeyPoints?: CallKeyPoints;
+    agentFeedback?: AgentFeedback;
+    coachingAudioUrl?: string;
+    coachingAudioRegeneratedAt?: Date;
+  } | null>(null);
+
+  // Load transcription details when modal opens and status is completed
+  useEffect(() => {
+    if (isOpen && currentStatus === 'completed') {
+      // Check cache first
+      if (detailsCache[booking.id]) {
+        setLoadedDetails(detailsCache[booking.id] as any);
+      } else {
+        fetchBookingDetails(booking.id).then(details => {
+          if (details) {
+            setLoadedDetails(details as any);
+          }
+        });
+      }
+    }
+  }, [isOpen, currentStatus, booking.id, fetchBookingDetails, detailsCache]);
 
   // Real-time subscription for status updates
   useEffect(() => {
@@ -60,6 +88,11 @@ export function TranscriptionModal({ booking, isOpen, onClose, onTranscriptionCo
               description: `Call for ${booking.memberName} has been analyzed.`,
             });
             setIsTranscribing(false);
+            // Clear cache and reload details
+            clearCache(booking.id);
+            fetchBookingDetails(booking.id).then(details => {
+              if (details) setLoadedDetails(details as any);
+            });
             onTranscriptionComplete();
           } else if (newStatus === 'failed') {
             toast({
@@ -210,12 +243,27 @@ export function TranscriptionModal({ booking, isOpen, onClose, onTranscriptionCo
     }
   };
 
+  // Derived values from loaded details (on-demand from booking_transcriptions table)
+  const keyPoints = loadedDetails?.callKeyPoints as CallKeyPoints | null;
+  const agentFeedback = loadedDetails?.agentFeedback as AgentFeedback | null;
+  const callSummary = loadedDetails?.callSummary;
+  const callTranscription = loadedDetails?.callTranscription;
+  const coachingAudioUrl = loadedDetails?.coachingAudioUrl;
+  const coachingAudioRegeneratedAt = loadedDetails?.coachingAudioRegeneratedAt;
+
+  const isProcessing = currentStatus === 'processing' || isTranscribing;
+  const hasTranscription = currentStatus === 'completed' && (callSummary || isLoadingDetails);
+  const isUnavailable = currentStatus === 'unavailable';
+  
+  // Only supervisors, admins, and super_admins can regenerate coaching or re-analyze
+  const canManageAnalysis = user && ['super_admin', 'admin', 'supervisor'].includes(user.role);
+  const showRegenerateButton = hasTranscription && !isLoadingDetails && !agentFeedback && !isRegenerating && !isReanalyzing && canManageAnalysis;
+  
   // Check if analysis appears incomplete (signs of failed/partial AI extraction)
   const hasIncompleteAnalysis = () => {
-    if (!hasTranscription) return false;
+    if (!hasTranscription || isLoadingDetails) return false;
     
-    const summary = booking.callSummary || '';
-    const kp = keyPoints;
+    const summary = callSummary || '';
     
     // Check for parsing failure message
     if (summary.includes('parsing failed')) return true;
@@ -225,26 +273,17 @@ export function TranscriptionModal({ booking, isOpen, onClose, onTranscriptionCo
     
     // Check if all insight arrays are empty for a longer call
     if (booking.callDurationSeconds && booking.callDurationSeconds > 120) {
-      const allEmpty = (!kp?.memberConcerns?.length && 
-                        !kp?.memberPreferences?.length && 
-                        !kp?.recommendedActions?.length && 
-                        !kp?.objections?.length);
+      const allEmpty = (!keyPoints?.memberConcerns?.length && 
+                        !keyPoints?.memberPreferences?.length && 
+                        !keyPoints?.recommendedActions?.length && 
+                        !keyPoints?.objections?.length);
       if (allEmpty) return true;
     }
     
     return false;
   };
-
-  const keyPoints = booking.callKeyPoints as CallKeyPoints | null;
-  const agentFeedback = booking.agentFeedback as AgentFeedback | null;
-  const isProcessing = currentStatus === 'processing' || isTranscribing;
-  const hasTranscription = currentStatus === 'completed' && booking.callSummary;
-  const isUnavailable = currentStatus === 'unavailable';
   
-  // Only supervisors, admins, and super_admins can regenerate coaching or re-analyze
-  const canManageAnalysis = user && ['super_admin', 'admin', 'supervisor'].includes(user.role);
-  const showRegenerateButton = hasTranscription && !agentFeedback && !isRegenerating && !isReanalyzing && canManageAnalysis;
-  const showReanalyzeButton = hasTranscription && hasIncompleteAnalysis() && !isReanalyzing && !isRegenerating && canManageAnalysis;
+  const showReanalyzeButton = hasTranscription && !isLoadingDetails && hasIncompleteAnalysis() && !isReanalyzing && !isRegenerating && canManageAnalysis;
   const showMarkUnavailableButton = currentStatus === 'failed' && canManageAnalysis && !isMarkingUnavailable;
 
   const formatDuration = (seconds?: number) => {
@@ -411,7 +450,7 @@ export function TranscriptionModal({ booking, isOpen, onClose, onTranscriptionCo
                   Summary
                 </h4>
                 <p className="text-sm text-muted-foreground leading-relaxed">
-                  {booking.callSummary || keyPoints?.summary}
+                  {callSummary || keyPoints?.summary}
                 </p>
               </div>
 
@@ -625,7 +664,7 @@ export function TranscriptionModal({ booking, isOpen, onClose, onTranscriptionCo
               )}
 
               {/* Full Transcript */}
-              {booking.callTranscription && (
+              {callTranscription && (
                 <Collapsible open={showFullTranscript} onOpenChange={setShowFullTranscript}>
                   <CollapsibleTrigger asChild>
                     <Button variant="ghost" className="w-full justify-between">
@@ -643,7 +682,7 @@ export function TranscriptionModal({ booking, isOpen, onClose, onTranscriptionCo
                   <CollapsibleContent>
                     <div className="bg-muted/20 rounded-lg p-4 mt-2 border border-border">
                       <p className="text-sm text-muted-foreground whitespace-pre-wrap leading-relaxed">
-                        {booking.callTranscription}
+                        {callTranscription}
                       </p>
                     </div>
                   </CollapsibleContent>

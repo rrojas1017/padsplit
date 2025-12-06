@@ -50,10 +50,10 @@ serve(async (req) => {
 
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    // Fetch booking with agent feedback and call details
+    // Fetch booking basic info
     const { data: booking, error: bookingError } = await supabase
       .from("bookings")
-      .select("id, member_name, agent_feedback, agent_id, call_summary, call_key_points")
+      .select("id, member_name, agent_id")
       .eq("id", bookingId)
       .single();
 
@@ -61,7 +61,14 @@ serve(async (req) => {
       throw new Error("Booking not found");
     }
 
-    if (!booking.agent_feedback) {
+    // Fetch transcription data from booking_transcriptions table
+    const { data: transcriptionData, error: transcriptionError } = await supabase
+      .from("booking_transcriptions")
+      .select("agent_feedback, call_summary, call_key_points")
+      .eq("booking_id", bookingId)
+      .single();
+
+    if (transcriptionError || !transcriptionData?.agent_feedback) {
       throw new Error("No agent feedback available for this booking");
     }
 
@@ -72,11 +79,11 @@ serve(async (req) => {
       .eq("id", booking.agent_id)
       .single();
 
-    const agentFeedback = booking.agent_feedback as AgentFeedback;
+    const agentFeedback = transcriptionData.agent_feedback as AgentFeedback;
     const agentName = agent?.name || "Agent";
     const memberName = booking.member_name || "the member";
-    const callSummary = booking.call_summary || "";
-    const callKeyPoints = booking.call_key_points as {
+    const callSummary = transcriptionData.call_summary || "";
+    const callKeyPoints = transcriptionData.call_key_points as {
       memberConcerns?: string[];
       memberPreferences?: string[];
       recommendedActions?: string[];
@@ -229,31 +236,30 @@ Generate ONLY the spoken script, no stage directions or formatting.`;
     // Create data URL for audio
     const audioDataUrl = `data:audio/mpeg;base64,${audioBase64}`;
 
-    // Step 3: Update booking with audio URL (and regeneration timestamp if regenerating)
-    const updatePayload: Record<string, unknown> = {
+    // Step 3: Update booking_transcriptions with audio URL
+    const transcriptionUpdatePayload: Record<string, unknown> = {
       coaching_audio_url: audioDataUrl,
       coaching_audio_generated_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
     };
     
     // If this is a regeneration, mark it so regenerate button disappears
     if (isRegenerate === true) {
       console.log("Setting coaching_audio_regenerated_at timestamp for regeneration");
-      updatePayload.coaching_audio_regenerated_at = new Date().toISOString();
+      transcriptionUpdatePayload.coaching_audio_regenerated_at = new Date().toISOString();
     }
     
-    console.log("Update payload:", JSON.stringify(updatePayload).substring(0, 200) + "...");
+    console.log("Update payload for booking_transcriptions");
     
     const { error: updateError } = await supabase
-      .from("bookings")
-      .update(updatePayload)
-      .eq("id", bookingId);
+      .from("booking_transcriptions")
+      .update(transcriptionUpdatePayload)
+      .eq("booking_id", bookingId);
 
     if (updateError) {
-      console.error("Failed to update booking:", updateError);
+      console.error("Failed to update booking_transcriptions:", updateError);
       throw new Error("Failed to save coaching audio");
     }
-
-    console.log("Coaching audio generated and saved successfully, isRegenerate:", isRegenerate);
 
     return new Response(
       JSON.stringify({
