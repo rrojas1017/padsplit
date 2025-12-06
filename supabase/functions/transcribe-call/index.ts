@@ -211,6 +211,18 @@ ${Object.entries(config.callType.scoring_criteria).map(([key, weight]) => `- ${k
 Return a JSON object with EXACTLY this structure (no markdown, just raw JSON):
 {
   "summary": "A concise 2-3 sentence summary capturing the key points of this call. What was discussed? What was the outcome?",
+  "memberDetails": {
+    "firstName": "string or null - the member's first name if mentioned",
+    "lastName": "string or null - the member's last name if mentioned",
+    "phoneNumber": "string or null - phone number if mentioned or confirmed (format: xxx-xxx-xxxx)",
+    "email": "string or null - email address if mentioned",
+    "householdSize": "number or null - how many people will be moving in",
+    "weeklyBudget": "number or null - their weekly budget amount in dollars",
+    "moveInDate": "string or null - specific move-in date mentioned (e.g., 'December 15' or 'next Monday')",
+    "commitmentWeeks": "number or null - how many weeks they plan to stay",
+    "preferredPaymentMethod": "string or null - cash, card, etc.",
+    "propertyAddress": "string or null - specific property address or listing being discussed"
+  },
   "memberConcerns": ["List every concern, worry, hesitation, or question raised by the member"],
   "memberPreferences": ["List ALL preferences mentioned: location, budget, timing, room type, amenities, etc."],
   "recommendedActions": ["Specific follow-up actions for the agent"],
@@ -255,6 +267,18 @@ ${transcription}
 Return a JSON object with EXACTLY this structure (no markdown, just raw JSON):
 {
   "summary": "A concise 2-3 sentence summary capturing the key points of this call. What was discussed? What was the outcome?",
+  "memberDetails": {
+    "firstName": "string or null - the member's first name if mentioned",
+    "lastName": "string or null - the member's last name if mentioned",
+    "phoneNumber": "string or null - phone number if mentioned or confirmed (format: xxx-xxx-xxxx)",
+    "email": "string or null - email address if mentioned",
+    "householdSize": "number or null - how many people will be moving in",
+    "weeklyBudget": "number or null - their weekly budget amount in dollars",
+    "moveInDate": "string or null - specific move-in date mentioned (e.g., 'December 15' or 'next Monday')",
+    "commitmentWeeks": "number or null - how many weeks they plan to stay",
+    "preferredPaymentMethod": "string or null - cash, card, etc.",
+    "propertyAddress": "string or null - specific property address or listing being discussed"
+  },
   "memberConcerns": ["List every concern, worry, hesitation, or question raised by the member, even minor ones. Example: 'Worried about parking availability', 'Concerned about noise levels'"],
   "memberPreferences": ["List ALL preferences mentioned: location, budget, timing, room type, amenities, etc. Example: 'Prefers ground floor', 'Budget under $800', 'Needs to move by next week'"],
   "recommendedActions": ["Specific follow-up actions for the agent. Example: 'Send listing links for downtown properties', 'Follow up about move-in date confirmation', 'Schedule property tour'"],
@@ -527,7 +551,8 @@ async function processTranscription(bookingId: string, kixieUrl: string) {
         recommendedActions: parsed.recommendedActions || [],
         objections: parsed.objections || [],
         moveInReadiness: parsed.moveInReadiness || 'medium',
-        callSentiment: parsed.callSentiment || 'neutral'
+        callSentiment: parsed.callSentiment || 'neutral',
+        memberDetails: parsed.memberDetails || null
       };
     } catch (parseError) {
       console.error('[Background] Failed to parse AI response:', parseError);
