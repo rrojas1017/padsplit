@@ -9,7 +9,7 @@ export interface CoachingBooking {
   bookingDate: Date;
   agentId: string;
   agentName: string;
-  memberName: string;
+  memberName?: string;
   transcriptionStatus: string;
   agentFeedback: AgentFeedback;
   coachingAudioUrl?: string | null;

@@ -1,20 +1,9 @@
 import { Booking, Agent, AgentFeedback } from '@/types';
 import { format } from 'date-fns';
+import { CoachingBooking } from '@/hooks/useCoachingData';
 
-// New interface for coaching data from booking_transcriptions
-export interface CoachingBooking {
-  id: string;
-  bookingDate: Date;
-  agentId: string;
-  agentName: string;
-  memberName?: string;
-  transcriptionStatus: string;
-  agentFeedback: AgentFeedback;
-  coachingAudioUrl?: string | null;
-  coachingAudioListenedAt?: string | null;
-  coachingAudioGeneratedAt?: string | null;
-  coachingAudioRegeneratedAt?: string | null;
-}
+// Re-export for backward compatibility
+export type { CoachingBooking } from '@/hooks/useCoachingData';
 
 interface TeamScores {
   communication: number;
