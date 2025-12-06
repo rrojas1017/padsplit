@@ -153,16 +153,47 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     let isMounted = true;
 
+    // Clear corrupted auth storage (helps recover from invalid refresh tokens)
+    const clearAuthStorage = () => {
+      // Supabase stores auth in localStorage with project-specific keys
+      const keysToRemove: string[] = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && (key.startsWith('sb-') || key.includes('supabase'))) {
+          keysToRemove.push(key);
+        }
+      }
+      keysToRemove.forEach(key => localStorage.removeItem(key));
+    };
+
     // Initialize: check for existing session on page load/refresh
     const initAuth = async () => {
       try {
         // Add timeout to prevent hanging if Supabase is slow
         const sessionPromise = supabase.auth.getSession();
-        const timeoutPromise = new Promise<{ data: { session: null }, error: null }>((resolve) => {
-          setTimeout(() => resolve({ data: { session: null }, error: null }), 5000);
+        const timeoutPromise = new Promise<{ data: { session: null }, error: Error }>((_, reject) => {
+          setTimeout(() => reject(new Error('Session timeout')), 5000);
         });
         
-        const { data: { session } } = await Promise.race([sessionPromise, timeoutPromise]);
+        const { data: { session }, error } = await Promise.race([
+          sessionPromise,
+          timeoutPromise.catch(() => ({ data: { session: null }, error: null }))
+        ]);
+
+        // Handle invalid refresh token error
+        if (error) {
+          const errorMessage = error.message?.toLowerCase() || '';
+          if (errorMessage.includes('refresh token') || errorMessage.includes('invalid')) {
+            console.warn('Invalid refresh token detected, clearing auth storage');
+            clearAuthStorage();
+            if (isMounted) {
+              setSession(null);
+              setUser(null);
+              setIsLoading(false);
+            }
+            return;
+          }
+        }
         
         if (session?.user && isMounted) {
           setSession(session);
@@ -175,8 +206,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             }
           });
         }
-      } catch (error) {
+      } catch (error: any) {
         console.error('Auth init error:', error);
+        // Handle token-related errors gracefully
+        const errorMessage = error?.message?.toLowerCase() || '';
+        if (errorMessage.includes('refresh token') || errorMessage.includes('invalid')) {
+          clearAuthStorage();
+        }
       } finally {
         if (isMounted) {
           setIsLoading(false);
@@ -196,9 +232,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setUser(null);
         }
         
-        if (event === 'TOKEN_REFRESHED' && session?.user) {
+        // Handle token refresh errors (e.g., invalid refresh token after hard refresh)
+        if (event === 'TOKEN_REFRESHED') {
+          if (session?.user) {
+            setSession(session);
+            // Defer to avoid Supabase deadlock
+            setTimeout(() => {
+              fetchUserData(session.user);
+            }, 0);
+          }
+        }
+
+        // Handle initial session restoration on page load
+        if (event === 'INITIAL_SESSION' && session?.user) {
           setSession(session);
-          // Defer to avoid Supabase deadlock
           setTimeout(() => {
             fetchUserData(session.user);
           }, 0);
@@ -206,15 +253,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     );
 
-    // Handle visibility change (mobile tab resume)
-    const handleVisibilityChange = () => {
+    // Handle visibility change (mobile tab resume) with error handling
+    const handleVisibilityChange = async () => {
       if (document.visibilityState === 'visible') {
-        supabase.auth.getSession().then(({ data: { session } }) => {
+        try {
+          const { data: { session }, error } = await supabase.auth.getSession();
+          
+          // Handle invalid refresh token on tab resume
+          if (error) {
+            const errorMessage = error.message?.toLowerCase() || '';
+            if (errorMessage.includes('refresh token') || errorMessage.includes('invalid')) {
+              console.warn('Invalid refresh token on visibility change, clearing auth');
+              clearAuthStorage();
+              setSession(null);
+              setUser(null);
+              return;
+            }
+          }
+          
           if (session?.user) {
             setSession(session);
             fetchUserData(session.user);
           }
-        });
+        } catch (error) {
+          console.error('Error restoring session on visibility change:', error);
+        }
       }
     };
 
