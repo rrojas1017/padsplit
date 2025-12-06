@@ -143,13 +143,17 @@ serve(async (req) => {
       throw agentsError;
     }
 
-    // Fetch bookings - apply site filter if set
-    let bookingsQuery = supabase
+    // Fetch bookings - LIMIT to last 30 days to prevent timeout
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    const dateLimit = thirtyDaysAgo.toISOString().split('T')[0];
+    
+    const { data: bookings, error: bookingsError } = await supabase
       .from('bookings')
       .select('*')
-      .order('booking_date', { ascending: false });
-
-    const { data: bookings, error: bookingsError } = await bookingsQuery;
+      .gte('booking_date', dateLimit)
+      .order('booking_date', { ascending: false })
+      .limit(500);
 
     if (bookingsError) {
       console.error('Error fetching bookings:', bookingsError);

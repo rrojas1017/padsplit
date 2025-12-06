@@ -25,7 +25,7 @@ export default function PublicWallboard() {
   const { token } = useParams<{ token: string }>();
   const [time, setTime] = useState(new Date());
   const [lastRefresh, setLastRefresh] = useState(new Date());
-  const [secondsUntilRefresh, setSecondsUntilRefresh] = useState(60);
+  const [secondsUntilRefresh, setSecondsUntilRefresh] = useState(120);
   const [isFlashing, setIsFlashing] = useState(false);
   const [displayToken, setDisplayToken] = useState<WallboardToken | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -126,20 +126,20 @@ export default function PublicWallboard() {
   useEffect(() => {
     const timer = setInterval(() => {
       setTime(new Date());
-      setSecondsUntilRefresh(prev => (prev > 1 ? prev - 1 : 60));
+      setSecondsUntilRefresh(prev => (prev > 1 ? prev - 1 : 120));
     }, 1000);
     return () => clearInterval(timer);
   }, []);
 
-  // Auto-refresh every 60 seconds
+  // Auto-refresh every 120 seconds (reduced from 60s to lower DB load)
   useEffect(() => {
     const refreshInterval = setInterval(async () => {
       await fetchWallboardData();
       setLastRefresh(new Date());
-      setSecondsUntilRefresh(60);
+      setSecondsUntilRefresh(120);
       setIsFlashing(true);
       setTimeout(() => setIsFlashing(false), 800);
-    }, 60000);
+    }, 120000);
     return () => clearInterval(refreshInterval);
   }, [fetchWallboardData]);
 

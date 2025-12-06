@@ -23,13 +23,21 @@ export function BookingsProvider({ children }: { children: ReactNode }) {
   const fetchBookings = async (showLoading = true) => {
     try {
       if (showLoading) setIsLoading(true);
+      
+      // Limit to last 90 days to prevent database timeout
+      const ninetyDaysAgo = new Date();
+      ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
+      const dateLimit = format(ninetyDaysAgo, 'yyyy-MM-dd');
+      
       const { data, error } = await supabase
         .from('bookings')
         .select(`
           *,
           agents!inner(name, site_id, sites(name))
         `)
-        .order('booking_date', { ascending: false });
+        .gte('booking_date', dateLimit)
+        .order('booking_date', { ascending: false })
+        .limit(1000);
 
       if (error) {
         console.error('Error fetching bookings:', error);
