@@ -12,6 +12,8 @@ interface CoachingAudioPlayerProps {
   variant?: 'button' | 'inline' | 'card';
   className?: string;
   canRegenerate?: boolean; // Controls if regenerate button shows (based on one-time limit)
+  listenedAt?: string | null; // Timestamp when audio was listened to
+  onListened?: () => void; // Callback when audio is first listened to
 }
 
 export function CoachingAudioPlayer({
@@ -21,6 +23,8 @@ export function CoachingAudioPlayer({
   variant = 'button',
   className,
   canRegenerate = false,
+  listenedAt,
+  onListened,
 }: CoachingAudioPlayerProps) {
   const [isGenerating, setIsGenerating] = useState(false);
   const [hasRegenerated, setHasRegenerated] = useState(false); // Local state to hide button immediately
@@ -28,7 +32,12 @@ export function CoachingAudioPlayer({
   const [currentAudioUrl, setCurrentAudioUrl] = useState<string | null>(audioUrl || null);
   const [progress, setProgress] = useState(0);
   const [duration, setDuration] = useState(0);
+  const [hasBeenListened, setHasBeenListened] = useState(!!listenedAt);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+
+  useEffect(() => {
+    setHasBeenListened(!!listenedAt);
+  }, [listenedAt]);
 
   useEffect(() => {
     setCurrentAudioUrl(audioUrl || null);
@@ -89,13 +98,27 @@ export function CoachingAudioPlayer({
   // Determine if regenerate button should show
   const showRegenerateButton = canRegenerate && !hasRegenerated;
 
-  const handlePlayPause = () => {
+  const handlePlayPause = async () => {
     if (!audioRef.current) return;
 
     if (isPlaying) {
       audioRef.current.pause();
     } else {
       audioRef.current.play();
+      
+      // Mark as listened on first play
+      if (!hasBeenListened && currentAudioUrl) {
+        setHasBeenListened(true);
+        try {
+          await supabase
+            .from('booking_transcriptions')
+            .update({ coaching_audio_listened_at: new Date().toISOString() })
+            .eq('booking_id', bookingId);
+          onListened?.();
+        } catch (error) {
+          console.error('Failed to mark audio as listened:', error);
+        }
+      }
     }
     setIsPlaying(!isPlaying);
   };

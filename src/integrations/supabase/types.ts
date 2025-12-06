@@ -184,6 +184,7 @@ export type Database = {
           call_summary: string | null
           call_transcription: string | null
           coaching_audio_generated_at: string | null
+          coaching_audio_listened_at: string | null
           coaching_audio_regenerated_at: string | null
           coaching_audio_url: string | null
           created_at: string | null
@@ -197,6 +198,7 @@ export type Database = {
           call_summary?: string | null
           call_transcription?: string | null
           coaching_audio_generated_at?: string | null
+          coaching_audio_listened_at?: string | null
           coaching_audio_regenerated_at?: string | null
           coaching_audio_url?: string | null
           created_at?: string | null
@@ -210,6 +212,7 @@ export type Database = {
           call_summary?: string | null
           call_transcription?: string | null
           coaching_audio_generated_at?: string | null
+          coaching_audio_listened_at?: string | null
           coaching_audio_regenerated_at?: string | null
           coaching_audio_url?: string | null
           created_at?: string | null
