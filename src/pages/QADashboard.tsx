@@ -326,6 +326,36 @@ export default function QADashboard() {
           </CardContent>
         </Card>
 
+        {/* Rolling Info Banner for QA Coaching */}
+        <div className="relative overflow-hidden rounded-lg bg-gradient-to-r from-pink-500/10 via-purple-500/10 to-pink-500/10 border border-pink-500/20 mb-4 w-full h-12">
+          <div className="absolute flex animate-marquee hover-pause whitespace-nowrap py-3 px-4">
+            {/* Content repeated twice for seamless loop */}
+            <div className="flex items-center gap-4 mx-8">
+              <Volume2 className="w-5 h-5 text-pink-500 flex-shrink-0" />
+              <span className="text-sm text-foreground font-medium">
+                💡 Tip: Click the arrow (→) on any agent row to open their QA details, then scroll down to play Katty's QA coaching audio for each call
+              </span>
+              <span className="text-pink-500">•</span>
+              <span className="text-sm text-muted-foreground">
+                Agents can access their personal QA scores and coaching via the "My QA" page
+              </span>
+              <span className="text-pink-500">•</span>
+            </div>
+            {/* Duplicate for seamless loop */}
+            <div className="flex items-center gap-4 mx-8">
+              <Volume2 className="w-5 h-5 text-pink-500 flex-shrink-0" />
+              <span className="text-sm text-foreground font-medium">
+                💡 Tip: Click the arrow (→) on any agent row to open their QA details, then scroll down to play Katty's QA coaching audio for each call
+              </span>
+              <span className="text-pink-500">•</span>
+              <span className="text-sm text-muted-foreground">
+                Agents can access their personal QA scores and coaching via the "My QA" page
+              </span>
+              <span className="text-pink-500">•</span>
+            </div>
+          </div>
+        </div>
+
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* Agent Leaderboard */}
           <Card>
