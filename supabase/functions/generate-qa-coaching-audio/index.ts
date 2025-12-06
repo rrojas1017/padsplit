@@ -48,7 +48,7 @@ serve(async (req) => {
 
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
-    // Fetch booking with transcription data
+    // Fetch booking with agent data
     const { data: booking, error: bookingError } = await supabase
       .from('bookings')
       .select(`
@@ -56,13 +56,17 @@ serve(async (req) => {
         member_name,
         agent_id,
         booking_date,
-        agents!inner(id, name)
+        agents(id, name)
       `)
       .eq('id', bookingId)
-      .single();
+      .maybeSingle();
 
-    if (bookingError || !booking) {
-      throw new Error(`Failed to fetch booking: ${bookingError?.message}`);
+    if (bookingError) {
+      throw new Error(`Failed to fetch booking: ${bookingError.message}`);
+    }
+
+    if (!booking) {
+      throw new Error(`Booking not found: ${bookingId}`);
     }
 
     // Fetch transcription with QA scores
@@ -134,7 +138,7 @@ serve(async (req) => {
     const sortedCategories = [...categoryResults].sort((a, b) => a.percentage - b.percentage);
     const weakestAreas = sortedCategories.slice(0, 3).filter(c => c.percentage < 80);
 
-    const agentName = (booking.agents as any).name;
+    const agentName = (booking.agents as any)?.name || 'Agent';
     const memberName = booking.member_name;
 
     // Calculate max words based on seconds (approx 2.5 words per second for natural speech)
