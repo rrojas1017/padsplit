@@ -8,7 +8,7 @@ import { QACoachingAudioPlayer } from '@/components/qa/QACoachingAudioPlayer';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+
 import { 
   ClipboardCheck, TrendingUp, Calendar, Target, Award, BarChart3, 
   Trophy, ArrowUp, ArrowDown
@@ -255,75 +255,95 @@ export default function MyQA() {
           </Card>
         </div>
 
-        {/* Recent QA Scores with Katty Coaching */}
+        {/* Recent QA Scores with Katty Coaching - Card Based Layout */}
         <Card>
           <CardHeader>
-            <div className="flex items-center justify-between">
-              <CardTitle className="flex items-center gap-2 text-lg">
-                <Trophy className="w-5 h-5 text-accent" />
-                Recent QA Scores
-              </CardTitle>
-              <p className="text-xs text-muted-foreground italic">
-                Note: Katty may occasionally mispronounce some names — we apologize in advance! 😊
+            <CardTitle className="flex items-center gap-2 text-lg">
+              <Trophy className="w-5 h-5 text-accent" />
+              Recent QA Scores
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {/* Katty Disclaimer Note */}
+            <div className="flex items-center gap-2 p-3 rounded-lg bg-muted/50 border border-border">
+              <span className="text-accent">🎙️</span>
+              <p className="text-xs text-muted-foreground">
+                <span className="font-medium">Note:</span> Katty may occasionally mispronounce some names — we apologize in advance! 😊
               </p>
             </div>
-          </CardHeader>
-          <CardContent>
+
             {filteredBookings.length === 0 ? (
               <p className="text-center text-muted-foreground py-8">No scored calls yet</p>
             ) : (
-              <div className="max-h-[500px] overflow-y-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Date</TableHead>
-                      <TableHead>Member</TableHead>
-                      <TableHead className="text-center">Score</TableHead>
-                      <TableHead className="text-right">Katty's Coaching</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {filteredBookings.map((booking) => {
-                      const matchingCoaching = qaCoachingBookings.find(c => c.bookingId === booking.id);
-                      return (
-                        <TableRow key={booking.id}>
-                          <TableCell className="text-muted-foreground">
-                            {format(new Date(booking.bookingDate + 'T00:00:00'), 'MMM d')}
-                          </TableCell>
-                          <TableCell className="font-medium">{booking.memberName}</TableCell>
-                          <TableCell className="text-center">
-                            <span className={`font-bold ${getScoreColor(booking.qaScores?.percentage || 0)}`}>
-                              {booking.qaScores?.percentage || 0}%
-                            </span>
-                          </TableCell>
-                          <TableCell className="text-right">
+              <div className="space-y-3 max-h-[500px] overflow-y-auto">
+                {filteredBookings.map((booking) => {
+                  const matchingCoaching = qaCoachingBookings.find(c => c.bookingId === booking.id);
+                  const scorePercentage = booking.qaScores?.percentage || 0;
+                  const hasListened = !!matchingCoaching?.qaCoachingAudioListenedAt;
+                  
+                  return (
+                    <div 
+                      key={booking.id} 
+                      className="p-4 rounded-lg bg-muted/50 border border-border hover:bg-muted/70 transition-colors"
+                    >
+                      <div className="flex items-center justify-between gap-4">
+                        {/* Left side - Member info */}
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <p className="font-medium truncate">{booking.memberName}</p>
+                            {hasListened && (
+                              <Badge variant="outline" className="text-success border-success/30 text-xs">
+                                ✓ Listened
+                              </Badge>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-2 text-sm text-muted-foreground mt-1">
+                            <span>{format(new Date(booking.bookingDate + 'T00:00:00'), 'MMM d, yyyy')}</span>
+                            {booking.marketCity && (
+                              <>
+                                <span>•</span>
+                                <span>{booking.marketCity}{booking.marketState ? `, ${booking.marketState}` : ''}</span>
+                              </>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Right side - Score + Audio */}
+                        <div className="flex items-center gap-4">
+                          {/* QA Score Badge */}
+                          <Badge 
+                            className={`text-sm px-3 py-1 ${
+                              scorePercentage >= 85 
+                                ? 'bg-success/20 text-success border-success/30' 
+                                : scorePercentage >= 70 
+                                  ? 'bg-accent/20 text-accent border-accent/30' 
+                                  : 'bg-destructive/20 text-destructive border-destructive/30'
+                            }`}
+                            variant="outline"
+                          >
+                            {scorePercentage}%
+                          </Badge>
+
+                          {/* Katty's Coaching */}
+                          <div className="w-48">
                             {isCoachingLoading ? (
                               <span className="text-muted-foreground text-sm">Loading...</span>
-                            ) : matchingCoaching?.qaCoachingAudioUrl ? (
-                              <QACoachingAudioPlayer
-                                bookingId={booking.bookingId}
-                                audioUrl={matchingCoaching.qaCoachingAudioUrl}
-                                listenedAt={matchingCoaching.qaCoachingAudioListenedAt}
-                                qaScore={booking.qaScores?.percentage}
-                                canRegenerate={true}
-                                compact={true}
-                              />
                             ) : (
                               <QACoachingAudioPlayer
                                 bookingId={booking.bookingId}
-                                audioUrl={null}
-                                listenedAt={null}
-                                qaScore={booking.qaScores?.percentage}
+                                audioUrl={matchingCoaching?.qaCoachingAudioUrl || null}
+                                listenedAt={matchingCoaching?.qaCoachingAudioListenedAt || null}
+                                qaScore={scorePercentage}
                                 canRegenerate={true}
                                 compact={true}
                               />
                             )}
-                          </TableCell>
-                        </TableRow>
-                      );
-                    })}
-                  </TableBody>
-                </Table>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             )}
           </CardContent>
