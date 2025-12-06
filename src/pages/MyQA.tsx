@@ -305,11 +305,18 @@ export default function MyQA() {
                                 audioUrl={matchingCoaching.qaCoachingAudioUrl}
                                 listenedAt={matchingCoaching.qaCoachingAudioListenedAt}
                                 qaScore={booking.qaScores?.percentage}
-                                canRegenerate={false}
+                                canRegenerate={true}
                                 compact={true}
                               />
                             ) : (
-                              <span className="text-muted-foreground text-sm">No coaching yet</span>
+                              <QACoachingAudioPlayer
+                                bookingId={booking.id}
+                                audioUrl={null}
+                                listenedAt={null}
+                                qaScore={booking.qaScores?.percentage}
+                                canRegenerate={true}
+                                compact={true}
+                              />
                             )}
                           </TableCell>
                         </TableRow>
