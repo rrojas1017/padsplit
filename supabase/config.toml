@@ -29,3 +29,6 @@ verify_jwt = true
 
 [functions.generate-coaching-audio]
 verify_jwt = true
+
+[functions.batch-regenerate-coaching]
+verify_jwt = false
