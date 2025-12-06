@@ -81,7 +81,7 @@ export function BookingsProvider({ children }: { children: ReactNode }) {
         memberName: b.member_name,
         bookingType: b.booking_type,
         agentId: b.agent_id,
-        agentName: 'Loading...', // Will be resolved from AgentsContext
+        agentName: '', // Resolved from AgentsContext at component level
         marketCity: b.market_city || '',
         marketState: b.market_state || '',
         communicationMethod: b.communication_method,
