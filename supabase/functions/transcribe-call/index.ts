@@ -285,6 +285,21 @@ SCORING GUIDE (1-10):
 IMPORTANT: Even for very short calls, provide meaningful analysis. A 1-minute call checking availability still has extractable insights (member's location interest, timing, urgency level).`;
 }
 
+// Helper to update booking with error message
+async function updateBookingError(supabase: any, bookingId: string, errorMessage: string) {
+  try {
+    await supabase
+      .from('bookings')
+      .update({ 
+        transcription_status: 'failed',
+        transcription_error_message: errorMessage 
+      })
+      .eq('id', bookingId);
+  } catch (e) {
+    console.error('[Background] Failed to update error status:', e);
+  }
+}
+
 // Background transcription processing with timeout handling
 async function processTranscription(bookingId: string, kixieUrl: string) {
   console.log(`[Background] Starting transcription for booking ${bookingId}`);
@@ -300,21 +315,17 @@ async function processTranscription(bookingId: string, kixieUrl: string) {
   const TIMEOUT_MS = 5 * 60 * 1000;
   const timeoutId = setTimeout(async () => {
     console.error(`[Background] Transcription timeout for booking ${bookingId} after 5 minutes`);
-    try {
-      await supabase
-        .from('bookings')
-        .update({ transcription_status: 'failed' })
-        .eq('id', bookingId);
-    } catch (e) {
-      console.error('[Background] Failed to update timeout status:', e);
-    }
+    await updateBookingError(supabase, bookingId, 'Processing timeout - the audio file may be too large or the service is busy. Please try again.');
   }, TIMEOUT_MS);
 
   try {
-    // Update status to processing
+    // Update status to processing (clear any previous error)
     await supabase
       .from('bookings')
-      .update({ transcription_status: 'processing' })
+      .update({ 
+        transcription_status: 'processing',
+        transcription_error_message: null 
+      })
       .eq('id', bookingId);
 
     // Fetch booking to get call_type_id
@@ -334,15 +345,58 @@ async function processTranscription(bookingId: string, kixieUrl: string) {
     // Fetch call type configuration if available
     const config = await fetchCallTypeConfig(supabase, callTypeId);
 
-    // Step 1: Download the audio file
+    // Step 1: Download the audio file with detailed error handling
     console.log('[Background] Downloading audio file...');
-    const audioResponse = await fetch(kixieUrl);
-    if (!audioResponse.ok) {
-      throw new Error(`Failed to download audio: ${audioResponse.status}`);
+    console.log('[Background] Audio URL:', kixieUrl.substring(0, 80) + '...');
+    
+    let audioResponse;
+    try {
+      audioResponse = await fetch(kixieUrl, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (compatible; Lovable/1.0)',
+        },
+      });
+    } catch (fetchError) {
+      const errorMsg = fetchError instanceof Error ? fetchError.message : 'Unknown network error';
+      console.error('[Background] Audio download network error:', errorMsg);
+      clearTimeout(timeoutId);
+      await updateBookingError(supabase, bookingId, `Audio download failed: ${errorMsg}. The recording link may be invalid or expired.`);
+      return;
     }
+
+    if (!audioResponse.ok) {
+      const statusText = audioResponse.statusText || 'Unknown error';
+      console.error(`[Background] Audio download failed: ${audioResponse.status} ${statusText}`);
+      clearTimeout(timeoutId);
+      
+      let errorMessage = '';
+      if (audioResponse.status === 404) {
+        errorMessage = 'Audio file not found (404). The recording may have been deleted or the link is invalid.';
+      } else if (audioResponse.status === 403) {
+        errorMessage = 'Access denied to audio file (403). The recording link may have expired.';
+      } else if (audioResponse.status === 401) {
+        errorMessage = 'Authentication required for audio file (401). The recording link may have expired.';
+      } else if (audioResponse.status >= 500) {
+        errorMessage = `Recording server error (${audioResponse.status}). Please try again later.`;
+      } else {
+        errorMessage = `Failed to download audio: ${audioResponse.status} ${statusText}`;
+      }
+      
+      await updateBookingError(supabase, bookingId, errorMessage);
+      return;
+    }
+    
     const audioBlob = await audioResponse.blob();
     const fileSizeMB = audioBlob.size / (1024 * 1024);
     console.log(`[Background] Audio downloaded, size: ${audioBlob.size} bytes (${fileSizeMB.toFixed(2)} MB)`);
+    
+    // Check if audio file is valid (not empty or too small)
+    if (audioBlob.size < 1000) {
+      console.error('[Background] Audio file too small, likely invalid');
+      clearTimeout(timeoutId);
+      await updateBookingError(supabase, bookingId, 'Audio file is empty or corrupted. The recording may not have been saved properly.');
+      return;
+    }
 
     // Step 2: Transcribe with ElevenLabs Speech-to-Text
     console.log('[Background] Sending to ElevenLabs Speech-to-Text...');

@@ -72,7 +72,8 @@ export interface Booking {
   callTranscription?: string;
   callSummary?: string;
   callKeyPoints?: CallKeyPoints;
-  transcriptionStatus?: 'pending' | 'processing' | 'completed' | 'failed';
+  transcriptionStatus?: 'pending' | 'processing' | 'completed' | 'failed' | 'unavailable';
+  transcriptionErrorMessage?: string;
   transcribedAt?: Date;
   callDurationSeconds?: number;
   // Agent feedback from transcription analysis

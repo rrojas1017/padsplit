@@ -68,6 +68,7 @@ export function BookingsProvider({ children }: { children: ReactNode }) {
         callSummary: b.call_summary || undefined,
         callKeyPoints: b.call_key_points || undefined,
         transcriptionStatus: b.transcription_status || undefined,
+        transcriptionErrorMessage: b.transcription_error_message || undefined,
         transcribedAt: b.transcribed_at ? new Date(b.transcribed_at) : undefined,
         callDurationSeconds: b.call_duration_seconds || undefined,
         agentFeedback: b.agent_feedback || undefined,
