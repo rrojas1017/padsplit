@@ -206,3 +206,8 @@
 ::-webkit-scrollbar-thumb {
   @apply bg-muted-foreground/30 rounded-full hover:bg-muted-foreground/50 transition-colors;
 }
+
+/* Marquee pause on hover */
+.hover-pause:hover {
+  animation-play-state: paused;
+}

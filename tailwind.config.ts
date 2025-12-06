@@ -90,6 +90,10 @@ export default {
           from: { height: "var(--radix-accordion-content-height)" },
           to: { height: "0" },
         },
+        "marquee": {
+          "0%": { transform: "translateX(0)" },
+          "100%": { transform: "translateX(-50%)" },
+        },
         "fade-in": {
           from: { opacity: "0" },
           to: { opacity: "1" },
@@ -111,6 +115,7 @@ export default {
         "fade-in": "fade-in 0.5s ease-out forwards",
         "slide-up": "slide-up 0.5s ease-out forwards",
         "flash": "flash 0.8s ease-out",
+        "marquee": "marquee 25s linear infinite",
       },
       boxShadow: {
         'glow': '0 0 20px hsl(42 72% 55% / 0.3)',

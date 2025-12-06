@@ -396,6 +396,36 @@ export default function CoachingHub() {
               </Card>
             )}
 
+            {/* Rolling Info Banner */}
+            <div className="relative overflow-hidden rounded-lg bg-gradient-to-r from-primary/10 via-accent/10 to-primary/10 border border-primary/20 mb-4">
+              <div className="flex animate-marquee hover-pause whitespace-nowrap py-3 px-4">
+                {/* Content repeated twice for seamless loop */}
+                <div className="flex items-center gap-4 mx-8">
+                  <Headphones className="w-5 h-5 text-primary flex-shrink-0" />
+                  <span className="text-sm text-foreground font-medium">
+                    💡 Tip: Click "View Details" on any agent → Scroll to "Call History" to listen to coaching audio for each call
+                  </span>
+                  <span className="text-accent">•</span>
+                  <span className="text-sm text-muted-foreground">
+                    Agents access their own coaching via "My Performance" page
+                  </span>
+                  <span className="text-accent">•</span>
+                </div>
+                {/* Duplicate for seamless loop */}
+                <div className="flex items-center gap-4 mx-8">
+                  <Headphones className="w-5 h-5 text-primary flex-shrink-0" />
+                  <span className="text-sm text-foreground font-medium">
+                    💡 Tip: Click "View Details" on any agent → Scroll to "Call History" to listen to coaching audio for each call
+                  </span>
+                  <span className="text-accent">•</span>
+                  <span className="text-sm text-muted-foreground">
+                    Agents access their own coaching via "My Performance" page
+                  </span>
+                  <span className="text-accent">•</span>
+                </div>
+              </div>
+            </div>
+
             {/* Agent Performance Table */}
             <Card>
               <CardHeader>
