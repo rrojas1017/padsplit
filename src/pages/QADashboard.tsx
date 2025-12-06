@@ -628,7 +628,7 @@ export default function QADashboard() {
                         listenedAt={booking.qaCoachingAudioListenedAt}
                         qaScore={booking.qaScores?.percentage}
                         canRegenerate={hasRole(['super_admin', 'admin'])}
-                        compact
+                        variant="button"
                       />
                     </div>
                   ))}

@@ -14,7 +14,7 @@ interface QACoachingAudioPlayerProps {
   canRegenerate?: boolean;
   qaScore?: number;
   weakestAreas?: string[];
-  compact?: boolean;
+  variant?: 'button' | 'card';
 }
 
 export const QACoachingAudioPlayer: React.FC<QACoachingAudioPlayerProps> = ({
@@ -25,7 +25,7 @@ export const QACoachingAudioPlayer: React.FC<QACoachingAudioPlayerProps> = ({
   canRegenerate = false,
   qaScore,
   weakestAreas = [],
-  compact = false,
+  variant = 'card',
 }) => {
   const [isPlaying, setIsPlaying] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
@@ -123,63 +123,66 @@ export const QACoachingAudioPlayer: React.FC<QACoachingAudioPlayerProps> = ({
     return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
-  if (compact) {
+  // Button variant - matches Jeff's coaching button style
+  if (variant === 'button') {
     return (
       <div className="flex items-center gap-2">
+        <audio
+          ref={audioRef}
+          src={currentAudioUrl || ''}
+          onTimeUpdate={handleTimeUpdate}
+          onLoadedMetadata={handleLoadedMetadata}
+          onEnded={handleEnded}
+        />
         {currentAudioUrl ? (
           <>
-            <audio
-              ref={audioRef}
-              src={currentAudioUrl}
-              onTimeUpdate={handleTimeUpdate}
-              onLoadedMetadata={handleLoadedMetadata}
-              onEnded={handleEnded}
-            />
             <Button
-              variant="ghost"
-              size="sm"
-              className="h-8 w-8 p-0 rounded-full bg-accent/20 hover:bg-accent/30"
               onClick={handlePlayPause}
+              size="sm"
+              variant="outline"
+              className={cn("gap-2", isPlaying && "bg-accent/20")}
             >
               {isPlaying ? (
-                <Pause className="h-4 w-4 text-accent" />
+                <>
+                  <Pause className="h-4 w-4" />
+                  Pause
+                </>
               ) : (
-                <Play className="h-4 w-4 text-accent ml-0.5" />
+                <>
+                  <Play className="h-4 w-4" />
+                  Play Coaching
+                </>
               )}
             </Button>
-            {hasListened && (
-              <Badge variant="outline" className="bg-green-500/10 text-green-600 border-green-500/20 text-xs">
-                <CheckCircle className="h-3 w-3 mr-1" />
-                Listened
-              </Badge>
-            )}
             {canRegenerate && (
-              <button
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8"
                 onClick={handleGenerateAudio}
                 disabled={isGenerating}
-                className="p-1 rounded hover:bg-accent/20 transition-colors disabled:opacity-50"
-                title="Regenerate with Katty's improved coaching"
+                title="Regenerate coaching"
               >
                 {isGenerating ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
+                  <Loader2 className="h-4 w-4 animate-spin" />
                 ) : (
-                  <RefreshCw className="h-3.5 w-3.5 text-muted-foreground hover:text-accent" />
+                  <RefreshCw className="h-4 w-4" />
                 )}
-              </button>
+              </Button>
             )}
           </>
         ) : canRegenerate ? (
           <Button
-            variant="ghost"
+            variant="outline"
             size="sm"
             onClick={handleGenerateAudio}
             disabled={isGenerating}
-            className="text-xs gap-1 text-accent hover:text-accent hover:bg-accent/10"
+            className="gap-2"
           >
             {isGenerating ? (
-              <Loader2 className="h-3 w-3 animate-spin" />
+              <Loader2 className="h-4 w-4 animate-spin" />
             ) : (
-              <Sparkles className="h-3 w-3" />
+              <Sparkles className="h-4 w-4" />
             )}
             Generate
           </Button>
