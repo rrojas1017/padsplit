@@ -345,12 +345,17 @@ export default function MyPerformance() {
         <div className="bg-card rounded-xl p-6 border border-border shadow-card animate-slide-up" style={{ animationDelay: '300ms' }}>
           <h3 className="text-lg font-semibold text-foreground mb-4">
             {dateFilter === 'today' ? "Today's Bookings" : "Recent Bookings"}
+            {periodBookings.length > 0 && (
+              <span className="text-sm font-normal text-muted-foreground ml-2">
+                ({periodBookings.length})
+              </span>
+            )}
           </h3>
-          <div className="space-y-3">
+          <div className="space-y-3 max-h-[400px] overflow-y-auto">
             {periodBookings.length === 0 ? (
               <p className="text-muted-foreground text-sm">No bookings {periodLabel}. Keep going!</p>
             ) : (
-              periodBookings.slice(0, 5).map((booking) => {
+              (dateFilter === 'today' ? periodBookings : periodBookings.slice(0, 5)).map((booking) => {
                 // Find coaching data for this booking from the dedicated hook
                 const coachingData = coachingBookingsWithAudio.find(c => c.id === booking.id);
                 
@@ -372,7 +377,7 @@ export default function MyPerformance() {
                           </span>
                         </div>
                       </div>
-                      {coachingData && (
+                      {coachingData?.coachingAudioUrl ? (
                         <CoachingAudioPlayer
                           bookingId={booking.id}
                           audioUrl={coachingData.coachingAudioUrl}
@@ -380,6 +385,8 @@ export default function MyPerformance() {
                           className="ml-2"
                           canRegenerate={!coachingData.coachingAudioRegeneratedAt}
                         />
+                      ) : (
+                        <span className="text-xs text-muted-foreground italic ml-2">No coaching yet</span>
                       )}
                     </div>
                   </div>
