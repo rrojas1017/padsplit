@@ -301,7 +301,7 @@ export default function MyQA() {
                               <span className="text-muted-foreground text-sm">Loading...</span>
                             ) : matchingCoaching?.qaCoachingAudioUrl ? (
                               <QACoachingAudioPlayer
-                                bookingId={booking.id}
+                                bookingId={booking.bookingId}
                                 audioUrl={matchingCoaching.qaCoachingAudioUrl}
                                 listenedAt={matchingCoaching.qaCoachingAudioListenedAt}
                                 qaScore={booking.qaScores?.percentage}
@@ -310,7 +310,7 @@ export default function MyQA() {
                               />
                             ) : (
                               <QACoachingAudioPlayer
-                                bookingId={booking.id}
+                                bookingId={booking.bookingId}
                                 audioUrl={null}
                                 listenedAt={null}
                                 qaScore={booking.qaScores?.percentage}
