@@ -1,8 +1,9 @@
-import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { createContext, useContext, useState, useEffect, useRef, useCallback, ReactNode } from 'react';
 import { Booking } from '@/types';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { format } from 'date-fns';
+import { deduplicatedQuery, debounce } from '@/utils/databaseCircuitBreaker';
 
 interface BookingsContextType {
   bookings: Booking[];
@@ -19,9 +20,25 @@ export function BookingsProvider({ children }: { children: ReactNode }) {
   const { user, isLoading: authLoading } = useAuth();
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const lastFetchRef = useRef<number>(0);
+  const fetchInProgressRef = useRef<boolean>(false);
 
-  const fetchBookings = async (showLoading = true) => {
+  const fetchBookings = useCallback(async (showLoading = true) => {
+    // Prevent concurrent fetches
+    if (fetchInProgressRef.current) {
+      console.log('[BookingsContext] Fetch already in progress, skipping');
+      return;
+    }
+
+    // Rate limit: minimum 5 seconds between fetches
+    const now = Date.now();
+    if (now - lastFetchRef.current < 5000) {
+      console.log('[BookingsContext] Rate limited, skipping fetch');
+      return;
+    }
+
     try {
+      fetchInProgressRef.current = true;
       if (showLoading) setIsLoading(true);
       
       // Limit to last 90 days to prevent database timeout
@@ -29,29 +46,42 @@ export function BookingsProvider({ children }: { children: ReactNode }) {
       ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
       const dateLimit = format(ninetyDaysAgo, 'yyyy-MM-dd');
       
-      const { data, error } = await supabase
-        .from('bookings')
-        .select(`
-          *,
-          agents!inner(name, site_id, sites(name))
-        `)
-        .gte('booking_date', dateLimit)
-        .order('booking_date', { ascending: false })
-        .limit(1000);
+      const result = await deduplicatedQuery('bookings-fetch', async () => {
+        // Simplified query - fetch agent info from AgentsContext instead
+        const { data, error } = await supabase
+          .from('bookings')
+          .select(`
+            id, member_name, booking_date, move_in_date, agent_id, status,
+            booking_type, market_city, market_state, communication_method,
+            notes, hubspot_link, kixie_link, admin_profile_link, move_in_day_reach_out,
+            created_by, created_at, call_transcription, call_summary, call_key_points,
+            transcription_status, transcription_error_message, transcribed_at, 
+            call_duration_seconds, agent_feedback, coaching_audio_url, 
+            coaching_audio_generated_at, coaching_audio_regenerated_at
+          `)
+          .gte('booking_date', dateLimit)
+          .order('booking_date', { ascending: false })
+          .limit(1000);
 
-      if (error) {
-        console.error('Error fetching bookings:', error);
+        if (error) throw error;
+        return data;
+      });
+
+      if (!result) {
+        // Circuit breaker blocked the query
         return;
       }
 
-      const transformedBookings: Booking[] = (data || []).map((b: any) => ({
+      lastFetchRef.current = Date.now();
+
+      const transformedBookings: Booking[] = (result || []).map((b: any) => ({
         id: b.id,
         moveInDate: new Date(b.move_in_date + 'T00:00:00'),
         bookingDate: new Date(b.booking_date + 'T00:00:00'),
         memberName: b.member_name,
         bookingType: b.booking_type,
         agentId: b.agent_id,
-        agentName: b.agents?.name || 'Unknown',
+        agentName: 'Loading...', // Will be resolved from AgentsContext
         marketCity: b.market_city || '',
         marketState: b.market_state || '',
         communicationMethod: b.communication_method,
@@ -63,7 +93,6 @@ export function BookingsProvider({ children }: { children: ReactNode }) {
         moveInDayReachOut: b.move_in_day_reach_out || false,
         createdBy: b.created_by || undefined,
         createdAt: b.created_at ? new Date(b.created_at) : undefined,
-        // Call transcription fields
         callTranscription: b.call_transcription || undefined,
         callSummary: b.call_summary || undefined,
         callKeyPoints: b.call_key_points || undefined,
@@ -72,7 +101,6 @@ export function BookingsProvider({ children }: { children: ReactNode }) {
         transcribedAt: b.transcribed_at ? new Date(b.transcribed_at) : undefined,
         callDurationSeconds: b.call_duration_seconds || undefined,
         agentFeedback: b.agent_feedback || undefined,
-        // Coaching audio fields
         coachingAudioUrl: b.coaching_audio_url || undefined,
         coachingAudioGeneratedAt: b.coaching_audio_generated_at ? new Date(b.coaching_audio_generated_at) : undefined,
         coachingAudioRegeneratedAt: b.coaching_audio_regenerated_at ? new Date(b.coaching_audio_regenerated_at) : undefined,
@@ -82,73 +110,62 @@ export function BookingsProvider({ children }: { children: ReactNode }) {
     } catch (error) {
       console.error('Error fetching bookings:', error);
     } finally {
+      fetchInProgressRef.current = false;
       setIsLoading(false);
     }
-  };
+  }, []);
+
+  // Debounced version for realtime updates
+  const debouncedFetch = useCallback(
+    debounce(() => fetchBookings(false), 2000),
+    [fetchBookings]
+  );
 
   useEffect(() => {
-    // Wait for auth to be ready
-    if (authLoading) {
-      return;
-    }
+    if (authLoading) return;
 
-    // If no user, clear bookings
     if (!user) {
       setBookings([]);
       setIsLoading(false);
       return;
     }
 
-    // User is authenticated - stagger the initial fetch to let auth stabilize
-    // This prevents RLS timeout during initial JWT propagation
+    // Initial fetch with small delay for auth stabilization
     const initialFetchTimeout = setTimeout(() => {
       fetchBookings();
     }, 200);
 
-    // Delayed re-fetch to ensure complete data on fresh login
-    const refreshTimeout = setTimeout(() => {
-      fetchBookings(false); // Silent refresh
-    }, 1000);
-
-    // Set up realtime subscription - use silent refresh (no loading skeleton)
+    // Set up realtime subscription with debounced handler
     const channel = supabase
       .channel('bookings-changes')
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'bookings' },
         () => {
-          fetchBookings(false); // Silent background refresh
+          debouncedFetch();
         }
       )
       .subscribe();
 
     return () => {
       clearTimeout(initialFetchTimeout);
-      clearTimeout(refreshTimeout);
       supabase.removeChannel(channel);
     };
-  }, [user, authLoading]);
+  }, [user, authLoading, fetchBookings, debouncedFetch]);
 
   const triggerAutoTranscription = async (bookingId: string) => {
     try {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session?.access_token) return;
 
-      // Fire-and-forget - don't await, don't block
       supabase.functions.invoke('check-auto-transcription', {
         body: { bookingId }
       }).then(({ error }) => {
         if (error) {
           console.log('[Auto-transcription] Check skipped or failed:', error.message);
-        } else {
-          console.log('[Auto-transcription] Check completed for booking:', bookingId);
         }
-      }).catch(() => {
-        // Silently ignore errors - auto-transcription is optional
-      });
-    } catch (error) {
-      // Silently ignore errors - auto-transcription is optional
-    }
+      }).catch(() => {});
+    } catch (error) {}
   };
 
   const addBooking = async (booking: Omit<Booking, 'id'>): Promise<string | null> => {
@@ -179,7 +196,6 @@ export function BookingsProvider({ children }: { children: ReactNode }) {
 
     const bookingId = data?.id || null;
 
-    // Trigger auto-transcription check if booking has kixie link
     if (bookingId && booking.kixieLink) {
       triggerAutoTranscription(bookingId);
     }
@@ -216,7 +232,6 @@ export function BookingsProvider({ children }: { children: ReactNode }) {
       throw error;
     }
 
-    // Trigger auto-transcription check if kixieLink was added/updated
     if (updates.kixieLink) {
       triggerAutoTranscription(id);
     }
