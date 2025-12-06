@@ -80,10 +80,10 @@ serve(async (req) => {
           failCount++;
         }
 
-        // Pace the requests: 3 second delay between each to avoid rate limiting
+        // Pace the requests: 10 second delay between each to avoid rate limiting
         if (i < transcriptions.length - 1) {
-          console.log('Waiting 3 seconds before next request...');
-          await new Promise(resolve => setTimeout(resolve, 3000));
+          console.log('Waiting 10 seconds before next request...');
+          await new Promise(resolve => setTimeout(resolve, 10000));
         }
       }
 
@@ -98,7 +98,7 @@ serve(async (req) => {
       JSON.stringify({
         success: true,
         queued: transcriptions.length,
-        message: `Started generating QA coaching audio for ${transcriptions.length} bookings. Processing in background with 3-second pacing.`
+        message: `Started generating QA coaching audio for ${transcriptions.length} bookings. Processing in background with 10-second pacing.`
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
