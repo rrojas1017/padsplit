@@ -33,7 +33,24 @@ import AgentStatus from "./pages/AgentStatus";
 import MemberInsights from "./pages/MemberInsights";
 import NotFound from "./pages/NotFound";
 
-const queryClient = new QueryClient(); // Initialize query client
+const queryClient = new QueryClient();
+
+// Wrapper for protected routes that need data contexts
+function DataProviders({ children }: { children: React.ReactNode }) {
+  return (
+    <SidebarProvider>
+      <BookingsProvider>
+        <AgentsProvider>
+          <DisplayTokensProvider>
+            <AgentStatusProvider>
+              {children}
+            </AgentStatusProvider>
+          </DisplayTokensProvider>
+        </AgentsProvider>
+      </BookingsProvider>
+    </SidebarProvider>
+  );
+}
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
@@ -43,115 +60,135 @@ const App = () => (
           <Toaster />
           <Sonner />
           <BrowserRouter>
-            <SidebarProvider>
-            <BookingsProvider>
-            <AgentsProvider>
-            <DisplayTokensProvider>
-            <AgentStatusProvider>
             <Routes>
+              {/* Public routes - no data providers needed */}
               <Route path="/" element={<Index />} />
               <Route path="/login" element={<Login />} />
+              <Route path="/display/:token" element={<PublicWallboard />} />
               
+              {/* Protected routes - wrapped with data providers */}
               <Route path="/dashboard" element={
                 <ProtectedRoute allowedRoles={['super_admin', 'admin', 'supervisor']}>
-                  <Dashboard />
+                  <DataProviders>
+                    <Dashboard />
+                  </DataProviders>
                 </ProtectedRoute>
               } />
               
               <Route path="/my-performance" element={
                 <ProtectedRoute>
-                  <MyPerformance />
+                  <DataProviders>
+                    <MyPerformance />
+                  </DataProviders>
                 </ProtectedRoute>
               } />
               
               <Route path="/leaderboard" element={
                 <ProtectedRoute allowedRoles={['super_admin', 'admin', 'supervisor']}>
-                  <Leaderboard />
+                  <DataProviders>
+                    <Leaderboard />
+                  </DataProviders>
                 </ProtectedRoute>
               } />
               
               <Route path="/reports" element={
                 <ProtectedRoute allowedRoles={['super_admin', 'admin', 'supervisor']}>
-                  <Reports />
+                  <DataProviders>
+                    <Reports />
+                  </DataProviders>
                 </ProtectedRoute>
               } />
 
               <Route path="/add-booking" element={
                 <ProtectedRoute allowedRoles={['super_admin', 'admin', 'supervisor', 'agent']}>
-                  <AddBooking />
+                  <DataProviders>
+                    <AddBooking />
+                  </DataProviders>
                 </ProtectedRoute>
               } />
 
               <Route path="/edit-booking/:id" element={
                 <ProtectedRoute allowedRoles={['super_admin', 'admin', 'supervisor', 'agent']}>
-                  <EditBooking />
+                  <DataProviders>
+                    <EditBooking />
+                  </DataProviders>
                 </ProtectedRoute>
               } />
               
               <Route path="/wallboard" element={
                 <ProtectedRoute allowedRoles={['super_admin', 'admin', 'supervisor']}>
-                  <Wallboard />
+                  <DataProviders>
+                    <Wallboard />
+                  </DataProviders>
                 </ProtectedRoute>
               } />
               
               <Route path="/users" element={
                 <ProtectedRoute allowedRoles={['super_admin', 'admin', 'supervisor']}>
-                  <UserManagement />
+                  <DataProviders>
+                    <UserManagement />
+                  </DataProviders>
                 </ProtectedRoute>
               } />
-
 
               <Route path="/display-links" element={
                 <ProtectedRoute allowedRoles={['super_admin', 'admin']}>
-                  <DisplayLinks />
+                  <DataProviders>
+                    <DisplayLinks />
+                  </DataProviders>
                 </ProtectedRoute>
               } />
-
-              <Route path="/display/:token" element={<PublicWallboard />} />
               
               <Route path="/audit-log" element={
                 <ProtectedRoute allowedRoles={['super_admin', 'admin']}>
-                  <AuditLog />
+                  <DataProviders>
+                    <AuditLog />
+                  </DataProviders>
                 </ProtectedRoute>
               } />
               
               <Route path="/settings" element={
                 <ProtectedRoute allowedRoles={['super_admin', 'admin']}>
-                  <Settings />
+                  <DataProviders>
+                    <Settings />
+                  </DataProviders>
                 </ProtectedRoute>
               } />
 
               <Route path="/import-bookings" element={
                 <ProtectedRoute allowedRoles={['super_admin', 'admin']}>
-                  <ImportBookings />
+                  <DataProviders>
+                    <ImportBookings />
+                  </DataProviders>
                 </ProtectedRoute>
               } />
 
               <Route path="/coaching-hub" element={
                 <ProtectedRoute allowedRoles={['super_admin', 'admin', 'supervisor']}>
-                  <CoachingHub />
+                  <DataProviders>
+                    <CoachingHub />
+                  </DataProviders>
                 </ProtectedRoute>
               } />
 
               <Route path="/agent-status" element={
                 <ProtectedRoute allowedRoles={['super_admin', 'admin', 'supervisor']}>
-                  <AgentStatus />
+                  <DataProviders>
+                    <AgentStatus />
+                  </DataProviders>
                 </ProtectedRoute>
               } />
 
               <Route path="/member-insights" element={
                 <ProtectedRoute allowedRoles={['super_admin', 'admin']}>
-                  <MemberInsights />
+                  <DataProviders>
+                    <MemberInsights />
+                  </DataProviders>
                 </ProtectedRoute>
               } />
               
               <Route path="*" element={<NotFound />} />
             </Routes>
-            </AgentStatusProvider>
-            </DisplayTokensProvider>
-            </AgentsProvider>
-            </BookingsProvider>
-            </SidebarProvider>
           </BrowserRouter>
         </TooltipProvider>
       </AuthProvider>
