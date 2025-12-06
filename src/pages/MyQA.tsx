@@ -255,46 +255,74 @@ export default function MyQA() {
           </Card>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Recent Scores Table */}
-          <Card>
-            <CardHeader>
+        {/* Recent QA Scores with Katty Coaching */}
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between">
               <CardTitle className="flex items-center gap-2 text-lg">
                 <Trophy className="w-5 h-5 text-accent" />
                 Recent QA Scores
               </CardTitle>
-            </CardHeader>
-            <CardContent>
-              {filteredBookings.length === 0 ? (
-                <p className="text-center text-muted-foreground py-8">No scored calls yet</p>
-              ) : (
+              <p className="text-xs text-muted-foreground italic">
+                Note: Katty may occasionally mispronounce some names — we apologize in advance! 😊
+              </p>
+            </div>
+          </CardHeader>
+          <CardContent>
+            {filteredBookings.length === 0 ? (
+              <p className="text-center text-muted-foreground py-8">No scored calls yet</p>
+            ) : (
+              <div className="max-h-[500px] overflow-y-auto">
                 <Table>
                   <TableHeader>
                     <TableRow>
                       <TableHead>Date</TableHead>
                       <TableHead>Member</TableHead>
-                      <TableHead className="text-right">Score</TableHead>
+                      <TableHead className="text-center">Score</TableHead>
+                      <TableHead className="text-right">Katty's Coaching</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {filteredBookings.slice(0, 10).map((booking) => (
-                      <TableRow key={booking.id}>
-                        <TableCell className="text-muted-foreground">
-                          {format(new Date(booking.bookingDate + 'T00:00:00'), 'MMM d')}
-                        </TableCell>
-                        <TableCell className="font-medium">{booking.memberName}</TableCell>
-                        <TableCell className="text-right">
-                          <span className={`font-bold ${getScoreColor(booking.qaScores?.percentage || 0)}`}>
-                            {booking.qaScores?.percentage || 0}%
-                          </span>
-                        </TableCell>
-                      </TableRow>
-                    ))}
+                    {filteredBookings.map((booking) => {
+                      const matchingCoaching = qaCoachingBookings.find(c => c.bookingId === booking.id);
+                      return (
+                        <TableRow key={booking.id}>
+                          <TableCell className="text-muted-foreground">
+                            {format(new Date(booking.bookingDate + 'T00:00:00'), 'MMM d')}
+                          </TableCell>
+                          <TableCell className="font-medium">{booking.memberName}</TableCell>
+                          <TableCell className="text-center">
+                            <span className={`font-bold ${getScoreColor(booking.qaScores?.percentage || 0)}`}>
+                              {booking.qaScores?.percentage || 0}%
+                            </span>
+                          </TableCell>
+                          <TableCell className="text-right">
+                            {isCoachingLoading ? (
+                              <span className="text-muted-foreground text-sm">Loading...</span>
+                            ) : matchingCoaching?.qaCoachingAudioUrl ? (
+                              <QACoachingAudioPlayer
+                                bookingId={booking.id}
+                                audioUrl={matchingCoaching.qaCoachingAudioUrl}
+                                listenedAt={matchingCoaching.qaCoachingAudioListenedAt}
+                                qaScore={booking.qaScores?.percentage}
+                                canRegenerate={false}
+                                compact={true}
+                              />
+                            ) : (
+                              <span className="text-muted-foreground text-sm">No coaching yet</span>
+                            )}
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
                   </TableBody>
                 </Table>
-              )}
-            </CardContent>
-          </Card>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
 
           {/* Category Breakdown */}
           <Card>
