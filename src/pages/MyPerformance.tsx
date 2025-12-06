@@ -7,12 +7,31 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useBookings } from '@/contexts/BookingsContext';
 import { useAgents } from '@/contexts/AgentsContext';
 import { useCoachingData, CoachingBookingWithAudio } from '@/hooks/useCoachingData';
-import { CalendarDays, TrendingUp, Clock, CheckCircle2, Trophy, GraduationCap, ThumbsUp, Lightbulb, Star, Headphones } from 'lucide-react';
-import { format, subDays, startOfMonth, startOfDay, endOfDay } from 'date-fns';
-import { Area, AreaChart, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { CalendarDays, TrendingUp, Clock, CheckCircle2, Trophy, GraduationCap, ThumbsUp, Lightbulb, Star, Headphones, Timer } from 'lucide-react';
+import { format, subDays, startOfMonth, startOfDay, endOfDay, differenceInDays } from 'date-fns';
+import { Area, AreaChart, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer } from 'recharts';
 import { Skeleton } from '@/components/ui/skeleton';
 import { AgentFeedback } from '@/types';
 import { CoachingAudioPlayer } from '@/components/coaching/CoachingAudioPlayer';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { cn } from '@/lib/utils';
+
+// Helper to calculate audio expiration info (15-day retention)
+function getAudioExpirationInfo(generatedAt: string | null) {
+  if (!generatedAt) return null;
+  
+  const generated = new Date(generatedAt);
+  const expiresAt = new Date(generated.getTime() + 15 * 24 * 60 * 60 * 1000); // +15 days
+  const now = new Date();
+  const daysRemaining = differenceInDays(expiresAt, now);
+  
+  return {
+    daysRemaining: Math.max(0, daysRemaining),
+    expiresAt,
+    isExpiringSoon: daysRemaining <= 3 && daysRemaining > 0,
+    isExpired: daysRemaining <= 0,
+  };
+}
 
 // Helper to get date range from filter
 function getDateRangeFromFilter(filter: DateFilterValue): { start: Date; end: Date } {
@@ -302,7 +321,7 @@ export default function MyPerformance() {
                   tickLine={false}
                   tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 12 }}
                 />
-                <Tooltip 
+                <RechartsTooltip 
                   contentStyle={{
                     backgroundColor: 'hsl(var(--card))',
                     border: '1px solid hsl(var(--border))',
@@ -380,6 +399,10 @@ export default function MyPerformance() {
         
         if (!latestWithFeedback) return null;
 
+        const expirationInfo = latestWithFeedback.coachingAudioUrl 
+          ? getAudioExpirationInfo(latestWithFeedback.coachingAudioGeneratedAt)
+          : null;
+
         return (
           <div className="mb-6 animate-slide-up" style={{ animationDelay: '350ms' }}>
             <div className="bg-card rounded-xl p-6 border border-accent/30 shadow-card">
@@ -387,8 +410,35 @@ export default function MyPerformance() {
                 <div className="w-10 h-10 rounded-full bg-accent/20 flex items-center justify-center">
                   <Headphones className="w-5 h-5 text-accent" />
                 </div>
-                <div>
-                  <h3 className="text-lg font-semibold text-foreground">Your Latest Coaching</h3>
+                <div className="flex-1">
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-lg font-semibold text-foreground">Your Latest Coaching</h3>
+                    {expirationInfo && !expirationInfo.isExpired && (
+                      <TooltipProvider>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <span className={cn(
+                              "text-xs px-2 py-0.5 rounded-full flex items-center gap-1 cursor-help",
+                              expirationInfo.isExpiringSoon 
+                                ? "bg-warning/20 text-warning" 
+                                : "bg-muted text-muted-foreground"
+                            )}>
+                              <Timer className="w-3 h-3" />
+                              {expirationInfo.daysRemaining}d left
+                            </span>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            <p>Audio expires {format(expirationInfo.expiresAt, 'MMM d, yyyy')}</p>
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
+                    )}
+                    {expirationInfo?.isExpired && (
+                      <span className="text-xs px-2 py-0.5 rounded-full bg-destructive/20 text-destructive">
+                        Expired
+                      </span>
+                    )}
+                  </div>
                   <p className="text-sm text-muted-foreground">
                     {latestWithFeedback.memberName} • {latestWithFeedback.marketCity}
                   </p>
