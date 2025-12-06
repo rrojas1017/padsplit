@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 
 import { 
   ClipboardCheck, TrendingUp, Calendar, Target, Award, BarChart3, 
-  Trophy, ArrowUp, ArrowDown
+  Trophy, ArrowUp, ArrowDown, AlertTriangle
 } from 'lucide-react';
 import { useState, useMemo } from 'react';
 import { format, isWithinInterval, startOfDay, endOfDay, startOfWeek, startOfMonth } from 'date-fns';
@@ -66,10 +66,29 @@ export default function MyQA() {
       .sort((a, b) => new Date(b.bookingDate + 'T00:00:00').getTime() - new Date(a.bookingDate + 'T00:00:00').getTime());
   }, [qaBookings, dateRange]);
 
+  // Helper to find weakest category for a booking
+  const getWeakestCategory = (booking: typeof qaBookings[0]) => {
+    if (!booking?.qaScores?.scores || !rubric) return null;
+    
+    let weakest: { name: string; score: number; max: number; percentage: number } | null = null;
+    
+    for (const cat of rubric.categories) {
+      const score = booking.qaScores.scores[cat.name] || 0;
+      const max = cat.maxPoints;
+      const percentage = (score / max) * 100;
+      
+      if (!weakest || percentage < weakest.percentage) {
+        weakest = { name: cat.name, score, max, percentage };
+      }
+    }
+    
+    return weakest;
+  };
+
   // Calculate top and lowest scored bookings
-  const { topScoredBooking, lowestScoredBooking } = useMemo(() => {
+  const { topScoredBooking, lowestScoredBooking, lowestWeakestCategory } = useMemo(() => {
     const scoredBookings = filteredBookings.filter(b => b.qaScores?.percentage !== undefined);
-    if (scoredBookings.length === 0) return { topScoredBooking: null, lowestScoredBooking: null };
+    if (scoredBookings.length === 0) return { topScoredBooking: null, lowestScoredBooking: null, lowestWeakestCategory: null };
     
     const sorted = [...scoredBookings].sort((a, b) => 
       (b.qaScores?.percentage || 0) - (a.qaScores?.percentage || 0)
@@ -82,11 +101,15 @@ export default function MyQA() {
     const topCoaching = qaCoachingBookings.find(c => c.bookingId === top.id);
     const lowestCoaching = qaCoachingBookings.find(c => c.bookingId === lowest.id);
     
+    // Get weakest category for lowest scored booking
+    const weakestCat = lowest && lowest.id !== top?.id ? getWeakestCategory(lowest) : null;
+    
     return {
       topScoredBooking: top ? { ...top, coaching: topCoaching } : null,
       lowestScoredBooking: lowest && lowest.id !== top?.id ? { ...lowest, coaching: lowestCoaching } : null,
+      lowestWeakestCategory: weakestCat,
     };
-  }, [filteredBookings, qaCoachingBookings]);
+  }, [filteredBookings, qaCoachingBookings, rubric]);
 
   const stats = calculateQAStats(filteredBookings, rubric);
 
@@ -255,6 +278,15 @@ export default function MyQA() {
                       {lowestScoredBooking.qaScores?.percentage || 0}%
                     </Badge>
                   </div>
+                  {lowestWeakestCategory && (
+                    <div className="flex items-center gap-2 p-2 rounded-md bg-amber-500/10 border border-amber-500/20">
+                      <AlertTriangle className="w-4 h-4 text-amber-500 flex-shrink-0" />
+                      <span className="text-sm font-medium">Focus: {lowestWeakestCategory.name}</span>
+                      <Badge variant="outline" className="text-amber-500 border-amber-500/30 ml-auto">
+                        {lowestWeakestCategory.score}/{lowestWeakestCategory.max}
+                      </Badge>
+                    </div>
+                  )}
                   <QACoachingAudioPlayer
                     bookingId={lowestScoredBooking.id}
                     audioUrl={lowestScoredBooking.coaching?.qaCoachingAudioUrl || null}
