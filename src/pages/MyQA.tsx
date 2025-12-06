@@ -58,10 +58,12 @@ export default function MyQA() {
         startDate = new Date(0);
     }
 
-    return qaBookings.filter(b => {
-      const bookingDate = new Date(b.bookingDate + 'T00:00:00');
-      return isWithinInterval(bookingDate, { start: startDate, end: endOfDay(now) });
-    });
+    return qaBookings
+      .filter(b => {
+        const bookingDate = new Date(b.bookingDate + 'T00:00:00');
+        return isWithinInterval(bookingDate, { start: startDate, end: endOfDay(now) });
+      })
+      .sort((a, b) => new Date(b.bookingDate + 'T00:00:00').getTime() - new Date(a.bookingDate + 'T00:00:00').getTime());
   }, [qaBookings, dateRange]);
 
   // Calculate top and lowest scored bookings
