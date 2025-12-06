@@ -379,17 +379,19 @@ export default function MyPerformance() {
                           </span>
                         </div>
                       </div>
-                {coachingData ? (
-                  <CoachingAudioPlayer
-                    bookingId={booking.id}
-                    audioUrl={coachingData.coachingAudioUrl || undefined}
-                    variant="button"
-                    className="ml-2"
-                    canRegenerate={!!coachingData.coachingAudioUrl && !coachingData.coachingAudioRegeneratedAt}
-                  />
-                ) : (
-                  <span className="text-xs text-muted-foreground italic ml-2">No coaching yet</span>
-                )}
+                      {coachingLoading ? (
+                        <span className="text-xs text-muted-foreground italic ml-2">Loading...</span>
+                      ) : coachingData ? (
+                        <CoachingAudioPlayer
+                          bookingId={booking.id}
+                          audioUrl={coachingData.coachingAudioUrl || undefined}
+                          variant="button"
+                          className="ml-2"
+                          canRegenerate={!!coachingData.coachingAudioUrl && !coachingData.coachingAudioRegeneratedAt}
+                        />
+                      ) : (
+                        <span className="text-xs text-muted-foreground italic ml-2">No coaching yet</span>
+                      )}
                     </div>
                   </div>
                 );
