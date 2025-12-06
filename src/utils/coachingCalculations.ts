@@ -10,6 +10,10 @@ export interface CoachingBooking {
   memberName?: string;
   transcriptionStatus: string;
   agentFeedback: AgentFeedback;
+  coachingAudioUrl?: string | null;
+  coachingAudioListenedAt?: string | null;
+  coachingAudioGeneratedAt?: string | null;
+  coachingAudioRegeneratedAt?: string | null;
 }
 
 interface TeamScores {
@@ -27,7 +31,7 @@ interface RatingDistribution {
   poor: number;
 }
 
-interface AgentCoachingStats {
+export interface AgentCoachingStats {
   agentId: string;
   agentName: string;
   siteName: string;
@@ -43,6 +47,11 @@ interface AgentCoachingStats {
   recentStrengths: string[];
   recentImprovements: string[];
   recentTips: string[];
+  // Listening stats
+  totalCoachingAudios: number;
+  listenedCount: number;
+  listenedPercentage: number;
+  unlistenedCoachings: CoachingBooking[];
 }
 
 export interface ScoreTrendDataPoint {
@@ -247,6 +256,11 @@ export function getAgentCoachingStatsFromCoaching(coachingBookings: CoachingBook
     const improvements: string[] = [];
     const tips: string[] = [];
 
+    // Listening stats tracking
+    const bookingsWithAudio = agentBookings.filter(b => b.coachingAudioUrl);
+    const listenedBookings = bookingsWithAudio.filter(b => b.coachingAudioListenedAt);
+    const unlistenedBookings = bookingsWithAudio.filter(b => !b.coachingAudioListenedAt);
+
     agentBookings.forEach(b => {
       const feedback = b.agentFeedback;
       if (feedback?.scores) {
@@ -273,6 +287,12 @@ export function getAgentCoachingStatsFromCoaching(coachingBookings: CoachingBook
     const avgProd = productKnowledge / count;
     const avgObj = objectionHandling / count;
     const avgClose = closingSkills / count;
+    
+    const totalCoachingAudios = bookingsWithAudio.length;
+    const listenedCount = listenedBookings.length;
+    const listenedPercentage = totalCoachingAudios > 0 
+      ? Math.round((listenedCount / totalCoachingAudios) * 100) 
+      : 0;
 
     agentStats.push({
       agentId: agent.id,
@@ -290,10 +310,50 @@ export function getAgentCoachingStatsFromCoaching(coachingBookings: CoachingBook
       recentStrengths: [...new Set(strengths)].slice(0, 5),
       recentImprovements: [...new Set(improvements)].slice(0, 5),
       recentTips: [...new Set(tips)].slice(0, 5),
+      totalCoachingAudios,
+      listenedCount,
+      listenedPercentage,
+      unlistenedCoachings: unlistenedBookings.sort((a, b) => 
+        new Date(b.bookingDate).getTime() - new Date(a.bookingDate).getTime()
+      ),
     });
   });
 
   return agentStats.sort((a, b) => b.averageScores.overall - a.averageScores.overall);
+}
+
+// Calculate team-wide listening stats
+export function calculateTeamListeningStats(agentStats: AgentCoachingStats[]): {
+  totalCoachingAudios: number;
+  totalListened: number;
+  overallPercentage: number;
+  unlistenedCount: number;
+  mostEngagedAgent: { name: string; percentage: number } | null;
+} {
+  const totalCoachingAudios = agentStats.reduce((sum, a) => sum + a.totalCoachingAudios, 0);
+  const totalListened = agentStats.reduce((sum, a) => sum + a.listenedCount, 0);
+  const unlistenedCount = totalCoachingAudios - totalListened;
+  const overallPercentage = totalCoachingAudios > 0 
+    ? Math.round((totalListened / totalCoachingAudios) * 100) 
+    : 0;
+  
+  // Find most engaged agent (min 1 audio required)
+  const agentsWithAudio = agentStats.filter(a => a.totalCoachingAudios > 0);
+  const mostEngaged = agentsWithAudio.length > 0 
+    ? agentsWithAudio.reduce((best, curr) => 
+        curr.listenedPercentage > best.listenedPercentage ? curr : best
+      )
+    : null;
+
+  return {
+    totalCoachingAudios,
+    totalListened,
+    overallPercentage,
+    unlistenedCount,
+    mostEngagedAgent: mostEngaged 
+      ? { name: mostEngaged.agentName, percentage: mostEngaged.listenedPercentage }
+      : null,
+  };
 }
 
 // Legacy function

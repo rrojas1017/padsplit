@@ -18,8 +18,11 @@ import {
   getAgentCoachingStatsFromCoaching,
   getAgentDetailedFeedbackFromCoaching,
   calculateScoresTrendFromCoaching,
-  calculateAgentScoresTrendFromCoaching
+  calculateAgentScoresTrendFromCoaching,
+  calculateTeamListeningStats,
+  CoachingBooking,
 } from '@/utils/coachingCalculations';
+import { CoachingAudioPlayer } from '@/components/coaching/CoachingAudioPlayer';
 import { 
   PieChart, Pie, Cell, ResponsiveContainer, Tooltip as RechartsTooltip, Legend,
   LineChart, Line, XAxis, YAxis, CartesianGrid
@@ -35,7 +38,10 @@ import {
   Star,
   User,
   Phone,
-  Loader2
+  Loader2,
+  Headphones,
+  CheckCircle2,
+  Clock,
 } from 'lucide-react';
 import { format, startOfDay } from 'date-fns';
 
@@ -86,6 +92,7 @@ export default function CoachingHub() {
   const commonStrengths = useMemo(() => getCommonStrengthsFromCoaching(dateFilteredCoachingBookings), [dateFilteredCoachingBookings]);
   const commonImprovements = useMemo(() => getCommonImprovementsFromCoaching(dateFilteredCoachingBookings), [dateFilteredCoachingBookings]);
   const agentStats = useMemo(() => getAgentCoachingStatsFromCoaching(dateFilteredCoachingBookings, filteredAgents), [dateFilteredCoachingBookings, filteredAgents]);
+  const listeningStats = useMemo(() => calculateTeamListeningStats(agentStats), [agentStats]);
   const scoreTrendData = useMemo(() => calculateScoresTrendFromCoaching(dateFilteredCoachingBookings), [dateFilteredCoachingBookings]);
 
   const selectedAgentStats = useMemo(() => {
@@ -355,6 +362,40 @@ export default function CoachingHub() {
               </Card>
             </div>
 
+            {/* Team Listening Engagement Card */}
+            {listeningStats.totalCoachingAudios > 0 && (
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Headphones className="w-5 h-5 text-primary" />
+                    Coaching Engagement
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                    <div className="text-center p-3 rounded-lg bg-muted">
+                      <p className="text-2xl font-bold text-foreground">{listeningStats.overallPercentage}%</p>
+                      <p className="text-xs text-muted-foreground">Overall Listened</p>
+                    </div>
+                    <div className="text-center p-3 rounded-lg bg-muted">
+                      <p className="text-2xl font-bold text-foreground">{listeningStats.totalListened}/{listeningStats.totalCoachingAudios}</p>
+                      <p className="text-xs text-muted-foreground">Audios Listened</p>
+                    </div>
+                    <div className="text-center p-3 rounded-lg bg-muted">
+                      <p className="text-2xl font-bold text-amber-500">{listeningStats.unlistenedCount}</p>
+                      <p className="text-xs text-muted-foreground">Pending Listens</p>
+                    </div>
+                    {listeningStats.mostEngagedAgent && (
+                      <div className="text-center p-3 rounded-lg bg-muted">
+                        <p className="text-lg font-bold text-foreground">{listeningStats.mostEngagedAgent.name}</p>
+                        <p className="text-xs text-muted-foreground">Most Engaged ({listeningStats.mostEngagedAgent.percentage}%)</p>
+                      </div>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
             {/* Agent Performance Table */}
             <Card>
               <CardHeader>
@@ -375,46 +416,66 @@ export default function CoachingHub() {
                           <th className="text-center py-3 px-2 text-sm font-medium text-muted-foreground hidden md:table-cell">Product</th>
                           <th className="text-center py-3 px-2 text-sm font-medium text-muted-foreground hidden lg:table-cell">Objection</th>
                           <th className="text-center py-3 px-2 text-sm font-medium text-muted-foreground hidden lg:table-cell">Closing</th>
+                          <th className="text-center py-3 px-2 text-sm font-medium text-muted-foreground">Listening</th>
                           <th className="text-right py-3 px-2 text-sm font-medium text-muted-foreground">Actions</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {agentStats.map((agent) => (
-                          <tr key={agent.agentId} className="border-b border-border/50 hover:bg-muted/50">
-                            <td className="py-3 px-2">
-                              <div className="flex items-center gap-2">
-                                <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center">
-                                  <User className="w-4 h-4 text-primary" />
+                        {agentStats.map((agent) => {
+                          const listeningBadgeClass = agent.totalCoachingAudios === 0 
+                            ? 'bg-muted text-muted-foreground'
+                            : agent.listenedPercentage >= 80 
+                              ? 'bg-green-500/20 text-green-600' 
+                              : agent.listenedPercentage >= 50 
+                                ? 'bg-amber-500/20 text-amber-600' 
+                                : 'bg-red-500/20 text-red-600';
+                          
+                          return (
+                            <tr key={agent.agentId} className="border-b border-border/50 hover:bg-muted/50">
+                              <td className="py-3 px-2">
+                                <div className="flex items-center gap-2">
+                                  <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center">
+                                    <User className="w-4 h-4 text-primary" />
+                                  </div>
+                                  <div>
+                                    <p className="font-medium text-foreground">{agent.agentName}</p>
+                                    <p className="text-xs text-muted-foreground">{agent.siteName}</p>
+                                  </div>
                                 </div>
-                                <div>
-                                  <p className="font-medium text-foreground">{agent.agentName}</p>
-                                  <p className="text-xs text-muted-foreground">{agent.siteName}</p>
+                              </td>
+                              <td className="text-center py-3 px-2">
+                                <Badge variant="secondary">{agent.callCount}</Badge>
+                              </td>
+                              <td className="text-center py-3 px-2">
+                                <div className="flex items-center justify-center gap-1">
+                                  <Star className="w-4 h-4 text-amber-500" />
+                                  <span className="font-medium text-foreground">{agent.averageScores.overall}</span>
                                 </div>
-                              </div>
-                            </td>
-                            <td className="text-center py-3 px-2">
-                              <Badge variant="secondary">{agent.callCount}</Badge>
-                            </td>
-                            <td className="text-center py-3 px-2">
-                              <div className="flex items-center justify-center gap-1">
-                                <Star className="w-4 h-4 text-amber-500" />
-                                <span className="font-medium text-foreground">{agent.averageScores.overall}</span>
-                              </div>
-                            </td>
-                            <td className="text-center py-3 px-2 hidden md:table-cell text-foreground">{agent.averageScores.communication}</td>
-                            <td className="text-center py-3 px-2 hidden md:table-cell text-foreground">{agent.averageScores.productKnowledge}</td>
-                            <td className="text-center py-3 px-2 hidden lg:table-cell text-foreground">{agent.averageScores.objectionHandling}</td>
-                            <td className="text-center py-3 px-2 hidden lg:table-cell text-foreground">{agent.averageScores.closingSkills}</td>
-                            <td className="text-right py-3 px-2">
-                              <button
-                                onClick={() => setSelectedAgentId(agent.agentId)}
-                                className="text-primary hover:underline text-sm font-medium"
-                              >
-                                View Details
-                              </button>
-                            </td>
-                          </tr>
-                        ))}
+                              </td>
+                              <td className="text-center py-3 px-2 hidden md:table-cell text-foreground">{agent.averageScores.communication}</td>
+                              <td className="text-center py-3 px-2 hidden md:table-cell text-foreground">{agent.averageScores.productKnowledge}</td>
+                              <td className="text-center py-3 px-2 hidden lg:table-cell text-foreground">{agent.averageScores.objectionHandling}</td>
+                              <td className="text-center py-3 px-2 hidden lg:table-cell text-foreground">{agent.averageScores.closingSkills}</td>
+                              <td className="text-center py-3 px-2">
+                                {agent.totalCoachingAudios > 0 ? (
+                                  <Badge className={listeningBadgeClass}>
+                                    {agent.listenedCount}/{agent.totalCoachingAudios} ({agent.listenedPercentage}%)
+                                  </Badge>
+                                ) : (
+                                  <span className="text-xs text-muted-foreground">No audio</span>
+                                )}
+                              </td>
+                              <td className="text-right py-3 px-2">
+                                <button
+                                  onClick={() => setSelectedAgentId(agent.agentId)}
+                                  className="text-primary hover:underline text-sm font-medium"
+                                >
+                                  View Details
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        })}
                       </tbody>
                     </table>
                   </div>
@@ -572,21 +633,74 @@ export default function CoachingHub() {
                   </div>
                 )}
 
-                {/* Call History */}
+                {/* Listening Stats Summary */}
+                {selectedAgentStats.totalCoachingAudios > 0 && (
+                  <div className="p-3 rounded-lg bg-muted/50 border border-border">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <Headphones className="w-4 h-4 text-primary" />
+                        <span className="text-sm font-medium text-foreground">Listening Progress</span>
+                      </div>
+                      <Badge className={
+                        selectedAgentStats.listenedPercentage >= 80 
+                          ? 'bg-green-500/20 text-green-600' 
+                          : selectedAgentStats.listenedPercentage >= 50 
+                            ? 'bg-amber-500/20 text-amber-600' 
+                            : 'bg-red-500/20 text-red-600'
+                      }>
+                        {selectedAgentStats.listenedCount}/{selectedAgentStats.totalCoachingAudios} ({selectedAgentStats.listenedPercentage}%)
+                      </Badge>
+                    </div>
+                  </div>
+                )}
+
+                {/* Call History with Audio Players */}
                 <div>
                   <h4 className="font-medium text-foreground mb-2">Call History ({selectedAgentFeedback.length} calls)</h4>
-                  <div className="space-y-2 max-h-[200px] overflow-y-auto">
-                    {selectedAgentFeedback.map(({ booking, feedback }) => (
-                      <div key={booking.id} className="flex items-center justify-between p-2 rounded bg-muted/50">
-                        <div>
-                          <p className="text-sm font-medium text-foreground">{booking.memberName}</p>
-                          <p className="text-xs text-muted-foreground">{format(booking.bookingDate, 'MMM d, yyyy')}</p>
+                  <div className="space-y-3 max-h-[300px] overflow-y-auto">
+                    {selectedAgentFeedback.map(({ booking, feedback }) => {
+                      const coachingBooking = dateFilteredCoachingBookings.find(b => b.id === booking.id);
+                      const hasAudio = !!coachingBooking?.coachingAudioUrl;
+                      const hasListened = !!coachingBooking?.coachingAudioListenedAt;
+                      
+                      return (
+                        <div key={booking.id} className="p-3 rounded-lg bg-muted/50 border border-border/50">
+                          <div className="flex items-center justify-between mb-2">
+                            <div>
+                              <p className="text-sm font-medium text-foreground">{booking.memberName}</p>
+                              <p className="text-xs text-muted-foreground">{format(booking.bookingDate, 'MMM d, yyyy')}</p>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <Badge variant={getRatingBadgeVariant(feedback.overallRating)}>
+                                {feedback.overallRating?.replace('_', ' ')}
+                              </Badge>
+                              {hasAudio && (
+                                hasListened ? (
+                                  <Badge variant="outline" className="bg-green-500/10 text-green-600 border-green-500/30">
+                                    <CheckCircle2 className="w-3 h-3 mr-1" />
+                                    Listened
+                                  </Badge>
+                                ) : (
+                                  <Badge variant="outline" className="bg-amber-500/10 text-amber-600 border-amber-500/30">
+                                    <Clock className="w-3 h-3 mr-1" />
+                                    Pending
+                                  </Badge>
+                                )
+                              )}
+                            </div>
+                          </div>
+                          {/* Audio Player */}
+                          {coachingBooking && (
+                            <CoachingAudioPlayer
+                              bookingId={booking.id}
+                              audioUrl={coachingBooking.coachingAudioUrl}
+                              variant="inline"
+                              listenedAt={coachingBooking.coachingAudioListenedAt}
+                            />
+                          )}
                         </div>
-                        <Badge variant={getRatingBadgeVariant(feedback.overallRating)}>
-                          {feedback.overallRating?.replace('_', ' ')}
-                        </Badge>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
               </div>
