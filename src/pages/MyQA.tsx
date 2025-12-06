@@ -335,7 +335,7 @@ export default function MyQA() {
                                 listenedAt={matchingCoaching?.qaCoachingAudioListenedAt || null}
                                 qaScore={scorePercentage}
                                 canRegenerate={true}
-                                compact={true}
+                                variant="button"
                               />
                             )}
                           </div>
