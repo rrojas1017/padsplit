@@ -3,20 +3,24 @@ import { usePageTracking } from '@/hooks/usePageTracking';
 import { useAuth } from '@/contexts/AuthContext';
 import { useAgents } from '@/contexts/AgentsContext';
 import { useQAData, calculateQAStats, getAgentQARankings, QABooking } from '@/hooks/useQAData';
+import { useQACoachingData, calculateQACoachingEngagement, getAgentQACoachingStats } from '@/hooks/useQACoachingData';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { ScrollArea } from '@/components/ui/scroll-area';
 import { 
   ClipboardCheck, TrendingUp, Calendar, Target, Award, BarChart3, 
-  Users, Trophy, ChevronRight, Loader2, Zap 
+  Users, Trophy, ChevronRight, Loader2, Zap, Headphones, Volume2, CheckCircle
 } from 'lucide-react';
 import { useState, useMemo } from 'react';
 import { format, isWithinInterval, startOfDay, endOfDay, startOfWeek, startOfMonth } from 'date-fns';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Cell } from 'recharts';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
+import { QACoachingAudioPlayer } from '@/components/qa/QACoachingAudioPlayer';
 
 type DateRange = 'today' | 'week' | 'month' | 'all';
 
@@ -27,8 +31,10 @@ export default function QADashboard() {
   const [dateRange, setDateRange] = useState<DateRange>('month');
   const [selectedAgent, setSelectedAgent] = useState<string>('all');
   const [isBatchScoring, setIsBatchScoring] = useState(false);
+  const [selectedAgentForModal, setSelectedAgentForModal] = useState<string | null>(null);
   
   const { qaBookings, rubric, isLoading } = useQAData({ includeUnscored: true });
+  const { qaCoachingBookings, isLoading: isCoachingLoading } = useQACoachingData();
 
   // Filter by date range and agent
   const filteredBookings = useMemo(() => {
@@ -71,6 +77,28 @@ export default function QADashboard() {
     const agentIds = new Set(qaBookings.map(b => b.agentId));
     return agents.filter(a => agentIds.has(a.id));
   }, [qaBookings, agents]);
+
+  // QA Coaching engagement stats
+  const coachingEngagement = useMemo(() => 
+    calculateQACoachingEngagement(qaCoachingBookings), 
+    [qaCoachingBookings]
+  );
+
+  const agentCoachingStats = useMemo(() => 
+    getAgentQACoachingStats(qaCoachingBookings, agents),
+    [qaCoachingBookings, agents]
+  );
+
+  // Get selected agent's coaching bookings for modal
+  const selectedAgentCoachingBookings = useMemo(() => {
+    if (!selectedAgentForModal) return [];
+    return qaCoachingBookings.filter(b => b.agentId === selectedAgentForModal);
+  }, [qaCoachingBookings, selectedAgentForModal]);
+
+  const selectedAgentName = useMemo(() => {
+    if (!selectedAgentForModal) return '';
+    return agents.find(a => a.id === selectedAgentForModal)?.name || '';
+  }, [selectedAgentForModal, agents]);
 
   // Category breakdown data
   const categoryData = useMemo(() => {
@@ -262,6 +290,42 @@ export default function QADashboard() {
           </Card>
         </div>
 
+        {/* Katty's QA Coaching Engagement Card */}
+        <Card className="bg-gradient-to-r from-pink-500/10 to-purple-500/10 border-pink-500/20">
+          <CardHeader className="pb-2">
+            <CardTitle className="flex items-center gap-2 text-lg">
+              <Volume2 className="w-5 h-5 text-pink-500" />
+              Katty's QA Coaching Engagement
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div>
+                <p className="text-sm text-muted-foreground">Overall Listened</p>
+                <p className={`text-2xl font-bold ${coachingEngagement.listenedPercentage >= 80 ? 'text-green-500' : coachingEngagement.listenedPercentage >= 50 ? 'text-amber-500' : 'text-red-500'}`}>
+                  {coachingEngagement.listenedPercentage}%
+                </p>
+              </div>
+              <div>
+                <p className="text-sm text-muted-foreground">Audios Listened</p>
+                <p className="text-2xl font-bold text-foreground">
+                  {coachingEngagement.listened}<span className="text-lg text-muted-foreground">/{coachingEngagement.totalWithAudio}</span>
+                </p>
+              </div>
+              <div>
+                <p className="text-sm text-muted-foreground">Pending Listens</p>
+                <p className="text-2xl font-bold text-amber-500">{coachingEngagement.pending}</p>
+              </div>
+              <div>
+                <p className="text-sm text-muted-foreground">Most Engaged</p>
+                <p className="text-xl font-bold text-foreground">
+                  {agentCoachingStats[0]?.agentName || '-'}
+                </p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* Agent Leaderboard */}
           <Card>
@@ -281,24 +345,54 @@ export default function QADashboard() {
                       <TableHead className="w-12">#</TableHead>
                       <TableHead>Agent</TableHead>
                       <TableHead className="text-center">Calls</TableHead>
-                      <TableHead className="text-right">Score</TableHead>
+                      <TableHead className="text-center">Score</TableHead>
+                      <TableHead className="text-center">QA Coaching</TableHead>
+                      <TableHead className="w-10"></TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {rankings.slice(0, 10).map((agent, index) => (
-                      <TableRow key={agent.agentId}>
-                        <TableCell>
-                          {index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : index + 1}
-                        </TableCell>
-                        <TableCell className="font-medium">{agent.agentName}</TableCell>
-                        <TableCell className="text-center">{agent.callCount}</TableCell>
-                        <TableCell className="text-right">
-                          <span className={`font-bold ${getScoreColor(agent.avgPercentage)}`}>
-                            {agent.avgPercentage}%
-                          </span>
-                        </TableCell>
-                      </TableRow>
-                    ))}
+                    {rankings.slice(0, 10).map((agent, index) => {
+                      const coachingStats = agentCoachingStats.find(s => s.agentId === agent.agentId);
+                      const listenedPct = coachingStats?.percentage || 0;
+                      return (
+                        <TableRow key={agent.agentId}>
+                          <TableCell>
+                            {index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : index + 1}
+                          </TableCell>
+                          <TableCell className="font-medium">{agent.agentName}</TableCell>
+                          <TableCell className="text-center">{agent.callCount}</TableCell>
+                          <TableCell className="text-center">
+                            <span className={`font-bold ${getScoreColor(agent.avgPercentage)}`}>
+                              {agent.avgPercentage}%
+                            </span>
+                          </TableCell>
+                          <TableCell className="text-center">
+                            {coachingStats && coachingStats.totalWithAudio > 0 ? (
+                              <Badge 
+                                variant="outline" 
+                                className={`${listenedPct >= 80 ? 'bg-green-500/10 text-green-600 border-green-500/20' : 
+                                  listenedPct >= 50 ? 'bg-amber-500/10 text-amber-600 border-amber-500/20' : 
+                                  'bg-red-500/10 text-red-600 border-red-500/20'}`}
+                              >
+                                {coachingStats.listened}/{coachingStats.totalWithAudio} ({listenedPct}%)
+                              </Badge>
+                            ) : (
+                              <span className="text-xs text-muted-foreground">-</span>
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            <Button 
+                              variant="ghost" 
+                              size="sm" 
+                              className="h-8 w-8 p-0"
+                              onClick={() => setSelectedAgentForModal(agent.agentId)}
+                            >
+                              <ChevronRight className="h-4 w-4" />
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
                   </TableBody>
                 </Table>
               )}
@@ -483,6 +577,66 @@ export default function QADashboard() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Agent QA Coaching Detail Modal */}
+      <Dialog open={!!selectedAgentForModal} onOpenChange={() => setSelectedAgentForModal(null)}>
+        <DialogContent className="max-w-2xl max-h-[80vh]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Volume2 className="w-5 h-5 text-pink-500" />
+              {selectedAgentName}'s QA Coaching from Katty
+            </DialogTitle>
+          </DialogHeader>
+          
+          <ScrollArea className="max-h-[60vh] pr-4">
+            {selectedAgentCoachingBookings.length === 0 ? (
+              <div className="text-center py-8 text-muted-foreground">
+                No QA coaching audio available for this agent yet.
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {selectedAgentCoachingBookings
+                  .sort((a, b) => new Date(b.bookingDate).getTime() - new Date(a.bookingDate).getTime())
+                  .map((booking) => (
+                    <div key={booking.id} className="border rounded-lg p-4 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="font-medium">{booking.memberName || 'Unknown Member'}</p>
+                          <p className="text-sm text-muted-foreground">
+                            {format(booking.bookingDate, 'MMM d, yyyy')}
+                            {booking.marketCity && ` • ${booking.marketCity}, ${booking.marketState}`}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          {booking.qaScores && (
+                            <Badge className={`${getScoreColor(booking.qaScores.percentage)}`}>
+                              {booking.qaScores.percentage}%
+                            </Badge>
+                          )}
+                          {booking.qaCoachingAudioListenedAt && (
+                            <Badge variant="outline" className="bg-green-500/10 text-green-600 border-green-500/20">
+                              <CheckCircle className="w-3 h-3 mr-1" />
+                              Listened
+                            </Badge>
+                          )}
+                        </div>
+                      </div>
+                      
+                      <QACoachingAudioPlayer
+                        bookingId={booking.bookingId}
+                        audioUrl={booking.qaCoachingAudioUrl}
+                        listenedAt={booking.qaCoachingAudioListenedAt}
+                        qaScore={booking.qaScores?.percentage}
+                        canRegenerate={hasRole(['super_admin', 'admin'])}
+                        compact
+                      />
+                    </div>
+                  ))}
+              </div>
+            )}
+          </ScrollArea>
+        </DialogContent>
+      </Dialog>
     </DashboardLayout>
   );
 }
