@@ -14,7 +14,7 @@ import {
 } from 'lucide-react';
 import { useState, useMemo } from 'react';
 import { format, isWithinInterval, startOfDay, endOfDay, startOfWeek, startOfMonth } from 'date-fns';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Cell, Legend } from 'recharts';
+import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Cell } from 'recharts';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 
@@ -362,7 +362,7 @@ export default function QADashboard() {
 
         {/* Trend Chart */}
         {trendData.length > 1 && (
-          <Card>
+          <Card className="shadow-card">
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-lg">
                 <TrendingUp className="w-5 h-5 text-accent" />
@@ -372,32 +372,58 @@ export default function QADashboard() {
             <CardContent>
               <div className="h-64">
                 <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={trendData}>
-                    <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
-                    <XAxis dataKey="date" tick={{ fontSize: 12 }} />
-                    <YAxis domain={[0, 100]} tickFormatter={(v) => `${v}%`} />
+                  <AreaChart data={trendData} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
+                    <defs>
+                      <linearGradient id="qaDashboardGradient" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor="hsl(var(--accent))" stopOpacity={0.4} />
+                        <stop offset="50%" stopColor="hsl(var(--accent))" stopOpacity={0.15} />
+                        <stop offset="100%" stopColor="hsl(var(--accent))" stopOpacity={0.02} />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
+                    <XAxis 
+                      dataKey="date" 
+                      tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 12 }}
+                      axisLine={false}
+                      tickLine={false}
+                      dy={10}
+                    />
+                    <YAxis 
+                      domain={[0, 100]} 
+                      tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 12 }}
+                      axisLine={false}
+                      tickLine={false}
+                      tickFormatter={(v) => `${v}%`}
+                      width={45}
+                    />
                     <Tooltip 
                       content={({ active, payload }) => {
                         if (active && payload?.[0]) {
+                          const percentage = payload[0].value as number;
                           return (
-                            <div className="bg-popover border border-border p-3 rounded-lg shadow-lg">
-                              <p className="font-medium">{payload[0].payload.date}</p>
-                              <p className="text-primary">{payload[0].value}% avg</p>
-                              <p className="text-sm text-muted-foreground">{payload[0].payload.calls} calls</p>
+                            <div className="bg-popover/95 backdrop-blur-md border border-border/50 px-4 py-3 rounded-xl shadow-xl">
+                              <p className="font-semibold text-sm text-foreground">{payload[0].payload.date}</p>
+                              <div className="flex items-baseline gap-1 mt-1">
+                                <span className={`text-lg font-bold ${getScoreColor(percentage)}`}>{percentage}%</span>
+                                <span className="text-xs text-muted-foreground">avg score</span>
+                              </div>
+                              <p className="text-xs text-muted-foreground mt-1">{payload[0].payload.calls} calls scored</p>
                             </div>
                           );
                         }
                         return null;
                       }}
                     />
-                    <Line 
+                    <Area 
                       type="monotone" 
                       dataKey="percentage" 
-                      stroke="hsl(var(--primary))" 
-                      strokeWidth={2}
-                      dot={{ fill: 'hsl(var(--primary))' }}
+                      stroke="hsl(var(--accent))" 
+                      strokeWidth={2.5}
+                      fill="url(#qaDashboardGradient)" 
+                      dot={{ fill: 'hsl(var(--accent))', r: 4, strokeWidth: 2, stroke: 'hsl(var(--background))' }}
+                      activeDot={{ r: 7, strokeWidth: 3, fill: 'hsl(var(--accent))', stroke: 'hsl(var(--background))' }}
                     />
-                  </LineChart>
+                  </AreaChart>
                 </ResponsiveContainer>
               </div>
             </CardContent>

@@ -373,32 +373,38 @@ export default function MyQA() {
                   <ResponsiveContainer width="100%" height="100%">
                     <AreaChart data={trendData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                       <defs>
-                        <linearGradient id="qaScoreGradient" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="0%" stopColor="hsl(var(--primary))" stopOpacity={0.3} />
-                          <stop offset="100%" stopColor="hsl(var(--primary))" stopOpacity={0} />
+                        <linearGradient id="myQaScoreGradient" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="0%" stopColor="hsl(var(--accent))" stopOpacity={0.4} />
+                          <stop offset="50%" stopColor="hsl(var(--accent))" stopOpacity={0.15} />
+                          <stop offset="100%" stopColor="hsl(var(--accent))" stopOpacity={0.02} />
                         </linearGradient>
                       </defs>
                       <XAxis 
                         dataKey="date" 
-                        tick={{ fontSize: 11 }} 
+                        tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 11 }} 
                         axisLine={false}
                         tickLine={false}
                         dy={10}
                       />
                       <YAxis 
                         domain={[0, 100]} 
-                        tick={{ fontSize: 11 }}
+                        tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 11 }}
                         axisLine={false}
                         tickLine={false}
                         tickFormatter={(v) => `${v}%`}
+                        width={40}
                       />
                       <Tooltip 
                         content={({ active, payload }) => {
                           if (active && payload?.[0]) {
+                            const percentage = payload[0].value as number;
                             return (
-                              <div className="bg-popover/95 backdrop-blur-sm border border-border p-3 rounded-xl shadow-lg">
-                                <p className="font-medium text-sm">{payload[0].payload.date}</p>
-                                <p className="text-primary text-lg font-bold">{payload[0].value}%</p>
+                              <div className="bg-popover/95 backdrop-blur-md border border-border/50 px-4 py-3 rounded-xl shadow-xl">
+                                <p className="font-semibold text-sm text-foreground">{payload[0].payload.date}</p>
+                                <div className="flex items-baseline gap-1 mt-1">
+                                  <span className={`text-lg font-bold ${getScoreColor(percentage)}`}>{percentage}%</span>
+                                  <span className="text-xs text-muted-foreground">avg score</span>
+                                </div>
                               </div>
                             );
                           }
@@ -408,9 +414,11 @@ export default function MyQA() {
                       <Area 
                         type="monotone" 
                         dataKey="percentage" 
-                        stroke="hsl(var(--primary))" 
+                        stroke="hsl(var(--accent))" 
                         strokeWidth={2.5}
-                        fill="url(#qaScoreGradient)"
+                        fill="url(#myQaScoreGradient)" 
+                        dot={{ fill: 'hsl(var(--accent))', r: 4, strokeWidth: 2, stroke: 'hsl(var(--background))' }}
+                        activeDot={{ r: 7, strokeWidth: 3, fill: 'hsl(var(--accent))', stroke: 'hsl(var(--background))' }}
                       />
                     </AreaChart>
                   </ResponsiveContainer>
