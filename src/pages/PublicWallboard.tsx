@@ -2,11 +2,14 @@ import { useEffect, useState, useCallback } from 'react';
 import { useParams } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { calculateLeaderboard } from '@/utils/dashboardCalculations';
+import { useFullscreen } from '@/hooks/useFullscreen';
 import { Booking, Agent } from '@/types';
 import { format, subDays } from 'date-fns';
-import { Trophy, TrendingUp, TrendingDown, RefreshCw, Users, Calendar } from 'lucide-react';
+import { Trophy, TrendingUp, TrendingDown, RefreshCw, Users, Calendar, Maximize2, Minimize2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import padsplitLogo from '@/assets/padsplit-logo.jpeg';
+import { Button } from '@/components/ui/button';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 
 interface WallboardToken {
   id: string;
@@ -30,6 +33,7 @@ export default function PublicWallboard() {
   const [displayToken, setDisplayToken] = useState<WallboardToken | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const { isFullscreen, toggleFullscreen } = useFullscreen();
   
   // Data state
   const [bookings, setBookings] = useState<Booking[]>([]);
@@ -213,11 +217,25 @@ export default function PublicWallboard() {
             <p className="text-sm text-muted-foreground">Live Performance View • {displayToken.name}</p>
           </div>
         </div>
-        <div className="text-right">
-          <p className="text-2xl lg:text-3xl font-bold text-foreground font-mono">
-            {format(time, 'HH:mm:ss')}
-          </p>
-          <p className="text-sm text-muted-foreground">{format(time, 'EEEE, MMMM d, yyyy')}</p>
+        <div className="flex items-center gap-4">
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button variant="ghost" size="icon" onClick={toggleFullscreen}>
+                  {isFullscreen ? <Minimize2 className="w-5 h-5" /> : <Maximize2 className="w-5 h-5" />}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                {isFullscreen ? 'Exit fullscreen' : 'Fit to screen'}
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+          <div className="text-right">
+            <p className="text-2xl lg:text-3xl font-bold text-foreground font-mono">
+              {format(time, 'HH:mm:ss')}
+            </p>
+            <p className="text-sm text-muted-foreground">{format(time, 'EEEE, MMMM d, yyyy')}</p>
+          </div>
         </div>
       </header>
 
