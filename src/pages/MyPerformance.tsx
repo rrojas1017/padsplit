@@ -6,13 +6,13 @@ import { DateRangeFilter, DateFilterValue } from '@/components/dashboard/DateRan
 import { useAuth } from '@/contexts/AuthContext';
 import { useBookings } from '@/contexts/BookingsContext';
 import { useAgents } from '@/contexts/AgentsContext';
+import { useCoachingData, CoachingBookingWithAudio } from '@/hooks/useCoachingData';
 import { CalendarDays, TrendingUp, Clock, CheckCircle2, Trophy, GraduationCap, ThumbsUp, Lightbulb, Star, Headphones } from 'lucide-react';
 import { format, subDays, startOfMonth, startOfDay, endOfDay } from 'date-fns';
 import { Area, AreaChart, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { Skeleton } from '@/components/ui/skeleton';
 import { AgentFeedback } from '@/types';
 import { CoachingAudioPlayer } from '@/components/coaching/CoachingAudioPlayer';
-import { useBookings as useBookingsRefresh } from '@/contexts/BookingsContext';
 
 // Helper to get date range from filter
 function getDateRangeFromFilter(filter: DateFilterValue): { start: Date; end: Date } {
@@ -84,10 +84,16 @@ export default function MyPerformance() {
   const { agents, isLoading: agentsLoading } = useAgents();
   const [dateFilter, setDateFilter] = useState<DateFilterValue>('7d');
   
-  const isLoading = bookingsLoading || agentsLoading;
-  
   // Find the agent linked to the current user
   const myAgent = agents.find(a => a.userId === user?.id);
+  
+  // Fetch coaching data for this specific agent
+  const { coachingBookingsWithAudio, isLoading: coachingLoading } = useCoachingData({
+    agentId: myAgent?.id,
+    includeAudio: true,
+  });
+  
+  const isLoading = bookingsLoading || agentsLoading || coachingLoading;
   
   const today = new Date();
   const { start: periodStart, end: periodEnd } = getDateRangeFromFilter(dateFilter);
@@ -325,36 +331,41 @@ export default function MyPerformance() {
             {periodBookings.length === 0 ? (
               <p className="text-muted-foreground text-sm">No bookings {periodLabel}. Keep going!</p>
             ) : (
-              periodBookings.slice(0, 5).map((booking) => (
-                <div key={booking.id} className="p-3 rounded-lg bg-muted/50 border border-border">
-                  <div className="flex items-start justify-between">
-                    <div className="flex-1">
-                      <p className="font-medium text-foreground text-sm">{booking.memberName}</p>
-                      <div className="flex items-center justify-between mt-1">
-                        <span className="text-xs text-muted-foreground">
-                          {booking.marketCity}, {booking.marketState}
-                        </span>
-                        <span className={`text-xs px-2 py-0.5 rounded-full ${
-                          booking.status === 'Moved In' ? 'bg-success/20 text-success' :
-                          booking.status === 'Pending Move-In' ? 'bg-warning/20 text-warning' :
-                          'bg-muted text-muted-foreground'
-                        }`}>
-                          {booking.status}
-                        </span>
+              periodBookings.slice(0, 5).map((booking) => {
+                // Find coaching data for this booking from the dedicated hook
+                const coachingData = coachingBookingsWithAudio.find(c => c.id === booking.id);
+                
+                return (
+                  <div key={booking.id} className="p-3 rounded-lg bg-muted/50 border border-border">
+                    <div className="flex items-start justify-between">
+                      <div className="flex-1">
+                        <p className="font-medium text-foreground text-sm">{booking.memberName}</p>
+                        <div className="flex items-center justify-between mt-1">
+                          <span className="text-xs text-muted-foreground">
+                            {booking.marketCity}, {booking.marketState}
+                          </span>
+                          <span className={`text-xs px-2 py-0.5 rounded-full ${
+                            booking.status === 'Moved In' ? 'bg-success/20 text-success' :
+                            booking.status === 'Pending Move-In' ? 'bg-warning/20 text-warning' :
+                            'bg-muted text-muted-foreground'
+                          }`}>
+                            {booking.status}
+                          </span>
+                        </div>
                       </div>
+                      {coachingData && (
+                        <CoachingAudioPlayer
+                          bookingId={booking.id}
+                          audioUrl={coachingData.coachingAudioUrl}
+                          variant="button"
+                          className="ml-2"
+                          canRegenerate={!coachingData.coachingAudioRegeneratedAt}
+                        />
+                      )}
                     </div>
-                    {booking.agentFeedback && (
-                      <CoachingAudioPlayer
-                        bookingId={booking.id}
-                        audioUrl={booking.coachingAudioUrl}
-                        variant="button"
-                        className="ml-2"
-                        canRegenerate={!booking.coachingAudioRegeneratedAt}
-                      />
-                    )}
                   </div>
-                </div>
-              ))
+                );
+              })
             )}
           </div>
         </div>
@@ -362,7 +373,11 @@ export default function MyPerformance() {
 
       {/* Latest Coaching Audio - Prominent Card */}
       {myAgent && (() => {
-        const latestWithFeedback = periodBookings.find(b => b.agentFeedback);
+        // Use coaching data from dedicated hook
+        const latestWithFeedback = coachingBookingsWithAudio
+          .filter(c => c.bookingDate >= periodStart && c.bookingDate <= periodEnd)
+          .sort((a, b) => b.bookingDate.getTime() - a.bookingDate.getTime())[0];
+        
         if (!latestWithFeedback) return null;
 
         return (
@@ -392,8 +407,8 @@ export default function MyPerformance() {
 
       {/* Coaching Insights Section */}
       {myAgent && (() => {
-        // Get bookings with agent feedback
-        const bookingsWithFeedback = myBookings.filter(b => b.agentFeedback);
+        // Use coaching data from dedicated hook instead of bookings
+        const bookingsWithFeedback = coachingBookingsWithAudio;
         
         if (bookingsWithFeedback.length === 0) return null;
         

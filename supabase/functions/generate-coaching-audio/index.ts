@@ -222,23 +222,36 @@ Generate ONLY the spoken script, no stage directions or formatting.`;
       throw new Error("Failed to generate audio from ElevenLabs");
     }
 
-    // Convert audio to base64 using chunked encoding to avoid stack overflow
+    // Get audio as array buffer
     const audioArrayBuffer = await ttsResponse.arrayBuffer();
-    const bytes = new Uint8Array(audioArrayBuffer);
-    let binary = '';
-    const chunkSize = 8192; // Process in 8KB chunks to avoid stack overflow
-    for (let i = 0; i < bytes.length; i += chunkSize) {
-      const chunk = bytes.subarray(i, i + chunkSize);
-      binary += String.fromCharCode(...chunk);
+    const audioBytes = new Uint8Array(audioArrayBuffer);
+    
+    // Upload to Supabase Storage instead of storing as base64
+    const fileName = `coaching-${bookingId}-${Date.now()}.mp3`;
+    
+    const { data: uploadData, error: uploadError } = await supabase.storage
+      .from("coaching-audio")
+      .upload(fileName, audioBytes, {
+        contentType: "audio/mpeg",
+        upsert: true,
+      });
+
+    if (uploadError) {
+      console.error("Storage upload error:", uploadError);
+      throw new Error("Failed to upload audio to storage");
     }
-    const audioBase64 = btoa(binary);
 
-    // Create data URL for audio
-    const audioDataUrl = `data:audio/mpeg;base64,${audioBase64}`;
+    // Get the public URL for the uploaded audio
+    const { data: publicUrlData } = supabase.storage
+      .from("coaching-audio")
+      .getPublicUrl(fileName);
 
-    // Step 3: Update booking_transcriptions with audio URL
+    const audioUrl = publicUrlData.publicUrl;
+    console.log("Audio uploaded to storage:", audioUrl);
+
+    // Step 3: Update booking_transcriptions with storage URL
     const transcriptionUpdatePayload: Record<string, unknown> = {
-      coaching_audio_url: audioDataUrl,
+      coaching_audio_url: audioUrl,
       coaching_audio_generated_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     };
@@ -264,7 +277,7 @@ Generate ONLY the spoken script, no stage directions or formatting.`;
     return new Response(
       JSON.stringify({
         success: true,
-        audioUrl: audioDataUrl,
+        audioUrl: audioUrl,
         script: coachingScript,
       }),
       {

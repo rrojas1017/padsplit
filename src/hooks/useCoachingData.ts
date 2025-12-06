@@ -14,11 +14,26 @@ export interface CoachingBooking {
   agentFeedback: AgentFeedback;
 }
 
-export function useCoachingData() {
+export interface CoachingBookingWithAudio extends CoachingBooking {
+  coachingAudioUrl: string | null;
+  coachingAudioRegeneratedAt: string | null;
+  marketCity: string | null;
+  marketState: string | null;
+}
+
+interface UseCoachingDataOptions {
+  agentId?: string;
+  includeAudio?: boolean;
+}
+
+export function useCoachingData(options: UseCoachingDataOptions = {}) {
   const { user, isLoading: authLoading } = useAuth();
   const { agents } = useAgents();
   const [coachingBookings, setCoachingBookings] = useState<CoachingBooking[]>([]);
+  const [coachingBookingsWithAudio, setCoachingBookingsWithAudio] = useState<CoachingBookingWithAudio[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+
+  const { agentId, includeAudio = false } = options;
 
   useEffect(() => {
     if (authLoading || !user) return;
@@ -26,30 +41,43 @@ export function useCoachingData() {
     const fetchCoachingData = async () => {
       setIsLoading(true);
       try {
-        // Fetch bookings with transcriptions that have agent_feedback
-        const { data, error } = await supabase
+        // Build query for booking_transcriptions with agent_feedback
+        let query = supabase
           .from('booking_transcriptions')
           .select(`
             booking_id,
             agent_feedback,
+            coaching_audio_url,
+            coaching_audio_regenerated_at,
             bookings!inner (
               id,
               booking_date,
               agent_id,
               member_name,
+              market_city,
+              market_state,
               transcription_status
             )
           `)
           .not('agent_feedback', 'is', null);
 
+        const { data, error } = await query;
+
         if (error) {
           console.error('Error fetching coaching data:', error);
           setCoachingBookings([]);
+          setCoachingBookingsWithAudio([]);
           return;
         }
 
+        // Filter by agentId if provided (post-query filter due to nested join)
+        let filteredData = data || [];
+        if (agentId) {
+          filteredData = filteredData.filter((item: any) => item.bookings.agent_id === agentId);
+        }
+
         // Map to CoachingBooking format
-        const mappedData: CoachingBooking[] = (data || []).map((item: any) => {
+        const mappedData: CoachingBooking[] = filteredData.map((item: any) => {
           const booking = item.bookings;
           const agent = agents.find(a => a.id === booking.agent_id);
           
@@ -65,16 +93,40 @@ export function useCoachingData() {
         });
 
         setCoachingBookings(mappedData);
+
+        // If audio data is needed, also populate the extended type
+        if (includeAudio) {
+          const mappedWithAudio: CoachingBookingWithAudio[] = filteredData.map((item: any) => {
+            const booking = item.bookings;
+            const agent = agents.find(a => a.id === booking.agent_id);
+            
+            return {
+              id: booking.id,
+              bookingDate: new Date(booking.booking_date + 'T00:00:00'),
+              agentId: booking.agent_id,
+              agentName: agent?.name || 'Unknown Agent',
+              memberName: booking.member_name || 'Unknown Member',
+              transcriptionStatus: booking.transcription_status || 'completed',
+              agentFeedback: item.agent_feedback as AgentFeedback,
+              coachingAudioUrl: item.coaching_audio_url,
+              coachingAudioRegeneratedAt: item.coaching_audio_regenerated_at,
+              marketCity: booking.market_city,
+              marketState: booking.market_state,
+            };
+          });
+          setCoachingBookingsWithAudio(mappedWithAudio);
+        }
       } catch (err) {
         console.error('Error in useCoachingData:', err);
         setCoachingBookings([]);
+        setCoachingBookingsWithAudio([]);
       } finally {
         setIsLoading(false);
       }
     };
 
     fetchCoachingData();
-  }, [user, authLoading, agents]);
+  }, [user, authLoading, agents, agentId, includeAudio]);
 
-  return { coachingBookings, isLoading };
+  return { coachingBookings, coachingBookingsWithAudio, isLoading };
 }
