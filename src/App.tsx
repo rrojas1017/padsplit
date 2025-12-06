@@ -31,6 +31,8 @@ import ImportBookings from "./pages/ImportBookings";
 import CoachingHub from "./pages/CoachingHub";
 import AgentStatus from "./pages/AgentStatus";
 import MemberInsights from "./pages/MemberInsights";
+import MyQA from "./pages/MyQA";
+import QADashboard from "./pages/QADashboard";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -183,6 +185,22 @@ const App = () => (
                 <ProtectedRoute allowedRoles={['super_admin', 'admin']}>
                   <DataProviders>
                     <MemberInsights />
+                  </DataProviders>
+                </ProtectedRoute>
+              } />
+
+              <Route path="/my-qa" element={
+                <ProtectedRoute allowedRoles={['agent']}>
+                  <DataProviders>
+                    <MyQA />
+                  </DataProviders>
+                </ProtectedRoute>
+              } />
+
+              <Route path="/qa-dashboard" element={
+                <ProtectedRoute allowedRoles={['super_admin', 'admin', 'supervisor']}>
+                  <DataProviders>
+                    <QADashboard />
                   </DataProviders>
                 </ProtectedRoute>
               } />

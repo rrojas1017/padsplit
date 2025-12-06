@@ -7,13 +7,14 @@ import { Switch } from '@/components/ui/switch';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useAuth } from '@/contexts/AuthContext';
-import { Database, Bell, Moon, Sun, Upload, Key, FileText, Download, Brain, Phone, BookOpen, Shield, ScrollText, Zap, Volume2, Loader2 } from 'lucide-react';
+import { Database, Bell, Moon, Sun, Upload, Key, FileText, Download, Brain, Phone, BookOpen, Shield, ScrollText, Zap, Volume2, Loader2, ClipboardCheck } from 'lucide-react';
 import { generateRoleDocumentationPDF } from '@/utils/roleDocumentation';
 import { CallTypeList } from '@/components/ai-management/CallTypeList';
 import { KnowledgeList } from '@/components/ai-management/KnowledgeList';
 import { CallRulesList } from '@/components/ai-management/CallRulesList';
 import { ScriptList } from '@/components/ai-management/ScriptList';
 import { AutoTranscriptionSettings } from '@/components/ai-management/AutoTranscriptionSettings';
+import { QARubricSettings } from '@/components/ai-management/QARubricSettings';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { useState } from 'react';
@@ -288,6 +289,18 @@ export default function Settings() {
                     )}
                   </Button>
                 </div>
+              </div>
+
+              {/* QA Rubric Settings */}
+              <div className="bg-card rounded-xl border border-border p-6 shadow-card">
+                <div className="flex items-center gap-3 mb-6">
+                  <ClipboardCheck className="w-5 h-5 text-accent" />
+                  <div>
+                    <h3 className="text-lg font-semibold text-foreground">QA Scoring Rubric</h3>
+                    <p className="text-sm text-muted-foreground">Configure quality assurance scoring categories and weights</p>
+                  </div>
+                </div>
+                <QARubricSettings />
               </div>
 
               {/* Info Box */}

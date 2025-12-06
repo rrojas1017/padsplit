@@ -139,7 +139,7 @@ export function useQAData(options: UseQADataOptions = {}) {
     };
 
     fetchData();
-  }, [user, authLoading, agents, agentId, includeUnscored]);
+  }, [user, agents, agentId, includeUnscored]);
 
   return { qaBookings, rubric, isLoading };
 }
