@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Play, Pause, RotateCcw, Volume2, Loader2, CheckCircle, Sparkles } from 'lucide-react';
+import { Play, Pause, RotateCcw, Volume2, Loader2, CheckCircle, Sparkles, RefreshCw } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
@@ -138,36 +138,34 @@ export const QACoachingAudioPlayer: React.FC<QACoachingAudioPlayerProps> = ({
             <Button
               variant="ghost"
               size="sm"
-              className="h-8 w-8 p-0"
+              className="h-8 w-8 p-0 rounded-full bg-accent/20 hover:bg-accent/30"
               onClick={handlePlayPause}
             >
               {isPlaying ? (
-                <Pause className="h-4 w-4" />
+                <Pause className="h-4 w-4 text-accent" />
               ) : (
-                <Play className="h-4 w-4" />
+                <Play className="h-4 w-4 text-accent ml-0.5" />
               )}
             </Button>
-          {hasListened && (
+            {hasListened && (
               <Badge variant="outline" className="bg-green-500/10 text-green-600 border-green-500/20 text-xs">
                 <CheckCircle className="h-3 w-3 mr-1" />
                 Listened
               </Badge>
             )}
             {canRegenerate && (
-              <Button
-                variant="ghost"
-                size="sm"
+              <button
                 onClick={handleGenerateAudio}
                 disabled={isGenerating}
-                className="h-8 w-8 p-0"
+                className="p-1 rounded hover:bg-accent/20 transition-colors disabled:opacity-50"
                 title="Regenerate with Katty's improved coaching"
               >
                 {isGenerating ? (
-                  <Loader2 className="h-3 w-3 animate-spin" />
+                  <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
                 ) : (
-                  <RotateCcw className="h-3 w-3" />
+                  <RefreshCw className="h-3.5 w-3.5 text-muted-foreground hover:text-accent" />
                 )}
-              </Button>
+              </button>
             )}
           </>
         ) : canRegenerate ? (
@@ -176,12 +174,12 @@ export const QACoachingAudioPlayer: React.FC<QACoachingAudioPlayerProps> = ({
             size="sm"
             onClick={handleGenerateAudio}
             disabled={isGenerating}
-            className="text-xs"
+            className="text-xs gap-1 text-accent hover:text-accent hover:bg-accent/10"
           >
             {isGenerating ? (
-              <Loader2 className="h-3 w-3 animate-spin mr-1" />
+              <Loader2 className="h-3 w-3 animate-spin" />
             ) : (
-              <Sparkles className="h-3 w-3 mr-1" />
+              <Sparkles className="h-3 w-3" />
             )}
             Generate
           </Button>
@@ -192,32 +190,105 @@ export const QACoachingAudioPlayer: React.FC<QACoachingAudioPlayerProps> = ({
     );
   }
 
+  // No audio - show generate card (matching Jeff's style)
+  if (!currentAudioUrl) {
+    return (
+      <div 
+        onClick={!isGenerating ? handleGenerateAudio : undefined}
+        className={cn(
+          "flex items-center gap-3 p-3 rounded-lg border border-accent/30 bg-accent/5 cursor-pointer hover:bg-accent/10 transition-colors",
+          isGenerating && "cursor-wait"
+        )}
+      >
+        <div className="w-10 h-10 rounded-full bg-accent/20 flex items-center justify-center">
+          {isGenerating ? (
+            <Loader2 className="h-5 w-5 text-accent animate-spin" />
+          ) : (
+            <Sparkles className="h-5 w-5 text-accent" />
+          )}
+        </div>
+        <div className="flex-1">
+          <p className="text-sm font-medium">
+            {isGenerating ? "Katty is preparing your coaching..." : "Listen to Katty's QA Coaching"}
+          </p>
+          <p className="text-xs text-muted-foreground">
+            {isGenerating ? 'This may take a few seconds' : 'Get personalized feedback on this call'}
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  // Audio exists - show player (matching Jeff's card style)
   return (
-    <div className="rounded-lg border bg-card p-4">
-      <div className="flex items-center justify-between mb-3">
-        <div className="flex items-center gap-2">
-          <div className="h-8 w-8 rounded-full bg-pink-500/20 flex items-center justify-center">
-            <Volume2 className="h-4 w-4 text-pink-500" />
-          </div>
-          <div>
-            <span className="text-sm font-medium">Katty's QA Coaching</span>
-            {qaScore !== undefined && (
-              <span className="text-xs text-muted-foreground ml-2">
-                Score: {qaScore}%
+    <div className="space-y-2">
+      <audio
+        ref={audioRef}
+        src={currentAudioUrl}
+        onTimeUpdate={handleTimeUpdate}
+        onLoadedMetadata={handleLoadedMetadata}
+        onEnded={handleEnded}
+      />
+
+      <div className="flex items-center gap-4 p-4 rounded-lg border border-accent/30 bg-gradient-to-r from-accent/10 to-accent/5">
+        <button
+          onClick={handlePlayPause}
+          disabled={isGenerating}
+          className="w-12 h-12 rounded-full bg-accent flex items-center justify-center hover:bg-accent/80 transition-colors disabled:opacity-50"
+        >
+          {isGenerating ? (
+            <Loader2 className="h-6 w-6 text-accent-foreground animate-spin" />
+          ) : isPlaying ? (
+            <Pause className="h-6 w-6 text-accent-foreground" />
+          ) : (
+            <Play className="h-6 w-6 text-accent-foreground ml-0.5" />
+          )}
+        </button>
+        
+        <div className="flex-1">
+          <div className="flex items-center justify-between mb-1">
+            <span className="text-sm font-medium flex items-center gap-2">
+              <Volume2 className="h-4 w-4 text-accent" />
+              Katty's QA Coaching
+              {qaScore !== undefined && (
+                <span className="text-xs text-muted-foreground">
+                  ({qaScore}%)
+                </span>
+              )}
+            </span>
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-muted-foreground">
+                {formatTime(duration)}
               </span>
-            )}
+              {hasListened && (
+                <Badge variant="outline" className="bg-green-500/10 text-green-600 border-green-500/20 text-xs">
+                  <CheckCircle className="h-3 w-3 mr-1" />
+                  Listened
+                </Badge>
+              )}
+              {canRegenerate && (
+                <button
+                  onClick={handleGenerateAudio}
+                  disabled={isGenerating}
+                  className="p-1 rounded hover:bg-accent/20 transition-colors disabled:opacity-50"
+                  title="Regenerate with Katty's improved coaching"
+                >
+                  <RefreshCw className={cn("h-3.5 w-3.5 text-muted-foreground hover:text-accent", isGenerating && "animate-spin")} />
+                </button>
+              )}
+            </div>
+          </div>
+          <div className="w-full bg-muted rounded-full h-2">
+            <div
+              className="bg-accent h-2 rounded-full transition-all duration-200"
+              style={{ width: `${progress}%` }}
+            />
           </div>
         </div>
-        {hasListened && (
-          <Badge variant="outline" className="bg-green-500/10 text-green-600 border-green-500/20">
-            <CheckCircle className="h-3 w-3 mr-1" />
-            Listened
-          </Badge>
-        )}
       </div>
 
       {weakestAreas.length > 0 && (
-        <div className="mb-3">
+        <div className="px-1">
           <span className="text-xs text-muted-foreground">Focus Areas:</span>
           <div className="flex flex-wrap gap-1 mt-1">
             {weakestAreas.map((area, index) => (
@@ -226,85 +297,6 @@ export const QACoachingAudioPlayer: React.FC<QACoachingAudioPlayerProps> = ({
               </Badge>
             ))}
           </div>
-        </div>
-      )}
-
-      {currentAudioUrl ? (
-        <>
-          <audio
-            ref={audioRef}
-            src={currentAudioUrl}
-            onTimeUpdate={handleTimeUpdate}
-            onLoadedMetadata={handleLoadedMetadata}
-            onEnded={handleEnded}
-          />
-
-          <div className="space-y-2">
-            <div className="h-2 bg-secondary rounded-full overflow-hidden">
-              <div
-                className="h-full bg-pink-500 transition-all duration-100"
-                style={{ width: `${progress}%` }}
-              />
-            </div>
-
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="h-9 w-9 p-0 rounded-full"
-                  onClick={handlePlayPause}
-                >
-                  {isPlaying ? (
-                    <Pause className="h-4 w-4" />
-                  ) : (
-                    <Play className="h-4 w-4 ml-0.5" />
-                  )}
-                </Button>
-                <span className="text-xs text-muted-foreground">
-                  {formatTime(audioRef.current?.currentTime || 0)} / {formatTime(duration)}
-                </span>
-              </div>
-
-              {canRegenerate && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={handleGenerateAudio}
-                  disabled={isGenerating}
-                  className="text-xs"
-                >
-                  {isGenerating ? (
-                    <Loader2 className="h-3 w-3 animate-spin mr-1" />
-                  ) : (
-                    <RotateCcw className="h-3 w-3 mr-1" />
-                  )}
-                  Regenerate
-                </Button>
-              )}
-            </div>
-          </div>
-        </>
-      ) : (
-        <div className="flex items-center justify-center py-4">
-          <Button
-            variant="outline"
-            onClick={handleGenerateAudio}
-            disabled={isGenerating}
-            className="gap-2"
-          >
-            {isGenerating ? (
-              <>
-                <Loader2 className="h-4 w-4 animate-spin" />
-                Katty is preparing your coaching...
-              </>
-            ) : (
-              <>
-                <Sparkles className="h-4 w-4" />
-                Generate QA Coaching from Katty
-              </>
-            )}
-          </Button>
         </div>
       )}
     </div>
