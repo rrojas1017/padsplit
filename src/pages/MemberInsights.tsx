@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePageTracking } from '@/hooks/usePageTracking';
 import { supabase } from '@/integrations/supabase/client';
+import { deduplicatedQuery } from '@/utils/databaseCircuitBreaker';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -46,47 +47,121 @@ const MemberInsights = () => {
   const [insights, setInsights] = useState<MemberInsight[]>([]);
   const [selectedInsight, setSelectedInsight] = useState<MemberInsight | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isLoadingDetail, setIsLoadingDetail] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [dateRange, setDateRange] = useState<DateRangeOption>('last30days');
+  const [dbSlowMode, setDbSlowMode] = useState(false);
 
   useEffect(() => {
     fetchInsights();
   }, []);
 
+  // Phase 1: Fetch only lightweight metadata for the list
   const fetchInsights = async () => {
     try {
-      const { data, error } = await supabase
-        .from('member_insights')
-        .select('*')
-        .order('created_at', { ascending: false })
-        .limit(20);
+      const result = await deduplicatedQuery('member_insights_list', async () => {
+        return await supabase
+          .from('member_insights')
+          .select('id, analysis_period, date_range_start, date_range_end, total_calls_analyzed, created_at')
+          .order('created_at', { ascending: false })
+          .limit(10);
+      });
 
+      if (!result) {
+        setDbSlowMode(true);
+        toast.error('Database is busy. Please try again in a moment.');
+        return;
+      }
+
+      const { data, error } = result;
       if (error) throw error;
 
-      // Type assertion for the data - handle Json types
-      const typedData = (data || []).map((d: any) => ({
+      // Set lightweight list data with empty detail fields
+      const listData = (data || []).map((d: any) => ({
         ...d,
-        sentiment_distribution: d.sentiment_distribution as { positive: number; neutral: number; negative: number },
-        pain_points: d.pain_points as any[],
-        payment_insights: d.payment_insights as any[],
-        transportation_insights: d.transportation_insights as any[],
-        price_sensitivity: d.price_sensitivity as any[],
-        move_in_barriers: d.move_in_barriers as any[],
-        property_preferences: d.property_preferences as any[],
-        objection_patterns: d.objection_patterns as any[],
-        market_breakdown: d.market_breakdown as Record<string, any>,
-        ai_recommendations: d.ai_recommendations as any[],
-        member_journey_insights: d.member_journey_insights as any[],
+        sentiment_distribution: { positive: 0, neutral: 0, negative: 0 },
+        pain_points: [],
+        payment_insights: [],
+        transportation_insights: [],
+        price_sensitivity: [],
+        move_in_barriers: [],
+        property_preferences: [],
+        objection_patterns: [],
+        market_breakdown: {},
+        ai_recommendations: [],
+        member_journey_insights: [],
       })) as MemberInsight[];
-      setInsights(typedData);
-      if (typedData.length > 0) {
-        setSelectedInsight(typedData[0]);
+      
+      setInsights(listData);
+      
+      // Phase 2: Load full detail for the first/most recent insight
+      if (listData.length > 0) {
+        await fetchInsightDetail(listData[0].id);
       }
     } catch (error) {
       console.error('Error fetching insights:', error);
       toast.error('Failed to load insights');
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  // Phase 2: Fetch full detail for a specific insight
+  const fetchInsightDetail = async (insightId: string) => {
+    setIsLoadingDetail(true);
+    try {
+      const result = await deduplicatedQuery(`member_insight_detail_${insightId}`, async () => {
+        return await supabase
+          .from('member_insights')
+          .select('*')
+          .eq('id', insightId)
+          .maybeSingle();
+      });
+
+      if (!result) {
+        setDbSlowMode(true);
+        return;
+      }
+
+      const { data, error } = result;
+      if (error) throw error;
+      if (!data) return;
+
+      const typedData = {
+        ...data,
+        sentiment_distribution: data.sentiment_distribution as { positive: number; neutral: number; negative: number },
+        pain_points: data.pain_points as any[],
+        payment_insights: data.payment_insights as any[],
+        transportation_insights: data.transportation_insights as any[],
+        price_sensitivity: data.price_sensitivity as any[],
+        move_in_barriers: data.move_in_barriers as any[],
+        property_preferences: data.property_preferences as any[],
+        objection_patterns: data.objection_patterns as any[],
+        market_breakdown: data.market_breakdown as Record<string, any>,
+        ai_recommendations: data.ai_recommendations as any[],
+        member_journey_insights: data.member_journey_insights as any[],
+      } as MemberInsight;
+
+      setSelectedInsight(typedData);
+      
+      // Update the insights list with full data for this item
+      setInsights(prev => prev.map(i => i.id === insightId ? typedData : i));
+    } catch (error) {
+      console.error('Error fetching insight detail:', error);
+    } finally {
+      setIsLoadingDetail(false);
+    }
+  };
+
+  // Handle insight selection - load full detail if needed
+  const handleInsightSelect = async (insightId: string) => {
+    const existingInsight = insights.find(i => i.id === insightId);
+    
+    // Check if we already have full data (pain_points populated)
+    if (existingInsight && existingInsight.pain_points.length > 0) {
+      setSelectedInsight(existingInsight);
+    } else {
+      await fetchInsightDetail(insightId);
     }
   };
 
@@ -212,7 +287,7 @@ const MemberInsights = () => {
                 <CardTitle className="text-sm font-medium">Previous Analyses</CardTitle>
                 <Select 
                   value={selectedInsight?.id || ''} 
-                  onValueChange={(id) => setSelectedInsight(insights.find(i => i.id === id) || null)}
+                  onValueChange={handleInsightSelect}
                 >
                   <SelectTrigger className="w-[300px]">
                     <SelectValue placeholder="Select analysis" />
@@ -228,6 +303,25 @@ const MemberInsights = () => {
               </div>
             </CardHeader>
           </Card>
+        )}
+
+        {/* DB Slow Mode Warning */}
+        {dbSlowMode && (
+          <Card className="border-amber-500/50 bg-amber-500/10">
+            <CardContent className="py-3">
+              <p className="text-sm text-amber-600 dark:text-amber-400">
+                Database is busy. Data may be delayed or incomplete.
+              </p>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Loading Detail Indicator */}
+        {isLoadingDetail && (
+          <div className="flex items-center justify-center py-4">
+            <Loader2 className="h-5 w-5 animate-spin text-primary mr-2" />
+            <span className="text-sm text-muted-foreground">Loading insight details...</span>
+          </div>
         )}
 
         {selectedInsight ? (
