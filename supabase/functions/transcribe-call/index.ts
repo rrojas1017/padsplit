@@ -285,7 +285,7 @@ SCORING GUIDE (1-10):
 IMPORTANT: Even for very short calls, provide meaningful analysis. A 1-minute call checking availability still has extractable insights (member's location interest, timing, urgency level).`;
 }
 
-// Background transcription processing
+// Background transcription processing with timeout handling
 async function processTranscription(bookingId: string, kixieUrl: string) {
   console.log(`[Background] Starting transcription for booking ${bookingId}`);
   
@@ -295,6 +295,20 @@ async function processTranscription(bookingId: string, kixieUrl: string) {
   const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
   
   const supabase = createClient(supabaseUrl!, supabaseServiceKey!);
+  
+  // Set a timeout to mark as failed if processing takes too long (5 minutes)
+  const TIMEOUT_MS = 5 * 60 * 1000;
+  const timeoutId = setTimeout(async () => {
+    console.error(`[Background] Transcription timeout for booking ${bookingId} after 5 minutes`);
+    try {
+      await supabase
+        .from('bookings')
+        .update({ transcription_status: 'failed' })
+        .eq('id', bookingId);
+    } catch (e) {
+      console.error('[Background] Failed to update timeout status:', e);
+    }
+  }, TIMEOUT_MS);
 
   try {
     // Update status to processing
@@ -496,9 +510,13 @@ async function processTranscription(bookingId: string, kixieUrl: string) {
       throw new Error(`Failed to update booking: ${updateError.message}`);
     }
 
+    // Clear timeout on success
+    clearTimeout(timeoutId);
     console.log(`[Background] Transcription completed successfully for booking ${bookingId}`);
 
   } catch (error) {
+    // Clear timeout on error
+    clearTimeout(timeoutId);
     console.error(`[Background] Transcription failed for booking ${bookingId}:`, error);
     
     // Update status to failed

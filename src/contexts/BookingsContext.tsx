@@ -10,7 +10,7 @@ interface BookingsContextType {
   addBooking: (booking: Omit<Booking, 'id'>) => Promise<string | null>;
   updateBooking: (id: string, booking: Partial<Booking>) => Promise<void>;
   deleteBooking: (id: string) => Promise<void>;
-  refreshBookings: () => Promise<void>;
+  refreshBookings: (showLoading?: boolean) => Promise<void>;
 }
 
 const BookingsContext = createContext<BookingsContextType | undefined>(undefined);
@@ -234,8 +234,8 @@ export function BookingsProvider({ children }: { children: ReactNode }) {
     await fetchBookings();
   };
 
-  const refreshBookings = async () => {
-    await fetchBookings(false); // Silent refresh without loading skeleton
+  const refreshBookings = async (showLoading = false) => {
+    await fetchBookings(showLoading);
   };
 
   return (
