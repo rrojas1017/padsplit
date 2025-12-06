@@ -5,20 +5,20 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
-import { useBookings } from '@/contexts/BookingsContext';
 import { useAgents } from '@/contexts/AgentsContext';
 import { useAuth } from '@/contexts/AuthContext';
+import { useCoachingData } from '@/hooks/useCoachingData';
 import { DateRangeFilter, DateFilterValue } from '@/components/dashboard/DateRangeFilter';
 import { getDateRangeFromFilter, DateRangeFilter as DateRangeFilterType } from '@/utils/dashboardCalculations';
 import { 
-  calculateTeamAverageScores, 
-  calculateRatingDistribution, 
-  getCommonStrengths, 
-  getCommonImprovements,
-  getAgentCoachingStats,
-  getAgentDetailedFeedback,
-  calculateScoresTrend,
-  calculateAgentScoresTrend
+  calculateTeamAverageScoresFromCoaching, 
+  calculateRatingDistributionFromCoaching, 
+  getCommonStrengthsFromCoaching, 
+  getCommonImprovementsFromCoaching,
+  getAgentCoachingStatsFromCoaching,
+  getAgentDetailedFeedbackFromCoaching,
+  calculateScoresTrendFromCoaching,
+  calculateAgentScoresTrendFromCoaching
 } from '@/utils/coachingCalculations';
 import { 
   PieChart, Pie, Cell, ResponsiveContainer, Tooltip as RechartsTooltip, Legend,
@@ -34,7 +34,8 @@ import {
   TrendingDown,
   Star,
   User,
-  Phone
+  Phone,
+  Loader2
 } from 'lucide-react';
 import { format, startOfDay } from 'date-fns';
 
@@ -47,7 +48,7 @@ const RATING_COLORS = {
 
 export default function CoachingHub() {
   usePageTracking('view_coaching_hub');
-  const { bookings } = useBookings();
+  const { coachingBookings, isLoading: coachingLoading } = useCoachingData();
   const { agents } = useAgents();
   const { user } = useAuth();
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
@@ -61,31 +62,31 @@ export default function CoachingHub() {
     return agents;
   }, [agents, user]);
 
-  // Filter bookings by filtered agents
-  const filteredBookings = useMemo(() => {
+  // Filter coaching bookings by filtered agents
+  const filteredCoachingBookings = useMemo(() => {
     const agentIds = new Set(filteredAgents.map(a => a.id));
-    return bookings.filter(b => agentIds.has(b.agentId));
-  }, [bookings, filteredAgents]);
+    return coachingBookings.filter(b => agentIds.has(b.agentId));
+  }, [coachingBookings, filteredAgents]);
 
   // Apply date filtering
-  const dateFilteredBookings = useMemo(() => {
-    if (dateRange === 'all') return filteredBookings;
+  const dateFilteredCoachingBookings = useMemo(() => {
+    if (dateRange === 'all') return filteredCoachingBookings;
     
     const { start, end } = getDateRangeFromFilter(dateRange);
-    return filteredBookings.filter(b => {
+    return filteredCoachingBookings.filter(b => {
       const bookingDate = b.bookingDate instanceof Date 
         ? startOfDay(b.bookingDate)
         : startOfDay(new Date(b.bookingDate + 'T00:00:00'));
       return bookingDate >= startOfDay(start) && bookingDate <= startOfDay(end);
     });
-  }, [filteredBookings, dateRange]);
+  }, [filteredCoachingBookings, dateRange]);
 
-  const teamScores = useMemo(() => calculateTeamAverageScores(dateFilteredBookings), [dateFilteredBookings]);
-  const ratingDistribution = useMemo(() => calculateRatingDistribution(dateFilteredBookings), [dateFilteredBookings]);
-  const commonStrengths = useMemo(() => getCommonStrengths(dateFilteredBookings), [dateFilteredBookings]);
-  const commonImprovements = useMemo(() => getCommonImprovements(dateFilteredBookings), [dateFilteredBookings]);
-  const agentStats = useMemo(() => getAgentCoachingStats(dateFilteredBookings, filteredAgents), [dateFilteredBookings, filteredAgents]);
-  const scoreTrendData = useMemo(() => calculateScoresTrend(dateFilteredBookings), [dateFilteredBookings]);
+  const teamScores = useMemo(() => calculateTeamAverageScoresFromCoaching(dateFilteredCoachingBookings), [dateFilteredCoachingBookings]);
+  const ratingDistribution = useMemo(() => calculateRatingDistributionFromCoaching(dateFilteredCoachingBookings), [dateFilteredCoachingBookings]);
+  const commonStrengths = useMemo(() => getCommonStrengthsFromCoaching(dateFilteredCoachingBookings), [dateFilteredCoachingBookings]);
+  const commonImprovements = useMemo(() => getCommonImprovementsFromCoaching(dateFilteredCoachingBookings), [dateFilteredCoachingBookings]);
+  const agentStats = useMemo(() => getAgentCoachingStatsFromCoaching(dateFilteredCoachingBookings, filteredAgents), [dateFilteredCoachingBookings, filteredAgents]);
+  const scoreTrendData = useMemo(() => calculateScoresTrendFromCoaching(dateFilteredCoachingBookings), [dateFilteredCoachingBookings]);
 
   const selectedAgentStats = useMemo(() => {
     if (!selectedAgentId) return null;
@@ -94,13 +95,13 @@ export default function CoachingHub() {
 
   const selectedAgentFeedback = useMemo(() => {
     if (!selectedAgentId) return [];
-    return getAgentDetailedFeedback(dateFilteredBookings, selectedAgentId);
-  }, [selectedAgentId, dateFilteredBookings]);
+    return getAgentDetailedFeedbackFromCoaching(dateFilteredCoachingBookings, selectedAgentId);
+  }, [selectedAgentId, dateFilteredCoachingBookings]);
 
   const selectedAgentTrendData = useMemo(() => {
     if (!selectedAgentId) return [];
-    return calculateAgentScoresTrend(dateFilteredBookings, selectedAgentId);
-  }, [selectedAgentId, dateFilteredBookings]);
+    return calculateAgentScoresTrendFromCoaching(dateFilteredCoachingBookings, selectedAgentId);
+  }, [selectedAgentId, dateFilteredCoachingBookings]);
 
   const pieData = [
     { name: 'Excellent', value: ratingDistribution.excellent, color: RATING_COLORS.excellent },
@@ -142,7 +143,14 @@ export default function CoachingHub() {
           </div>
         </div>
 
-        {teamScores.totalCalls === 0 ? (
+        {coachingLoading ? (
+          <Card>
+            <CardContent className="py-12 text-center">
+              <Loader2 className="w-12 h-12 mx-auto text-primary animate-spin mb-4" />
+              <h3 className="text-lg font-medium text-foreground mb-2">Loading Coaching Data...</h3>
+            </CardContent>
+          </Card>
+        ) : teamScores.totalCalls === 0 ? (
           <Card>
             <CardContent className="py-12 text-center">
               <Phone className="w-12 h-12 mx-auto text-muted-foreground/50 mb-4" />

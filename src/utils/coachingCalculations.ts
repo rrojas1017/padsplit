@@ -1,6 +1,17 @@
 import { Booking, Agent, AgentFeedback } from '@/types';
 import { format } from 'date-fns';
 
+// New interface for coaching data from booking_transcriptions
+export interface CoachingBooking {
+  id: string;
+  bookingDate: Date;
+  agentId: string;
+  agentName: string;
+  memberName?: string;
+  transcriptionStatus: string;
+  agentFeedback: AgentFeedback;
+}
+
 interface TeamScores {
   communication: number;
   productKnowledge: number;
@@ -44,14 +55,14 @@ export interface ScoreTrendDataPoint {
   callCount: number;
 }
 
+// Legacy function for backward compatibility with Booking type
 export function getBookingsWithFeedback(bookings: Booking[]): Booking[] {
   return bookings.filter(b => b.agentFeedback && b.transcriptionStatus === 'completed');
 }
 
-export function calculateTeamAverageScores(bookings: Booking[]): TeamScores {
-  const feedbackBookings = getBookingsWithFeedback(bookings);
-  
-  if (feedbackBookings.length === 0) {
+// New function that works with CoachingBooking data
+export function calculateTeamAverageScoresFromCoaching(coachingBookings: CoachingBooking[]): TeamScores {
+  if (coachingBookings.length === 0) {
     return {
       communication: 0,
       productKnowledge: 0,
@@ -66,8 +77,8 @@ export function calculateTeamAverageScores(bookings: Booking[]): TeamScores {
   let objectionHandling = 0;
   let closingSkills = 0;
 
-  feedbackBookings.forEach(b => {
-    const feedback = b.agentFeedback as AgentFeedback;
+  coachingBookings.forEach(b => {
+    const feedback = b.agentFeedback;
     if (feedback?.scores) {
       communication += feedback.scores.communication || 0;
       productKnowledge += feedback.scores.productKnowledge || 0;
@@ -76,7 +87,7 @@ export function calculateTeamAverageScores(bookings: Booking[]): TeamScores {
     }
   });
 
-  const count = feedbackBookings.length;
+  const count = coachingBookings.length;
   return {
     communication: Math.round((communication / count) * 10) / 10,
     productKnowledge: Math.round((productKnowledge / count) * 10) / 10,
@@ -86,9 +97,22 @@ export function calculateTeamAverageScores(bookings: Booking[]): TeamScores {
   };
 }
 
-export function calculateRatingDistribution(bookings: Booking[]): RatingDistribution {
+// Legacy function for backward compatibility
+export function calculateTeamAverageScores(bookings: Booking[]): TeamScores {
   const feedbackBookings = getBookingsWithFeedback(bookings);
-  
+  return calculateTeamAverageScoresFromCoaching(
+    feedbackBookings.map(b => ({
+      id: b.id,
+      bookingDate: b.bookingDate instanceof Date ? b.bookingDate : new Date(b.bookingDate),
+      agentId: b.agentId,
+      agentName: b.agentName,
+      transcriptionStatus: b.transcriptionStatus || 'completed',
+      agentFeedback: b.agentFeedback as AgentFeedback,
+    }))
+  );
+}
+
+export function calculateRatingDistributionFromCoaching(coachingBookings: CoachingBooking[]): RatingDistribution {
   const distribution: RatingDistribution = {
     excellent: 0,
     good: 0,
@@ -96,8 +120,8 @@ export function calculateRatingDistribution(bookings: Booking[]): RatingDistribu
     poor: 0,
   };
 
-  feedbackBookings.forEach(b => {
-    const feedback = b.agentFeedback as AgentFeedback;
+  coachingBookings.forEach(b => {
+    const feedback = b.agentFeedback;
     if (feedback?.overallRating) {
       switch (feedback.overallRating) {
         case 'excellent':
@@ -119,12 +143,26 @@ export function calculateRatingDistribution(bookings: Booking[]): RatingDistribu
   return distribution;
 }
 
-export function getCommonStrengths(bookings: Booking[], limit: number = 5): { strength: string; count: number }[] {
+// Legacy function
+export function calculateRatingDistribution(bookings: Booking[]): RatingDistribution {
   const feedbackBookings = getBookingsWithFeedback(bookings);
+  return calculateRatingDistributionFromCoaching(
+    feedbackBookings.map(b => ({
+      id: b.id,
+      bookingDate: b.bookingDate instanceof Date ? b.bookingDate : new Date(b.bookingDate),
+      agentId: b.agentId,
+      agentName: b.agentName,
+      transcriptionStatus: b.transcriptionStatus || 'completed',
+      agentFeedback: b.agentFeedback as AgentFeedback,
+    }))
+  );
+}
+
+export function getCommonStrengthsFromCoaching(coachingBookings: CoachingBooking[], limit: number = 5): { strength: string; count: number }[] {
   const strengthCounts: Record<string, number> = {};
 
-  feedbackBookings.forEach(b => {
-    const feedback = b.agentFeedback as AgentFeedback;
+  coachingBookings.forEach(b => {
+    const feedback = b.agentFeedback;
     if (feedback?.strengths) {
       feedback.strengths.forEach(strength => {
         const normalized = strength.toLowerCase().trim();
@@ -139,12 +177,11 @@ export function getCommonStrengths(bookings: Booking[], limit: number = 5): { st
     .slice(0, limit);
 }
 
-export function getCommonImprovements(bookings: Booking[], limit: number = 5): { improvement: string; count: number }[] {
-  const feedbackBookings = getBookingsWithFeedback(bookings);
+export function getCommonImprovementsFromCoaching(coachingBookings: CoachingBooking[], limit: number = 5): { improvement: string; count: number }[] {
   const improvementCounts: Record<string, number> = {};
 
-  feedbackBookings.forEach(b => {
-    const feedback = b.agentFeedback as AgentFeedback;
+  coachingBookings.forEach(b => {
+    const feedback = b.agentFeedback;
     if (feedback?.improvements) {
       feedback.improvements.forEach(improvement => {
         const normalized = improvement.toLowerCase().trim();
@@ -159,11 +196,43 @@ export function getCommonImprovements(bookings: Booking[], limit: number = 5): {
     .slice(0, limit);
 }
 
-export function getAgentCoachingStats(bookings: Booking[], agents: Agent[]): AgentCoachingStats[] {
+// Legacy functions
+export function getCommonStrengths(bookings: Booking[], limit: number = 5): { strength: string; count: number }[] {
+  const feedbackBookings = getBookingsWithFeedback(bookings);
+  return getCommonStrengthsFromCoaching(
+    feedbackBookings.map(b => ({
+      id: b.id,
+      bookingDate: b.bookingDate instanceof Date ? b.bookingDate : new Date(b.bookingDate),
+      agentId: b.agentId,
+      agentName: b.agentName,
+      transcriptionStatus: b.transcriptionStatus || 'completed',
+      agentFeedback: b.agentFeedback as AgentFeedback,
+    })),
+    limit
+  );
+}
+
+export function getCommonImprovements(bookings: Booking[], limit: number = 5): { improvement: string; count: number }[] {
+  const feedbackBookings = getBookingsWithFeedback(bookings);
+  return getCommonImprovementsFromCoaching(
+    feedbackBookings.map(b => ({
+      id: b.id,
+      bookingDate: b.bookingDate instanceof Date ? b.bookingDate : new Date(b.bookingDate),
+      agentId: b.agentId,
+      agentName: b.agentName,
+      transcriptionStatus: b.transcriptionStatus || 'completed',
+      agentFeedback: b.agentFeedback as AgentFeedback,
+    })),
+    limit
+  );
+}
+
+
+export function getAgentCoachingStatsFromCoaching(coachingBookings: CoachingBooking[], agents: Agent[]): AgentCoachingStats[] {
   const agentStats: AgentCoachingStats[] = [];
 
   agents.forEach(agent => {
-    const agentBookings = getBookingsWithFeedback(bookings.filter(b => b.agentId === agent.id));
+    const agentBookings = coachingBookings.filter(b => b.agentId === agent.id);
     
     if (agentBookings.length === 0) {
       return;
@@ -179,7 +248,7 @@ export function getAgentCoachingStats(bookings: Booking[], agents: Agent[]): Age
     const tips: string[] = [];
 
     agentBookings.forEach(b => {
-      const feedback = b.agentFeedback as AgentFeedback;
+      const feedback = b.agentFeedback;
       if (feedback?.scores) {
         communication += feedback.scores.communication || 0;
         productKnowledge += feedback.scores.productKnowledge || 0;
@@ -227,6 +296,36 @@ export function getAgentCoachingStats(bookings: Booking[], agents: Agent[]): Age
   return agentStats.sort((a, b) => b.averageScores.overall - a.averageScores.overall);
 }
 
+// Legacy function
+export function getAgentCoachingStats(bookings: Booking[], agents: Agent[]): AgentCoachingStats[] {
+  const feedbackBookings = getBookingsWithFeedback(bookings);
+  return getAgentCoachingStatsFromCoaching(
+    feedbackBookings.map(b => ({
+      id: b.id,
+      bookingDate: b.bookingDate instanceof Date ? b.bookingDate : new Date(b.bookingDate),
+      agentId: b.agentId,
+      agentName: b.agentName,
+      transcriptionStatus: b.transcriptionStatus || 'completed',
+      agentFeedback: b.agentFeedback as AgentFeedback,
+    })),
+    agents
+  );
+}
+
+export function getAgentDetailedFeedbackFromCoaching(coachingBookings: CoachingBooking[], agentId: string): {
+  booking: CoachingBooking;
+  feedback: AgentFeedback;
+}[] {
+  return coachingBookings
+    .filter(b => b.agentId === agentId)
+    .map(b => ({
+      booking: b,
+      feedback: b.agentFeedback,
+    }))
+    .sort((a, b) => new Date(b.booking.bookingDate).getTime() - new Date(a.booking.bookingDate).getTime());
+}
+
+// Legacy function
 export function getAgentDetailedFeedback(bookings: Booking[], agentId: string): {
   booking: Booking;
   feedback: AgentFeedback;
@@ -239,14 +338,12 @@ export function getAgentDetailedFeedback(bookings: Booking[], agentId: string): 
     .sort((a, b) => new Date(b.booking.bookingDate).getTime() - new Date(a.booking.bookingDate).getTime());
 }
 
-export function calculateScoresTrend(bookings: Booking[]): ScoreTrendDataPoint[] {
-  const feedbackBookings = getBookingsWithFeedback(bookings);
-  
-  if (feedbackBookings.length === 0) return [];
+export function calculateScoresTrendFromCoaching(coachingBookings: CoachingBooking[]): ScoreTrendDataPoint[] {
+  if (coachingBookings.length === 0) return [];
 
   // Group by date
-  const dateGroups: Record<string, Booking[]> = {};
-  feedbackBookings.forEach(b => {
+  const dateGroups: Record<string, CoachingBooking[]> = {};
+  coachingBookings.forEach(b => {
     const bookingDate = b.bookingDate instanceof Date 
       ? b.bookingDate 
       : new Date(b.bookingDate + 'T00:00:00');
@@ -264,7 +361,7 @@ export function calculateScoresTrend(bookings: Booking[]): ScoreTrendDataPoint[]
       let closingSkills = 0;
 
       dayBookings.forEach(b => {
-        const feedback = b.agentFeedback as AgentFeedback;
+        const feedback = b.agentFeedback;
         if (feedback?.scores) {
           communication += feedback.scores.communication || 0;
           productKnowledge += feedback.scores.productKnowledge || 0;
@@ -285,6 +382,26 @@ export function calculateScoresTrend(bookings: Booking[]): ScoreTrendDataPoint[]
       };
     })
     .sort((a, b) => a.date.localeCompare(b.date));
+}
+
+export function calculateAgentScoresTrendFromCoaching(coachingBookings: CoachingBooking[], agentId: string): ScoreTrendDataPoint[] {
+  const agentBookings = coachingBookings.filter(b => b.agentId === agentId);
+  return calculateScoresTrendFromCoaching(agentBookings);
+}
+
+// Legacy functions
+export function calculateScoresTrend(bookings: Booking[]): ScoreTrendDataPoint[] {
+  const feedbackBookings = getBookingsWithFeedback(bookings);
+  return calculateScoresTrendFromCoaching(
+    feedbackBookings.map(b => ({
+      id: b.id,
+      bookingDate: b.bookingDate instanceof Date ? b.bookingDate : new Date(b.bookingDate),
+      agentId: b.agentId,
+      agentName: b.agentName,
+      transcriptionStatus: b.transcriptionStatus || 'completed',
+      agentFeedback: b.agentFeedback as AgentFeedback,
+    }))
+  );
 }
 
 export function calculateAgentScoresTrend(bookings: Booking[], agentId: string): ScoreTrendDataPoint[] {
