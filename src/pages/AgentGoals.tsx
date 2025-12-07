@@ -103,7 +103,18 @@ const AgentGoals = () => {
     ? Math.round(goals.reduce((sum, g) => sum + g.progress_percentage, 0) / goals.length) 
     : 0;
 
-  if (goalsLoading || agentsLoading) {
+  // Debug logging to identify the issue
+  console.log('AgentGoals Debug:', {
+    agentsLoading,
+    goalsLoading,
+    agentsCount: agents.length,
+    filteredAgentsCount: filteredAgents.length,
+    userSiteId: user?.siteId,
+    userName: user?.name,
+  });
+
+  // Show loading if data is still being fetched OR if agents haven't loaded yet
+  if (goalsLoading || agentsLoading || (agents.length === 0 && !agentsLoading)) {
     return (
       <DashboardLayout title="Agent Goals" subtitle="Set and track weekly booking targets">
         <div className="space-y-6">
