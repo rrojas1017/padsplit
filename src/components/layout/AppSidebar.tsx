@@ -17,7 +17,8 @@ import {
   Lightbulb,
   Wrench,
   ClipboardCheck,
-  Target
+  Target,
+  DollarSign
 } from 'lucide-react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
@@ -158,6 +159,13 @@ const menuItems: MenuItem[] = [
     label: 'Settings', 
     path: '/settings',
     roles: ['super_admin', 'admin'],
+    group: 'admin'
+  },
+  {
+    icon: DollarSign,
+    label: 'Cost & Billing',
+    path: '/billing',
+    roles: ['super_admin'],
     group: 'admin'
   },
 ];
