@@ -7,9 +7,9 @@ import { Textarea } from '@/components/ui/textarea';
 import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Separator } from '@/components/ui/separator';
-import { FileText, CalendarIcon, Download } from 'lucide-react';
-import { format, startOfMonth, endOfMonth, startOfWeek, endOfWeek, subDays } from 'date-fns';
-import { Client, ApiCost, DateRangeType } from '@/hooks/useBillingData';
+import { FileText, CalendarIcon } from 'lucide-react';
+import { format, startOfMonth, endOfMonth } from 'date-fns';
+import { Client, ApiCost, DateRangeType, BillingUnit } from '@/hooks/useBillingData';
 import { formatCurrency, SERVICE_TYPE_LABELS } from '@/utils/billingCalculations';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
@@ -30,12 +30,27 @@ interface InvoiceGeneratorProps {
   dateRange: DateRangeType;
 }
 
+const BILLING_UNIT_LABELS: Record<BillingUnit, string> = {
+  raw_cost: 'Raw Cost + Markup',
+  per_booking: 'Per Booking',
+  per_minute: 'Per Minute',
+};
+
+const formatDuration = (seconds: number): string => {
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes} min`;
+  const hours = Math.floor(minutes / 60);
+  const remainingMinutes = minutes % 60;
+  return `${hours}h ${remainingMinutes}m`;
+};
+
 const InvoiceGenerator = ({ clients, costs, onGenerate, dateRange }: InvoiceGeneratorProps) => {
   const [selectedClientId, setSelectedClientId] = useState<string>('');
   const [periodStart, setPeriodStart] = useState<Date>(startOfMonth(new Date()));
   const [periodEnd, setPeriodEnd] = useState<Date>(endOfMonth(new Date()));
   const [notes, setNotes] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
+  const [billingUnit, setBillingUnit] = useState<BillingUnit>('per_booking');
 
   const selectedClient = clients.find(c => c.id === selectedClientId);
 
@@ -47,10 +62,29 @@ const InvoiceGenerator = ({ clients, costs, onGenerate, dateRange }: InvoiceGene
     });
   }, [costs, periodStart, periodEnd]);
 
+  // Calculate per-unit metrics
+  const perUnitMetrics = useMemo(() => {
+    const uniqueBookingIds = new Set(periodCosts.filter(c => c.booking_id).map(c => c.booking_id));
+    const uniqueBookings = uniqueBookingIds.size;
+    const totalTalkTimeSeconds = periodCosts.reduce((sum, c) => sum + (c.audio_duration_seconds || 0), 0);
+    const totalTalkTimeMinutes = totalTalkTimeSeconds / 60;
+    const rawCost = periodCosts.reduce((sum, c) => sum + Number(c.estimated_cost_usd), 0);
+    const costPerBooking = uniqueBookings > 0 ? rawCost / uniqueBookings : 0;
+    const costPerMinute = totalTalkTimeMinutes > 0 ? rawCost / totalTalkTimeMinutes : 0;
+
+    return {
+      uniqueBookings,
+      totalTalkTimeSeconds,
+      totalTalkTimeMinutes,
+      rawCost,
+      costPerBooking,
+      costPerMinute,
+    };
+  }, [periodCosts]);
+
   // Calculate breakdown
   const breakdown = useMemo(() => {
     const byService: Record<string, { count: number; cost: number }> = {};
-    let total = 0;
 
     periodCosts.forEach(cost => {
       const type = cost.service_type;
@@ -59,16 +93,65 @@ const InvoiceGenerator = ({ clients, costs, onGenerate, dateRange }: InvoiceGene
       }
       byService[type].count++;
       byService[type].cost += Number(cost.estimated_cost_usd);
-      total += Number(cost.estimated_cost_usd);
     });
 
-    return { byService, total };
+    return { byService };
   }, [periodCosts]);
 
-  const markupAmount = selectedClient 
-    ? (breakdown.total * selectedClient.markup_percentage) / 100 
-    : 0;
-  const totalWithMarkup = breakdown.total + markupAmount;
+  // Calculate billable amount based on billing unit
+  const billableCalculation = useMemo(() => {
+    const markupPercent = selectedClient?.markup_percentage || 0;
+    
+    switch (billingUnit) {
+      case 'per_booking': {
+        const unitCost = perUnitMetrics.costPerBooking;
+        const unitCostWithMarkup = unitCost * (1 + markupPercent / 100);
+        const quantity = perUnitMetrics.uniqueBookings;
+        const total = unitCostWithMarkup * quantity;
+        return {
+          unitLabel: 'Per Booking',
+          unitCost,
+          unitCostWithMarkup,
+          quantity,
+          quantityLabel: `${quantity} bookings`,
+          rawTotal: perUnitMetrics.rawCost,
+          markupAmount: total - perUnitMetrics.rawCost,
+          total,
+        };
+      }
+      case 'per_minute': {
+        const unitCost = perUnitMetrics.costPerMinute;
+        const unitCostWithMarkup = unitCost * (1 + markupPercent / 100);
+        const quantity = perUnitMetrics.totalTalkTimeMinutes;
+        const total = unitCostWithMarkup * quantity;
+        return {
+          unitLabel: 'Per Minute',
+          unitCost,
+          unitCostWithMarkup,
+          quantity,
+          quantityLabel: formatDuration(perUnitMetrics.totalTalkTimeSeconds),
+          rawTotal: perUnitMetrics.rawCost,
+          markupAmount: total - perUnitMetrics.rawCost,
+          total,
+        };
+      }
+      case 'raw_cost':
+      default: {
+        const rawTotal = perUnitMetrics.rawCost;
+        const markupAmount = rawTotal * (markupPercent / 100);
+        return {
+          unitLabel: 'Raw Cost',
+          unitCost: rawTotal,
+          unitCostWithMarkup: rawTotal + markupAmount,
+          quantity: 1,
+          quantityLabel: `${periodCosts.length} API calls`,
+          rawTotal,
+          markupAmount,
+          total: rawTotal + markupAmount,
+        };
+      }
+    }
+  }, [billingUnit, perUnitMetrics, selectedClient, periodCosts.length]);
 
   const handleGenerate = async () => {
     if (!selectedClientId) {
@@ -82,12 +165,17 @@ const InvoiceGenerator = ({ clients, costs, onGenerate, dateRange }: InvoiceGene
         client_id: selectedClientId,
         period_start: format(periodStart, 'yyyy-MM-dd'),
         period_end: format(periodEnd, 'yyyy-MM-dd'),
-        raw_cost_usd: breakdown.total,
-        markup_usd: markupAmount,
-        total_usd: totalWithMarkup,
+        raw_cost_usd: billableCalculation.rawTotal,
+        markup_usd: billableCalculation.markupAmount,
+        total_usd: billableCalculation.total,
         cost_breakdown: {
           byService: breakdown.byService,
           totalCalls: periodCosts.length,
+          billingUnit,
+          uniqueBookings: perUnitMetrics.uniqueBookings,
+          totalTalkTimeMinutes: perUnitMetrics.totalTalkTimeMinutes,
+          costPerBooking: perUnitMetrics.costPerBooking,
+          costPerMinute: perUnitMetrics.costPerMinute,
         },
         notes: notes || undefined,
       });
@@ -125,6 +213,21 @@ const InvoiceGenerator = ({ clients, costs, onGenerate, dateRange }: InvoiceGene
                   {client.name} ({client.markup_percentage}% markup)
                 </SelectItem>
               ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        {/* Billing Unit Selection */}
+        <div className="space-y-2">
+          <Label>Billing Method</Label>
+          <Select value={billingUnit} onValueChange={(v) => setBillingUnit(v as BillingUnit)}>
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="per_booking">Per Booking ({formatCurrency(perUnitMetrics.costPerBooking)}/booking)</SelectItem>
+              <SelectItem value="per_minute">Per Minute ({formatCurrency(perUnitMetrics.costPerMinute)}/min)</SelectItem>
+              <SelectItem value="raw_cost">Raw Cost + Markup</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -189,26 +292,54 @@ const InvoiceGenerator = ({ clients, costs, onGenerate, dateRange }: InvoiceGene
           <h4 className="font-medium">Invoice Preview</h4>
           
           <div className="space-y-2 text-sm">
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">API Calls:</span>
-              <span>{periodCosts.length}</span>
-            </div>
+            {/* Billing unit specific display */}
+            {billingUnit === 'per_booking' && (
+              <>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Bookings Processed:</span>
+                  <span>{perUnitMetrics.uniqueBookings}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Cost Per Booking:</span>
+                  <span>{formatCurrency(perUnitMetrics.costPerBooking)}</span>
+                </div>
+              </>
+            )}
+            {billingUnit === 'per_minute' && (
+              <>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Talk Time:</span>
+                  <span>{formatDuration(perUnitMetrics.totalTalkTimeSeconds)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Cost Per Minute:</span>
+                  <span>{formatCurrency(perUnitMetrics.costPerMinute)}</span>
+                </div>
+              </>
+            )}
+            {billingUnit === 'raw_cost' && (
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">API Calls:</span>
+                <span>{periodCosts.length}</span>
+              </div>
+            )}
+            
             <div className="flex justify-between">
               <span className="text-muted-foreground">Raw Cost:</span>
-              <span>{formatCurrency(breakdown.total)}</span>
+              <span>{formatCurrency(billableCalculation.rawTotal)}</span>
             </div>
             {selectedClient && (
               <div className="flex justify-between">
                 <span className="text-muted-foreground">
                   Markup ({selectedClient.markup_percentage}%):
                 </span>
-                <span>{formatCurrency(markupAmount)}</span>
+                <span>{formatCurrency(billableCalculation.markupAmount)}</span>
               </div>
             )}
             <Separator />
             <div className="flex justify-between font-medium text-base">
               <span>Total:</span>
-              <span className="text-primary">{formatCurrency(totalWithMarkup)}</span>
+              <span className="text-primary">{formatCurrency(billableCalculation.total)}</span>
             </div>
           </div>
 
