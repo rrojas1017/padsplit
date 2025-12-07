@@ -34,9 +34,25 @@ const AgentGoals = () => {
   // Filter agents based on role and selected site
   const filteredAgents = agents.filter(agent => {
     if (!agent.active) return false;
+    // Supervisors only see agents in their site (if siteId is defined)
     if (isSupervisor && user?.siteId && agent.siteId !== user.siteId) return false;
+    // Site filter for admins
     if (selectedSiteId !== 'all' && agent.siteId !== selectedSiteId) return false;
     return true;
+  });
+
+  // Debug logging
+  console.log('AgentGoals Debug:', {
+    agentsLoading,
+    goalsLoading,
+    agentsCount: agents.length,
+    filteredAgentsCount: filteredAgents.length,
+    goalsCount: goals.length,
+    userSiteId: user?.siteId,
+    userRole: user?.role,
+    isSupervisor,
+    isAdmin,
+    isSuperAdmin,
   });
 
   // Initialize editing goals from fetched goals
@@ -103,18 +119,8 @@ const AgentGoals = () => {
     ? Math.round(goals.reduce((sum, g) => sum + g.progress_percentage, 0) / goals.length) 
     : 0;
 
-  // Debug logging to identify the issue
-  console.log('AgentGoals Debug:', {
-    agentsLoading,
-    goalsLoading,
-    agentsCount: agents.length,
-    filteredAgentsCount: filteredAgents.length,
-    userSiteId: user?.siteId,
-    userName: user?.name,
-  });
-
-  // Show loading if data is still being fetched OR if agents haven't loaded yet
-  if (goalsLoading || agentsLoading || (agents.length === 0 && !agentsLoading)) {
+  // Show loading only when actually loading
+  if (goalsLoading || agentsLoading) {
     return (
       <DashboardLayout title="Agent Goals" subtitle="Set and track weekly booking targets">
         <div className="space-y-6">
