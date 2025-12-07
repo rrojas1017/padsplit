@@ -49,6 +49,8 @@ export interface BillingInvoice {
 
 export type DateRangeType = 'today' | 'yesterday' | 'thisWeek' | 'thisMonth' | 'last30Days' | 'allTime' | 'custom';
 
+export type BillingUnit = 'raw_cost' | 'per_booking' | 'per_minute';
+
 export interface CostSummary {
   totalCost: number;
   byProvider: Record<string, number>;
@@ -56,6 +58,11 @@ export interface CostSummary {
   byFunction: Record<string, { count: number; cost: number }>;
   byAgent: Record<string, { name: string; cost: number; count: number }>;
   dailyTrend: Array<{ date: string; cost: number; count: number }>;
+  // Per-unit billing metrics
+  uniqueBookingsProcessed: number;
+  totalTalkTimeSeconds: number;
+  costPerBooking: number;
+  costPerMinute: number;
 }
 
 export function useBillingData(dateRange: DateRangeType = 'thisMonth', customStart?: Date, customEnd?: Date) {
@@ -148,14 +155,26 @@ export function useBillingData(dateRange: DateRangeType = 'thisMonth', customSta
     fetchData();
   }, [fetchData]);
 
+  // Calculate per-unit metrics
+  const uniqueBookingIds = new Set(costs.filter(c => c.booking_id).map(c => c.booking_id));
+  const uniqueBookingsProcessed = uniqueBookingIds.size;
+  const totalTalkTimeSeconds = costs.reduce((sum, c) => sum + (c.audio_duration_seconds || 0), 0);
+  const totalCost = costs.reduce((sum, c) => sum + Number(c.estimated_cost_usd), 0);
+  const costPerBooking = uniqueBookingsProcessed > 0 ? totalCost / uniqueBookingsProcessed : 0;
+  const costPerMinute = totalTalkTimeSeconds > 0 ? totalCost / (totalTalkTimeSeconds / 60) : 0;
+
   // Calculate summary statistics
   const summary: CostSummary = {
-    totalCost: costs.reduce((sum, c) => sum + Number(c.estimated_cost_usd), 0),
+    totalCost,
     byProvider: {},
     byServiceType: {},
     byFunction: {},
     byAgent: {},
     dailyTrend: [],
+    uniqueBookingsProcessed,
+    totalTalkTimeSeconds,
+    costPerBooking,
+    costPerMinute,
   };
 
   // Group by provider

@@ -1,6 +1,6 @@
 import React from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { DollarSign, TrendingUp, Zap, Clock } from 'lucide-react';
+import { DollarSign, Clock, FileCheck, Timer } from 'lucide-react';
 import { formatCurrency } from '@/utils/billingCalculations';
 import { CostSummary, ApiCost, DateRangeType } from '@/hooks/useBillingData';
 
@@ -10,44 +10,57 @@ interface CostOverviewCardsProps {
   dateRange: DateRangeType;
 }
 
-const CostOverviewCards = ({ summary, costs, dateRange }: CostOverviewCardsProps) => {
-  const elevenlabsCost = summary.byProvider['elevenlabs'] || 0;
-  const lovableAICost = summary.byProvider['lovable_ai'] || 0;
-  const totalCalls = costs.length;
-  const avgCostPerCall = totalCalls > 0 ? summary.totalCost / totalCalls : 0;
+const formatDuration = (seconds: number): string => {
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.floor(seconds / 60);
+  const remainingSeconds = seconds % 60;
+  if (minutes < 60) return `${minutes}m ${remainingSeconds}s`;
+  const hours = Math.floor(minutes / 60);
+  const remainingMinutes = minutes % 60;
+  return `${hours}h ${remainingMinutes}m`;
+};
 
+const CostOverviewCards = ({ summary, costs, dateRange }: CostOverviewCardsProps) => {
   const cards = [
     {
-      title: 'Total Costs',
+      title: 'Total Raw Cost',
       value: formatCurrency(summary.totalCost),
-      subtitle: `${totalCalls} API calls`,
+      subtitle: `${costs.length} API calls`,
       icon: DollarSign,
       color: 'text-primary',
       bgColor: 'bg-primary/10',
     },
     {
-      title: 'ElevenLabs',
-      value: formatCurrency(elevenlabsCost),
-      subtitle: 'TTS + STT',
-      icon: Zap,
+      title: 'Bookings Processed',
+      value: summary.uniqueBookingsProcessed.toString(),
+      subtitle: summary.uniqueBookingsProcessed > 0 
+        ? `${formatCurrency(summary.costPerBooking)}/booking`
+        : 'No bookings yet',
+      icon: FileCheck,
+      color: 'text-emerald-500',
+      bgColor: 'bg-emerald-500/10',
+    },
+    {
+      title: 'Talk Time Processed',
+      value: formatDuration(summary.totalTalkTimeSeconds),
+      subtitle: summary.totalTalkTimeSeconds > 0 
+        ? `${formatCurrency(summary.costPerMinute)}/min`
+        : 'No audio processed',
+      icon: Timer,
       color: 'text-amber-500',
       bgColor: 'bg-amber-500/10',
     },
     {
-      title: 'Lovable AI',
-      value: formatCurrency(lovableAICost),
-      subtitle: 'AI Analysis',
-      icon: TrendingUp,
+      title: 'Cost Per Booking',
+      value: summary.uniqueBookingsProcessed > 0 
+        ? formatCurrency(summary.costPerBooking) 
+        : '—',
+      subtitle: summary.uniqueBookingsProcessed > 0 
+        ? 'Avg across all services'
+        : 'Process bookings to see',
+      icon: Clock,
       color: 'text-purple-500',
       bgColor: 'bg-purple-500/10',
-    },
-    {
-      title: 'Avg Cost/Call',
-      value: formatCurrency(avgCostPerCall),
-      subtitle: 'Per API request',
-      icon: Clock,
-      color: 'text-emerald-500',
-      bgColor: 'bg-emerald-500/10',
     },
   ];
 
