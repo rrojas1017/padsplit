@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useAgents } from '@/contexts/AgentsContext';
 import { useAgentGoals } from '@/hooks/useAgentGoals';
@@ -22,7 +22,7 @@ const AgentGoals = () => {
   const { agents, sites, isLoading: agentsLoading } = useAgents();
   const [selectedWeek, setSelectedWeek] = useState(startOfWeek(new Date(), { weekStartsOn: 1 }));
   const [selectedSiteId, setSelectedSiteId] = useState<string>('all');
-  const { goals, isLoading: goalsLoading, upsertGoal, weekStart, weekEnd } = useAgentGoals(selectedWeek);
+  const { goals, isLoading: goalsLoading, batchUpsertGoals, weekStart, weekEnd } = useAgentGoals(selectedWeek);
   
   // Determine if we're on the current week (to disable past navigation)
   const currentWeekStart = startOfWeek(new Date(), { weekStartsOn: 1 });
@@ -32,6 +32,7 @@ const AgentGoals = () => {
   const [editingGoals, setEditingGoals] = useState<Record<string, number>>({});
   const [applyToAllValue, setApplyToAllValue] = useState<string>('');
   const [isSaving, setIsSaving] = useState(false);
+  const isSavingRef = useRef(false);
 
   const isSupervisor = hasRole(['supervisor']);
   const isAdmin = hasRole(['admin']);
@@ -46,8 +47,9 @@ const AgentGoals = () => {
     return true;
   });
 
-  // Initialize editing goals from fetched goals
+  // Initialize editing goals from fetched goals - skip during save to prevent glitch
   useEffect(() => {
+    if (isSavingRef.current) return;
     const initialGoals: Record<string, number> = {};
     goals.forEach(goal => {
       initialGoals[goal.agent_id] = goal.weekly_target;
@@ -76,23 +78,22 @@ const AgentGoals = () => {
 
   const handleSaveGoals = async () => {
     setIsSaving(true);
-    let successCount = 0;
-    let errorCount = 0;
+    isSavingRef.current = true;
 
-    for (const [agentId, target] of Object.entries(editingGoals)) {
-      if (target > 0) {
-        const success = await upsertGoal(agentId, target);
-        if (success) successCount++;
-        else errorCount++;
-      }
-    }
+    // Collect all goals to save in one batch
+    const goalsToSave = Object.entries(editingGoals)
+      .filter(([_, target]) => target > 0)
+      .map(([agentId, target]) => ({ agentId, target }));
 
+    const success = await batchUpsertGoals(goalsToSave);
+    
+    isSavingRef.current = false;
     setIsSaving(false);
     
-    if (errorCount === 0) {
-      toast.success(`Saved goals for ${successCount} agents`);
+    if (success) {
+      toast.success(`Saved goals for ${goalsToSave.length} agents`);
     } else {
-      toast.error(`Failed to save ${errorCount} goals`);
+      toast.error('Failed to save goals');
     }
   };
 

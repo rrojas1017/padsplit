@@ -149,7 +149,7 @@ export function useAgentGoals(weekStart?: Date) {
         .upsert({
           agent_id: agentId,
           weekly_target: weeklyTarget,
-          daily_target: Math.ceil(weeklyTarget / 5), // 5 working days
+          daily_target: Math.ceil(weeklyTarget / 5),
           week_start: weekStartStr,
           week_end: weekEndStr,
           set_by: user.id,
@@ -165,6 +165,40 @@ export function useAgentGoals(weekStart?: Date) {
       return true;
     } catch (err) {
       console.error('Error saving goal:', err);
+      return false;
+    }
+  };
+
+  // Batch upsert goals - single DB operation, single refetch
+  const batchUpsertGoals = async (
+    goalsToSave: Array<{ agentId: string; target: number; notes?: string }>
+  ): Promise<boolean> => {
+    if (!user || goalsToSave.length === 0) return false;
+
+    try {
+      const upsertData = goalsToSave.map(g => ({
+        agent_id: g.agentId,
+        weekly_target: g.target,
+        daily_target: Math.ceil(g.target / 5),
+        week_start: weekStartStr,
+        week_end: weekEndStr,
+        set_by: user.id,
+        notes: g.notes || null,
+        updated_at: new Date().toISOString(),
+      }));
+
+      const { error } = await supabase
+        .from('agent_goals')
+        .upsert(upsertData, {
+          onConflict: 'agent_id,week_start',
+        });
+
+      if (error) throw error;
+      
+      await fetchGoals();
+      return true;
+    } catch (err) {
+      console.error('Error batch saving goals:', err);
       return false;
     }
   };
@@ -191,6 +225,7 @@ export function useAgentGoals(weekStart?: Date) {
     isLoading,
     error,
     upsertGoal,
+    batchUpsertGoals,
     deleteGoal,
     refreshGoals: fetchGoals,
     weekStart: selectedWeekStart,
