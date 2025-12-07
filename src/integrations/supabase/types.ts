@@ -58,7 +58,11 @@ export type Database = {
           created_at: string
           daily_target: number
           id: string
+          notes: string | null
+          set_by: string | null
           updated_at: string
+          week_end: string | null
+          week_start: string | null
           weekly_target: number
         }
         Insert: {
@@ -66,7 +70,11 @@ export type Database = {
           created_at?: string
           daily_target?: number
           id?: string
+          notes?: string | null
+          set_by?: string | null
           updated_at?: string
+          week_end?: string | null
+          week_start?: string | null
           weekly_target?: number
         }
         Update: {
@@ -74,7 +82,11 @@ export type Database = {
           created_at?: string
           daily_target?: number
           id?: string
+          notes?: string | null
+          set_by?: string | null
           updated_at?: string
+          week_end?: string | null
+          week_start?: string | null
           weekly_target?: number
         }
         Relationships: [

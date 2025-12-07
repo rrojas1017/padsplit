@@ -33,6 +33,7 @@ import AgentStatus from "./pages/AgentStatus";
 import MemberInsights from "./pages/MemberInsights";
 import MyQA from "./pages/MyQA";
 import QADashboard from "./pages/QADashboard";
+import AgentGoals from "./pages/AgentGoals";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -201,6 +202,14 @@ const App = () => (
                 <ProtectedRoute allowedRoles={['super_admin', 'admin', 'supervisor']}>
                   <DataProviders>
                     <QADashboard />
+                  </DataProviders>
+                </ProtectedRoute>
+              } />
+
+              <Route path="/agent-goals" element={
+                <ProtectedRoute allowedRoles={['super_admin', 'admin', 'supervisor']}>
+                  <DataProviders>
+                    <AgentGoals />
                   </DataProviders>
                 </ProtectedRoute>
               } />
