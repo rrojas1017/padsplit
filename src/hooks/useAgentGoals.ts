@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { startOfWeek, endOfWeek, format } from 'date-fns';
@@ -31,8 +31,20 @@ export function useAgentGoals(weekStart?: Date) {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const selectedWeekStart = weekStart || startOfWeek(new Date(), { weekStartsOn: 1 });
-  const selectedWeekEnd = endOfWeek(selectedWeekStart, { weekStartsOn: 1 });
+  // Memoize dates to prevent infinite re-renders (Date objects create new references each render)
+  const selectedWeekStart = useMemo(
+    () => weekStart || startOfWeek(new Date(), { weekStartsOn: 1 }),
+    [weekStart]
+  );
+  
+  const selectedWeekEnd = useMemo(
+    () => endOfWeek(selectedWeekStart, { weekStartsOn: 1 }),
+    [selectedWeekStart]
+  );
+
+  // Memoize string versions for stable useCallback dependencies
+  const weekStartStr = useMemo(() => format(selectedWeekStart, 'yyyy-MM-dd'), [selectedWeekStart]);
+  const weekEndStr = useMemo(() => format(selectedWeekEnd, 'yyyy-MM-dd'), [selectedWeekEnd]);
 
   const fetchGoals = useCallback(async () => {
     if (!user) return;
@@ -41,10 +53,8 @@ export function useAgentGoals(weekStart?: Date) {
     setError(null);
 
     try {
-      const weekStartStr = format(selectedWeekStart, 'yyyy-MM-dd');
-      const weekEndStr = format(selectedWeekEnd, 'yyyy-MM-dd');
 
-      // Fetch goals for the selected week
+      // Fetch goals for the selected week (use the memoized string values)
       const { data: goalsData, error: goalsError } = await supabase
         .from('agent_goals')
         .select('*')
@@ -120,7 +130,7 @@ export function useAgentGoals(weekStart?: Date) {
     } finally {
       setIsLoading(false);
     }
-  }, [user, selectedWeekStart, selectedWeekEnd]);
+  }, [user, weekStartStr, weekEndStr]); // Use stable string dependencies
 
   useEffect(() => {
     fetchGoals();
@@ -132,9 +142,6 @@ export function useAgentGoals(weekStart?: Date) {
     notes?: string
   ): Promise<boolean> => {
     if (!user) return false;
-
-    const weekStartStr = format(selectedWeekStart, 'yyyy-MM-dd');
-    const weekEndStr = format(selectedWeekEnd, 'yyyy-MM-dd');
 
     try {
       const { error } = await supabase
