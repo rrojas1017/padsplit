@@ -6,6 +6,61 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+// Cost logging helper function
+async function logApiCost(supabase: any, params: {
+  service_provider: 'elevenlabs' | 'lovable_ai';
+  service_type: string;
+  edge_function: string;
+  booking_id?: string;
+  agent_id?: string;
+  site_id?: string;
+  input_tokens?: number;
+  output_tokens?: number;
+  audio_duration_seconds?: number;
+  character_count?: number;
+  metadata?: Record<string, any>;
+}) {
+  try {
+    let cost = 0;
+    
+    if (params.service_provider === 'elevenlabs') {
+      // STT: ~$0.10 per minute
+      if (params.audio_duration_seconds) {
+        cost = (params.audio_duration_seconds / 60) * 0.10;
+      }
+      // TTS: ~$0.30 per 1000 characters
+      if (params.character_count) {
+        cost = params.character_count * 0.0003;
+      }
+    } else if (params.service_provider === 'lovable_ai') {
+      // Gemini Flash: ~$0.0001 per 1K input, ~$0.0003 per 1K output
+      const inputCost = ((params.input_tokens || 0) / 1000) * 0.0001;
+      const outputCost = ((params.output_tokens || 0) / 1000) * 0.0003;
+      cost = inputCost + outputCost;
+    }
+
+    await supabase.from('api_costs').insert({
+      service_provider: params.service_provider,
+      service_type: params.service_type,
+      edge_function: params.edge_function,
+      booking_id: params.booking_id || null,
+      agent_id: params.agent_id || null,
+      site_id: params.site_id || null,
+      input_tokens: params.input_tokens || null,
+      output_tokens: params.output_tokens || null,
+      audio_duration_seconds: params.audio_duration_seconds || null,
+      character_count: params.character_count || null,
+      estimated_cost_usd: cost,
+      metadata: params.metadata || {}
+    });
+    
+    console.log(`[Cost] Logged ${params.service_provider} ${params.service_type}: $${cost.toFixed(6)}`);
+  } catch (error) {
+    // Don't fail the main operation if cost logging fails
+    console.error('[Cost] Failed to log API cost:', error);
+  }
+}
+
 interface AgentFeedback {
   overallRating: string;
   strengths: string[];
@@ -50,16 +105,19 @@ serve(async (req) => {
 
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    // Fetch booking basic info
+    // Fetch booking basic info with agent's site
     const { data: booking, error: bookingError } = await supabase
       .from("bookings")
-      .select("id, member_name, agent_id")
+      .select("id, member_name, agent_id, agents(id, name, site_id)")
       .eq("id", bookingId)
       .single();
 
     if (bookingError || !booking) {
       throw new Error("Booking not found");
     }
+
+    const agentId = booking.agent_id;
+    const siteId = (booking.agents as any)?.site_id || null;
 
     // Fetch transcription data from booking_transcriptions table
     const { data: transcriptionData, error: transcriptionError } = await supabase
@@ -72,15 +130,8 @@ serve(async (req) => {
       throw new Error("No agent feedback available for this booking");
     }
 
-    // Fetch agent name separately
-    const { data: agent } = await supabase
-      .from("agents")
-      .select("name")
-      .eq("id", booking.agent_id)
-      .single();
-
     const agentFeedback = transcriptionData.agent_feedback as AgentFeedback;
-    const agentName = agent?.name || "Agent";
+    const agentName = (booking.agents as any)?.name || "Agent";
     const memberName = booking.member_name || "the member";
     const callSummary = transcriptionData.call_summary || "";
     const callKeyPoints = transcriptionData.call_key_points as {
@@ -194,6 +245,21 @@ Generate ONLY the spoken script, no stage directions or formatting.`;
 
     console.log("Generated script:", coachingScript.substring(0, 100) + "...");
 
+    // Log Lovable AI cost for script generation
+    const estimatedInputTokens = Math.ceil(scriptPrompt.length / 4);
+    const estimatedOutputTokens = Math.ceil(coachingScript.length / 4);
+    logApiCost(supabase, {
+      service_provider: 'lovable_ai',
+      service_type: 'tts_script_generation',
+      edge_function: 'generate-coaching-audio',
+      booking_id: bookingId,
+      agent_id: agentId,
+      site_id: siteId,
+      input_tokens: estimatedInputTokens,
+      output_tokens: estimatedOutputTokens,
+      metadata: { model: 'google/gemini-2.5-flash', script_length: coachingScript.length }
+    });
+
     // Step 2: Convert script to audio using ElevenLabs
     // Using "Brian" voice - energetic male coach
     const voiceId = "nPczCjzI2devNBz1zQrb";
@@ -221,6 +287,18 @@ Generate ONLY the spoken script, no stage directions or formatting.`;
       console.error("ElevenLabs API error:", errorText);
       throw new Error("Failed to generate audio from ElevenLabs");
     }
+
+    // Log ElevenLabs TTS cost
+    logApiCost(supabase, {
+      service_provider: 'elevenlabs',
+      service_type: 'tts_coaching',
+      edge_function: 'generate-coaching-audio',
+      booking_id: bookingId,
+      agent_id: agentId,
+      site_id: siteId,
+      character_count: coachingScript.length,
+      metadata: { model: 'eleven_turbo_v2', voice_id: voiceId }
+    });
 
     // Get audio as array buffer
     const audioArrayBuffer = await ttsResponse.arrayBuffer();
