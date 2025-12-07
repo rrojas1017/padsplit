@@ -22,6 +22,10 @@ const AgentGoals = () => {
   const [selectedSiteId, setSelectedSiteId] = useState<string>('all');
   const { goals, isLoading: goalsLoading, upsertGoal, weekStart, weekEnd } = useAgentGoals(selectedWeek);
   
+  // Determine if we're on the current week (to disable past navigation)
+  const currentWeekStart = startOfWeek(new Date(), { weekStartsOn: 1 });
+  const isCurrentWeek = format(selectedWeek, 'yyyy-MM-dd') === format(currentWeekStart, 'yyyy-MM-dd');
+  
   const [editingGoals, setEditingGoals] = useState<Record<string, number>>({});
   const [applyToAllValue, setApplyToAllValue] = useState<string>('');
   const [isSaving, setIsSaving] = useState(false);
@@ -136,7 +140,13 @@ const AgentGoals = () => {
             <div className="flex flex-col md:flex-row gap-4 items-center justify-between">
               {/* Week Navigation */}
               <div className="flex items-center gap-2">
-                <Button variant="outline" size="icon" onClick={() => handleWeekChange('prev')}>
+                <Button 
+                  variant="outline" 
+                  size="icon" 
+                  onClick={() => handleWeekChange('prev')}
+                  disabled={isCurrentWeek}
+                  title={isCurrentWeek ? "Cannot set goals for past weeks" : "Previous week"}
+                >
                   <ChevronLeft className="h-4 w-4" />
                 </Button>
                 <div className="text-center min-w-[200px]">
