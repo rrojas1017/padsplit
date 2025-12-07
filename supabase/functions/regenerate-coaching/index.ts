@@ -32,6 +32,45 @@ interface CallTypeConfig {
   } | null;
 }
 
+// Cost logging helper
+async function logApiCost(supabase: any, params: {
+  service_provider: 'elevenlabs' | 'lovable_ai';
+  service_type: string;
+  edge_function: string;
+  booking_id?: string;
+  agent_id?: string;
+  site_id?: string;
+  input_tokens?: number;
+  output_tokens?: number;
+  audio_duration_seconds?: number;
+  character_count?: number;
+  metadata?: Record<string, any>;
+}) {
+  try {
+    let cost = 0;
+    if (params.service_provider === 'elevenlabs') {
+      if (params.audio_duration_seconds) {
+        cost += (params.audio_duration_seconds / 60) * 0.10;
+      }
+      if (params.character_count) {
+        cost += params.character_count * 0.0003;
+      }
+    } else if (params.service_provider === 'lovable_ai') {
+      const inputCost = ((params.input_tokens || 0) / 1000) * 0.0001;
+      const outputCost = ((params.output_tokens || 0) / 1000) * 0.0003;
+      cost = inputCost + outputCost;
+    }
+
+    await supabase.from('api_costs').insert({
+      ...params,
+      estimated_cost_usd: cost
+    });
+    console.log(`[Cost] Logged ${params.service_type}: $${cost.toFixed(4)}`);
+  } catch (error) {
+    console.error('[Cost] Failed to log cost:', error);
+  }
+}
+
 // Fetch call type configuration from database
 async function fetchCallTypeConfig(
   supabase: any,
@@ -43,7 +82,6 @@ async function fetchCallTypeConfig(
   }
 
   try {
-    // Fetch call type details
     const { data: callType, error: callTypeError } = await supabase
       .from('call_types')
       .select('name, analysis_focus, scoring_criteria')
@@ -56,7 +94,6 @@ async function fetchCallTypeConfig(
       return null;
     }
 
-    // Fetch company knowledge for this call type
     const { data: knowledge, error: knowledgeError } = await supabase
       .from('company_knowledge')
       .select('title, content, category')
@@ -68,7 +105,6 @@ async function fetchCallTypeConfig(
       console.log('[Config] Error fetching knowledge:', knowledgeError);
     }
 
-    // Fetch rules for this call type
     const { data: rules, error: rulesError } = await supabase
       .from('call_type_rules')
       .select('rule_name, rule_type, rule_description, ai_instruction, weight')
@@ -80,7 +116,6 @@ async function fetchCallTypeConfig(
       console.log('[Config] Error fetching rules:', rulesError);
     }
 
-    // Fetch script template for this call type
     const { data: script, error: scriptError } = await supabase
       .from('script_templates')
       .select('name, script_content')
@@ -113,25 +148,21 @@ async function fetchCallTypeConfig(
 
 // Build dynamic coaching prompt based on configuration
 function buildDynamicCoachingPrompt(transcription: string, config: CallTypeConfig | null): string {
-  // Default prompt if no config
   if (!config) {
     return buildDefaultCoachingPrompt(transcription);
   }
 
   const sections: string[] = [];
 
-  // Header with call type context
   sections.push(`You are an expert at analyzing sales call transcriptions for a housing/rental service called PadSplit.
 This is a "${config.callType?.name || 'General'}" call type.`);
 
-  // Analysis focus from call type
   if (config.callType?.analysis_focus) {
     sections.push(`
 ANALYSIS FOCUS:
 ${config.callType.analysis_focus}`);
   }
 
-  // Company knowledge context
   if (config.knowledge.length > 0) {
     sections.push(`
 COMPANY KNOWLEDGE (use this context when evaluating):
@@ -140,7 +171,6 @@ ${config.knowledge.map(k => `
 ${k.content}`).join('\n')}`);
   }
 
-  // Evaluation rules grouped by type
   const requiredRules = config.rules.filter(r => r.rule_type === 'required');
   const recommendedRules = config.rules.filter(r => r.rule_type === 'recommended');
   const prohibitedRules = config.rules.filter(r => r.rule_type === 'prohibited');
@@ -168,7 +198,6 @@ ${prohibitedRules.map(r => `- ${r.rule_name}: ${r.ai_instruction || r.rule_descr
     }
   }
 
-  // Script adherence if script exists
   if (config.script) {
     sections.push(`
 SCRIPT TEMPLATE (evaluate adherence):
@@ -178,14 +207,12 @@ ${config.script.script_content}
 Note: Agent should follow the general structure and key talking points.`);
   }
 
-  // Transcription and output format
   sections.push(`
 Analyze this call transcription and provide detailed agent performance feedback in JSON format.
 
 TRANSCRIPTION:
 ${transcription}`);
 
-  // Custom scoring if defined
   const scoringGuide = config.callType?.scoring_criteria 
     ? `CUSTOM SCORING WEIGHTS:
 ${Object.entries(config.callType.scoring_criteria).map(([key, weight]) => `- ${key}: weight ${weight}`).join('\n')}`
@@ -222,7 +249,6 @@ Reference the evaluation criteria in your feedback.`);
   return sections.join('\n');
 }
 
-// Default coaching prompt for calls without call type configuration
 function buildDefaultCoachingPrompt(transcription: string): string {
   return `You are an expert at analyzing sales call transcriptions for a housing/rental service called PadSplit.
     
@@ -252,7 +278,6 @@ For agent feedback, be specific and constructive - mention exact phrases or mome
 }
 
 serve(async (req) => {
-  // Handle CORS preflight
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
@@ -276,10 +301,10 @@ serve(async (req) => {
 
     console.log(`Regenerating coaching for booking ${bookingId}`);
 
-    // Fetch the existing booking with transcription status and call_type_id
+    // Fetch the existing booking with transcription status, call_type_id, and agent info
     const { data: booking, error: fetchError } = await supabase
       .from('bookings')
-      .select('id, transcription_status, call_type_id')
+      .select('id, transcription_status, call_type_id, agent_id, agents(site_id)')
       .eq('id', bookingId)
       .single();
 
@@ -290,6 +315,9 @@ serve(async (req) => {
     if (booking.transcription_status !== 'completed') {
       throw new Error('Transcription is not completed yet.');
     }
+
+    const agentId = booking.agent_id || null;
+    const siteId = (booking.agents as any)?.site_id || null;
 
     // Fetch transcription from booking_transcriptions table
     const { data: transcriptionData, error: transcriptionError } = await supabase
@@ -332,6 +360,21 @@ serve(async (req) => {
     const aiResult = await aiResponse.json();
     const aiContent = aiResult.choices?.[0]?.message?.content || '';
     console.log('AI response received');
+
+    // Log AI cost
+    const inputTokens = Math.ceil(feedbackPrompt.length / 4);
+    const outputTokens = Math.ceil(aiContent.length / 4);
+    logApiCost(supabase, {
+      service_provider: 'lovable_ai',
+      service_type: 'ai_coaching',
+      edge_function: 'regenerate-coaching',
+      booking_id: bookingId,
+      agent_id: agentId,
+      site_id: siteId,
+      input_tokens: inputTokens,
+      output_tokens: outputTokens,
+      metadata: { model: 'google/gemini-2.5-flash' }
+    });
 
     // Parse the JSON response
     let agentFeedback = null;

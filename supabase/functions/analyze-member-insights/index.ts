@@ -26,6 +26,45 @@ interface BookingWithTranscription {
   transcribed_at: string;
 }
 
+// Cost logging helper
+async function logApiCost(supabase: any, params: {
+  service_provider: 'elevenlabs' | 'lovable_ai';
+  service_type: string;
+  edge_function: string;
+  booking_id?: string;
+  agent_id?: string;
+  site_id?: string;
+  input_tokens?: number;
+  output_tokens?: number;
+  audio_duration_seconds?: number;
+  character_count?: number;
+  metadata?: Record<string, any>;
+}) {
+  try {
+    let cost = 0;
+    if (params.service_provider === 'elevenlabs') {
+      if (params.audio_duration_seconds) {
+        cost += (params.audio_duration_seconds / 60) * 0.10;
+      }
+      if (params.character_count) {
+        cost += params.character_count * 0.0003;
+      }
+    } else if (params.service_provider === 'lovable_ai') {
+      const inputCost = ((params.input_tokens || 0) / 1000) * 0.0001;
+      const outputCost = ((params.output_tokens || 0) / 1000) * 0.0003;
+      cost = inputCost + outputCost;
+    }
+
+    await supabase.from('api_costs').insert({
+      ...params,
+      estimated_cost_usd: cost
+    });
+    console.log(`[Cost] Logged ${params.service_type}: $${cost.toFixed(4)}`);
+  } catch (error) {
+    console.error('[Cost] Failed to log cost:', error);
+  }
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -85,22 +124,18 @@ serve(async (req) => {
       const keyPoints = booking.call_key_points;
       if (!keyPoints) continue;
 
-      // Aggregate concerns, preferences, objections
       if (keyPoints.memberConcerns) allConcerns.push(...keyPoints.memberConcerns);
       if (keyPoints.memberPreferences) allPreferences.push(...keyPoints.memberPreferences);
       if (keyPoints.objections) allObjections.push(...keyPoints.objections);
 
-      // Count sentiments
       if (keyPoints.callSentiment) {
         sentimentCounts[keyPoints.callSentiment]++;
       }
 
-      // Count readiness
       if (keyPoints.moveInReadiness) {
         readinessCounts[keyPoints.moveInReadiness]++;
       }
 
-      // Group by market
       const marketKey = `${booking.market_city || 'Unknown'}, ${booking.market_state || 'Unknown'}`;
       if (!marketData[marketKey]) {
         marketData[marketKey] = { concerns: [], objections: [], preferences: [], count: 0 };
@@ -110,7 +145,6 @@ serve(async (req) => {
       if (keyPoints.objections) marketData[marketKey].objections.push(...keyPoints.objections);
       if (keyPoints.memberPreferences) marketData[marketKey].preferences.push(...keyPoints.memberPreferences);
 
-      // Track repeat callers
       const memberName = booking.member_name?.toLowerCase().trim();
       if (memberName) {
         memberCallCounts[memberName] = (memberCallCounts[memberName] || 0) + 1;
@@ -233,12 +267,27 @@ IMPORTANT:
     const aiData = await aiResponse.json();
     const analysisText = aiData.choices?.[0]?.message?.content || '';
     
+    // Log AI cost
+    const inputTokens = Math.ceil(aiPrompt.length / 4);
+    const outputTokens = Math.ceil(analysisText.length / 4);
+    logApiCost(supabase, {
+      service_provider: 'lovable_ai',
+      service_type: 'ai_member_insights',
+      edge_function: 'analyze-member-insights',
+      input_tokens: inputTokens,
+      output_tokens: outputTokens,
+      metadata: { 
+        model: 'google/gemini-2.5-flash', 
+        analysis_period,
+        total_calls: totalCalls 
+      }
+    });
+    
     console.log('AI response received, parsing...');
 
     // Parse AI response
     let parsedAnalysis;
     try {
-      // Extract JSON from response (handle potential markdown wrapping)
       const jsonMatch = analysisText.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
         parsedAnalysis = JSON.parse(jsonMatch[0]);
@@ -248,7 +297,6 @@ IMPORTANT:
     } catch (parseError) {
       console.error('Failed to parse AI response:', parseError);
       console.log('Raw response:', analysisText);
-      // Create fallback structure
       parsedAnalysis = {
         pain_points: [],
         payment_insights: [],
