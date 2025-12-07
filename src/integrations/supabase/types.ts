@@ -188,6 +188,132 @@ export type Database = {
           },
         ]
       }
+      api_costs: {
+        Row: {
+          agent_id: string | null
+          audio_duration_seconds: number | null
+          booking_id: string | null
+          character_count: number | null
+          created_at: string | null
+          edge_function: string
+          estimated_cost_usd: number
+          id: string
+          input_tokens: number | null
+          metadata: Json | null
+          output_tokens: number | null
+          service_provider: string
+          service_type: string
+          site_id: string | null
+        }
+        Insert: {
+          agent_id?: string | null
+          audio_duration_seconds?: number | null
+          booking_id?: string | null
+          character_count?: number | null
+          created_at?: string | null
+          edge_function: string
+          estimated_cost_usd?: number
+          id?: string
+          input_tokens?: number | null
+          metadata?: Json | null
+          output_tokens?: number | null
+          service_provider: string
+          service_type: string
+          site_id?: string | null
+        }
+        Update: {
+          agent_id?: string | null
+          audio_duration_seconds?: number | null
+          booking_id?: string | null
+          character_count?: number | null
+          created_at?: string | null
+          edge_function?: string
+          estimated_cost_usd?: number
+          id?: string
+          input_tokens?: number | null
+          metadata?: Json | null
+          output_tokens?: number | null
+          service_provider?: string
+          service_type?: string
+          site_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "api_costs_agent_id_fkey"
+            columns: ["agent_id"]
+            isOneToOne: false
+            referencedRelation: "agents"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "api_costs_booking_id_fkey"
+            columns: ["booking_id"]
+            isOneToOne: false
+            referencedRelation: "bookings"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "api_costs_site_id_fkey"
+            columns: ["site_id"]
+            isOneToOne: false
+            referencedRelation: "sites"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      billing_invoices: {
+        Row: {
+          client_id: string
+          cost_breakdown: Json | null
+          created_at: string | null
+          created_by: string | null
+          id: string
+          markup_usd: number
+          notes: string | null
+          period_end: string
+          period_start: string
+          raw_cost_usd: number
+          status: string
+          total_usd: number
+        }
+        Insert: {
+          client_id: string
+          cost_breakdown?: Json | null
+          created_at?: string | null
+          created_by?: string | null
+          id?: string
+          markup_usd?: number
+          notes?: string | null
+          period_end: string
+          period_start: string
+          raw_cost_usd?: number
+          status?: string
+          total_usd?: number
+        }
+        Update: {
+          client_id?: string
+          cost_breakdown?: Json | null
+          created_at?: string | null
+          created_by?: string | null
+          id?: string
+          markup_usd?: number
+          notes?: string | null
+          period_end?: string
+          period_start?: string
+          raw_cost_usd?: number
+          status?: string
+          total_usd?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "billing_invoices_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       booking_transcriptions: {
         Row: {
           agent_feedback: Json | null
@@ -459,6 +585,42 @@ export type Database = {
           is_default?: boolean | null
           name?: string
           scoring_criteria?: Json | null
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
+      clients: {
+        Row: {
+          billing_period: string
+          contact_email: string | null
+          created_at: string | null
+          created_by: string | null
+          id: string
+          is_active: boolean | null
+          markup_percentage: number
+          name: string
+          updated_at: string | null
+        }
+        Insert: {
+          billing_period?: string
+          contact_email?: string | null
+          created_at?: string | null
+          created_by?: string | null
+          id?: string
+          is_active?: boolean | null
+          markup_percentage?: number
+          name: string
+          updated_at?: string | null
+        }
+        Update: {
+          billing_period?: string
+          contact_email?: string | null
+          created_at?: string | null
+          created_by?: string | null
+          id?: string
+          is_active?: boolean | null
+          markup_percentage?: number
+          name?: string
           updated_at?: string | null
         }
         Relationships: []

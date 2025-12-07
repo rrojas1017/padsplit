@@ -34,6 +34,7 @@ import MemberInsights from "./pages/MemberInsights";
 import MyQA from "./pages/MyQA";
 import QADashboard from "./pages/QADashboard";
 import AgentGoals from "./pages/AgentGoals";
+import Billing from "./pages/Billing";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -210,6 +211,14 @@ const App = () => (
                 <ProtectedRoute allowedRoles={['super_admin', 'admin', 'supervisor']}>
                   <DataProviders>
                     <AgentGoals />
+                  </DataProviders>
+                </ProtectedRoute>
+              } />
+
+              <Route path="/billing" element={
+                <ProtectedRoute allowedRoles={['super_admin']}>
+                  <DataProviders>
+                    <Billing />
                   </DataProviders>
                 </ProtectedRoute>
               } />
