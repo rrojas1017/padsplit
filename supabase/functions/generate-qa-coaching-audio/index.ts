@@ -7,6 +7,61 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+// Cost logging helper function
+async function logApiCost(supabase: any, params: {
+  service_provider: 'elevenlabs' | 'lovable_ai';
+  service_type: string;
+  edge_function: string;
+  booking_id?: string;
+  agent_id?: string;
+  site_id?: string;
+  input_tokens?: number;
+  output_tokens?: number;
+  audio_duration_seconds?: number;
+  character_count?: number;
+  metadata?: Record<string, any>;
+}) {
+  try {
+    let cost = 0;
+    
+    if (params.service_provider === 'elevenlabs') {
+      // STT: ~$0.10 per minute
+      if (params.audio_duration_seconds) {
+        cost = (params.audio_duration_seconds / 60) * 0.10;
+      }
+      // TTS: ~$0.30 per 1000 characters
+      if (params.character_count) {
+        cost = params.character_count * 0.0003;
+      }
+    } else if (params.service_provider === 'lovable_ai') {
+      // Gemini Flash: ~$0.0001 per 1K input, ~$0.0003 per 1K output
+      const inputCost = ((params.input_tokens || 0) / 1000) * 0.0001;
+      const outputCost = ((params.output_tokens || 0) / 1000) * 0.0003;
+      cost = inputCost + outputCost;
+    }
+
+    await supabase.from('api_costs').insert({
+      service_provider: params.service_provider,
+      service_type: params.service_type,
+      edge_function: params.edge_function,
+      booking_id: params.booking_id || null,
+      agent_id: params.agent_id || null,
+      site_id: params.site_id || null,
+      input_tokens: params.input_tokens || null,
+      output_tokens: params.output_tokens || null,
+      audio_duration_seconds: params.audio_duration_seconds || null,
+      character_count: params.character_count || null,
+      estimated_cost_usd: cost,
+      metadata: params.metadata || {}
+    });
+    
+    console.log(`[Cost] Logged ${params.service_provider} ${params.service_type}: $${cost.toFixed(6)}`);
+  } catch (error) {
+    // Don't fail the main operation if cost logging fails
+    console.error('[Cost] Failed to log API cost:', error);
+  }
+}
+
 interface QACategory {
   name: string;
   maxPoints: number;
@@ -56,7 +111,7 @@ serve(async (req) => {
         member_name,
         agent_id,
         booking_date,
-        agents(id, name)
+        agents(id, name, site_id)
       `)
       .eq('id', bookingId)
       .maybeSingle();
@@ -68,6 +123,9 @@ serve(async (req) => {
     if (!booking) {
       throw new Error(`Booking not found: ${bookingId}`);
     }
+
+    const agentId = booking.agent_id;
+    const siteId = (booking.agents as any)?.site_id || null;
 
     // Fetch transcription with QA scores
     const { data: transcription, error: transcriptionError } = await supabase
@@ -252,6 +310,21 @@ Generate ONLY the spoken coaching script. No formatting, no quotes around the sc
 
     console.log('Generated QA coaching script:', coachingScript.substring(0, 100) + '...');
 
+    // Log Lovable AI cost for script generation
+    const estimatedInputTokens = Math.ceil(kattyPrompt.length / 4);
+    const estimatedOutputTokens = Math.ceil(coachingScript.length / 4);
+    logApiCost(supabase, {
+      service_provider: 'lovable_ai',
+      service_type: 'qa_script_generation',
+      edge_function: 'generate-qa-coaching-audio',
+      booking_id: bookingId,
+      agent_id: agentId,
+      site_id: siteId,
+      input_tokens: estimatedInputTokens,
+      output_tokens: estimatedOutputTokens,
+      metadata: { model: 'google/gemini-2.5-flash', script_length: coachingScript.length }
+    });
+
     // Generate audio with ElevenLabs using Sarah's voice
     console.log(`Generating audio with ElevenLabs voice: ${voiceId}`);
     
@@ -279,6 +352,18 @@ Generate ONLY the spoken coaching script. No formatting, no quotes around the sc
       console.error('ElevenLabs error:', elevenLabsResponse.status, errorText);
       throw new Error(`ElevenLabs API error: ${elevenLabsResponse.status}`);
     }
+
+    // Log ElevenLabs TTS cost
+    logApiCost(supabase, {
+      service_provider: 'elevenlabs',
+      service_type: 'tts_qa_coaching',
+      edge_function: 'generate-qa-coaching-audio',
+      booking_id: bookingId,
+      agent_id: agentId,
+      site_id: siteId,
+      character_count: coachingScript.length,
+      metadata: { model: 'eleven_turbo_v2', voice_id: voiceId }
+    });
 
     const audioBuffer = await elevenLabsResponse.arrayBuffer();
     const audioData = new Uint8Array(audioBuffer);

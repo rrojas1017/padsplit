@@ -12,6 +12,61 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+// Cost logging helper function
+async function logApiCost(supabase: any, params: {
+  service_provider: 'elevenlabs' | 'lovable_ai';
+  service_type: string;
+  edge_function: string;
+  booking_id?: string;
+  agent_id?: string;
+  site_id?: string;
+  input_tokens?: number;
+  output_tokens?: number;
+  audio_duration_seconds?: number;
+  character_count?: number;
+  metadata?: Record<string, any>;
+}) {
+  try {
+    let cost = 0;
+    
+    if (params.service_provider === 'elevenlabs') {
+      // STT: ~$0.10 per minute
+      if (params.audio_duration_seconds) {
+        cost = (params.audio_duration_seconds / 60) * 0.10;
+      }
+      // TTS: ~$0.30 per 1000 characters
+      if (params.character_count) {
+        cost = params.character_count * 0.0003;
+      }
+    } else if (params.service_provider === 'lovable_ai') {
+      // Gemini Flash: ~$0.0001 per 1K input, ~$0.0003 per 1K output
+      const inputCost = ((params.input_tokens || 0) / 1000) * 0.0001;
+      const outputCost = ((params.output_tokens || 0) / 1000) * 0.0003;
+      cost = inputCost + outputCost;
+    }
+
+    await supabase.from('api_costs').insert({
+      service_provider: params.service_provider,
+      service_type: params.service_type,
+      edge_function: params.edge_function,
+      booking_id: params.booking_id || null,
+      agent_id: params.agent_id || null,
+      site_id: params.site_id || null,
+      input_tokens: params.input_tokens || null,
+      output_tokens: params.output_tokens || null,
+      audio_duration_seconds: params.audio_duration_seconds || null,
+      character_count: params.character_count || null,
+      estimated_cost_usd: cost,
+      metadata: params.metadata || {}
+    });
+    
+    console.log(`[Cost] Logged ${params.service_provider} ${params.service_type}: $${cost.toFixed(6)}`);
+  } catch (error) {
+    // Don't fail the main operation if cost logging fails
+    console.error('[Cost] Failed to log API cost:', error);
+  }
+}
+
 // Types for call type configuration
 interface CallTypeConfig {
   callType: {
@@ -342,6 +397,10 @@ async function processTranscription(bookingId: string, kixieUrl: string) {
     await updateBookingError(supabase, bookingId, 'Processing timeout - the audio file may be too large or the service is busy. Please try again.');
   }, TIMEOUT_MS);
 
+  // Variables to track for cost logging
+  let agentId: string | null = null;
+  let siteId: string | null = null;
+
   try {
     // Update status to processing (clear any previous error)
     await supabase
@@ -352,19 +411,21 @@ async function processTranscription(bookingId: string, kixieUrl: string) {
       })
       .eq('id', bookingId);
 
-    // Fetch booking to get call_type_id
+    // Fetch booking to get call_type_id, agent_id, and site_id
     const { data: bookingData, error: bookingError } = await supabase
       .from('bookings')
-      .select('call_type_id')
+      .select('call_type_id, agent_id, agents(site_id)')
       .eq('id', bookingId)
       .maybeSingle();
 
     if (bookingError) {
-      console.log('[Background] Error fetching booking call_type_id:', bookingError);
+      console.log('[Background] Error fetching booking:', bookingError);
     }
 
     const callTypeId = bookingData?.call_type_id || null;
-    console.log(`[Background] Booking call_type_id: ${callTypeId || 'none'}`);
+    agentId = bookingData?.agent_id || null;
+    siteId = (bookingData?.agents as any)?.site_id || null;
+    console.log(`[Background] Booking call_type_id: ${callTypeId || 'none'}, agent_id: ${agentId}, site_id: ${siteId}`);
 
     // Fetch call type configuration if available
     const config = await fetchCallTypeConfig(supabase, callTypeId);
@@ -494,6 +555,20 @@ async function processTranscription(bookingId: string, kixieUrl: string) {
     
     console.log('[Background] Transcription complete, length:', transcription.length);
 
+    // Log ElevenLabs STT cost
+    if (callDurationSeconds) {
+      logApiCost(supabase, {
+        service_provider: 'elevenlabs',
+        service_type: 'stt_transcription',
+        edge_function: 'transcribe-call',
+        booking_id: bookingId,
+        agent_id: agentId || undefined,
+        site_id: siteId || undefined,
+        audio_duration_seconds: callDurationSeconds,
+        metadata: { model: 'scribe_v1', file_size_mb: fileSizeMB }
+      });
+    }
+
     // Step 3: Generate summary, key points, and agent feedback with dynamic prompt
     console.log('[Background] Generating AI summary and agent feedback...');
     const summaryPrompt = buildDynamicPrompt(transcription, config);
@@ -521,6 +596,21 @@ async function processTranscription(bookingId: string, kixieUrl: string) {
     const aiResult = await aiResponse.json();
     const aiContent = aiResult.choices?.[0]?.message?.content || '';
     console.log('[Background] AI response received');
+
+    // Log Lovable AI cost (estimate tokens from content length)
+    const estimatedInputTokens = Math.ceil(summaryPrompt.length / 4);
+    const estimatedOutputTokens = Math.ceil(aiContent.length / 4);
+    logApiCost(supabase, {
+      service_provider: 'lovable_ai',
+      service_type: 'ai_analysis',
+      edge_function: 'transcribe-call',
+      booking_id: bookingId,
+      agent_id: agentId || undefined,
+      site_id: siteId || undefined,
+      input_tokens: estimatedInputTokens,
+      output_tokens: estimatedOutputTokens,
+      metadata: { model: 'google/gemini-2.5-flash', transcription_length: transcription.length }
+    });
 
     // Parse the JSON response
     let keyPoints;
@@ -605,10 +695,6 @@ async function processTranscription(bookingId: string, kixieUrl: string) {
       console.error('[Background] Transcription insert error:', transcriptionError);
       throw new Error(`Failed to save transcription: ${transcriptionError.message}`);
     }
-
-    // Clear timeout on success
-    clearTimeout(timeoutId);
-    console.log(`[Background] Transcription completed successfully for booking ${bookingId}`);
 
     // Clear timeout on success
     clearTimeout(timeoutId);
