@@ -50,3 +50,6 @@ verify_jwt = false
 
 [functions.batch-reanalyze-member-details]
 verify_jwt = false
+
+[functions.backfill-historical-costs]
+verify_jwt = false
