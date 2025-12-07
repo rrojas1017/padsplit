@@ -9,6 +9,7 @@ interface BookingDetails {
   coachingAudioUrl?: string;
   coachingAudioGeneratedAt?: Date;
   coachingAudioRegeneratedAt?: Date;
+  sttProvider?: string;
 }
 
 // On-demand loading of heavy data from booking_transcriptions table
@@ -28,7 +29,7 @@ export function useBookingDetails() {
       // Fetch from the new booking_transcriptions table
       const { data, error } = await supabase
         .from('booking_transcriptions')
-        .select('call_transcription, call_summary, call_key_points, agent_feedback, coaching_audio_url, coaching_audio_generated_at, coaching_audio_regenerated_at')
+        .select('call_transcription, call_summary, call_key_points, agent_feedback, coaching_audio_url, coaching_audio_generated_at, coaching_audio_regenerated_at, stt_provider')
         .eq('booking_id', bookingId)
         .maybeSingle();
 
@@ -49,6 +50,7 @@ export function useBookingDetails() {
         coachingAudioUrl: data.coaching_audio_url || undefined,
         coachingAudioGeneratedAt: data.coaching_audio_generated_at ? new Date(data.coaching_audio_generated_at) : undefined,
         coachingAudioRegeneratedAt: data.coaching_audio_regenerated_at ? new Date(data.coaching_audio_regenerated_at) : undefined,
+        sttProvider: (data as any).stt_provider || undefined,
       };
 
       // Cache the result
