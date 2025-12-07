@@ -17,10 +17,10 @@ import { format, startOfWeek, addWeeks, subWeeks } from 'date-fns';
 
 const AgentGoals = () => {
   const { user, hasRole } = useAuth();
-  const { agents, sites } = useAgents();
+  const { agents, sites, isLoading: agentsLoading } = useAgents();
   const [selectedWeek, setSelectedWeek] = useState(startOfWeek(new Date(), { weekStartsOn: 1 }));
   const [selectedSiteId, setSelectedSiteId] = useState<string>('all');
-  const { goals, isLoading, upsertGoal, weekStart, weekEnd } = useAgentGoals(selectedWeek);
+  const { goals, isLoading: goalsLoading, upsertGoal, weekStart, weekEnd } = useAgentGoals(selectedWeek);
   
   const [editingGoals, setEditingGoals] = useState<Record<string, number>>({});
   const [applyToAllValue, setApplyToAllValue] = useState<string>('');
@@ -103,11 +103,17 @@ const AgentGoals = () => {
     ? Math.round(goals.reduce((sum, g) => sum + g.progress_percentage, 0) / goals.length) 
     : 0;
 
-  if (isLoading) {
+  if (goalsLoading || agentsLoading) {
     return (
       <DashboardLayout title="Agent Goals" subtitle="Set and track weekly booking targets">
         <div className="space-y-6">
           <Skeleton className="h-32 w-full" />
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <Skeleton className="h-24 w-full" />
+            <Skeleton className="h-24 w-full" />
+            <Skeleton className="h-24 w-full" />
+            <Skeleton className="h-24 w-full" />
+          </div>
           <Skeleton className="h-64 w-full" />
         </div>
       </DashboardLayout>
