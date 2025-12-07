@@ -7,6 +7,44 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+// Cost logging helper
+async function logApiCost(supabase: any, params: {
+  service_provider: 'elevenlabs' | 'lovable_ai';
+  service_type: string;
+  edge_function: string;
+  booking_id?: string;
+  agent_id?: string;
+  site_id?: string;
+  input_tokens?: number;
+  output_tokens?: number;
+  audio_duration_seconds?: number;
+  character_count?: number;
+  metadata?: Record<string, any>;
+}) {
+  try {
+    let cost = 0;
+    if (params.service_provider === 'elevenlabs') {
+      if (params.audio_duration_seconds) {
+        cost += (params.audio_duration_seconds / 60) * 0.10;
+      }
+      if (params.character_count) {
+        cost += params.character_count * 0.0003;
+      }
+    } else if (params.service_provider === 'lovable_ai') {
+      const inputCost = ((params.input_tokens || 0) / 1000) * 0.0001;
+      const outputCost = ((params.output_tokens || 0) / 1000) * 0.0003;
+      cost = inputCost + outputCost;
+    }
+
+    await supabase.from('api_costs').insert({
+      ...params,
+      estimated_cost_usd: cost
+    });
+  } catch (error) {
+    console.error('[Cost] Failed to log cost:', error);
+  }
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });

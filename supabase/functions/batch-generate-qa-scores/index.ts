@@ -12,6 +12,44 @@ interface QACategory {
   criteria: string;
 }
 
+// Cost logging helper
+async function logApiCost(supabase: any, params: {
+  service_provider: 'elevenlabs' | 'lovable_ai';
+  service_type: string;
+  edge_function: string;
+  booking_id?: string;
+  agent_id?: string;
+  site_id?: string;
+  input_tokens?: number;
+  output_tokens?: number;
+  audio_duration_seconds?: number;
+  character_count?: number;
+  metadata?: Record<string, any>;
+}) {
+  try {
+    let cost = 0;
+    if (params.service_provider === 'elevenlabs') {
+      if (params.audio_duration_seconds) {
+        cost += (params.audio_duration_seconds / 60) * 0.10;
+      }
+      if (params.character_count) {
+        cost += params.character_count * 0.0003;
+      }
+    } else if (params.service_provider === 'lovable_ai') {
+      const inputCost = ((params.input_tokens || 0) / 1000) * 0.0001;
+      const outputCost = ((params.output_tokens || 0) / 1000) * 0.0003;
+      cost = inputCost + outputCost;
+    }
+
+    await supabase.from('api_costs').insert({
+      ...params,
+      estimated_cost_usd: cost
+    });
+  } catch (error) {
+    console.error('[Cost] Failed to log cost:', error);
+  }
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -69,6 +107,16 @@ serve(async (req) => {
 
       for (const trans of transcriptions) {
         try {
+          // Fetch booking for agent_id and site_id
+          const { data: booking } = await supabase
+            .from('bookings')
+            .select('agent_id, agents(site_id)')
+            .eq('id', trans.booking_id)
+            .single();
+
+          const agentId = booking?.agent_id || null;
+          const siteId = (booking?.agents as any)?.site_id || null;
+
           // Build scoring prompt
           const categoryList = categories.map((cat, i) => 
             `${i + 1}. ${cat.name} (0-${cat.maxPoints} points): ${cat.criteria}`
@@ -116,6 +164,21 @@ ${categories.map(cat => `    "${cat.name}": <score 0-${cat.maxPoints}>`).join(',
 
           const aiData = await aiResponse.json();
           const content = aiData.choices?.[0]?.message?.content || '';
+
+          // Log AI cost
+          const inputTokens = Math.ceil(prompt.length / 4);
+          const outputTokens = Math.ceil(content.length / 4);
+          logApiCost(supabase, {
+            service_provider: 'lovable_ai',
+            service_type: 'ai_qa_scoring',
+            edge_function: 'batch-generate-qa-scores',
+            booking_id: trans.booking_id,
+            agent_id: agentId,
+            site_id: siteId,
+            input_tokens: inputTokens,
+            output_tokens: outputTokens,
+            metadata: { model: 'google/gemini-2.5-flash', batch: true }
+          });
 
           // Parse scores
           const jsonMatch = content.match(/\{[\s\S]*\}/);

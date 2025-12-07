@@ -20,6 +20,44 @@ interface AgentFeedback {
   };
 }
 
+// Cost logging helper
+async function logApiCost(supabase: any, params: {
+  service_provider: 'elevenlabs' | 'lovable_ai';
+  service_type: string;
+  edge_function: string;
+  booking_id?: string;
+  agent_id?: string;
+  site_id?: string;
+  input_tokens?: number;
+  output_tokens?: number;
+  audio_duration_seconds?: number;
+  character_count?: number;
+  metadata?: Record<string, any>;
+}) {
+  try {
+    let cost = 0;
+    if (params.service_provider === 'elevenlabs') {
+      if (params.audio_duration_seconds) {
+        cost += (params.audio_duration_seconds / 60) * 0.10;
+      }
+      if (params.character_count) {
+        cost += params.character_count * 0.0003;
+      }
+    } else if (params.service_provider === 'lovable_ai') {
+      const inputCost = ((params.input_tokens || 0) / 1000) * 0.0001;
+      const outputCost = ((params.output_tokens || 0) / 1000) * 0.0003;
+      cost = inputCost + outputCost;
+    }
+
+    await supabase.from('api_costs').insert({
+      ...params,
+      estimated_cost_usd: cost
+    });
+  } catch (error) {
+    console.error('[Cost] Failed to log cost:', error);
+  }
+}
+
 async function generateAudioForBooking(
   supabase: any,
   elevenlabsApiKey: string,
@@ -30,13 +68,16 @@ async function generateAudioForBooking(
     // Fetch booking basic info
     const { data: booking, error: bookingError } = await supabase
       .from("bookings")
-      .select("id, member_name, agent_id")
+      .select("id, member_name, agent_id, agents(site_id)")
       .eq("id", bookingId)
       .single();
 
     if (bookingError || !booking) {
       return { success: false, error: "Booking not found" };
     }
+
+    const agentId = booking.agent_id || null;
+    const siteId = (booking.agents as any)?.site_id || null;
 
     // Fetch transcription data
     const { data: transcriptionData, error: transcriptionError } = await supabase
@@ -133,6 +174,21 @@ Generate ONLY the spoken script, no stage directions or formatting.`;
       return { success: false, error: "No script generated" };
     }
 
+    // Log AI cost for script generation
+    const inputTokens = Math.ceil(scriptPrompt.length / 4);
+    const outputTokens = Math.ceil(coachingScript.length / 4);
+    logApiCost(supabase, {
+      service_provider: 'lovable_ai',
+      service_type: 'ai_coaching',
+      edge_function: 'batch-regenerate-coaching',
+      booking_id: bookingId,
+      agent_id: agentId,
+      site_id: siteId,
+      input_tokens: inputTokens,
+      output_tokens: outputTokens,
+      metadata: { model: 'google/gemini-2.5-flash', batch: true }
+    });
+
     // Convert to audio using ElevenLabs
     const voiceId = "nPczCjzI2devNBz1zQrb"; // Brian voice
     const ttsResponse = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
@@ -156,6 +212,18 @@ Generate ONLY the spoken script, no stage directions or formatting.`;
     if (!ttsResponse.ok) {
       return { success: false, error: "Failed to generate audio" };
     }
+
+    // Log TTS cost
+    logApiCost(supabase, {
+      service_provider: 'elevenlabs',
+      service_type: 'tts_coaching',
+      edge_function: 'batch-regenerate-coaching',
+      booking_id: bookingId,
+      agent_id: agentId,
+      site_id: siteId,
+      character_count: coachingScript.length,
+      metadata: { voice_id: voiceId, model: 'eleven_turbo_v2', batch: true }
+    });
 
     // Upload to storage
     const audioArrayBuffer = await ttsResponse.arrayBuffer();
@@ -255,8 +323,8 @@ serve(async (req) => {
         console.log(`✗ Failed: ${item.booking_id} - ${result.error}`);
       }
 
-      // Wait 2 seconds between each to avoid rate limiting
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      // Wait 10 seconds between each to avoid rate limiting (per memory)
+      await new Promise(resolve => setTimeout(resolve, 10000));
     }
 
     console.log(`Batch complete: ${results.succeeded} succeeded, ${results.failed} failed`);
