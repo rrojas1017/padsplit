@@ -16,7 +16,8 @@ import {
   Activity,
   Lightbulb,
   Wrench,
-  ClipboardCheck
+  ClipboardCheck,
+  Target
 } from 'lucide-react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
@@ -99,6 +100,13 @@ const menuItems: MenuItem[] = [
     icon: ClipboardCheck,
     label: 'QA Dashboard',
     path: '/qa-dashboard',
+    roles: ['super_admin', 'admin', 'supervisor'],
+    group: 'core'
+  },
+  {
+    icon: Target,
+    label: 'Agent Goals',
+    path: '/agent-goals',
     roles: ['super_admin', 'admin', 'supervisor'],
     group: 'core'
   },

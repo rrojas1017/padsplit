@@ -7,13 +7,15 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useBookings } from '@/contexts/BookingsContext';
 import { useAgents } from '@/contexts/AgentsContext';
 import { useCoachingData, CoachingBookingWithAudio } from '@/hooks/useCoachingData';
-import { CalendarDays, TrendingUp, Clock, CheckCircle2, Trophy, GraduationCap, ThumbsUp, Lightbulb, Star, Headphones, Timer, Check, Info } from 'lucide-react';
+import { useMyGoal } from '@/hooks/useAgentGoals';
+import { CalendarDays, TrendingUp, Clock, CheckCircle2, Trophy, GraduationCap, ThumbsUp, Lightbulb, Star, Headphones, Timer, Check, Info, Target } from 'lucide-react';
 import { format, subDays, startOfMonth, startOfDay, endOfDay, differenceInDays } from 'date-fns';
 import { Area, AreaChart, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer } from 'recharts';
 import { Skeleton } from '@/components/ui/skeleton';
 import { AgentFeedback } from '@/types';
 import { CoachingAudioPlayer } from '@/components/coaching/CoachingAudioPlayer';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { Progress } from '@/components/ui/progress';
 import { cn } from '@/lib/utils';
 
 // Helper to calculate audio expiration info (15-day retention)
@@ -112,7 +114,10 @@ export default function MyPerformance() {
     includeAudio: true,
   });
   
-  const isLoading = bookingsLoading || agentsLoading || coachingLoading;
+  // Fetch weekly goal for current agent
+  const { goal: myGoal, isLoading: goalLoading } = useMyGoal();
+  
+  const isLoading = bookingsLoading || agentsLoading || coachingLoading || goalLoading;
   
   const today = new Date();
   const { start: periodStart, end: periodEnd } = getDateRangeFromFilter(dateFilter);
@@ -283,6 +288,46 @@ export default function MyPerformance() {
           </p>
         </div>
       </div>
+
+      {/* Weekly Goal Progress Card */}
+      {myGoal && (
+        <div className="mb-6 p-4 rounded-xl bg-gradient-to-r from-primary/10 to-primary/5 border border-primary/20 animate-slide-up" style={{ animationDelay: '100ms' }}>
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center">
+                <Target className="w-5 h-5 text-primary" />
+              </div>
+              <div>
+                <h3 className="font-semibold text-foreground">This Week's Goal</h3>
+                <p className="text-sm text-muted-foreground">
+                  {format(new Date(myGoal.week_start), 'MMM d')} - {format(new Date(myGoal.week_end), 'MMM d')}
+                </p>
+              </div>
+            </div>
+            <div className="text-right">
+              <div className="text-2xl font-bold text-foreground">
+                {myGoal.current_bookings} / {myGoal.weekly_target}
+              </div>
+              <div className={cn(
+                "text-sm font-medium",
+                myGoal.progress_percentage >= 100 ? "text-green-500" :
+                myGoal.progress_percentage >= 75 ? "text-amber-500" : "text-muted-foreground"
+              )}>
+                {myGoal.progress_percentage}% complete
+              </div>
+            </div>
+          </div>
+          <Progress 
+            value={Math.min(100, myGoal.progress_percentage)} 
+            className="h-3"
+          />
+          {myGoal.progress_percentage >= 100 && (
+            <p className="text-sm text-green-500 mt-2 font-medium">
+              🎉 Congratulations! You've achieved your weekly goal!
+            </p>
+          )}
+        </div>
+      )}
 
       {/* KPI Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
