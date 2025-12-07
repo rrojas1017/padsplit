@@ -7,6 +7,10 @@ export const PRICING = {
     // ElevenLabs STT: ~$0.10 per minute
     stt_per_minute: 0.10,
   },
+  deepgram: {
+    // Deepgram Nova-2 batch: ~$0.0043 per minute
+    stt_per_minute: 0.0043,
+  },
   lovable_ai: {
     // Lovable AI (Gemini Flash): approximate pricing
     input_per_1k_tokens: 0.0001,
@@ -21,6 +25,11 @@ export function calculateElevenLabsTTSCost(characterCount: number): number {
 export function calculateElevenLabsSTTCost(audioDurationSeconds: number): number {
   const minutes = audioDurationSeconds / 60;
   return minutes * PRICING.elevenlabs.stt_per_minute;
+}
+
+export function calculateDeepgramSTTCost(audioDurationSeconds: number): number {
+  const minutes = audioDurationSeconds / 60;
+  return minutes * PRICING.deepgram.stt_per_minute;
 }
 
 export function calculateLovableAICost(inputTokens: number, outputTokens: number): number {
@@ -57,6 +66,7 @@ export function formatCurrencyCompact(amount: number): string {
 
 export const SERVICE_TYPE_LABELS: Record<string, string> = {
   stt_transcription: 'Speech-to-Text (Transcription)',
+  stt_transcription_deepgram: 'Speech-to-Text (Deepgram Nova-2)',
   tts_coaching: 'Text-to-Speech (Jeff Coaching)',
   tts_qa_coaching: 'Text-to-Speech (Katty QA)',
   ai_analysis: 'AI Analysis (Call Processing)',
@@ -64,6 +74,12 @@ export const SERVICE_TYPE_LABELS: Record<string, string> = {
   ai_qa_scoring: 'AI QA Scoring',
   ai_member_insights: 'AI Member Insights',
   ai_reanalysis: 'AI Re-Analysis',
+};
+
+export const PROVIDER_LABELS: Record<string, string> = {
+  elevenlabs: 'ElevenLabs',
+  deepgram: 'Deepgram',
+  lovable_ai: 'Lovable AI',
 };
 
 export const FUNCTION_LABELS: Record<string, string> = {
