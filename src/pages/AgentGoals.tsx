@@ -41,19 +41,6 @@ const AgentGoals = () => {
     return true;
   });
 
-  // Debug logging
-  console.log('AgentGoals Debug:', {
-    agentsLoading,
-    goalsLoading,
-    agentsCount: agents.length,
-    filteredAgentsCount: filteredAgents.length,
-    goalsCount: goals.length,
-    userSiteId: user?.siteId,
-    userRole: user?.role,
-    isSupervisor,
-    isAdmin,
-    isSuperAdmin,
-  });
 
   // Initialize editing goals from fetched goals
   useEffect(() => {
