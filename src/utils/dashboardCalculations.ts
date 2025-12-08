@@ -40,10 +40,27 @@ const getBookingsBySite = (bookings: Booking[], agents: Agent[], siteName: strin
   return bookings.filter(b => siteAgentIds.includes(b.agentId));
 };
 
-export type DateRangeFilter = 'today' | 'yesterday' | '7d' | '30d' | 'month' | 'all';
+export type DateRangeFilter = 'today' | 'yesterday' | '7d' | '30d' | 'month' | 'all' | 'custom';
 
-export const getDateRangeFromFilter = (filter: DateRangeFilter): { start: Date; end: Date } => {
+export interface CustomDateRange {
+  from: Date;
+  to: Date;
+}
+
+export const getDateRangeFromFilter = (
+  filter: DateRangeFilter, 
+  customDates?: CustomDateRange
+): { start: Date; end: Date } => {
   const today = startOfDay(new Date());
+  
+  // Handle custom date range
+  if (filter === 'custom' && customDates) {
+    return { 
+      start: startOfDay(customDates.from), 
+      end: startOfDay(customDates.to) 
+    };
+  }
+  
   switch (filter) {
     case 'all':
       return { start: new Date('2020-01-01'), end: today };
@@ -63,9 +80,10 @@ export const getDateRangeFromFilter = (filter: DateRangeFilter): { start: Date; 
 export const calculateKPIData = (
   bookings: Booking[], 
   agents: Agent[], 
-  dateFilter: DateRangeFilter = 'today'
+  dateFilter: DateRangeFilter = 'today',
+  customDates?: CustomDateRange
 ): KPIData[] => {
-  const { start, end } = getDateRangeFromFilter(dateFilter);
+  const { start, end } = getDateRangeFromFilter(dateFilter, customDates);
   const periodDays = Math.max(1, Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1);
   
   // Get previous period for comparison
@@ -103,7 +121,8 @@ export const calculateKPIData = (
   const periodLabel = dateFilter === 'today' ? 'Today' : 
     dateFilter === 'yesterday' ? 'Yesterday' : 
     dateFilter === '7d' ? 'Last 7 Days' : 
-    dateFilter === '30d' ? 'Last 30 Days' : 'This Month';
+    dateFilter === '30d' ? 'Last 30 Days' : 
+    dateFilter === 'custom' ? 'Custom Range' : 'This Month';
 
   const comparisonLabel = dateFilter === 'today' ? 'yesterday' : 'previous period';
 
@@ -142,10 +161,11 @@ export const calculateKPIData = (
 export const calculateChartData = (
   bookings: Booking[], 
   agents: Agent[], 
-  dateFilter: DateRangeFilter = 'today'
+  dateFilter: DateRangeFilter = 'today',
+  customDates?: CustomDateRange
 ): ChartDataPoint[] => {
   const chartData: ChartDataPoint[] = [];
-  const { start, end } = getDateRangeFromFilter(dateFilter);
+  const { start, end } = getDateRangeFromFilter(dateFilter, customDates);
   
   // Calculate number of days to show
   const days = Math.max(1, Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1);
@@ -171,9 +191,10 @@ export const calculateChartData = (
 export const calculateLeaderboard = (
   bookings: Booking[], 
   agents: Agent[],
-  dateFilter: DateRangeFilter = 'today'
+  dateFilter: DateRangeFilter = 'today',
+  customDates?: CustomDateRange
 ): LeaderboardEntry[] => {
-  const { start, end } = getDateRangeFromFilter(dateFilter);
+  const { start, end } = getDateRangeFromFilter(dateFilter, customDates);
   const weekdaysInPeriod = countWeekdays(start, end);
 
   // Get bookings from the selected period
@@ -237,9 +258,10 @@ export const calculateLeaderboard = (
 
 export const calculateMarketData = (
   bookings: Booking[],
-  dateFilter: DateRangeFilter = 'today'
+  dateFilter: DateRangeFilter = 'today',
+  customDates?: CustomDateRange
 ): { market: string; bookings: number }[] => {
-  const { start, end } = getDateRangeFromFilter(dateFilter);
+  const { start, end } = getDateRangeFromFilter(dateFilter, customDates);
   const filteredBookings = filterBookingsByDateRange(bookings, start, end);
   
   const marketCounts = new Map<string, number>();

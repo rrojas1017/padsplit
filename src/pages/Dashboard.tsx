@@ -5,14 +5,14 @@ import { KPICard } from '@/components/dashboard/KPICard';
 import { BookingsChart } from '@/components/dashboard/BookingsChart';
 import { LeaderboardTable } from '@/components/dashboard/LeaderboardTable';
 import { MarketChart } from '@/components/dashboard/MarketChart';
-import { DateRangeFilter } from '@/components/dashboard/DateRangeFilter';
+import { DateRangeFilter, DateFilterValue, CustomDateRange } from '@/components/dashboard/DateRangeFilter';
 import { SiteFilter } from '@/components/dashboard/SiteFilter';
 import { CalendarDays, Users, Clock, CheckCircle2 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useBookings } from '@/contexts/BookingsContext';
 import { useAgents } from '@/contexts/AgentsContext';
 import { Navigate } from 'react-router-dom';
-import { calculateKPIData, calculateChartData, calculateLeaderboard, calculateMarketData, calculateInsightsData, DateRangeFilter as DateRangeFilterType } from '@/utils/dashboardCalculations';
+import { calculateKPIData, calculateChartData, calculateLeaderboard, calculateMarketData, calculateInsightsData, DateRangeFilter as DateRangeFilterType, CustomDateRange as CalcCustomDateRange } from '@/utils/dashboardCalculations';
 import { Skeleton } from '@/components/ui/skeleton';
 
 export default function Dashboard() {
@@ -21,6 +21,7 @@ export default function Dashboard() {
   const { bookings, isLoading: bookingsLoading } = useBookings();
   const { agents, isLoading: agentsLoading } = useAgents();
   const [dateRange, setDateRange] = useState<DateRangeFilterType>('today');
+  const [customDates, setCustomDates] = useState<CalcCustomDateRange | undefined>(undefined);
   const [selectedSiteId, setSelectedSiteId] = useState<string | null>(null);
 
   // Redirect agents to their performance page
@@ -39,11 +40,16 @@ export default function Dashboard() {
     ? bookings.filter(b => filteredAgents.some(a => a.id === b.agentId))
     : bookings;
 
+  const handleRangeChange = (range: DateFilterValue, dates?: CustomDateRange) => {
+    setDateRange(range as DateRangeFilterType);
+    setCustomDates(range === 'custom' && dates ? dates : undefined);
+  };
+
   // Calculate real data from Supabase with date filter
-  const kpiData = calculateKPIData(filteredBookings, filteredAgents, dateRange);
-  const chartData = calculateChartData(filteredBookings, filteredAgents, dateRange);
-  const leaderboard = calculateLeaderboard(filteredBookings, filteredAgents, dateRange);
-  const marketData = calculateMarketData(filteredBookings, dateRange);
+  const kpiData = calculateKPIData(filteredBookings, filteredAgents, dateRange, customDates);
+  const chartData = calculateChartData(filteredBookings, filteredAgents, dateRange, customDates);
+  const leaderboard = calculateLeaderboard(filteredBookings, filteredAgents, dateRange, customDates);
+  const marketData = calculateMarketData(filteredBookings, dateRange, customDates);
   const insights = calculateInsightsData(filteredBookings, filteredAgents);
 
   const kpiIcons = [
@@ -88,7 +94,7 @@ export default function Dashboard() {
       {/* Filters */}
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-3">
-          <DateRangeFilter onRangeChange={(range) => setDateRange(range as DateRangeFilterType)} />
+          <DateRangeFilter onRangeChange={handleRangeChange} includeAllTime={true} includeCustom={true} />
           <SiteFilter onSiteChange={setSelectedSiteId} />
         </div>
         <div className="text-sm text-muted-foreground">

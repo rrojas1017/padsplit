@@ -2,11 +2,11 @@ import { useState } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { usePageTracking } from '@/hooks/usePageTracking';
 import { LeaderboardTable } from '@/components/dashboard/LeaderboardTable';
-import { DateRangeFilter } from '@/components/dashboard/DateRangeFilter';
+import { DateRangeFilter, DateFilterValue, CustomDateRange } from '@/components/dashboard/DateRangeFilter';
 import { SiteFilter } from '@/components/dashboard/SiteFilter';
 import { useBookings } from '@/contexts/BookingsContext';
 import { useAgents } from '@/contexts/AgentsContext';
-import { calculateLeaderboard, DateRangeFilter as DateRangeFilterType } from '@/utils/dashboardCalculations';
+import { calculateLeaderboard, DateRangeFilter as DateRangeFilterType, CustomDateRange as CalcCustomDateRange } from '@/utils/dashboardCalculations';
 import { Skeleton } from '@/components/ui/skeleton';
 
 export default function Leaderboard() {
@@ -14,9 +14,15 @@ export default function Leaderboard() {
   const { bookings, isLoading: bookingsLoading } = useBookings();
   const { agents, isLoading: agentsLoading } = useAgents();
   const [dateRange, setDateRange] = useState<DateRangeFilterType>('7d');
+  const [customDates, setCustomDates] = useState<CalcCustomDateRange | undefined>(undefined);
+
+  const handleRangeChange = (range: DateFilterValue, dates?: CustomDateRange) => {
+    setDateRange(range as DateRangeFilterType);
+    setCustomDates(range === 'custom' && dates ? dates : undefined);
+  };
 
   const isLoading = bookingsLoading || agentsLoading;
-  const leaderboard = calculateLeaderboard(bookings, agents, dateRange);
+  const leaderboard = calculateLeaderboard(bookings, agents, dateRange, customDates);
 
   return (
     <DashboardLayout 
@@ -26,7 +32,9 @@ export default function Leaderboard() {
       <div className="flex items-center gap-3 mb-6">
         <DateRangeFilter 
           defaultValue="7d" 
-          onRangeChange={(range) => setDateRange(range as DateRangeFilterType)} 
+          onRangeChange={handleRangeChange}
+          includeAllTime={true}
+          includeCustom={true}
         />
         <SiteFilter />
       </div>

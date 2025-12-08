@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { usePageTracking } from '@/hooks/usePageTracking';
 import { KPICard } from '@/components/dashboard/KPICard';
-import { DateRangeFilter, DateFilterValue } from '@/components/dashboard/DateRangeFilter';
+import { DateRangeFilter, DateFilterValue, CustomDateRange } from '@/components/dashboard/DateRangeFilter';
 import { useAuth } from '@/contexts/AuthContext';
 import { useBookings } from '@/contexts/BookingsContext';
 import { useAgents } from '@/contexts/AgentsContext';
@@ -36,9 +36,13 @@ function getAudioExpirationInfo(generatedAt: string | null) {
 }
 
 // Helper to get date range from filter
-function getDateRangeFromFilter(filter: DateFilterValue): { start: Date; end: Date } {
+function getDateRangeFromFilterLocal(filter: DateFilterValue, customDates?: CustomDateRange): { start: Date; end: Date } {
   const today = new Date();
   const end = endOfDay(today);
+  
+  if (filter === 'custom' && customDates) {
+    return { start: startOfDay(customDates.from), end: endOfDay(customDates.to) };
+  }
   
   switch (filter) {
     case 'today':
@@ -60,8 +64,15 @@ function getDateRangeFromFilter(filter: DateFilterValue): { start: Date; end: Da
 }
 
 // Helper to get previous period for comparison
-function getPreviousPeriod(filter: DateFilterValue): { start: Date; end: Date } {
+function getPreviousPeriod(filter: DateFilterValue, customDates?: CustomDateRange): { start: Date; end: Date } {
   const today = new Date();
+  
+  if (filter === 'custom' && customDates) {
+    const periodDays = Math.ceil((customDates.to.getTime() - customDates.from.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+    const prevEnd = subDays(customDates.from, 1);
+    const prevStart = subDays(prevEnd, periodDays - 1);
+    return { start: startOfDay(prevStart), end: endOfDay(prevEnd) };
+  }
   
   switch (filter) {
     case 'today':
@@ -94,6 +105,7 @@ function getFilterLabel(filter: DateFilterValue): string {
     case '30d': return 'Last 30 Days';
     case 'month': return 'This Month';
     case 'all': return 'All Time';
+    case 'custom': return 'Custom Range';
     default: return 'Today';
   }
 }
@@ -104,6 +116,12 @@ export default function MyPerformance() {
   const { bookings, isLoading: bookingsLoading } = useBookings();
   const { agents, isLoading: agentsLoading } = useAgents();
   const [dateFilter, setDateFilter] = useState<DateFilterValue>('7d');
+  const [customDates, setCustomDates] = useState<CustomDateRange | undefined>(undefined);
+
+  const handleRangeChange = (range: DateFilterValue, dates?: CustomDateRange) => {
+    setDateFilter(range);
+    setCustomDates(range === 'custom' && dates ? dates : undefined);
+  };
   
   // Find the agent linked to the current user
   const myAgent = agents.find(a => a.userId === user?.id);
@@ -120,8 +138,8 @@ export default function MyPerformance() {
   const isLoading = bookingsLoading || agentsLoading || coachingLoading || goalLoading;
   
   const today = new Date();
-  const { start: periodStart, end: periodEnd } = getDateRangeFromFilter(dateFilter);
-  const { start: prevStart, end: prevEnd } = getPreviousPeriod(dateFilter);
+  const { start: periodStart, end: periodEnd } = getDateRangeFromFilterLocal(dateFilter, customDates);
+  const { start: prevStart, end: prevEnd } = getPreviousPeriod(dateFilter, customDates);
   
   // Get agent's bookings
   const myBookings = myAgent ? bookings.filter(b => b.agentId === myAgent.id) : [];
@@ -255,8 +273,9 @@ export default function MyPerformance() {
       actions={
         <DateRangeFilter 
           defaultValue={dateFilter} 
-          onRangeChange={(value) => setDateFilter(value)} 
+          onRangeChange={handleRangeChange} 
           includeAllTime={true}
+          includeCustom={true}
         />
       }
     >
