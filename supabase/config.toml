@@ -55,4 +55,4 @@ verify_jwt = false
 verify_jwt = true
 
 [functions.recalculate-pro-pricing]
-verify_jwt = true
+verify_jwt = false
