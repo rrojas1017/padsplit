@@ -25,13 +25,14 @@ async function logApiCost(supabase: any, params: {
     let cost = 0;
     
     if (params.service_provider === 'elevenlabs') {
-      // STT: ~$0.10 per minute
+      // Pro Plan rates (credits-based, ~$99/mo for 500k credits)
+      // STT: ~$0.034 per minute (Pro Plan)
       if (params.audio_duration_seconds) {
-        cost = (params.audio_duration_seconds / 60) * 0.10;
+        cost = (params.audio_duration_seconds / 60) * 0.034;
       }
-      // TTS: ~$0.30 per 1000 characters
+      // TTS: ~$0.15 per 1000 characters (Pro Plan)
       if (params.character_count) {
-        cost = params.character_count * 0.0003;
+        cost = params.character_count * 0.00015;
       }
     } else if (params.service_provider === 'lovable_ai') {
       // Gemini Flash: ~$0.0001 per 1K input, ~$0.0003 per 1K output

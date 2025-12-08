@@ -2,10 +2,12 @@
 
 export const PRICING = {
   elevenlabs: {
-    // ElevenLabs TTS: ~$0.30 per 1,000 characters (Turbo v2)
-    tts_per_character: 0.0003,
-    // ElevenLabs STT: ~$0.10 per minute
-    stt_per_minute: 0.10,
+    // ElevenLabs Pro Plan effective rates (credits-based)
+    // Pro Plan: $99/mo for 500k credits = ~2,880 min STT or ~1M chars TTS
+    // STT: ~$0.034 per minute (Pro Plan)
+    tts_per_character: 0.00015,
+    // STT: ~$0.034 per minute (Pro Plan) - was $0.10 pay-as-you-go
+    stt_per_minute: 0.034,
   },
   lovable_ai: {
     // Lovable AI (Gemini Flash): approximate pricing
