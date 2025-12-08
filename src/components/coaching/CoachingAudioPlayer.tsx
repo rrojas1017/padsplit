@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
-import { Headphones, Play, Pause, Loader2, Volume2, RefreshCw } from 'lucide-react';
+import { Headphones, Play, Pause, Loader2, Volume2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface CoachingAudioPlayerProps {
@@ -11,9 +11,8 @@ interface CoachingAudioPlayerProps {
   onAudioGenerated?: () => void;
   variant?: 'button' | 'inline' | 'card';
   className?: string;
-  canRegenerate?: boolean; // Controls if regenerate button shows (based on one-time limit)
-  listenedAt?: string | null; // Timestamp when audio was listened to
-  onListened?: () => void; // Callback when audio is first listened to
+  listenedAt?: string | null;
+  onListened?: () => void;
 }
 
 export function CoachingAudioPlayer({
@@ -22,12 +21,10 @@ export function CoachingAudioPlayer({
   onAudioGenerated,
   variant = 'button',
   className,
-  canRegenerate = false,
   listenedAt,
   onListened,
 }: CoachingAudioPlayerProps) {
   const [isGenerating, setIsGenerating] = useState(false);
-  const [hasRegenerated, setHasRegenerated] = useState(false); // Local state to hide button immediately
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentAudioUrl, setCurrentAudioUrl] = useState<string | null>(audioUrl || null);
   const [progress, setProgress] = useState(0);
@@ -43,28 +40,16 @@ export function CoachingAudioPlayer({
     setCurrentAudioUrl(audioUrl || null);
   }, [audioUrl]);
 
-  const handleGenerateAudio = async (isRegenerate = false) => {
-    if (isGenerating) return; // Prevent double-clicks
+  const handleGenerateAudio = async () => {
+    if (isGenerating) return;
     
     setIsGenerating(true);
     
-    // For regeneration: pause audio but DON'T clear URL to prevent flash
-    if (isRegenerate) {
-      if (audioRef.current) {
-        audioRef.current.pause();
-        setIsPlaying(false);
-        setProgress(0);
-      }
-      // Immediately hide regenerate button to prevent double-clicks
-      setHasRegenerated(true);
-      toast.info('Regenerating with personalized feedback...');
-    }
-    
     try {
-      console.log('Calling generate-coaching-audio with:', { bookingId, isRegenerate });
+      console.log('Calling generate-coaching-audio with:', { bookingId });
       
       const { data, error } = await supabase.functions.invoke('generate-coaching-audio', {
-        body: { bookingId, isRegenerate },
+        body: { bookingId },
       });
 
       console.log('Response from generate-coaching-audio:', { data, error });
@@ -73,30 +58,17 @@ export function CoachingAudioPlayer({
 
       if (data?.success && data?.audioUrl) {
         setCurrentAudioUrl(data.audioUrl);
-        if (isRegenerate) {
-          toast.success('Personalized coaching updated! ✨');
-        } else {
-          toast.success('Coaching audio ready! 🎧');
-        }
-        // Don't call onAudioGenerated - Supabase realtime handles updates
-        // This prevents double refresh and blank screen
+        toast.success('Coaching audio ready! 🎧');
       } else {
-        // If regeneration failed, allow retry
-        if (isRegenerate) setHasRegenerated(false);
         throw new Error(data?.error || 'Failed to generate audio');
       }
     } catch (error) {
       console.error('Audio generation error:', error);
-      // If regeneration failed, allow retry
-      if (isRegenerate) setHasRegenerated(false);
       toast.error(error instanceof Error ? error.message : 'Failed to generate coaching audio');
     } finally {
       setIsGenerating(false);
     }
   };
-
-  // Determine if regenerate button should show
-  const showRegenerateButton = canRegenerate && !hasRegenerated;
 
   const handlePlayPause = async () => {
     if (!audioRef.current) return;
@@ -151,7 +123,7 @@ export function CoachingAudioPlayer({
     if (variant === 'button') {
       return (
         <Button
-          onClick={() => handleGenerateAudio(false)}
+          onClick={handleGenerateAudio}
           disabled={isGenerating}
           size="sm"
           variant="outline"
@@ -174,7 +146,7 @@ export function CoachingAudioPlayer({
 
     return (
       <div 
-        onClick={!isGenerating ? () => handleGenerateAudio(false) : undefined}
+        onClick={!isGenerating ? handleGenerateAudio : undefined}
         className={cn(
           "flex items-center gap-3 p-3 rounded-lg border border-primary/30 bg-primary/5 cursor-pointer hover:bg-primary/10 transition-colors",
           isGenerating && "cursor-wait",
@@ -235,21 +207,9 @@ export function CoachingAudioPlayer({
                 <Volume2 className="h-4 w-4 text-accent" />
                 Your Coaching Feedback
               </span>
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-muted-foreground">
-                  {formatTime(duration)}
-                </span>
-                {showRegenerateButton && (
-                  <button
-                    onClick={() => handleGenerateAudio(true)}
-                    disabled={isGenerating}
-                    className="p-1 rounded hover:bg-accent/20 transition-colors disabled:opacity-50"
-                    title="Regenerate with personalized feedback"
-                  >
-                    <RefreshCw className={cn("h-3.5 w-3.5 text-muted-foreground hover:text-accent", isGenerating && "animate-spin")} />
-                  </button>
-                )}
-              </div>
+              <span className="text-xs text-muted-foreground">
+                {formatTime(duration)}
+              </span>
             </div>
             <div className="w-full bg-muted rounded-full h-2">
               <div
@@ -283,56 +243,32 @@ export function CoachingAudioPlayer({
           <span className="text-xs text-muted-foreground min-w-[40px]">
             {formatTime(audioRef.current?.currentTime || 0)}
           </span>
-          {showRegenerateButton && (
-            <button
-              onClick={() => handleGenerateAudio(true)}
-              disabled={isGenerating}
-              className="p-1 rounded hover:bg-muted transition-colors disabled:opacity-50"
-              title="Regenerate"
-            >
-              <RefreshCw className={cn("h-3.5 w-3.5 text-muted-foreground hover:text-foreground", isGenerating && "animate-spin")} />
-            </button>
-          )}
         </div>
       ) : (
-        <div className="flex items-center gap-2">
-          <Button
-            onClick={handlePlayPause}
-            disabled={isGenerating}
-            size="sm"
-            variant="outline"
-            className={cn("gap-2", isPlaying && "bg-accent/20")}
-          >
-            {isGenerating ? (
-              <>
-                <Loader2 className="h-4 w-4 animate-spin" />
-                Generating...
-              </>
-            ) : isPlaying ? (
-              <>
-                <Pause className="h-4 w-4" />
-                Pause
-              </>
-            ) : (
-              <>
-                <Play className="h-4 w-4" />
-                Play Coaching
-              </>
-            )}
-          </Button>
-          {showRegenerateButton && (
-            <Button
-              onClick={() => handleGenerateAudio(true)}
-              disabled={isGenerating}
-              size="sm"
-              variant="ghost"
-              className="px-2"
-              title="Regenerate with personalized feedback"
-            >
-              <RefreshCw className={cn("h-4 w-4", isGenerating && "animate-spin")} />
-            </Button>
+        <Button
+          onClick={handlePlayPause}
+          disabled={isGenerating}
+          size="sm"
+          variant="outline"
+          className={cn("gap-2", isPlaying && "bg-accent/20")}
+        >
+          {isGenerating ? (
+            <>
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Generating...
+            </>
+          ) : isPlaying ? (
+            <>
+              <Pause className="h-4 w-4" />
+              Pause
+            </>
+          ) : (
+            <>
+              <Play className="h-4 w-4" />
+              Play Coaching
+            </>
           )}
-        </div>
+        </Button>
       )}
     </div>
   );

@@ -438,7 +438,6 @@ export default function MyPerformance() {
                           bookingId={booking.id}
                           audioUrl={coachingData.coachingAudioUrl || undefined}
                           variant="button"
-                          canRegenerate={!!coachingData.coachingAudioUrl && !coachingData.coachingAudioRegeneratedAt}
                           listenedAt={coachingData.coachingAudioListenedAt}
                         />
                       ) : (
@@ -511,7 +510,6 @@ export default function MyPerformance() {
                 bookingId={latestWithFeedback.id}
                 audioUrl={latestWithFeedback.coachingAudioUrl}
                 variant="card"
-                canRegenerate={!latestWithFeedback.coachingAudioRegeneratedAt}
               />
             </div>
           </div>

@@ -6,14 +6,12 @@ import { Badge } from '@/components/ui/badge';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
-import { useAuth } from '@/contexts/AuthContext';
 import { useBookingDetails } from '@/hooks/useBookingDetails';
 import { CoachingAudioPlayer } from '@/components/coaching/CoachingAudioPlayer';
 import { MemberDetailsCard } from './MemberDetailsCard';
 import { 
   Mic, Loader2, CheckCircle, XCircle, ChevronDown, ChevronUp,
-  AlertCircle, Heart, Lightbulb, ListTodo, AlertTriangle,
-  Target, GraduationCap, Volume2
+  AlertCircle, Target, Volume2
 } from 'lucide-react';
 
 interface CallInsightsProps {
@@ -23,11 +21,9 @@ interface CallInsightsProps {
 
 export function CallInsights({ booking, onTranscriptionComplete }: CallInsightsProps) {
   const [isTranscribing, setIsTranscribing] = useState(false);
-  const [isRegenerating, setIsRegenerating] = useState(false);
   const [isTranscriptionOpen, setIsTranscriptionOpen] = useState(false);
-  const { user } = useAuth();
   
-  const { fetchBookingDetails, isLoadingDetails, clearCache, detailsCache } = useBookingDetails();
+  const { fetchBookingDetails, isLoadingDetails, detailsCache } = useBookingDetails();
   const [loadedDetails, setLoadedDetails] = useState<any>(null);
 
   useEffect(() => {
@@ -41,8 +37,6 @@ export function CallInsights({ booking, onTranscriptionComplete }: CallInsightsP
       }
     }
   }, [booking.transcriptionStatus, booking.id, fetchBookingDetails, detailsCache]);
-
-  const canRegenerateCoaching = user && ['super_admin', 'admin', 'supervisor'].includes(user.role);
 
   const handleTranscribe = async () => {
     if (!booking.kixieLink) return;
@@ -60,32 +54,11 @@ export function CallInsights({ booking, onTranscriptionComplete }: CallInsightsP
     }
   };
 
-  const handleRegenerateCoaching = async () => {
-    setIsRegenerating(true);
-    try {
-      const { data, error } = await supabase.functions.invoke('regenerate-coaching', {
-        body: { bookingId: booking.id }
-      });
-      if (error) throw error;
-      if (data?.success) {
-        toast.success('Coaching regenerated');
-        clearCache(booking.id);
-        fetchBookingDetails(booking.id).then(d => d && setLoadedDetails(d));
-        onTranscriptionComplete();
-      }
-    } catch (error) {
-      toast.error('Failed to regenerate coaching');
-    } finally {
-      setIsRegenerating(false);
-    }
-  };
-
   const callKeyPoints = loadedDetails?.callKeyPoints;
   const callSummary = loadedDetails?.callSummary;
   const callTranscription = loadedDetails?.callTranscription;
   const agentFeedback = loadedDetails?.agentFeedback;
   const coachingAudioUrl = loadedDetails?.coachingAudioUrl;
-  const coachingAudioRegeneratedAt = loadedDetails?.coachingAudioRegeneratedAt;
 
   const formatDuration = (seconds?: number) => {
     if (!seconds) return null;
@@ -144,21 +117,7 @@ export function CallInsights({ booking, onTranscriptionComplete }: CallInsightsP
                   <Volume2 className="h-5 w-5 text-accent" />
                   <p className="text-sm font-medium">Audio Coaching</p>
                 </div>
-                <CoachingAudioPlayer bookingId={booking.id} audioUrl={coachingAudioUrl} onAudioGenerated={onTranscriptionComplete} variant="card" canRegenerate={!coachingAudioRegeneratedAt} />
-              </CardContent>
-            </Card>
-          )}
-
-          {booking.transcriptionStatus === 'completed' && !agentFeedback && canRegenerateCoaching && (
-            <Card className="border-primary/30 bg-primary/5">
-              <CardContent className="py-4 flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <GraduationCap className="h-5 w-5 text-primary" />
-                  <p className="text-sm font-medium">Generate Coaching</p>
-                </div>
-                <Button onClick={handleRegenerateCoaching} disabled={isRegenerating} size="sm">
-                  {isRegenerating ? <Loader2 className="h-4 w-4 animate-spin" /> : <GraduationCap className="h-4 w-4" />}
-                </Button>
+                <CoachingAudioPlayer bookingId={booking.id} audioUrl={coachingAudioUrl} onAudioGenerated={onTranscriptionComplete} variant="card" />
               </CardContent>
             </Card>
           )}

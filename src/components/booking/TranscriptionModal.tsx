@@ -21,7 +21,6 @@ interface TranscriptionModalProps {
 
 export function TranscriptionModal({ booking, isOpen, onClose, onTranscriptionComplete }: TranscriptionModalProps) {
   const [isTranscribing, setIsTranscribing] = useState(false);
-  const [isRegenerating, setIsRegenerating] = useState(false);
   const [isReanalyzing, setIsReanalyzing] = useState(false);
   const [isMarkingUnavailable, setIsMarkingUnavailable] = useState(false);
   const [showFullTranscript, setShowFullTranscript] = useState(false);
@@ -38,7 +37,6 @@ export function TranscriptionModal({ booking, isOpen, onClose, onTranscriptionCo
     callKeyPoints?: CallKeyPoints;
     agentFeedback?: AgentFeedback;
     coachingAudioUrl?: string;
-    coachingAudioRegeneratedAt?: Date;
     sttProvider?: string;
   } | null>(null);
 
@@ -155,36 +153,6 @@ export function TranscriptionModal({ booking, isOpen, onClose, onTranscriptionCo
     }
   };
 
-  const handleRegenerateCoaching = async () => {
-    setIsRegenerating(true);
-    try {
-      const { data, error } = await supabase.functions.invoke('regenerate-coaching', {
-        body: { bookingId: booking.id }
-      });
-
-      if (error) throw error;
-
-      if (data?.success) {
-        toast({
-          title: "Coaching Regenerated",
-          description: "Agent feedback has been updated.",
-        });
-        onTranscriptionComplete(); // Refresh booking data
-      } else {
-        throw new Error(data?.error || 'Failed to regenerate coaching');
-      }
-    } catch (error) {
-      console.error('Regenerate coaching error:', error);
-      toast({
-        title: "Failed to Regenerate Coaching",
-        description: error instanceof Error ? error.message : "An error occurred",
-        variant: "destructive",
-      });
-    } finally {
-      setIsRegenerating(false);
-    }
-  };
-
   const handleReanalyzeCall = async () => {
     setIsReanalyzing(true);
     try {
@@ -251,15 +219,13 @@ export function TranscriptionModal({ booking, isOpen, onClose, onTranscriptionCo
   const callSummary = loadedDetails?.callSummary;
   const callTranscription = loadedDetails?.callTranscription;
   const coachingAudioUrl = loadedDetails?.coachingAudioUrl;
-  const coachingAudioRegeneratedAt = loadedDetails?.coachingAudioRegeneratedAt;
 
   const isProcessing = currentStatus === 'processing' || isTranscribing;
   const hasTranscription = currentStatus === 'completed' && (callSummary || isLoadingDetails);
   const isUnavailable = currentStatus === 'unavailable';
   
-  // Only supervisors, admins, and super_admins can regenerate coaching or re-analyze
+  // Only supervisors, admins, and super_admins can re-analyze
   const canManageAnalysis = user && ['super_admin', 'admin', 'supervisor'].includes(user.role);
-  const showRegenerateButton = hasTranscription && !isLoadingDetails && !agentFeedback && !isRegenerating && !isReanalyzing && canManageAnalysis;
   
   // Check if analysis appears incomplete (signs of failed/partial AI extraction)
   const hasIncompleteAnalysis = () => {
@@ -284,8 +250,7 @@ export function TranscriptionModal({ booking, isOpen, onClose, onTranscriptionCo
     
     return false;
   };
-  
-  const showReanalyzeButton = hasTranscription && !isLoadingDetails && hasIncompleteAnalysis() && !isReanalyzing && !isRegenerating && canManageAnalysis;
+  const showReanalyzeButton = hasTranscription && !isLoadingDetails && hasIncompleteAnalysis() && !isReanalyzing && canManageAnalysis;
   const showMarkUnavailableButton = currentStatus === 'failed' && canManageAnalysis && !isMarkingUnavailable;
 
   const formatDuration = (seconds?: number) => {
@@ -497,33 +462,6 @@ export function TranscriptionModal({ booking, isOpen, onClose, onTranscriptionCo
                 </div>
               )}
 
-              {/* Regenerate Coaching Button - shows when transcription complete but no feedback */}
-              {showRegenerateButton && (
-                <div className="flex items-center gap-3 p-4 bg-primary/5 rounded-lg border border-primary/20">
-                  <GraduationCap className="h-5 w-5 text-primary" />
-                  <div className="flex-1">
-                    <p className="text-sm font-medium">Coaching Insights Missing</p>
-                    <p className="text-xs text-muted-foreground">This call was transcribed before coaching analysis was available.</p>
-                  </div>
-                  <Button 
-                    onClick={handleRegenerateCoaching} 
-                    disabled={isRegenerating}
-                    size="sm"
-                  >
-                    {isRegenerating ? (
-                      <>
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        Generating...
-                      </>
-                    ) : (
-                      <>
-                        <GraduationCap className="mr-2 h-4 w-4" />
-                        Generate Coaching
-                      </>
-                    )}
-                  </Button>
-                </div>
-              )}
 
               {/* Key Insights Grid */}
               <div className="grid md:grid-cols-2 gap-4">

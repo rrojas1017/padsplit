@@ -104,7 +104,6 @@ export function BookingsProvider({ children }: { children: ReactNode }) {
         agentFeedback: undefined,
         coachingAudioUrl: undefined,
         coachingAudioGeneratedAt: undefined,
-        coachingAudioRegeneratedAt: undefined,
         callTypeId: b.call_type_id || undefined,
       }));
 
