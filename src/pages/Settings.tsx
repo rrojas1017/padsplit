@@ -9,6 +9,7 @@ import { useTheme } from '@/contexts/ThemeContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { Database, Bell, Moon, Sun, Upload, Key, FileText, Download, Brain, Phone, BookOpen, Shield, ScrollText, Zap, Volume2, Loader2, ClipboardCheck } from 'lucide-react';
 import { generateRoleDocumentationPDF } from '@/utils/roleDocumentation';
+import { generateQADocumentationPDF } from '@/utils/qaDocumentation';
 import { CallTypeList } from '@/components/ai-management/CallTypeList';
 import { KnowledgeList } from '@/components/ai-management/KnowledgeList';
 import { CallRulesList } from '@/components/ai-management/CallRulesList';
@@ -331,18 +332,38 @@ export default function Settings() {
                 <h3 className="text-lg font-semibold text-foreground">Documentation</h3>
               </div>
               
-              <div className="space-y-4">
-                <div>
-                  <p className="font-medium text-foreground">Role & Permissions Guide</p>
-                  <p className="text-sm text-muted-foreground">
-                    Download the complete user manual with role definitions, permissions, and responsibilities
-                  </p>
+              <div className="space-y-6">
+                {/* Role & Permissions Guide */}
+                <div className="p-4 rounded-lg bg-muted/50 border border-border">
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <p className="font-medium text-foreground">Role & Permissions Guide</p>
+                      <p className="text-sm text-muted-foreground">
+                        Complete user manual with role definitions, permissions, and responsibilities
+                      </p>
+                    </div>
+                    <Button onClick={generateRoleDocumentationPDF} variant="outline" className="gap-2 shrink-0">
+                      <Download className="w-4 h-4" />
+                      Download
+                    </Button>
+                  </div>
                 </div>
-                
-                <Button onClick={generateRoleDocumentationPDF} className="gap-2">
-                  <Download className="w-4 h-4" />
-                  Download PDF Guide
-                </Button>
+
+                {/* QA Process Guide */}
+                <div className="p-4 rounded-lg bg-muted/50 border border-border">
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <p className="font-medium text-foreground">QA Process Guide</p>
+                      <p className="text-sm text-muted-foreground">
+                        Complete QA scoring documentation with rubric details, AI prompts, and calculation methods
+                      </p>
+                    </div>
+                    <Button onClick={generateQADocumentationPDF} variant="outline" className="gap-2 shrink-0">
+                      <Download className="w-4 h-4" />
+                      Download
+                    </Button>
+                  </div>
+                </div>
               </div>
             </div>
           </TabsContent>
