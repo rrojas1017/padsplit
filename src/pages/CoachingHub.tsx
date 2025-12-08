@@ -8,8 +8,8 @@ import { Progress } from '@/components/ui/progress';
 import { useAgents } from '@/contexts/AgentsContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { useCoachingData } from '@/hooks/useCoachingData';
-import { DateRangeFilter, DateFilterValue } from '@/components/dashboard/DateRangeFilter';
-import { getDateRangeFromFilter, DateRangeFilter as DateRangeFilterType } from '@/utils/dashboardCalculations';
+import { DateRangeFilter, DateFilterValue, CustomDateRange } from '@/components/dashboard/DateRangeFilter';
+import { getDateRangeFromFilter, DateRangeFilter as DateRangeFilterType, CustomDateRange as CalcCustomDateRange } from '@/utils/dashboardCalculations';
 import { 
   calculateTeamAverageScoresFromCoaching, 
   calculateRatingDistributionFromCoaching, 
@@ -59,6 +59,12 @@ export default function CoachingHub() {
   const { user } = useAuth();
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
   const [dateRange, setDateRange] = useState<DateRangeFilterType>('all');
+  const [customDates, setCustomDates] = useState<CalcCustomDateRange | undefined>(undefined);
+
+  const handleRangeChange = (range: DateFilterValue, dates?: CustomDateRange) => {
+    setDateRange(range as DateRangeFilterType);
+    setCustomDates(range === 'custom' && dates ? dates : undefined);
+  };
 
   // Filter agents by site for supervisors
   const filteredAgents = useMemo(() => {
@@ -78,14 +84,14 @@ export default function CoachingHub() {
   const dateFilteredCoachingBookings = useMemo(() => {
     if (dateRange === 'all') return filteredCoachingBookings;
     
-    const { start, end } = getDateRangeFromFilter(dateRange);
+    const { start, end } = getDateRangeFromFilter(dateRange, customDates);
     return filteredCoachingBookings.filter(b => {
       const bookingDate = b.bookingDate instanceof Date 
         ? startOfDay(b.bookingDate)
         : startOfDay(new Date(b.bookingDate + 'T00:00:00'));
       return bookingDate >= startOfDay(start) && bookingDate <= startOfDay(end);
     });
-  }, [filteredCoachingBookings, dateRange]);
+  }, [filteredCoachingBookings, dateRange, customDates]);
 
   const teamScores = useMemo(() => calculateTeamAverageScoresFromCoaching(dateFilteredCoachingBookings), [dateFilteredCoachingBookings]);
   const ratingDistribution = useMemo(() => calculateRatingDistributionFromCoaching(dateFilteredCoachingBookings), [dateFilteredCoachingBookings]);
@@ -141,9 +147,10 @@ export default function CoachingHub() {
         {/* Header with Date Filter */}
         <div className="flex items-center justify-between">
           <DateRangeFilter 
-            onRangeChange={(range) => setDateRange(range as DateRangeFilterType)} 
+            onRangeChange={handleRangeChange} 
             defaultValue="all"
             includeAllTime={true}
+            includeCustom={true}
           />
           <div className="text-sm text-muted-foreground">
             {teamScores.totalCalls} calls analyzed

@@ -7,7 +7,7 @@ import { useQACoachingData, calculateQACoachingEngagement, getAgentQACoachingSta
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { DateRangeFilter, DateFilterValue, CustomDateRange } from '@/components/dashboard/DateRangeFilter';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -16,11 +16,12 @@ import {
   Users, Trophy, ChevronRight, Loader2, Zap, Headphones, Volume2, CheckCircle
 } from 'lucide-react';
 import { useState, useMemo } from 'react';
-import { format, isWithinInterval, startOfDay, endOfDay, startOfWeek, startOfMonth } from 'date-fns';
+import { format, isWithinInterval, startOfDay, endOfDay, startOfWeek, startOfMonth, subDays } from 'date-fns';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Cell } from 'recharts';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { QACoachingAudioPlayer } from '@/components/qa/QACoachingAudioPlayer';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 type DateRange = 'today' | 'week' | 'month' | 'all';
 
@@ -28,8 +29,16 @@ export default function QADashboard() {
   usePageTracking('view_qa_dashboard');
   const { user, hasRole } = useAuth();
   const { agents } = useAgents();
-  const [dateRange, setDateRange] = useState<DateRange>('month');
+  const [dateRange, setDateRange] = useState<DateFilterValue>('month');
+  const [customDates, setCustomDates] = useState<CustomDateRange | undefined>(undefined);
   const [selectedAgent, setSelectedAgent] = useState<string>('all');
+  const [isBatchScoring, setIsBatchScoring] = useState(false);
+  const [selectedAgentForModal, setSelectedAgentForModal] = useState<string | null>(null);
+
+  const handleRangeChange = (range: DateFilterValue, dates?: CustomDateRange) => {
+    setDateRange(range);
+    setCustomDates(range === 'custom' && dates ? dates : undefined);
+  };
   const [isBatchScoring, setIsBatchScoring] = useState(false);
   const [selectedAgentForModal, setSelectedAgentForModal] = useState<string | null>(null);
   
@@ -49,12 +58,27 @@ export default function QADashboard() {
     const now = new Date();
     let startDate: Date;
     
+    if (dateRange === 'custom' && customDates) {
+      startDate = startOfDay(customDates.from);
+      const endDate = endOfDay(customDates.to);
+      return filtered.filter(b => {
+        const bookingDate = new Date(b.bookingDate + 'T00:00:00');
+        return isWithinInterval(bookingDate, { start: startDate, end: endDate });
+      });
+    }
+    
     switch (dateRange) {
       case 'today':
         startDate = startOfDay(now);
         break;
-      case 'week':
-        startDate = startOfWeek(now, { weekStartsOn: 1 });
+      case 'yesterday':
+        startDate = startOfDay(subDays(now, 1));
+        break;
+      case '7d':
+        startDate = startOfDay(subDays(now, 6));
+        break;
+      case '30d':
+        startDate = startOfDay(subDays(now, 29));
         break;
       case 'month':
         startDate = startOfMonth(now);
@@ -67,7 +91,7 @@ export default function QADashboard() {
       const bookingDate = new Date(b.bookingDate + 'T00:00:00');
       return isWithinInterval(bookingDate, { start: startDate, end: endOfDay(now) });
     });
-  }, [qaBookings, dateRange, selectedAgent]);
+  }, [qaBookings, dateRange, selectedAgent, customDates]);
 
   const stats = calculateQAStats(filteredBookings, rubric);
   const rankings = getAgentQARankings(filteredBookings, agents);
@@ -180,18 +204,12 @@ export default function QADashboard() {
         {/* Controls */}
         <div className="flex flex-wrap justify-between items-center gap-4">
           <div className="flex items-center gap-3">
-            <Select value={dateRange} onValueChange={(v) => setDateRange(v as DateRange)}>
-              <SelectTrigger className="w-[140px]">
-                <Calendar className="w-4 h-4 mr-2" />
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="today">Today</SelectItem>
-                <SelectItem value="week">This Week</SelectItem>
-                <SelectItem value="month">This Month</SelectItem>
-                <SelectItem value="all">All Time</SelectItem>
-              </SelectContent>
-            </Select>
+            <DateRangeFilter 
+              defaultValue="month"
+              onRangeChange={handleRangeChange}
+              includeAllTime={true}
+              includeCustom={true}
+            />
             
             <Select value={selectedAgent} onValueChange={setSelectedAgent}>
               <SelectTrigger className="w-[180px]">

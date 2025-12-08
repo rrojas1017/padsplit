@@ -5,7 +5,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useBillingData, DateRangeType } from '@/hooks/useBillingData';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { DateRangeFilter, DateFilterValue, CustomDateRange } from '@/components/dashboard/DateRangeFilter';
 import { Skeleton } from '@/components/ui/skeleton';
 import { DollarSign, TrendingUp, Zap, FileText, Users, BarChart3 } from 'lucide-react';
 import { formatCurrency, SERVICE_TYPE_LABELS, FUNCTION_LABELS } from '@/utils/billingCalculations';
@@ -19,6 +19,25 @@ import InvoiceHistory from '@/components/billing/InvoiceHistory';
 
 const Billing = () => {
   const { hasRole, isLoading: authLoading } = useAuth();
+  const [dateRange, setDateRange] = useState<DateFilterValue>('month');
+  const [customDates, setCustomDates] = useState<CustomDateRange | undefined>(undefined);
+
+  const handleRangeChange = (range: DateFilterValue, dates?: CustomDateRange) => {
+    setDateRange(range);
+    setCustomDates(range === 'custom' && dates ? dates : undefined);
+  };
+
+  // Map DateFilterValue to DateRangeType for useBillingData hook
+  const getBillingDateRange = (): DateRangeType => {
+    if (dateRange === 'custom') return 'custom';
+    if (dateRange === 'today') return 'today';
+    if (dateRange === 'yesterday') return 'yesterday';
+    if (dateRange === '7d') return 'thisWeek';
+    if (dateRange === '30d') return 'last30Days';
+    if (dateRange === 'month') return 'thisMonth';
+    if (dateRange === 'all') return 'allTime';
+    return 'thisMonth';
+  };
   const [dateRange, setDateRange] = useState<DateRangeType>('thisMonth');
   
   const { 
@@ -34,7 +53,7 @@ const Billing = () => {
     updateClient,
     createInvoice,
     updateInvoiceStatus,
-  } = useBillingData(dateRange);
+  } = useBillingData(getBillingDateRange(), customDates?.from?.toISOString(), customDates?.to?.toISOString());
 
   // Redirect non-super_admins
   if (!authLoading && !hasRole(['super_admin'])) {
@@ -82,19 +101,12 @@ const Billing = () => {
             </p>
           </div>
           
-          <Select value={dateRange} onValueChange={(v) => setDateRange(v as DateRangeType)}>
-            <SelectTrigger className="w-[180px]">
-              <SelectValue placeholder="Select period" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="today">Today</SelectItem>
-              <SelectItem value="yesterday">Yesterday</SelectItem>
-              <SelectItem value="thisWeek">This Week</SelectItem>
-              <SelectItem value="thisMonth">This Month</SelectItem>
-              <SelectItem value="last30Days">Last 30 Days</SelectItem>
-              <SelectItem value="allTime">All Time</SelectItem>
-            </SelectContent>
-          </Select>
+          <DateRangeFilter 
+            defaultValue="month"
+            onRangeChange={handleRangeChange}
+            includeAllTime={true}
+            includeCustom={true}
+          />
         </div>
 
         {/* Main Tabs */}

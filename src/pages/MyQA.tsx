@@ -7,23 +7,27 @@ import { useQACoachingData } from '@/hooks/useQACoachingData';
 import { QACoachingAudioPlayer } from '@/components/qa/QACoachingAudioPlayer';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { DateRangeFilter, DateFilterValue, CustomDateRange } from '@/components/dashboard/DateRangeFilter';
 
 import { 
   ClipboardCheck, TrendingUp, Calendar, Target, Award, BarChart3, 
   Trophy, ArrowUp, ArrowDown, AlertTriangle
 } from 'lucide-react';
 import { useState, useMemo } from 'react';
-import { format, isWithinInterval, startOfDay, endOfDay, startOfWeek, startOfMonth } from 'date-fns';
+import { format, isWithinInterval, startOfDay, endOfDay, startOfWeek, startOfMonth, subDays } from 'date-fns';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Cell } from 'recharts';
-
-type DateRange = 'today' | 'week' | 'month' | 'all';
 
 export default function MyQA() {
   usePageTracking('view_my_qa');
   const { user } = useAuth();
   const { agents } = useAgents();
-  const [dateRange, setDateRange] = useState<DateRange>('month');
+  const [dateRange, setDateRange] = useState<DateFilterValue>('month');
+  const [customDates, setCustomDates] = useState<CustomDateRange | undefined>(undefined);
+
+  const handleRangeChange = (range: DateFilterValue, dates?: CustomDateRange) => {
+    setDateRange(range);
+    setCustomDates(range === 'custom' && dates ? dates : undefined);
+  };
   
   // Get agent ID for current user
   const myAgent = agents.find(a => a.userId === user?.id);
@@ -44,12 +48,29 @@ export default function MyQA() {
     const now = new Date();
     let startDate: Date;
     
+    if (dateRange === 'custom' && customDates) {
+      startDate = startOfDay(customDates.from);
+      const endDate = endOfDay(customDates.to);
+      return qaBookings
+        .filter(b => {
+          const bookingDate = new Date(b.bookingDate + 'T00:00:00');
+          return isWithinInterval(bookingDate, { start: startDate, end: endDate });
+        })
+        .sort((a, b) => new Date(b.bookingDate + 'T00:00:00').getTime() - new Date(a.bookingDate + 'T00:00:00').getTime());
+    }
+    
     switch (dateRange) {
       case 'today':
         startDate = startOfDay(now);
         break;
-      case 'week':
-        startDate = startOfWeek(now, { weekStartsOn: 1 });
+      case 'yesterday':
+        startDate = startOfDay(subDays(now, 1));
+        break;
+      case '7d':
+        startDate = startOfDay(subDays(now, 6));
+        break;
+      case '30d':
+        startDate = startOfDay(subDays(now, 29));
         break;
       case 'month':
         startDate = startOfMonth(now);
@@ -64,7 +85,7 @@ export default function MyQA() {
         return isWithinInterval(bookingDate, { start: startDate, end: endOfDay(now) });
       })
       .sort((a, b) => new Date(b.bookingDate + 'T00:00:00').getTime() - new Date(a.bookingDate + 'T00:00:00').getTime());
-  }, [qaBookings, dateRange]);
+  }, [qaBookings, dateRange, customDates]);
 
   // Helper to find weakest category for a booking
   const getWeakestCategory = (booking: typeof qaBookings[0]) => {
@@ -200,18 +221,12 @@ export default function MyQA() {
       <div className="space-y-6">
         {/* Controls */}
         <div className="flex flex-wrap justify-between items-center gap-4">
-          <Select value={dateRange} onValueChange={(v) => setDateRange(v as DateRange)}>
-            <SelectTrigger className="w-[140px]">
-              <Calendar className="w-4 h-4 mr-2" />
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="today">Today</SelectItem>
-              <SelectItem value="week">This Week</SelectItem>
-              <SelectItem value="month">This Month</SelectItem>
-              <SelectItem value="all">All Time</SelectItem>
-            </SelectContent>
-          </Select>
+          <DateRangeFilter 
+            defaultValue="month"
+            onRangeChange={handleRangeChange}
+            includeAllTime={true}
+            includeCustom={true}
+          />
         </div>
 
         {/* Top & Lowest Scored Calls Section */}
