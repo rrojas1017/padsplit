@@ -2,12 +2,13 @@ import React from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { DollarSign, Clock, FileCheck, Timer } from 'lucide-react';
 import { formatCurrency } from '@/utils/billingCalculations';
-import { CostSummary, ApiCost, DateRangeType } from '@/hooks/useBillingData';
+import { CostSummary, ApiCost } from '@/hooks/useBillingData';
+import { DateFilterValue } from '@/components/dashboard/DateRangeFilter';
 
 interface CostOverviewCardsProps {
   summary: CostSummary;
   costs: ApiCost[];
-  dateRange: DateRangeType;
+  dateRange: DateFilterValue;
 }
 
 const formatDuration = (seconds: number): string => {

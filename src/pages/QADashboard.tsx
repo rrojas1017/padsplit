@@ -39,8 +39,6 @@ export default function QADashboard() {
     setDateRange(range);
     setCustomDates(range === 'custom' && dates ? dates : undefined);
   };
-  const [isBatchScoring, setIsBatchScoring] = useState(false);
-  const [selectedAgentForModal, setSelectedAgentForModal] = useState<string | null>(null);
   
   const { qaBookings, rubric, isLoading } = useQAData({ includeUnscored: true });
   const { qaCoachingBookings, isLoading: isCoachingLoading } = useQACoachingData();

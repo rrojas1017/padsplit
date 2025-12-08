@@ -19,26 +19,25 @@ import InvoiceHistory from '@/components/billing/InvoiceHistory';
 
 const Billing = () => {
   const { hasRole, isLoading: authLoading } = useAuth();
-  const [dateRange, setDateRange] = useState<DateFilterValue>('month');
+  const [dateFilter, setDateFilter] = useState<DateFilterValue>('month');
   const [customDates, setCustomDates] = useState<CustomDateRange | undefined>(undefined);
 
   const handleRangeChange = (range: DateFilterValue, dates?: CustomDateRange) => {
-    setDateRange(range);
+    setDateFilter(range);
     setCustomDates(range === 'custom' && dates ? dates : undefined);
   };
 
   // Map DateFilterValue to DateRangeType for useBillingData hook
   const getBillingDateRange = (): DateRangeType => {
-    if (dateRange === 'custom') return 'custom';
-    if (dateRange === 'today') return 'today';
-    if (dateRange === 'yesterday') return 'yesterday';
-    if (dateRange === '7d') return 'thisWeek';
-    if (dateRange === '30d') return 'last30Days';
-    if (dateRange === 'month') return 'thisMonth';
-    if (dateRange === 'all') return 'allTime';
+    if (dateFilter === 'custom') return 'custom';
+    if (dateFilter === 'today') return 'today';
+    if (dateFilter === 'yesterday') return 'yesterday';
+    if (dateFilter === '7d') return 'last30Days'; // Map 7d to last30Days as closest match
+    if (dateFilter === '30d') return 'last30Days';
+    if (dateFilter === 'month') return 'thisMonth';
+    if (dateFilter === 'all') return 'allTime';
     return 'thisMonth';
   };
-  const [dateRange, setDateRange] = useState<DateRangeType>('thisMonth');
   
   const { 
     costs, 
@@ -53,7 +52,11 @@ const Billing = () => {
     updateClient,
     createInvoice,
     updateInvoiceStatus,
-  } = useBillingData(getBillingDateRange(), customDates?.from?.toISOString(), customDates?.to?.toISOString());
+  } = useBillingData(
+    getBillingDateRange(), 
+    customDates?.from, 
+    customDates?.to
+  );
 
   // Redirect non-super_admins
   if (!authLoading && !hasRole(['super_admin'])) {
@@ -129,7 +132,7 @@ const Billing = () => {
           {/* Costs Tab */}
           <TabsContent value="costs" className="space-y-6">
             {/* Overview Cards */}
-            <CostOverviewCards summary={summary} costs={costs} dateRange={dateRange} />
+            <CostOverviewCards summary={summary} costs={costs} dateRange={dateFilter} />
 
             {/* Charts Row */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -148,7 +151,7 @@ const Billing = () => {
                 clients={clients} 
                 costs={costs}
                 onGenerate={createInvoice}
-                dateRange={dateRange}
+                dateRange={dateFilter}
               />
               <InvoiceHistory 
                 invoices={invoices} 
