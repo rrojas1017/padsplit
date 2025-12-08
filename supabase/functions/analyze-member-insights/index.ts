@@ -104,10 +104,22 @@ serve(async (req) => {
       throw new Error(`Failed to fetch bookings: ${bookingsError.message}`);
     }
 
+    console.log(`Raw bookings fetched: ${bookingsRaw?.length || 0}`);
+    if (bookingsRaw && bookingsRaw.length > 0) {
+      console.log('Sample booking structure:', JSON.stringify(bookingsRaw[0], null, 2));
+    }
+
     // Filter to only include bookings with call_key_points
-    const bookings = (bookingsRaw || []).filter((b: any) => 
-      b.booking_transcriptions?.[0]?.call_key_points
-    ) as BookingWithTranscription[];
+    // Note: booking_transcriptions is a 1-to-1 relationship, so it returns an object (or array with single item)
+    const bookings = (bookingsRaw || []).filter((b: any) => {
+      // Handle both array and object responses from Supabase
+      const transcription = Array.isArray(b.booking_transcriptions) 
+        ? b.booking_transcriptions[0] 
+        : b.booking_transcriptions;
+      return transcription?.call_key_points;
+    }) as BookingWithTranscription[];
+
+    console.log(`Filtered bookings with call_key_points: ${bookings.length}`);
 
     if (bookings.length === 0) {
       console.log('No transcribed bookings found in date range');
@@ -134,7 +146,11 @@ serve(async (req) => {
     const memberCallCounts: Record<string, number> = {};
 
     for (const booking of bookings) {
-      const keyPoints = booking.booking_transcriptions?.[0]?.call_key_points;
+      // Handle both array and object responses
+      const transcription = Array.isArray(booking.booking_transcriptions)
+        ? booking.booking_transcriptions[0]
+        : booking.booking_transcriptions;
+      const keyPoints = transcription?.call_key_points;
       if (!keyPoints) continue;
 
       if (keyPoints.memberConcerns) allConcerns.push(...keyPoints.memberConcerns);
