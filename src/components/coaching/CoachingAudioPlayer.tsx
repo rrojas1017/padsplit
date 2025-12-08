@@ -4,6 +4,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { Headphones, Play, Pause, Loader2, Volume2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { useAuth } from '@/contexts/AuthContext';
 
 interface CoachingAudioPlayerProps {
   bookingId: string;
@@ -13,6 +14,7 @@ interface CoachingAudioPlayerProps {
   className?: string;
   listenedAt?: string | null;
   onListened?: () => void;
+  agentUserId?: string; // The user_id of the agent this coaching belongs to
 }
 
 export function CoachingAudioPlayer({
@@ -23,7 +25,9 @@ export function CoachingAudioPlayer({
   className,
   listenedAt,
   onListened,
+  agentUserId,
 }: CoachingAudioPlayerProps) {
+  const { user } = useAuth();
   const [isGenerating, setIsGenerating] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentAudioUrl, setCurrentAudioUrl] = useState<string | null>(audioUrl || null);
@@ -78,8 +82,9 @@ export function CoachingAudioPlayer({
     } else {
       audioRef.current.play();
       
-      // Mark as listened on first play
-      if (!hasBeenListened && currentAudioUrl) {
+      // Mark as listened on first play - only if current user is the owning agent
+      const isOwningAgent = agentUserId && user?.id === agentUserId;
+      if (!hasBeenListened && currentAudioUrl && isOwningAgent) {
         setHasBeenListened(true);
         try {
           await supabase

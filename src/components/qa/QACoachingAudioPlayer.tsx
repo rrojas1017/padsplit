@@ -5,6 +5,7 @@ import { Play, Pause, Volume2, Loader2, CheckCircle, Sparkles } from 'lucide-rea
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
+import { useAuth } from '@/contexts/AuthContext';
 
 interface QACoachingAudioPlayerProps {
   bookingId: string;
@@ -14,6 +15,7 @@ interface QACoachingAudioPlayerProps {
   qaScore?: number;
   weakestAreas?: string[];
   variant?: 'button' | 'card';
+  agentUserId?: string; // The user_id of the agent this coaching belongs to
 }
 
 export const QACoachingAudioPlayer: React.FC<QACoachingAudioPlayerProps> = ({
@@ -24,7 +26,9 @@ export const QACoachingAudioPlayer: React.FC<QACoachingAudioPlayerProps> = ({
   qaScore,
   weakestAreas = [],
   variant = 'card',
+  agentUserId,
 }) => {
+  const { user } = useAuth();
   const [isPlaying, setIsPlaying] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -49,8 +53,9 @@ export const QACoachingAudioPlayer: React.FC<QACoachingAudioPlayerProps> = ({
         await audioRef.current.play();
         setIsPlaying(true);
 
-        // Mark as listened on first play
-        if (!hasListened) {
+        // Mark as listened on first play - only if current user is the owning agent
+        const isOwningAgent = agentUserId && user?.id === agentUserId;
+        if (!hasListened && isOwningAgent) {
           await markAsListened();
         }
       } catch (error) {

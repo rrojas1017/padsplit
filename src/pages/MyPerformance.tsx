@@ -458,6 +458,7 @@ export default function MyPerformance() {
                           audioUrl={coachingData.coachingAudioUrl || undefined}
                           variant="button"
                           listenedAt={coachingData.coachingAudioListenedAt}
+                          agentUserId={myAgent?.userId}
                         />
                       ) : (
                         <span className="text-xs text-muted-foreground italic">No coaching yet</span>
@@ -529,6 +530,7 @@ export default function MyPerformance() {
                 bookingId={latestWithFeedback.id}
                 audioUrl={latestWithFeedback.coachingAudioUrl}
                 variant="card"
+                agentUserId={myAgent?.userId}
               />
             </div>
           </div>

@@ -674,6 +674,7 @@ export default function QADashboard() {
                         listenedAt={booking.qaCoachingAudioListenedAt}
                         qaScore={booking.qaScores?.percentage}
                         variant="button"
+                        agentUserId={agents.find(a => a.id === booking.agentId)?.userId}
                       />
                     </div>
                   ))}
