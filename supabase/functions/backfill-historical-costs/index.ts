@@ -6,11 +6,11 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// Cost estimation based on current API pricing
+// Cost estimation based on ElevenLabs Pro Plan pricing
 const PRICING = {
   elevenlabs: {
-    tts_per_character: 0.0003, // ~$0.30 per 1,000 characters
-    stt_per_minute: 0.10,      // ~$0.10 per minute
+    tts_per_character: 0.00015, // Pro Plan: ~$0.15 per 1,000 characters
+    stt_per_minute: 0.034,      // Pro Plan: ~$0.034 per minute
   },
   lovable_ai: {
     input_per_1k_tokens: 0.0001,
