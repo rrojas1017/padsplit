@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
-import { useAgents } from '@/contexts/AgentsContext';
 
 export interface QAScores {
   scores: Record<string, number>;
@@ -45,7 +44,6 @@ interface UseQADataOptions {
 export function useQAData(options: UseQADataOptions = {}) {
   const { agentId, includeUnscored = false } = options;
   const { user } = useAuth();
-  const { agents } = useAgents();
   const [qaBookings, setQABookings] = useState<QABooking[]>([]);
   const [rubric, setRubric] = useState<QARubric | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -63,7 +61,7 @@ export function useQAData(options: UseQADataOptions = {}) {
           .select('*')
           .eq('is_active', true)
           .limit(1)
-          .single();
+          .maybeSingle();
 
         if (rubricData) {
           setRubric({
@@ -74,7 +72,7 @@ export function useQAData(options: UseQADataOptions = {}) {
           });
         }
 
-        // Build query for transcriptions with QA scores
+        // Build query for transcriptions with QA scores - join agents directly
         let query = supabase
           .from('booking_transcriptions')
           .select(`
@@ -87,7 +85,11 @@ export function useQAData(options: UseQADataOptions = {}) {
               booking_date,
               agent_id,
               market_city,
-              market_state
+              market_state,
+              agents!inner (
+                id,
+                name
+              )
             )
           `);
 
@@ -107,7 +109,7 @@ export function useQAData(options: UseQADataOptions = {}) {
           return;
         }
 
-        // Map to QABooking format
+        // Map to QABooking format - agent name comes from joined query
         const mappedBookings: QABooking[] = transcriptions
           .filter(t => {
             const booking = t.bookings as any;
@@ -116,7 +118,7 @@ export function useQAData(options: UseQADataOptions = {}) {
           })
           .map(t => {
             const booking = t.bookings as any;
-            const agent = agents.find(a => a.id === booking.agent_id);
+            const agent = booking.agents as any;
             return {
               id: t.id,
               bookingId: t.booking_id,
@@ -139,7 +141,7 @@ export function useQAData(options: UseQADataOptions = {}) {
     };
 
     fetchData();
-  }, [user, agents, agentId, includeUnscored]);
+  }, [user, agentId, includeUnscored]);
 
   return { qaBookings, rubric, isLoading };
 }
@@ -178,15 +180,15 @@ export function calculateQAStats(bookings: QABooking[], rubric: QARubric | null)
   };
 }
 
-// Get agent QA rankings
-export function getAgentQARankings(bookings: QABooking[], agents: { id: string; name: string }[]) {
-  const agentStats: Record<string, { total: number; count: number; percentage: number }> = {};
+// Get agent QA rankings - builds from booking data directly
+export function getAgentQARankings(bookings: QABooking[]) {
+  const agentStats: Record<string, { name: string; total: number; count: number }> = {};
 
   for (const booking of bookings) {
     if (!booking.qaScores) continue;
     
     if (!agentStats[booking.agentId]) {
-      agentStats[booking.agentId] = { total: 0, count: 0, percentage: 0 };
+      agentStats[booking.agentId] = { name: booking.agentName, total: 0, count: 0 };
     }
     
     agentStats[booking.agentId].total += booking.qaScores.percentage;
@@ -194,13 +196,13 @@ export function getAgentQARankings(bookings: QABooking[], agents: { id: string; 
   }
 
   // Calculate averages and sort
-  const rankings = agents
-    .filter(a => agentStats[a.id]?.count > 0)
-    .map(a => ({
-      agentId: a.id,
-      agentName: a.name,
-      avgPercentage: Math.round((agentStats[a.id].total / agentStats[a.id].count) * 10) / 10,
-      callCount: agentStats[a.id].count,
+  const rankings = Object.entries(agentStats)
+    .filter(([_, stats]) => stats.count > 0)
+    .map(([agentId, stats]) => ({
+      agentId,
+      agentName: stats.name,
+      avgPercentage: Math.round((stats.total / stats.count) * 10) / 10,
+      callCount: stats.count,
     }))
     .sort((a, b) => b.avgPercentage - a.avgPercentage);
 
