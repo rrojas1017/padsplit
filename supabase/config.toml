@@ -47,3 +47,6 @@ verify_jwt = false
 
 [functions.backfill-historical-costs]
 verify_jwt = false
+
+[functions.batch-generate-coaching-audio]
+verify_jwt = false
