@@ -867,6 +867,66 @@ async function processTranscription(bookingId: string, kixieUrl: string) {
     clearTimeout(timeoutId);
     console.log(`[Background] Transcription completed successfully for booking ${bookingId}`);
 
+    // ===== AUTO-GENERATE QA SCORES AND COACHING AUDIO =====
+    console.log(`[Background] Triggering automatic QA scoring and coaching generation...`);
+    
+    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+
+    // Fire-and-forget: Generate Jeff's coaching audio (uses agent_feedback from transcription)
+    fetch(`${supabaseUrl}/functions/v1/generate-coaching-audio`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${supabaseServiceKey}`,
+      },
+      body: JSON.stringify({ bookingId }),
+    }).then(res => {
+      if (res.ok) console.log(`[Background] Jeff coaching audio triggered for ${bookingId}`);
+      else console.error(`[Background] Jeff coaching failed: ${res.status}`);
+    }).catch(err => console.error('[Background] Jeff coaching error:', err));
+
+    // QA scoring then Katty's QA coaching (sequential because Katty needs QA scores)
+    (async () => {
+      try {
+        // Step 1: Generate QA scores
+        const qaResponse = await fetch(`${supabaseUrl}/functions/v1/generate-qa-scores`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${supabaseServiceKey}`,
+          },
+          body: JSON.stringify({ bookingId }),
+        });
+        
+        if (qaResponse.ok) {
+          console.log(`[Background] QA scores generated for ${bookingId}`);
+          
+          // Step 2: Generate Katty's QA coaching audio (needs QA scores)
+          const kattyResponse = await fetch(`${supabaseUrl}/functions/v1/generate-qa-coaching-audio`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${supabaseServiceKey}`,
+            },
+            body: JSON.stringify({ bookingId }),
+          });
+          
+          if (kattyResponse.ok) {
+            console.log(`[Background] Katty QA coaching audio generated for ${bookingId}`);
+          } else {
+            console.error(`[Background] Katty coaching failed: ${kattyResponse.status}`);
+          }
+        } else {
+          console.error(`[Background] QA scoring failed: ${qaResponse.status}`);
+        }
+      } catch (error) {
+        console.error('[Background] Auto QA/Katty pipeline error:', error);
+      }
+    })();
+
+    console.log(`[Background] All automation triggers dispatched for booking ${bookingId}`);
+
   } catch (error) {
     // Clear timeout on error
     clearTimeout(timeoutId);
