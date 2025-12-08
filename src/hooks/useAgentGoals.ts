@@ -23,6 +23,9 @@ export interface AgentGoalWithProgress extends AgentGoal {
   current_bookings: number;
   progress_percentage: number;
   set_by_name?: string;
+  today_bookings?: number;
+  days_remaining?: number;
+  required_daily_pace?: number;
 }
 
 export function useAgentGoals(weekStart?: Date) {
@@ -246,10 +249,12 @@ export function useMyGoal() {
       setIsLoading(true);
 
       try {
-        const weekStart = startOfWeek(new Date(), { weekStartsOn: 1 });
+        const now = new Date();
+        const weekStart = startOfWeek(now, { weekStartsOn: 1 });
         const weekEnd = endOfWeek(weekStart, { weekStartsOn: 1 });
         const weekStartStr = format(weekStart, 'yyyy-MM-dd');
         const weekEndStr = format(weekEnd, 'yyyy-MM-dd');
+        const todayStr = format(now, 'yyyy-MM-dd');
 
         // Get agent ID for current user
         const { data: agentData } = await supabase
@@ -281,16 +286,30 @@ export function useMyGoal() {
         // Count bookings for current week
         const { data: bookingsData } = await supabase
           .from('bookings')
-          .select('id')
+          .select('id, booking_date')
           .eq('agent_id', agentData.id)
           .gte('booking_date', weekStartStr)
           .lte('booking_date', weekEndStr)
           .in('status', ['Pending Move-In', 'Moved In']);
 
         const currentBookings = bookingsData?.length || 0;
+        const todayBookings = bookingsData?.filter(b => b.booking_date === todayStr).length || 0;
         const progressPercentage = goalData.weekly_target > 0 
           ? Math.round((currentBookings / goalData.weekly_target) * 100) 
           : 0;
+
+        // Calculate days remaining (excluding weekends - Mon-Fri only)
+        const today = now.getDay(); // 0=Sun, 1=Mon, ..., 5=Fri, 6=Sat
+        let daysRemaining = 0;
+        if (today >= 1 && today <= 5) {
+          // Weekday: count remaining weekdays including today
+          daysRemaining = 6 - today; // Mon=5, Tue=4, Wed=3, Thu=2, Fri=1
+        }
+        // If weekend, daysRemaining stays 0
+
+        // Calculate required daily pace
+        const remainingBookings = Math.max(0, goalData.weekly_target - currentBookings);
+        const requiredDailyPace = daysRemaining > 0 ? remainingBookings / daysRemaining : remainingBookings;
 
         setGoal({
           ...goalData,
@@ -299,6 +318,9 @@ export function useMyGoal() {
           site_name: '',
           current_bookings: currentBookings,
           progress_percentage: progressPercentage,
+          today_bookings: todayBookings,
+          days_remaining: daysRemaining,
+          required_daily_pace: Math.ceil(requiredDailyPace),
         });
       } catch (err) {
         console.error('Error fetching my goal:', err);
