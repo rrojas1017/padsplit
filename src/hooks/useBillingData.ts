@@ -111,17 +111,33 @@ export function useBillingData(dateRange: DateRangeType = 'thisMonth', customSta
 
     try {
       const { start, end } = getDateRange();
+      const startDate = start.toISOString().split('T')[0];
+      const endDate = end.toISOString().split('T')[0];
 
-      // Fetch costs within date range
-      const { data: costsData, error: costsError } = await supabase
-        .from('api_costs')
-        .select('*')
-        .gte('created_at', start.toISOString())
-        .lte('created_at', end.toISOString())
-        .order('created_at', { ascending: false })
-        .limit(5000);
+      // Step 1: Get booking IDs within the date range (by booking_date)
+      const { data: bookingsData, error: bookingsError } = await supabase
+        .from('bookings')
+        .select('id')
+        .gte('booking_date', startDate)
+        .lte('booking_date', endDate);
 
-      if (costsError) throw costsError;
+      if (bookingsError) throw bookingsError;
+
+      const bookingIds = bookingsData?.map(b => b.id) || [];
+
+      // Step 2: Fetch costs for those specific bookings
+      let costsData: any[] = [];
+      if (bookingIds.length > 0) {
+        const { data, error: costsError } = await supabase
+          .from('api_costs')
+          .select('*')
+          .in('booking_id', bookingIds)
+          .order('created_at', { ascending: false })
+          .limit(5000);
+
+        if (costsError) throw costsError;
+        costsData = data || [];
+      }
 
       // Fetch clients
       const { data: clientsData, error: clientsError } = await supabase
