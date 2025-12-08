@@ -14,7 +14,7 @@ const corsHeaders = {
 
 // Cost logging helper function
 async function logApiCost(supabase: any, params: {
-  service_provider: 'elevenlabs' | 'deepgram' | 'lovable_ai';
+  service_provider: 'elevenlabs' | 'lovable_ai';
   service_type: string;
   edge_function: string;
   booking_id?: string;
@@ -37,11 +37,6 @@ async function logApiCost(supabase: any, params: {
       // TTS: ~$0.30 per 1000 characters
       if (params.character_count) {
         cost = params.character_count * 0.0003;
-      }
-    } else if (params.service_provider === 'deepgram') {
-      // Deepgram Nova-2 batch: ~$0.0043 per minute
-      if (params.audio_duration_seconds) {
-        cost = (params.audio_duration_seconds / 60) * 0.0043;
       }
     } else if (params.service_provider === 'lovable_ai') {
       // Gemini Flash: ~$0.0001 per 1K input, ~$0.0003 per 1K output
@@ -70,13 +65,6 @@ async function logApiCost(supabase: any, params: {
     // Don't fail the main operation if cost logging fails
     console.error('[Cost] Failed to log API cost:', error);
   }
-}
-
-// Determine which STT provider to use based on day of month
-// Odd days = ElevenLabs, Even days = Deepgram
-function getSTTProvider(): 'elevenlabs' | 'deepgram' {
-  const dayOfMonth = new Date().getDate();
-  return dayOfMonth % 2 === 0 ? 'deepgram' : 'elevenlabs';
 }
 
 // Types for call type configuration
@@ -396,14 +384,9 @@ async function processTranscription(bookingId: string, kixieUrl: string) {
   console.log(`[Background] Starting transcription for booking ${bookingId}`);
   
   const elevenLabsApiKey = Deno.env.get('ELEVENLABS_API_KEY');
-  const deepgramApiKey = Deno.env.get('DEEPGRAM_API_KEY');
   const lovableApiKey = Deno.env.get('LOVABLE_API_KEY');
   const supabaseUrl = Deno.env.get('SUPABASE_URL');
   const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
-  
-  // Determine which provider to use today
-  const sttProvider = getSTTProvider();
-  console.log(`[Background] Using STT provider: ${sttProvider} (day ${new Date().getDate()})`);
   
   const supabase = createClient(supabaseUrl!, supabaseServiceKey!);
   
@@ -500,177 +483,93 @@ async function processTranscription(bookingId: string, kixieUrl: string) {
       return;
     }
 
-    // Step 2: Transcribe with selected STT provider
+    // Step 2: Transcribe with ElevenLabs
     let transcription = '';
     let callDurationSeconds: number | null = null;
     
-    if (sttProvider === 'deepgram' && deepgramApiKey) {
-      // ========== DEEPGRAM NOVA-2 TRANSCRIPTION ==========
-      console.log('[Background] Sending to Deepgram Nova-2...');
-      
-      const deepgramResponse = await fetch('https://api.deepgram.com/v1/listen?model=nova-2&diarize=true&punctuate=true&language=en', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Token ${deepgramApiKey}`,
-          'Content-Type': 'audio/wav',
-        },
-        body: audioBlob,
-      });
+    console.log('[Background] Sending to ElevenLabs Speech-to-Text...');
+    const formData = new FormData();
+    formData.append('file', audioBlob, 'recording.wav');
+    formData.append('model_id', 'scribe_v1');
+    formData.append('diarize', 'true');
+    formData.append('language_code', 'eng');
+    formData.append('tag_audio_events', 'true');
 
-      if (!deepgramResponse.ok) {
-        const errorText = await deepgramResponse.text();
-        console.error('[Background] Deepgram API error:', errorText);
-        throw new Error(`Deepgram API error: ${deepgramResponse.status}`);
-      }
+    const elevenLabsResponse = await fetch('https://api.elevenlabs.io/v1/speech-to-text', {
+      method: 'POST',
+      headers: {
+        'xi-api-key': elevenLabsApiKey!,
+      },
+      body: formData,
+    });
 
-      const deepgramResult = await deepgramResponse.json();
-      console.log('[Background] Deepgram response received');
+    if (!elevenLabsResponse.ok) {
+      const errorText = await elevenLabsResponse.text();
+      console.error('[Background] ElevenLabs API error:', errorText);
+      throw new Error(`ElevenLabs API error: ${elevenLabsResponse.status}`);
+    }
 
-      // Extract duration from Deepgram response
-      if (deepgramResult.metadata?.duration) {
-        callDurationSeconds = Math.ceil(deepgramResult.metadata.duration);
+    const elevenLabsResult = await elevenLabsResponse.json();
+    console.log('[Background] ElevenLabs response received');
+
+    // Format transcription with speaker labels
+    transcription = elevenLabsResult.text || '';
+    
+    if (elevenLabsResult.words && elevenLabsResult.words.length > 0) {
+      const lastWord = elevenLabsResult.words[elevenLabsResult.words.length - 1];
+      if (lastWord.end) {
+        callDurationSeconds = Math.ceil(lastWord.end);
         const mins = Math.floor(callDurationSeconds / 60);
         const secs = callDurationSeconds % 60;
         console.log(`[Background] Call duration: ${callDurationSeconds} seconds (${mins}:${secs.toString().padStart(2, '0')})`);
       }
 
-      // Format Deepgram transcription with speaker labels (normalized to match ElevenLabs output)
-      const words = deepgramResult.results?.channels?.[0]?.alternatives?.[0]?.words || [];
-      if (words.length > 0) {
-        const formattedSegments: string[] = [];
-        let currentSpeaker = -1;
-        let currentText = '';
+      const formattedSegments: string[] = [];
+      let currentSpeaker = '';
+      let currentText = '';
+      
+      for (const word of elevenLabsResult.words) {
+        const speaker = word.speaker_id || 'Unknown';
         
-        for (const word of words) {
-          const speaker = word.speaker ?? 0;
-          
-          if (speaker !== currentSpeaker) {
-            if (currentText.trim()) {
-              const speakerLabel = currentSpeaker === 0 ? 'Agent' : 'Member';
-              formattedSegments.push(`${speakerLabel}: ${currentText.trim()}`);
-            }
-            currentSpeaker = speaker;
-            currentText = word.punctuated_word || word.word || '';
-            currentText += ' ';
-          } else {
-            currentText += (word.punctuated_word || word.word || '') + ' ';
+        if (speaker !== currentSpeaker) {
+          if (currentText.trim()) {
+            const speakerLabel = currentSpeaker === 'speaker_0' ? 'Agent' : 
+                                currentSpeaker === 'speaker_1' ? 'Member' : currentSpeaker;
+            formattedSegments.push(`${speakerLabel}: ${currentText.trim()}`);
           }
-        }
-        
-        if (currentText.trim()) {
-          const speakerLabel = currentSpeaker === 0 ? 'Agent' : 'Member';
-          formattedSegments.push(`${speakerLabel}: ${currentText.trim()}`);
-        }
-        
-        transcription = formattedSegments.length > 0 
-          ? formattedSegments.join('\n\n') 
-          : deepgramResult.results?.channels?.[0]?.alternatives?.[0]?.transcript || '';
-      } else {
-        transcription = deepgramResult.results?.channels?.[0]?.alternatives?.[0]?.transcript || '';
-      }
-      
-      console.log('[Background] Deepgram transcription complete, length:', transcription.length);
-
-      // Log Deepgram STT cost
-      if (callDurationSeconds) {
-        logApiCost(supabase, {
-          service_provider: 'deepgram',
-          service_type: 'stt_transcription',
-          edge_function: 'transcribe-call',
-          booking_id: bookingId,
-          agent_id: agentId || undefined,
-          site_id: siteId || undefined,
-          audio_duration_seconds: callDurationSeconds,
-          metadata: { model: 'nova-2', file_size_mb: fileSizeMB }
-        });
-      }
-    } else {
-      // ========== ELEVENLABS SCRIBE TRANSCRIPTION (default/fallback) ==========
-      console.log('[Background] Sending to ElevenLabs Speech-to-Text...');
-      const formData = new FormData();
-      formData.append('file', audioBlob, 'recording.wav');
-      formData.append('model_id', 'scribe_v1');
-      formData.append('diarize', 'true');
-      formData.append('language_code', 'eng');
-      formData.append('tag_audio_events', 'true');
-
-      const elevenLabsResponse = await fetch('https://api.elevenlabs.io/v1/speech-to-text', {
-        method: 'POST',
-        headers: {
-          'xi-api-key': elevenLabsApiKey!,
-        },
-        body: formData,
-      });
-
-      if (!elevenLabsResponse.ok) {
-        const errorText = await elevenLabsResponse.text();
-        console.error('[Background] ElevenLabs API error:', errorText);
-        throw new Error(`ElevenLabs API error: ${elevenLabsResponse.status}`);
-      }
-
-      const elevenLabsResult = await elevenLabsResponse.json();
-      console.log('[Background] ElevenLabs response received');
-
-      // Format transcription with speaker labels
-      transcription = elevenLabsResult.text || '';
-      
-      if (elevenLabsResult.words && elevenLabsResult.words.length > 0) {
-        const lastWord = elevenLabsResult.words[elevenLabsResult.words.length - 1];
-        if (lastWord.end) {
-          callDurationSeconds = Math.ceil(lastWord.end);
-          const mins = Math.floor(callDurationSeconds / 60);
-          const secs = callDurationSeconds % 60;
-          console.log(`[Background] Call duration: ${callDurationSeconds} seconds (${mins}:${secs.toString().padStart(2, '0')})`);
-        }
-
-        const formattedSegments: string[] = [];
-        let currentSpeaker = '';
-        let currentText = '';
-        
-        for (const word of elevenLabsResult.words) {
-          const speaker = word.speaker_id || 'Unknown';
-          
-          if (speaker !== currentSpeaker) {
-            if (currentText.trim()) {
-              const speakerLabel = currentSpeaker === 'speaker_0' ? 'Agent' : 
-                                  currentSpeaker === 'speaker_1' ? 'Member' : currentSpeaker;
-              formattedSegments.push(`${speakerLabel}: ${currentText.trim()}`);
-            }
-            currentSpeaker = speaker;
-            currentText = word.text + ' ';
-          } else {
-            currentText += word.text + ' ';
-          }
-        }
-        
-        if (currentText.trim()) {
-          const speakerLabel = currentSpeaker === 'speaker_0' ? 'Agent' : 
-                              currentSpeaker === 'speaker_1' ? 'Member' : currentSpeaker;
-          formattedSegments.push(`${speakerLabel}: ${currentText.trim()}`);
-        }
-        
-        if (formattedSegments.length > 0) {
-          transcription = formattedSegments.join('\n\n');
+          currentSpeaker = speaker;
+          currentText = word.text + ' ';
+        } else {
+          currentText += word.text + ' ';
         }
       }
       
-      console.log('[Background] ElevenLabs transcription complete, length:', transcription.length);
-
-      // Log ElevenLabs STT cost
-      if (callDurationSeconds) {
-        logApiCost(supabase, {
-          service_provider: 'elevenlabs',
-          service_type: 'stt_transcription',
-          edge_function: 'transcribe-call',
-          booking_id: bookingId,
-          agent_id: agentId || undefined,
-          site_id: siteId || undefined,
-          audio_duration_seconds: callDurationSeconds,
-          metadata: { model: 'scribe_v1', file_size_mb: fileSizeMB }
-        });
+      if (currentText.trim()) {
+        const speakerLabel = currentSpeaker === 'speaker_0' ? 'Agent' : 
+                            currentSpeaker === 'speaker_1' ? 'Member' : currentSpeaker;
+        formattedSegments.push(`${speakerLabel}: ${currentText.trim()}`);
+      }
+      
+      if (formattedSegments.length > 0) {
+        transcription = formattedSegments.join('\n\n');
       }
     }
+    
+    console.log('[Background] ElevenLabs transcription complete, length:', transcription.length);
 
+    // Log ElevenLabs STT cost
+    if (callDurationSeconds) {
+      logApiCost(supabase, {
+        service_provider: 'elevenlabs',
+        service_type: 'stt_transcription',
+        edge_function: 'transcribe-call',
+        booking_id: bookingId,
+        agent_id: agentId || undefined,
+        site_id: siteId || undefined,
+        audio_duration_seconds: callDurationSeconds,
+        metadata: { model: 'scribe_v1', file_size_mb: fileSizeMB }
+      });
+    }
     // Step 3: Generate summary, key points, and agent feedback with dynamic prompt
     console.log('[Background] Generating AI summary and agent feedback...');
     const summaryPrompt = buildDynamicPrompt(transcription, config);
@@ -788,7 +687,7 @@ async function processTranscription(bookingId: string, kixieUrl: string) {
         call_summary: summary,
         call_key_points: keyPoints,
         agent_feedback: agentFeedback,
-        stt_provider: sttProvider,
+        stt_provider: 'elevenlabs',
         updated_at: new Date().toISOString(),
       }, {
         onConflict: 'booking_id'
