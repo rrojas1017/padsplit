@@ -364,6 +364,168 @@ SCORING GUIDE (1-10):
 IMPORTANT: Even for very short calls, provide meaningful analysis. A 1-minute call checking availability still has extractable insights (member's location interest, timing, urgency level).`;
 }
 
+// AI-based speaker identification to correctly label Agent vs Member
+async function identifySpeakers(
+  rawTranscript: string,
+  lovableApiKey: string
+): Promise<{ speaker_0: string; speaker_1: string; confidence: string }> {
+  console.log('[Speaker ID] Starting AI-based speaker identification...');
+  
+  const prompt = `Analyze this call transcript between a PadSplit sales agent and a prospective member.
+
+CONTEXT: PadSplit is a housing/room rental service. The Agent works for PadSplit and helps people find rooms. The Member is looking for housing.
+
+AGENT INDICATORS (person who works for PadSplit):
+- Introduces themselves with name/company ("Hi, this is X from PadSplit", "Thank you for calling PadSplit")
+- Asks qualifying questions (budget, move-in date, household size, employment)
+- Offers to help, look up listings, send information
+- Uses professional language and call handling phrases ("How can I help you today?")
+- Provides information about PadSplit services/process/policies
+- Confirms availability, pricing, or property details
+- Guides the conversation structure
+
+MEMBER INDICATORS (person looking for housing):
+- Looking for housing/rooms/apartments ("I'm looking for a place", "I need a room")
+- Asks about prices, availability, locations, amenities
+- Shares personal details when asked (budget, timeline, family size, job)
+- May express concerns or objections about moving
+- Generally responds to questions rather than leading the conversation
+- Discusses their current living situation or reasons for moving
+
+TRANSCRIPT (first portion):
+${rawTranscript.substring(0, 3000)}
+
+Based on the conversation patterns above, identify which speaker is the Agent (PadSplit employee).
+
+CRITICAL: Look at WHO is asking qualifying questions vs WHO is answering them. The Agent ASKS, the Member ANSWERS.
+
+Return ONLY a JSON object (no markdown, no explanation):
+{
+  "speaker_0": "Agent" or "Member",
+  "speaker_1": "Agent" or "Member",
+  "confidence": "high" or "medium" or "low",
+  "reason": "Brief explanation"
+}`;
+
+  try {
+    const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${lovableApiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'google/gemini-2.5-flash-lite', // Fast, cheap model for this task
+        messages: [{ role: 'user', content: prompt }],
+      }),
+    });
+
+    if (!response.ok) {
+      console.error('[Speaker ID] AI request failed:', response.status);
+      return { speaker_0: 'Agent', speaker_1: 'Member', confidence: 'fallback' };
+    }
+
+    const result = await response.json();
+    const content = result.choices?.[0]?.message?.content || '';
+    
+    // Parse the JSON response
+    let cleanedContent = content.trim();
+    if (cleanedContent.startsWith('```json')) cleanedContent = cleanedContent.slice(7);
+    if (cleanedContent.startsWith('```')) cleanedContent = cleanedContent.slice(3);
+    if (cleanedContent.endsWith('```')) cleanedContent = cleanedContent.slice(0, -3);
+    cleanedContent = cleanedContent.trim();
+    
+    const parsed = JSON.parse(cleanedContent);
+    
+    // Validate the response
+    if (parsed.speaker_0 && parsed.speaker_1) {
+      console.log(`[Speaker ID] Identified: speaker_0=${parsed.speaker_0}, speaker_1=${parsed.speaker_1}, confidence=${parsed.confidence}`);
+      console.log(`[Speaker ID] Reason: ${parsed.reason || 'not provided'}`);
+      return {
+        speaker_0: parsed.speaker_0,
+        speaker_1: parsed.speaker_1,
+        confidence: parsed.confidence || 'medium'
+      };
+    }
+    
+    throw new Error('Invalid speaker identification response');
+  } catch (error) {
+    console.error('[Speaker ID] Error identifying speakers:', error);
+    // Fallback to original assumption
+    return { speaker_0: 'Agent', speaker_1: 'Member', confidence: 'fallback' };
+  }
+}
+
+// Format raw transcript with generic labels for speaker identification
+function formatRawTranscript(words: any[]): string {
+  const segments: string[] = [];
+  let currentSpeaker = '';
+  let currentText = '';
+  
+  for (const word of words) {
+    const speaker = word.speaker_id || 'Unknown';
+    
+    if (speaker !== currentSpeaker) {
+      if (currentText.trim()) {
+        segments.push(`${currentSpeaker}: ${currentText.trim()}`);
+      }
+      currentSpeaker = speaker;
+      currentText = word.text + ' ';
+    } else {
+      currentText += word.text + ' ';
+    }
+  }
+  
+  if (currentText.trim()) {
+    segments.push(`${currentSpeaker}: ${currentText.trim()}`);
+  }
+  
+  return segments.join('\n\n');
+}
+
+// Apply correct speaker labels based on AI identification
+function applyCorrectLabels(
+  words: any[],
+  speakerMapping: { speaker_0: string; speaker_1: string }
+): string {
+  const segments: string[] = [];
+  let currentSpeaker = '';
+  let currentText = '';
+  
+  for (const word of words) {
+    const rawSpeaker = word.speaker_id || 'Unknown';
+    
+    if (rawSpeaker !== currentSpeaker) {
+      if (currentText.trim()) {
+        // Map speaker_0/speaker_1 to Agent/Member based on AI identification
+        let label = currentSpeaker;
+        if (currentSpeaker === 'speaker_0') {
+          label = speakerMapping.speaker_0;
+        } else if (currentSpeaker === 'speaker_1') {
+          label = speakerMapping.speaker_1;
+        }
+        segments.push(`${label}: ${currentText.trim()}`);
+      }
+      currentSpeaker = rawSpeaker;
+      currentText = word.text + ' ';
+    } else {
+      currentText += word.text + ' ';
+    }
+  }
+  
+  if (currentText.trim()) {
+    let label = currentSpeaker;
+    if (currentSpeaker === 'speaker_0') {
+      label = speakerMapping.speaker_0;
+    } else if (currentSpeaker === 'speaker_1') {
+      label = speakerMapping.speaker_1;
+    }
+    segments.push(`${label}: ${currentText.trim()}`);
+  }
+  
+  return segments.join('\n\n');
+}
+
 // Helper to update booking with error message
 async function updateBookingError(supabase: any, bookingId: string, errorMessage: string) {
   try {
@@ -512,7 +674,7 @@ async function processTranscription(bookingId: string, kixieUrl: string) {
     const elevenLabsResult = await elevenLabsResponse.json();
     console.log('[Background] ElevenLabs response received');
 
-    // Format transcription with speaker labels
+    // Format transcription with AI-based speaker identification
     transcription = elevenLabsResult.text || '';
     
     if (elevenLabsResult.words && elevenLabsResult.words.length > 0) {
@@ -524,34 +686,37 @@ async function processTranscription(bookingId: string, kixieUrl: string) {
         console.log(`[Background] Call duration: ${callDurationSeconds} seconds (${mins}:${secs.toString().padStart(2, '0')})`);
       }
 
-      const formattedSegments: string[] = [];
-      let currentSpeaker = '';
-      let currentText = '';
+      // Phase 1: Format raw transcript with generic speaker labels
+      const rawTranscript = formatRawTranscript(elevenLabsResult.words);
       
-      for (const word of elevenLabsResult.words) {
-        const speaker = word.speaker_id || 'Unknown';
-        
-        if (speaker !== currentSpeaker) {
-          if (currentText.trim()) {
-            const speakerLabel = currentSpeaker === 'speaker_0' ? 'Agent' : 
-                                currentSpeaker === 'speaker_1' ? 'Member' : currentSpeaker;
-            formattedSegments.push(`${speakerLabel}: ${currentText.trim()}`);
-          }
-          currentSpeaker = speaker;
-          currentText = word.text + ' ';
-        } else {
-          currentText += word.text + ' ';
+      // Phase 2: Use AI to identify which speaker is Agent vs Member
+      const speakerMapping = await identifySpeakers(rawTranscript, lovableApiKey!);
+      
+      // Log cost for speaker identification (small AI call)
+      const speakerIdInputTokens = Math.ceil(3000 / 4); // ~3000 chars prompt
+      const speakerIdOutputTokens = Math.ceil(150 / 4); // ~150 chars response
+      logApiCost(supabase, {
+        service_provider: 'lovable_ai',
+        service_type: 'speaker_identification',
+        edge_function: 'transcribe-call',
+        booking_id: bookingId,
+        agent_id: agentId || undefined,
+        site_id: siteId || undefined,
+        input_tokens: speakerIdInputTokens,
+        output_tokens: speakerIdOutputTokens,
+        metadata: { 
+          model: 'google/gemini-2.5-flash-lite', 
+          confidence: speakerMapping.confidence,
+          speaker_0: speakerMapping.speaker_0,
+          speaker_1: speakerMapping.speaker_1
         }
-      }
+      });
       
-      if (currentText.trim()) {
-        const speakerLabel = currentSpeaker === 'speaker_0' ? 'Agent' : 
-                            currentSpeaker === 'speaker_1' ? 'Member' : currentSpeaker;
-        formattedSegments.push(`${speakerLabel}: ${currentText.trim()}`);
-      }
+      // Phase 3: Apply correct labels based on AI identification
+      transcription = applyCorrectLabels(elevenLabsResult.words, speakerMapping);
       
-      if (formattedSegments.length > 0) {
-        transcription = formattedSegments.join('\n\n');
+      if (speakerMapping.confidence === 'fallback') {
+        console.log('[Background] Warning: Speaker identification failed, using fallback assumption');
       }
     }
     
