@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
-import { Loader2, ChevronDown, ChevronUp, Mic, AlertCircle, CheckCircle2, Clock, TrendingUp, MessageSquare, Target, AlertTriangle, Lightbulb, Smile, Meh, Frown, Star, Award, ThumbsUp, GraduationCap, RefreshCw, Ban, Radio } from 'lucide-react';
+import { Loader2, ChevronDown, ChevronUp, Mic, AlertCircle, CheckCircle2, Clock, TrendingUp, MessageSquare, Target, AlertTriangle, Lightbulb, Smile, Meh, Frown, Star, Award, ThumbsUp, GraduationCap, RefreshCw, Ban, Radio, Wrench } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/contexts/AuthContext';
@@ -23,6 +23,7 @@ export function TranscriptionModal({ booking, isOpen, onClose, onTranscriptionCo
   const [isTranscribing, setIsTranscribing] = useState(false);
   const [isReanalyzing, setIsReanalyzing] = useState(false);
   const [isMarkingUnavailable, setIsMarkingUnavailable] = useState(false);
+  const [isRecoveringCoaching, setIsRecoveringCoaching] = useState(false);
   const [showFullTranscript, setShowFullTranscript] = useState(false);
   const [currentStatus, setCurrentStatus] = useState(booking.transcriptionStatus);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -213,6 +214,60 @@ export function TranscriptionModal({ booking, isOpen, onClose, onTranscriptionCo
     }
   };
 
+  // Recovery handler for missing Jeff coaching (when transcription exists but agent_feedback is null)
+  const handleRecoverMissingCoaching = async () => {
+    setIsRecoveringCoaching(true);
+    try {
+      // Step 1: Re-analyze to populate agent_feedback
+      toast({
+        title: "Step 1/2: Re-Analyzing Call",
+        description: "Generating coaching feedback from transcription...",
+      });
+      
+      const { data: reanalyzeData, error: reanalyzeError } = await supabase.functions.invoke('reanalyze-call', {
+        body: { bookingId: booking.id }
+      });
+
+      if (reanalyzeError) throw reanalyzeError;
+      if (!reanalyzeData?.success) throw new Error(reanalyzeData?.error || 'Failed to re-analyze call');
+
+      // Step 2: Generate coaching audio
+      toast({
+        title: "Step 2/2: Generating Audio",
+        description: "Creating Jeff's coaching audio...",
+      });
+      
+      const { data: audioData, error: audioError } = await supabase.functions.invoke('generate-coaching-audio', {
+        body: { bookingId: booking.id }
+      });
+
+      if (audioError) throw audioError;
+      if (!audioData?.success) throw new Error(audioData?.error || 'Failed to generate coaching audio');
+
+      toast({
+        title: "Recovery Complete",
+        description: "Jeff's coaching feedback and audio have been generated successfully!",
+      });
+      
+      // Clear cache and reload details
+      clearCache(booking.id);
+      fetchBookingDetails(booking.id).then(details => {
+        if (details) setLoadedDetails(details as any);
+      });
+      onTranscriptionComplete();
+      
+    } catch (error) {
+      console.error('Recovery error:', error);
+      toast({
+        title: "Recovery Failed",
+        description: error instanceof Error ? error.message : "An error occurred during recovery",
+        variant: "destructive",
+      });
+    } finally {
+      setIsRecoveringCoaching(false);
+    }
+  };
+
   // Derived values from loaded details (on-demand from booking_transcriptions table)
   const keyPoints = loadedDetails?.callKeyPoints as CallKeyPoints | null;
   const agentFeedback = loadedDetails?.agentFeedback as AgentFeedback | null;
@@ -252,6 +307,9 @@ export function TranscriptionModal({ booking, isOpen, onClose, onTranscriptionCo
   };
   const showReanalyzeButton = hasTranscription && !isLoadingDetails && hasIncompleteAnalysis() && !isReanalyzing && canManageAnalysis;
   const showMarkUnavailableButton = currentStatus === 'failed' && canManageAnalysis && !isMarkingUnavailable;
+  
+  // Show recovery button when transcription completed but Jeff's coaching (agent_feedback) is missing
+  const showRecoveryButton = hasTranscription && !isLoadingDetails && !agentFeedback && callTranscription && canManageAnalysis && !isRecoveringCoaching;
 
   const formatDuration = (seconds?: number) => {
     if (!seconds) return null;
@@ -462,6 +520,34 @@ export function TranscriptionModal({ booking, isOpen, onClose, onTranscriptionCo
                 </div>
               )}
 
+              {/* Recovery Button - shows when transcription exists but Jeff's coaching is missing */}
+              {showRecoveryButton && (
+                <div className="flex items-center gap-3 p-4 bg-primary/5 rounded-lg border border-primary/20">
+                  <Wrench className="h-5 w-5 text-primary" />
+                  <div className="flex-1">
+                    <p className="text-sm font-medium">Jeff's Coaching Missing</p>
+                    <p className="text-xs text-muted-foreground">Transcription exists but coaching feedback wasn't generated. Click to recover.</p>
+                  </div>
+                  <Button 
+                    onClick={handleRecoverMissingCoaching} 
+                    disabled={isRecoveringCoaching}
+                    size="sm"
+                    variant="outline"
+                  >
+                    {isRecoveringCoaching ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Recovering...
+                      </>
+                    ) : (
+                      <>
+                        <Wrench className="mr-2 h-4 w-4" />
+                        Recover Coaching
+                      </>
+                    )}
+                  </Button>
+                </div>
+              )}
 
               {/* Key Insights Grid */}
               <div className="grid md:grid-cols-2 gap-4">
