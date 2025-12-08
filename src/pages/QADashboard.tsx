@@ -100,22 +100,68 @@ export default function QADashboard() {
     return agents.filter(a => agentIds.has(a.id));
   }, [qaBookings, agents]);
 
-  // QA Coaching engagement stats
+  // Filter QA coaching bookings by date range (same logic as filteredBookings)
+  const filteredCoachingBookings = useMemo(() => {
+    let filtered = qaCoachingBookings;
+    
+    if (selectedAgent !== 'all') {
+      filtered = filtered.filter(b => b.agentId === selectedAgent);
+    }
+    
+    if (dateRange === 'all') return filtered;
+    
+    const now = new Date();
+    let startDate: Date;
+    let endDate = endOfDay(now);
+    
+    if (dateRange === 'custom' && customDates) {
+      startDate = startOfDay(customDates.from);
+      endDate = endOfDay(customDates.to);
+    } else {
+      switch (dateRange) {
+        case 'today':
+          startDate = startOfDay(now);
+          break;
+        case 'yesterday':
+          startDate = startOfDay(subDays(now, 1));
+          endDate = endOfDay(subDays(now, 1));
+          break;
+        case '7d':
+          startDate = startOfDay(subDays(now, 6));
+          break;
+        case '30d':
+          startDate = startOfDay(subDays(now, 29));
+          break;
+        case 'month':
+          startDate = startOfMonth(now);
+          break;
+        default:
+          startDate = new Date(0);
+      }
+    }
+    
+    return filtered.filter(b => {
+      const bookingDate = new Date(b.bookingDate + 'T00:00:00');
+      return isWithinInterval(bookingDate, { start: startDate, end: endDate });
+    });
+  }, [qaCoachingBookings, dateRange, selectedAgent, customDates]);
+
+  // QA Coaching engagement stats (now using filtered data)
   const coachingEngagement = useMemo(() => 
-    calculateQACoachingEngagement(qaCoachingBookings), 
-    [qaCoachingBookings]
+    calculateQACoachingEngagement(filteredCoachingBookings), 
+    [filteredCoachingBookings]
   );
 
   const agentCoachingStats = useMemo(() => 
-    getAgentQACoachingStats(qaCoachingBookings, agents),
-    [qaCoachingBookings, agents]
+    getAgentQACoachingStats(filteredCoachingBookings, agents),
+    [filteredCoachingBookings, agents]
   );
 
-  // Get selected agent's coaching bookings for modal
+  // Get selected agent's coaching bookings for modal (using filtered data)
   const selectedAgentCoachingBookings = useMemo(() => {
     if (!selectedAgentForModal) return [];
-    return qaCoachingBookings.filter(b => b.agentId === selectedAgentForModal);
-  }, [qaCoachingBookings, selectedAgentForModal]);
+    return filteredCoachingBookings.filter(b => b.agentId === selectedAgentForModal);
+  }, [filteredCoachingBookings, selectedAgentForModal]);
 
   const selectedAgentName = useMemo(() => {
     if (!selectedAgentForModal) return '';
