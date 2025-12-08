@@ -9,10 +9,11 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Separator } from '@/components/ui/separator';
 import { FileText, CalendarIcon } from 'lucide-react';
 import { format, startOfMonth, endOfMonth } from 'date-fns';
-import { Client, ApiCost, DateRangeType, BillingUnit } from '@/hooks/useBillingData';
+import { Client, ApiCost, BillingUnit } from '@/hooks/useBillingData';
 import { formatCurrency, SERVICE_TYPE_LABELS } from '@/utils/billingCalculations';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
+import { DateFilterValue } from '@/components/dashboard/DateRangeFilter';
 
 interface InvoiceGeneratorProps {
   clients: Client[];
@@ -27,7 +28,7 @@ interface InvoiceGeneratorProps {
     cost_breakdown: Record<string, any>;
     notes?: string;
   }) => Promise<any>;
-  dateRange: DateRangeType;
+  dateRange: DateFilterValue;
 }
 
 const BILLING_UNIT_LABELS: Record<BillingUnit, string> = {
