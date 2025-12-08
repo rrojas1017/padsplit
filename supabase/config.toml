@@ -53,9 +53,3 @@ verify_jwt = false
 
 [functions.backfill-historical-costs]
 verify_jwt = false
-
-[functions.compare-stt-providers]
-verify_jwt = false
-
-[functions.compare-full-pipeline]
-verify_jwt = false
