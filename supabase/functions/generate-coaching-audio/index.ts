@@ -82,9 +82,9 @@ serve(async (req) => {
 
   try {
     const body = await req.json();
-    const { bookingId, isRegenerate } = body;
+    const { bookingId } = body;
     
-    console.log("Received request:", { bookingId, isRegenerate, body });
+    console.log("Received request:", { bookingId, body });
 
     if (!bookingId) {
       throw new Error("Booking ID is required");
@@ -119,10 +119,10 @@ serve(async (req) => {
     const agentId = booking.agent_id;
     const siteId = (booking.agents as any)?.site_id || null;
 
-    // Fetch transcription data from booking_transcriptions table
+    // Fetch transcription data INCLUDING full transcript from booking_transcriptions table
     const { data: transcriptionData, error: transcriptionError } = await supabase
       .from("booking_transcriptions")
-      .select("agent_feedback, call_summary, call_key_points")
+      .select("agent_feedback, call_summary, call_key_points, call_transcription")
       .eq("booking_id", bookingId)
       .single();
 
@@ -134,6 +134,7 @@ serve(async (req) => {
     const agentName = (booking.agents as any)?.name || "Agent";
     const memberName = booking.member_name || "the member";
     const callSummary = transcriptionData.call_summary || "";
+    const callTranscript = transcriptionData.call_transcription || "";
     const callKeyPoints = transcriptionData.call_key_points as {
       memberConcerns?: string[];
       memberPreferences?: string[];
@@ -143,75 +144,91 @@ serve(async (req) => {
       sentiment?: string;
     } | null;
 
-    console.log(`Generating personalized coaching audio for agent: ${agentName}, member: ${memberName}`);
+    console.log(`Generating call-specific coaching audio for agent: ${agentName}, member: ${memberName}, transcript length: ${callTranscript.length}`);
 
-    // Extract call-specific details
-    const concerns = callKeyPoints?.memberConcerns?.slice(0, 2).join(", ") || "";
-    const objections = callKeyPoints?.objections?.slice(0, 2).join(", ") || "";
-    const preferences = callKeyPoints?.memberPreferences?.slice(0, 2).join(", ") || "";
+    // Extract call-specific details for context
+    const concerns = callKeyPoints?.memberConcerns?.slice(0, 3).join("; ") || "";
+    const objections = callKeyPoints?.objections?.slice(0, 3).join("; ") || "";
+    const preferences = callKeyPoints?.memberPreferences?.slice(0, 3).join("; ") || "";
     const sentiment = callKeyPoints?.sentiment || "positive";
 
-    // Step 1: Generate personalized motivational script using Lovable AI
-    const scriptPrompt = `You are an enthusiastic motivational coach delivering personalized feedback to a sales agent who just completed a booking.
+    // Identify weakest areas for focused coaching
+    const scores = agentFeedback.scores || { communication: 7, productKnowledge: 7, objectionHandling: 7, closingSkills: 7 };
+    const scoreEntries = [
+      { name: 'Communication', score: scores.communication },
+      { name: 'Product Knowledge', score: scores.productKnowledge },
+      { name: 'Objection Handling', score: scores.objectionHandling },
+      { name: 'Closing Skills', score: scores.closingSkills }
+    ].sort((a, b) => a.score - b.score);
+    const weakestArea = scoreEntries[0];
+    const secondWeakest = scoreEntries[1];
 
-Create a ~60 second spoken script that is SPECIFIC to THIS call. Reference the member by name and mention actual moments from the conversation.
+    // Step 1: Generate personalized motivational script using Lovable AI with FULL TRANSCRIPT
+    const scriptPrompt = `You are Jeff, an enthusiastic but HIGHLY SPECIFIC performance coach delivering personalized feedback to a sales agent.
 
-CALL DETAILS:
-- Agent Name: ${agentName}
-- Member Name: ${memberName}
-- Call Summary: ${callSummary || "Successful booking call"}
-- Member's Concerns: ${concerns || "None mentioned"}
-- Objections Handled: ${objections || "None"}
-- What Member Wanted: ${preferences || "Standard preferences"}
-- Call Sentiment: ${sentiment}
+CRITICAL: You MUST reference EXACT moments from the transcript. Quote what the agent actually said. Give word-for-word alternatives.
 
-PERFORMANCE SCORES:
-- Overall Rating: ${agentFeedback.overallRating}
-- Communication: ${agentFeedback.scores?.communication || 7}/10
-- Product Knowledge: ${agentFeedback.scores?.productKnowledge || 7}/10
-- Objection Handling: ${agentFeedback.scores?.objectionHandling || 7}/10
-- Closing Skills: ${agentFeedback.scores?.closingSkills || 7}/10
+=== AGENT & CALL INFO ===
+Agent: ${agentName}
+Member: ${memberName}
+Overall Rating: ${agentFeedback.overallRating}
 
-WHAT THEY DID WELL: ${agentFeedback.strengths?.join(", ") || "Strong performance"}
-AREAS TO IMPROVE: ${agentFeedback.improvements?.join(", ") || "Continue developing"}
+=== PERFORMANCE SCORES ===
+- Communication: ${scores.communication}/10
+- Product Knowledge: ${scores.productKnowledge}/10
+- Objection Handling: ${scores.objectionHandling}/10
+- Closing Skills: ${scores.closingSkills}/10
 
-YOUR SCRIPT MUST:
-1. Start with GENUINE EXCITEMENT - vary your opening each time! Pick ONE style randomly:
-   - Celebratory: "What an incredible call with ${memberName}!" / "Outstanding work with ${memberName}!"
-   - Impressed: "${agentName}, that was a masterclass!" / "Now THAT'S how it's done!"
-   - Hype: "${agentName}, you crushed it with ${memberName}!" / "You absolutely nailed that one!"
-   - Casual: "Hey ${agentName}! Great stuff on that call!" / "Wow, ${agentName}, you really brought it!"
-   - Playful: "Well look at you, closing like a champion!" / "${agentName}, you're on fire today!"
-   IMPORTANT: Rotate through different expressions - don't use the same phrase every time!
+WEAKEST AREA: ${weakestArea.name} (${weakestArea.score}/10)
+SECOND WEAKEST: ${secondWeakest.name} (${secondWeakest.score}/10)
 
-2. Reference 1-2 SPECIFIC things from THIS call (an objection handled, a concern addressed, how they matched member needs)
+=== CALL CONTEXT ===
+Summary: ${callSummary || "Booking call completed"}
+Member Concerns: ${concerns || "None noted"}
+Objections Raised: ${objections || "None"}
+Member Preferences: ${preferences || "Standard"}
+Call Sentiment: ${sentiment}
 
-3. If they handled an objection/concern well, vary how you praise it:
-   - "When ${memberName} mentioned [concern], you handled that beautifully..."
-   - "I love how you addressed [concern] - that was smooth!"
-   - "The way you navigated [objection]? That was textbook!"
-   - "Your response to [concern] was spot on..."
+=== FULL CALL TRANSCRIPT (reference specific moments!) ===
+${callTranscript.substring(0, 8000)}
 
-4. Give ONE quick tip - vary the lead-in:
-   - "Quick thought for next time..."
-   - "One thing to level up even more..."
-   - "Here's a little pro tip..."
-   - "Something to try on your next call..."
+=== YOUR COACHING SCRIPT REQUIREMENTS ===
 
-5. End with VARIED high-energy motivation:
-   - "Keep that energy going!" / "Now go bring that same fire to your next call!"
-   - "On to the next one!" / "You've got the momentum, let's keep it rolling!"
-   - "Can't wait to see what you do next!" / "That's the energy we need!"
+1. OPENING (vary your style - pick ONE):
+   - Celebratory: "What an incredible call with ${memberName}!"
+   - Impressed: "${agentName}, that was solid work!"
+   - Hype: "You brought the energy with ${memberName}!"
+   - Casual: "Hey ${agentName}! Let's break down that call!"
 
-CRITICAL RULES:
-- VARIETY IS KEY: Rotate through different expressions - avoid using the same opener repeatedly
-- Don't overuse any single phrase (including "crushed it", "nailed it", etc.) - mix it up!
-- Sound like a REAL human coach, not a script
-- Use natural contractions and conversational language
-- Each script should feel FRESH and UNIQUE
+2. SPECIFIC PRAISE - Quote the transcript!
+   Find something the agent said well and QUOTE IT:
+   "When ${memberName} asked about [topic], you said '[exact quote from transcript]' - that was perfect because..."
 
-Tone: Energetic but VARIED - like a real coach who celebrates differently each time.
-Length: 150-200 words (about 1 minute)
+3. SPECIFIC IMPROVEMENT - Quote what they said AND give alternative!
+   Focus on their WEAKEST AREA (${weakestArea.name}):
+   "When ${memberName} mentioned [concern], you said '[what agent actually said]'. Next time, try: '[word-for-word better response]'"
+   
+   EXAMPLE FORMAT:
+   "When the member asked about pricing, you said 'I'm not sure about that' - next time try: 'Great question! Our weekly rates start at around $150 and include all utilities. What's your budget looking like?'"
+
+4. ONE ACTIONABLE TIP for ${weakestArea.name}:
+   Give a specific technique they can use on their next call.
+
+5. ENERGETIC CLOSE (vary it):
+   - "Keep that momentum going!"
+   - "Can't wait to hear your next call!"
+   - "You've got this - now go close another one!"
+
+=== CRITICAL RULES ===
+- You MUST quote actual phrases from the transcript
+- You MUST provide word-for-word alternative responses
+- Focus coaching on ${weakestArea.name} since that's their lowest score
+- Sound like a REAL coach, not a script
+- Use natural contractions and conversational tone
+- Each script should feel FRESH and SPECIFIC to THIS call
+
+Tone: Energetic, supportive, but SPECIFIC - like a real coach who watched the actual call
+Length: 180-250 words (about 90 seconds)
 
 Generate ONLY the spoken script, no stage directions or formatting.`;
 
@@ -328,23 +345,13 @@ Generate ONLY the spoken script, no stage directions or formatting.`;
     console.log("Audio uploaded to storage:", audioUrl);
 
     // Step 3: Update booking_transcriptions with storage URL
-    const transcriptionUpdatePayload: Record<string, unknown> = {
-      coaching_audio_url: audioUrl,
-      coaching_audio_generated_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    };
-    
-    // If this is a regeneration, mark it so regenerate button disappears
-    if (isRegenerate === true) {
-      console.log("Setting coaching_audio_regenerated_at timestamp for regeneration");
-      transcriptionUpdatePayload.coaching_audio_regenerated_at = new Date().toISOString();
-    }
-    
-    console.log("Update payload for booking_transcriptions");
-    
     const { error: updateError } = await supabase
       .from("booking_transcriptions")
-      .update(transcriptionUpdatePayload)
+      .update({
+        coaching_audio_url: audioUrl,
+        coaching_audio_generated_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      })
       .eq("booking_id", bookingId);
 
     if (updateError) {
