@@ -37,7 +37,7 @@ const AgentGoals = () => {
   const isSupervisor = hasRole(['supervisor']);
   const isAdmin = hasRole(['admin']);
   const isSuperAdmin = hasRole(['super_admin']);
-  const canEdit = isSupervisor || isSuperAdmin;
+  const canEdit = isSupervisor || isSuperAdmin || isAdmin;
 
   // Filter agents based on role and selected site
   const filteredAgents = agents.filter(agent => {
