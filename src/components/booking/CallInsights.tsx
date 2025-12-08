@@ -7,6 +7,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/component
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { useBookingDetails } from '@/hooks/useBookingDetails';
+import { useAgents } from '@/contexts/AgentsContext';
 import { CoachingAudioPlayer } from '@/components/coaching/CoachingAudioPlayer';
 import { MemberDetailsCard } from './MemberDetailsCard';
 import { 
@@ -22,9 +23,14 @@ interface CallInsightsProps {
 export function CallInsights({ booking, onTranscriptionComplete }: CallInsightsProps) {
   const [isTranscribing, setIsTranscribing] = useState(false);
   const [isTranscriptionOpen, setIsTranscriptionOpen] = useState(false);
+  const { agents } = useAgents();
   
   const { fetchBookingDetails, isLoadingDetails, detailsCache } = useBookingDetails();
   const [loadedDetails, setLoadedDetails] = useState<any>(null);
+  
+  // Get the agent's user_id for this booking
+  const bookingAgent = agents.find(a => a.id === booking.agentId);
+  const agentUserId = bookingAgent?.userId;
 
   useEffect(() => {
     if (booking.transcriptionStatus === 'completed') {
@@ -117,7 +123,7 @@ export function CallInsights({ booking, onTranscriptionComplete }: CallInsightsP
                   <Volume2 className="h-5 w-5 text-accent" />
                   <p className="text-sm font-medium">Audio Coaching</p>
                 </div>
-                <CoachingAudioPlayer bookingId={booking.id} audioUrl={coachingAudioUrl} onAudioGenerated={onTranscriptionComplete} variant="card" />
+                <CoachingAudioPlayer bookingId={booking.id} audioUrl={coachingAudioUrl} onAudioGenerated={onTranscriptionComplete} variant="card" agentUserId={agentUserId} />
               </CardContent>
             </Card>
           )}

@@ -733,6 +733,7 @@ export default function CoachingHub() {
                               audioUrl={coachingBooking.coachingAudioUrl}
                               variant="inline"
                               listenedAt={coachingBooking.coachingAudioListenedAt}
+                              agentUserId={agents.find(a => a.id === booking.agentId)?.userId}
                             />
                           )}
                         </div>

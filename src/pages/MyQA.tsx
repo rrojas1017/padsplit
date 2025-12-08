@@ -259,6 +259,7 @@ export default function MyQA() {
                   listenedAt={topScoredBooking.coaching?.qaCoachingAudioListenedAt || null}
                   qaScore={topScoredBooking.qaScores?.percentage}
                   variant="button"
+                  agentUserId={myAgent?.userId}
                 />
               </CardContent>
             </Card>
@@ -307,6 +308,7 @@ export default function MyQA() {
                     listenedAt={lowestScoredBooking.coaching?.qaCoachingAudioListenedAt || null}
                     qaScore={lowestScoredBooking.qaScores?.percentage}
                     variant="button"
+                    agentUserId={myAgent?.userId}
                   />
                 </CardContent>
               </Card>
@@ -459,6 +461,7 @@ export default function MyQA() {
                                 listenedAt={matchingCoaching?.qaCoachingAudioListenedAt || null}
                                 qaScore={scorePercentage}
                                 variant="button"
+                                agentUserId={myAgent?.userId}
                               />
                             )}
                           </div>
