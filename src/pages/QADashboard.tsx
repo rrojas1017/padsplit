@@ -92,7 +92,7 @@ export default function QADashboard() {
   }, [qaBookings, dateRange, selectedAgent, customDates]);
 
   const stats = calculateQAStats(filteredBookings, rubric);
-  const rankings = getAgentQARankings(filteredBookings, agents);
+  const rankings = getAgentQARankings(filteredBookings);
 
   // Get unique agents with scores
   const agentsWithScores = useMemo(() => {
