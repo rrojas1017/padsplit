@@ -309,44 +309,102 @@ export default function MyPerformance() {
       </div>
 
       {/* Weekly Goal Progress Card */}
-      {myGoal && (
-        <div className="mb-6 p-4 rounded-xl bg-gradient-to-r from-primary/10 to-primary/5 border border-primary/20 animate-slide-up" style={{ animationDelay: '100ms' }}>
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center">
-                <Target className="w-5 h-5 text-primary" />
+      {myGoal && (() => {
+        // Calculate pace status for motivational messaging
+        const dayOfWeek = new Date().getDay(); // 0=Sun, 1=Mon, ..., 5=Fri, 6=Sat
+        const weekdaysPassed = dayOfWeek === 0 ? 5 : dayOfWeek === 6 ? 5 : dayOfWeek; // Mon=1, Fri=5
+        const expectedByNow = (myGoal.weekly_target / 5) * weekdaysPassed;
+        const isAhead = myGoal.current_bookings > expectedByNow;
+        const isOnTrack = myGoal.current_bookings >= expectedByNow * 0.9;
+        
+        // Motivational message based on progress
+        const getMotivationalMessage = () => {
+          const progress = myGoal.progress_percentage;
+          if (progress >= 100) return "🎉 Goal crushed! You're a superstar!";
+          if (progress >= 76) return "🔥 Almost there! Just a few more to go!";
+          if (progress >= 51) return "🎯 Great progress! The finish line is in sight!";
+          if (progress >= 26) return "📈 You're on your way! Halfway is within reach!";
+          if (progress >= 1) return "🚀 Good start! Keep the momentum going!";
+          return "💪 Let's get started! Your first booking awaits!";
+        };
+        
+        // Pace indicator message
+        const getPaceMessage = () => {
+          if (myGoal.progress_percentage >= 100) return null;
+          if (isAhead) return "✨ You're ahead of pace!";
+          if (isOnTrack) return "👍 You're on track!";
+          const behind = Math.ceil(expectedByNow - myGoal.current_bookings);
+          return `📊 ${behind} booking${behind > 1 ? 's' : ''} behind pace — you got this!`;
+        };
+        
+        return (
+          <div className="mb-6 p-4 rounded-xl bg-gradient-to-r from-primary/10 to-primary/5 border border-primary/20 animate-slide-up" style={{ animationDelay: '100ms' }}>
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center">
+                  <Target className="w-5 h-5 text-primary" />
+                </div>
+                <div>
+                  <h3 className="font-semibold text-foreground">This Week's Goal</h3>
+                  <p className="text-sm text-muted-foreground">
+                    {format(new Date(myGoal.week_start + 'T00:00:00'), 'MMM d')} - {format(new Date(myGoal.week_end + 'T00:00:00'), 'MMM d')}
+                  </p>
+                </div>
               </div>
-              <div>
-                <h3 className="font-semibold text-foreground">This Week's Goal</h3>
-                <p className="text-sm text-muted-foreground">
-                  {format(new Date(myGoal.week_start), 'MMM d')} - {format(new Date(myGoal.week_end), 'MMM d')}
-                </p>
+              <div className="text-right">
+                <div className="text-2xl font-bold text-foreground">
+                  {myGoal.current_bookings} / {myGoal.weekly_target}
+                </div>
+                <div className={cn(
+                  "text-sm font-medium",
+                  myGoal.progress_percentage >= 100 ? "text-green-500" :
+                  myGoal.progress_percentage >= 75 ? "text-amber-500" : "text-muted-foreground"
+                )}>
+                  {myGoal.progress_percentage}% complete
+                </div>
               </div>
             </div>
-            <div className="text-right">
-              <div className="text-2xl font-bold text-foreground">
-                {myGoal.current_bookings} / {myGoal.weekly_target}
+            <Progress 
+              value={Math.min(100, myGoal.progress_percentage)} 
+              className="h-3"
+            />
+            
+            {/* Daily breakdown row */}
+            <div className="flex flex-wrap items-center justify-between gap-2 mt-3 pt-3 border-t border-primary/10">
+              <div className="text-sm">
+                <span className="text-muted-foreground">Today: </span>
+                <span className="font-medium text-foreground">{myGoal.today_bookings ?? 0}</span>
               </div>
-              <div className={cn(
-                "text-sm font-medium",
-                myGoal.progress_percentage >= 100 ? "text-green-500" :
-                myGoal.progress_percentage >= 75 ? "text-amber-500" : "text-muted-foreground"
-              )}>
-                {myGoal.progress_percentage}% complete
+              <div className="text-sm">
+                <span className="text-muted-foreground">Daily target: </span>
+                <span className="font-medium text-foreground">{myGoal.daily_target}</span>
               </div>
+              <div className="text-sm">
+                <span className="text-muted-foreground">Days left: </span>
+                <span className="font-medium text-foreground">{myGoal.days_remaining ?? 0}</span>
+              </div>
+              {myGoal.progress_percentage < 100 && (myGoal.days_remaining ?? 0) > 0 && (
+                <div className="text-sm">
+                  <span className="text-muted-foreground">Need/day: </span>
+                  <span className="font-medium text-foreground">{myGoal.required_daily_pace ?? 0}</span>
+                </div>
+              )}
+            </div>
+            
+            {/* Motivational message */}
+            <div className="mt-3 space-y-1">
+              <p className="text-sm font-medium text-primary">
+                {getMotivationalMessage()}
+              </p>
+              {getPaceMessage() && (
+                <p className="text-xs text-muted-foreground">
+                  {getPaceMessage()}
+                </p>
+              )}
             </div>
           </div>
-          <Progress 
-            value={Math.min(100, myGoal.progress_percentage)} 
-            className="h-3"
-          />
-          {myGoal.progress_percentage >= 100 && (
-            <p className="text-sm text-green-500 mt-2 font-medium">
-              🎉 Congratulations! You've achieved your weekly goal!
-            </p>
-          )}
-        </div>
-      )}
+        );
+      })()}
 
       {/* KPI Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
