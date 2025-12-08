@@ -21,9 +21,9 @@ interface BookingWithTranscription {
   member_name: string;
   market_city: string;
   market_state: string;
-  call_key_points: CallKeyPoints;
-  call_sentiment?: string;
-  transcribed_at: string;
+  booking_transcriptions: Array<{
+    call_key_points: CallKeyPoints;
+  }>;
 }
 
 // Cost logging helper
@@ -83,11 +83,19 @@ serve(async (req) => {
     console.log(`Starting ${analysis_period} member insights analysis from ${date_range_start} to ${date_range_end}`);
 
     // Fetch all bookings with completed transcriptions in date range
-    const { data: bookings, error: bookingsError } = await supabase
+    // Join with booking_transcriptions table where call_key_points are stored
+    const { data: bookingsRaw, error: bookingsError } = await supabase
       .from('bookings')
-      .select('id, member_name, market_city, market_state, call_key_points, transcribed_at')
+      .select(`
+        id, 
+        member_name, 
+        market_city, 
+        market_state,
+        booking_transcriptions (
+          call_key_points
+        )
+      `)
       .eq('transcription_status', 'completed')
-      .not('call_key_points', 'is', null)
       .gte('booking_date', date_range_start)
       .lte('booking_date', date_range_end);
 
@@ -96,7 +104,12 @@ serve(async (req) => {
       throw new Error(`Failed to fetch bookings: ${bookingsError.message}`);
     }
 
-    if (!bookings || bookings.length === 0) {
+    // Filter to only include bookings with call_key_points
+    const bookings = (bookingsRaw || []).filter((b: any) => 
+      b.booking_transcriptions?.[0]?.call_key_points
+    ) as BookingWithTranscription[];
+
+    if (bookings.length === 0) {
       console.log('No transcribed bookings found in date range');
       return new Response(JSON.stringify({ 
         success: false, 
@@ -120,8 +133,8 @@ serve(async (req) => {
     // Track member names for journey insights
     const memberCallCounts: Record<string, number> = {};
 
-    for (const booking of bookings as BookingWithTranscription[]) {
-      const keyPoints = booking.call_key_points;
+    for (const booking of bookings) {
+      const keyPoints = booking.booking_transcriptions?.[0]?.call_key_points;
       if (!keyPoints) continue;
 
       if (keyPoints.memberConcerns) allConcerns.push(...keyPoints.memberConcerns);
