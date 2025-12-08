@@ -437,12 +437,10 @@ export function TranscriptionModal({ booking, isOpen, onClose, onTranscriptionCo
                   <CheckCircle2 className="h-3 w-3 mr-1" />
                   Transcribed
                 </Badge>
-                {loadedDetails?.sttProvider && (
-                  <Badge variant="outline" className={loadedDetails.sttProvider === 'deepgram' ? 'bg-blue-500/10 text-blue-500 border-blue-500/30' : 'bg-purple-500/10 text-purple-500 border-purple-500/30'}>
-                    <Radio className="h-3 w-3 mr-1" />
-                    {loadedDetails.sttProvider === 'deepgram' ? 'Deepgram' : 'ElevenLabs'}
-                  </Badge>
-                )}
+                <Badge variant="outline" className="bg-purple-500/10 text-purple-500 border-purple-500/30">
+                  <Radio className="h-3 w-3 mr-1" />
+                  ElevenLabs
+                </Badge>
                 {booking.callDurationSeconds && (
                   <Badge variant="outline" className="flex items-center gap-1">
                     <Clock className="h-3 w-3" />
