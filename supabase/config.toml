@@ -50,3 +50,6 @@ verify_jwt = false
 
 [functions.batch-generate-coaching-audio]
 verify_jwt = false
+
+[functions.check-elevenlabs-plan]
+verify_jwt = true
