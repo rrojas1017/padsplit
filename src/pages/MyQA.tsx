@@ -243,7 +243,6 @@ export default function MyQA() {
                   audioUrl={topScoredBooking.coaching?.qaCoachingAudioUrl || null}
                   listenedAt={topScoredBooking.coaching?.qaCoachingAudioListenedAt || null}
                   qaScore={topScoredBooking.qaScores?.percentage}
-                  canRegenerate={true}
                   variant="button"
                 />
               </CardContent>
@@ -292,7 +291,6 @@ export default function MyQA() {
                     audioUrl={lowestScoredBooking.coaching?.qaCoachingAudioUrl || null}
                     listenedAt={lowestScoredBooking.coaching?.qaCoachingAudioListenedAt || null}
                     qaScore={lowestScoredBooking.qaScores?.percentage}
-                    canRegenerate={true}
                     variant="button"
                   />
                 </CardContent>
@@ -445,7 +443,6 @@ export default function MyQA() {
                                 audioUrl={matchingCoaching?.qaCoachingAudioUrl || null}
                                 listenedAt={matchingCoaching?.qaCoachingAudioListenedAt || null}
                                 qaScore={scorePercentage}
-                                canRegenerate={true}
                                 variant="button"
                               />
                             )}

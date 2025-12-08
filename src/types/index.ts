@@ -95,7 +95,6 @@ export interface Booking {
   // Coaching audio fields
   coachingAudioUrl?: string;
   coachingAudioGeneratedAt?: Date;
-  coachingAudioRegeneratedAt?: Date; // If set, regeneration already happened (one-time limit)
   callTypeId?: string;
 }
 

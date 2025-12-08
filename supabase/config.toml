@@ -15,9 +15,6 @@ verify_jwt = false
 [functions.transcribe-call]
 verify_jwt = true
 
-[functions.regenerate-coaching]
-verify_jwt = true
-
 [functions.reanalyze-call]
 verify_jwt = true
 
@@ -29,9 +26,6 @@ verify_jwt = true
 
 [functions.generate-coaching-audio]
 verify_jwt = true
-
-[functions.batch-regenerate-coaching]
-verify_jwt = false
 
 [functions.cleanup-coaching-audio]
 verify_jwt = false

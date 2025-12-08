@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Play, Pause, RotateCcw, Volume2, Loader2, CheckCircle, Sparkles, RefreshCw } from 'lucide-react';
+import { Play, Pause, Volume2, Loader2, CheckCircle, Sparkles } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
@@ -11,7 +11,6 @@ interface QACoachingAudioPlayerProps {
   audioUrl?: string | null;
   listenedAt?: string | null;
   onAudioListened?: () => void;
-  canRegenerate?: boolean;
   qaScore?: number;
   weakestAreas?: string[];
   variant?: 'button' | 'card';
@@ -22,7 +21,6 @@ export const QACoachingAudioPlayer: React.FC<QACoachingAudioPlayerProps> = ({
   audioUrl,
   listenedAt,
   onAudioListened,
-  canRegenerate = false,
   qaScore,
   weakestAreas = [],
   variant = 'card',
@@ -100,7 +98,7 @@ export const QACoachingAudioPlayer: React.FC<QACoachingAudioPlayerProps> = ({
     setIsGenerating(true);
     try {
       const { data, error } = await supabase.functions.invoke('generate-qa-coaching-audio', {
-        body: { bookingId, isRegenerate: !!currentAudioUrl }
+        body: { bookingId }
       });
 
       if (error) throw error;
@@ -135,43 +133,25 @@ export const QACoachingAudioPlayer: React.FC<QACoachingAudioPlayerProps> = ({
           onEnded={handleEnded}
         />
         {currentAudioUrl ? (
-          <>
-            <Button
-              onClick={handlePlayPause}
-              size="sm"
-              variant="outline"
-              className={cn("gap-2", isPlaying && "bg-accent/20")}
-            >
-              {isPlaying ? (
-                <>
-                  <Pause className="h-4 w-4" />
-                  Pause
-                </>
-              ) : (
-                <>
-                  <Play className="h-4 w-4" />
-                  Play Coaching
-                </>
-              )}
-            </Button>
-            {canRegenerate && (
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-8 w-8"
-                onClick={handleGenerateAudio}
-                disabled={isGenerating}
-                title="Regenerate coaching"
-              >
-                {isGenerating ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <RefreshCw className="h-4 w-4" />
-                )}
-              </Button>
+          <Button
+            onClick={handlePlayPause}
+            size="sm"
+            variant="outline"
+            className={cn("gap-2", isPlaying && "bg-accent/20")}
+          >
+            {isPlaying ? (
+              <>
+                <Pause className="h-4 w-4" />
+                Pause
+              </>
+            ) : (
+              <>
+                <Play className="h-4 w-4" />
+                Play Coaching
+              </>
             )}
-          </>
-        ) : canRegenerate ? (
+          </Button>
+        ) : (
           <Button
             variant="outline"
             size="sm"
@@ -186,8 +166,6 @@ export const QACoachingAudioPlayer: React.FC<QACoachingAudioPlayerProps> = ({
             )}
             Generate
           </Button>
-        ) : (
-          <span className="text-xs text-muted-foreground">No audio</span>
         )}
       </div>
     );
@@ -268,16 +246,6 @@ export const QACoachingAudioPlayer: React.FC<QACoachingAudioPlayerProps> = ({
                   <CheckCircle className="h-3 w-3 mr-1" />
                   Listened
                 </Badge>
-              )}
-              {canRegenerate && (
-                <button
-                  onClick={handleGenerateAudio}
-                  disabled={isGenerating}
-                  className="p-1 rounded hover:bg-accent/20 transition-colors disabled:opacity-50"
-                  title="Regenerate with Katty's improved coaching"
-                >
-                  <RefreshCw className={cn("h-3.5 w-3.5 text-muted-foreground hover:text-accent", isGenerating && "animate-spin")} />
-                </button>
               )}
             </div>
           </div>
