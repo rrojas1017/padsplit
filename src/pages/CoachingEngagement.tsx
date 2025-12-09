@@ -57,7 +57,7 @@ export default function CoachingEngagement() {
   const { agents } = useAgents();
   const { user } = useAuth();
   
-  const [dateRange, setDateRange] = useState<DateRangeFilterType>('all');
+  const [dateRange, setDateRange] = useState<DateRangeFilterType>('today');
   const [customDates, setCustomDates] = useState<CalcCustomDateRange | undefined>(undefined);
   const [selectedSiteId, setSelectedSiteId] = useState<string>('all');
   const [sites, setSites] = useState<Site[]>([]);
@@ -214,7 +214,7 @@ export default function CoachingEngagement() {
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
           <DateRangeFilter 
             onRangeChange={handleRangeChange} 
-            defaultValue="all"
+            defaultValue="today"
             includeAllTime={true}
             includeCustom={true}
           />

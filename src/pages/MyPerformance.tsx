@@ -115,7 +115,7 @@ export default function MyPerformance() {
   const { user } = useAuth();
   const { bookings, isLoading: bookingsLoading } = useBookings();
   const { agents, isLoading: agentsLoading } = useAgents();
-  const [dateFilter, setDateFilter] = useState<DateFilterValue>('7d');
+  const [dateFilter, setDateFilter] = useState<DateFilterValue>('today');
   const [customDates, setCustomDates] = useState<CustomDateRange | undefined>(undefined);
 
   const handleRangeChange = (range: DateFilterValue, dates?: CustomDateRange) => {

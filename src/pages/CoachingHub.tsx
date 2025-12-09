@@ -58,7 +58,7 @@ export default function CoachingHub() {
   const { agents } = useAgents();
   const { user } = useAuth();
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
-  const [dateRange, setDateRange] = useState<DateRangeFilterType>('all');
+  const [dateRange, setDateRange] = useState<DateRangeFilterType>('today');
   const [customDates, setCustomDates] = useState<CalcCustomDateRange | undefined>(undefined);
 
   const handleRangeChange = (range: DateFilterValue, dates?: CustomDateRange) => {
@@ -148,7 +148,7 @@ export default function CoachingHub() {
         <div className="flex items-center justify-between">
           <DateRangeFilter 
             onRangeChange={handleRangeChange} 
-            defaultValue="all"
+            defaultValue="today"
             includeAllTime={true}
             includeCustom={true}
           />
