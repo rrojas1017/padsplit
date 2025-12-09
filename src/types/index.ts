@@ -74,7 +74,7 @@ export interface Booking {
   marketCity: string;
   marketState: string;
   communicationMethod: 'Phone' | 'SMS' | 'LC' | 'Email';
-  status: 'Pending Move-In' | 'Moved In' | 'Member Rejected' | 'No Show' | 'Cancelled';
+  status: 'Pending Move-In' | 'Moved In' | 'Member Rejected' | 'No Show' | 'Cancelled' | 'Postponed';
   notes?: string;
   hubspotLink?: string;
   kixieLink?: string;

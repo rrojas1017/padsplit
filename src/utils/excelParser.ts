@@ -83,6 +83,8 @@ const normalizeStatus = (status: string): string => {
     'noshow': 'No Show',
     'cancelled': 'Cancelled',
     'canceled': 'Cancelled',
+    'postponed': 'Postponed',
+    'rescheduled': 'Postponed',
   };
   
   const normalized = statusMap[finalStatus.toLowerCase()];
