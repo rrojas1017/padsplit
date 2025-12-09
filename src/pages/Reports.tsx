@@ -4,7 +4,7 @@ import { usePageTracking } from '@/hooks/usePageTracking';
 import { useAuth } from '@/contexts/AuthContext';
 import { useAgents } from '@/contexts/AgentsContext';
 import { Button } from '@/components/ui/button';
-import { Download, Search, PlusCircle, Pencil, ChevronDown, Building2, User, MessageSquare, Tag, CheckCircle, RotateCcw, ArrowUp, ArrowDown, ArrowUpDown, X, ExternalLink, Phone, UserCircle, Headphones, FileText, Loader2 } from 'lucide-react';
+import { Download, Search, PlusCircle, Pencil, ChevronDown, Building2, User, MessageSquare, Tag, CheckCircle, RotateCcw, ArrowUp, ArrowDown, ArrowUpDown, X, ExternalLink, Phone, UserCircle, Headphones, FileText, Loader2, MoreHorizontal, Clock, CalendarX, XCircle, Ban } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { format, startOfDay, endOfDay, isWithinInterval } from 'date-fns';
 import { cn } from '@/lib/utils';
@@ -18,8 +18,10 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { toast } from 'sonner';
 import {
   Select,
   SelectContent,
@@ -69,7 +71,7 @@ const communicationMethodOptions = [
 
 export default function Reports() {
   usePageTracking('view_reports');
-  const { bookings, refreshBookings } = useBookings();
+  const { bookings, refreshBookings, updateBooking } = useBookings();
   const { user } = useAuth();
   const { agents } = useAgents();
   const navigate = useNavigate();
@@ -740,14 +742,84 @@ export default function Reports() {
                     </td>
                     <td className="py-3 px-4">
                       {canEditBooking(booking.agentId) && (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="h-8 w-8 p-0"
-                          onClick={() => navigate(`/edit-booking/${booking.id}`)}
-                        >
-                          <Pencil className="h-4 w-4" />
-                        </Button>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-8 w-8 p-0"
+                            >
+                              <MoreHorizontal className="h-4 w-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end" className="w-48">
+                            <DropdownMenuItem
+                              onClick={async () => {
+                                await updateBooking(booking.id, { status: 'Moved In' });
+                                toast.success('Status updated to Moved In');
+                              }}
+                              className="text-green-600 focus:text-green-600"
+                              disabled={booking.status === 'Moved In'}
+                            >
+                              <CheckCircle className="h-4 w-4 mr-2" />
+                              Mark as Moved In
+                              {booking.status === 'Moved In' && <span className="ml-auto text-xs">✓</span>}
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onClick={async () => {
+                                await updateBooking(booking.id, { status: 'Postponed' });
+                                toast.success('Status updated to Postponed');
+                              }}
+                              className="text-primary focus:text-primary"
+                              disabled={booking.status === 'Postponed'}
+                            >
+                              <Clock className="h-4 w-4 mr-2" />
+                              Mark as Postponed
+                              {booking.status === 'Postponed' && <span className="ml-auto text-xs">✓</span>}
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onClick={async () => {
+                                await updateBooking(booking.id, { status: 'No Show' });
+                                toast.success('Status updated to No Show');
+                              }}
+                              className="text-muted-foreground focus:text-muted-foreground"
+                              disabled={booking.status === 'No Show'}
+                            >
+                              <CalendarX className="h-4 w-4 mr-2" />
+                              Mark as No Show
+                              {booking.status === 'No Show' && <span className="ml-auto text-xs">✓</span>}
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onClick={async () => {
+                                await updateBooking(booking.id, { status: 'Member Rejected' });
+                                toast.success('Status updated to Member Rejected');
+                              }}
+                              className="text-destructive focus:text-destructive"
+                              disabled={booking.status === 'Member Rejected'}
+                            >
+                              <XCircle className="h-4 w-4 mr-2" />
+                              Mark as Rejected
+                              {booking.status === 'Member Rejected' && <span className="ml-auto text-xs">✓</span>}
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onClick={async () => {
+                                await updateBooking(booking.id, { status: 'Cancelled' });
+                                toast.success('Status updated to Cancelled');
+                              }}
+                              className="text-muted-foreground focus:text-muted-foreground"
+                              disabled={booking.status === 'Cancelled'}
+                            >
+                              <Ban className="h-4 w-4 mr-2" />
+                              Mark as Cancelled
+                              {booking.status === 'Cancelled' && <span className="ml-auto text-xs">✓</span>}
+                            </DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem onClick={() => navigate(`/edit-booking/${booking.id}`)}>
+                              <Pencil className="h-4 w-4 mr-2" />
+                              Edit Full Details...
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
                       )}
                     </td>
                   </tr>
