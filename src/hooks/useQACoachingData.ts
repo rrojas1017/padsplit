@@ -8,6 +8,7 @@ export interface QACoachingBooking {
   bookingDate: Date;
   agentId: string;
   agentName: string;
+  agentUserId?: string;
   memberName?: string;
   qaScores: {
     scores: Record<string, number>;
@@ -20,6 +21,10 @@ export interface QACoachingBooking {
   qaCoachingAudioListenedAt?: string | null;
   marketCity?: string | null;
   marketState?: string | null;
+  // Jeff's coaching fields
+  agentFeedback?: Record<string, unknown> | null;
+  coachingAudioUrl?: string | null;
+  coachingAudioListenedAt?: string | null;
 }
 
 export interface UseQACoachingDataOptions {
@@ -52,6 +57,9 @@ export function useQACoachingData(options: UseQACoachingDataOptions = {}) {
             qa_coaching_audio_url,
             qa_coaching_audio_generated_at,
             qa_coaching_audio_listened_at,
+            agent_feedback,
+            coaching_audio_url,
+            coaching_audio_listened_at,
             bookings!inner(
               id,
               booking_date,
@@ -59,7 +67,7 @@ export function useQACoachingData(options: UseQACoachingDataOptions = {}) {
               member_name,
               market_city,
               market_state,
-              agents!inner(id, name)
+              agents!inner(id, name, user_id)
             )
           `);
 
@@ -92,6 +100,7 @@ export function useQACoachingData(options: UseQACoachingDataOptions = {}) {
             bookingDate: new Date(booking?.booking_date + 'T00:00:00'),
             agentId: booking?.agent_id || '',
             agentName: agent?.name || 'Unknown',
+            agentUserId: agent?.user_id || undefined,
             memberName: booking?.member_name,
             qaScores: item.qa_scores,
             qaCoachingAudioUrl: item.qa_coaching_audio_url,
@@ -99,6 +108,10 @@ export function useQACoachingData(options: UseQACoachingDataOptions = {}) {
             qaCoachingAudioListenedAt: item.qa_coaching_audio_listened_at,
             marketCity: booking?.market_city,
             marketState: booking?.market_state,
+            // Jeff's coaching fields
+            agentFeedback: item.agent_feedback,
+            coachingAudioUrl: item.coaching_audio_url,
+            coachingAudioListenedAt: item.coaching_audio_listened_at,
           };
         });
 
