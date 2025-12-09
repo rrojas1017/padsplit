@@ -382,11 +382,58 @@ export default function Reports() {
     );
   };
 
+  // Summary statistics
+  const summaryStats = useMemo(() => {
+    const total = filteredBookings.length;
+    const pendingMoveIn = filteredBookings.filter(b => b.status === 'Pending Move-In').length;
+    const movedIn = filteredBookings.filter(b => b.status === 'Moved In').length;
+    const memberRejected = filteredBookings.filter(b => b.status === 'Member Rejected').length;
+    const noShowCancelled = filteredBookings.filter(b => b.status === 'No Show' || b.status === 'Cancelled').length;
+    
+    return { total, pendingMoveIn, movedIn, memberRejected, noShowCancelled };
+  }, [filteredBookings]);
+
   return (
     <DashboardLayout 
       title="Reports" 
       subtitle="Detailed booking data and exports"
     >
+      {/* Summary Cards */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 mb-6">
+        <div className="bg-card rounded-xl p-4 border border-border shadow-sm">
+          <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Total Bookings</p>
+          <p className="text-2xl font-bold text-foreground mt-1">{summaryStats.total}</p>
+        </div>
+        <div className="bg-card rounded-xl p-4 border border-border shadow-sm">
+          <div className="flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-warning"></span>
+            <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Pending Move-In</p>
+          </div>
+          <p className="text-2xl font-bold text-warning mt-1">{summaryStats.pendingMoveIn}</p>
+        </div>
+        <div className="bg-card rounded-xl p-4 border border-border shadow-sm">
+          <div className="flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-success"></span>
+            <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Moved In</p>
+          </div>
+          <p className="text-2xl font-bold text-success mt-1">{summaryStats.movedIn}</p>
+        </div>
+        <div className="bg-card rounded-xl p-4 border border-border shadow-sm">
+          <div className="flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-destructive"></span>
+            <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Member Rejected</p>
+          </div>
+          <p className="text-2xl font-bold text-destructive mt-1">{summaryStats.memberRejected}</p>
+        </div>
+        <div className="bg-card rounded-xl p-4 border border-border shadow-sm">
+          <div className="flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-muted-foreground"></span>
+            <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">No Show / Cancelled</p>
+          </div>
+          <p className="text-2xl font-bold text-muted-foreground mt-1">{summaryStats.noShowCancelled}</p>
+        </div>
+      </div>
+
       {/* Filters Row 1 */}
       <div className="flex flex-wrap items-center gap-3 mb-3">
         {/* Booking Date Range Filter */}
