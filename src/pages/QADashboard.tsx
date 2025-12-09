@@ -13,7 +13,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { 
   ClipboardCheck, TrendingUp, Calendar, Target, Award, BarChart3, 
-  Users, Trophy, ChevronRight, Loader2, Zap, Headphones, Volume2, CheckCircle, Mic
+  Users, Trophy, ChevronRight, Loader2, Zap, Headphones, Volume2, CheckCircle
 } from 'lucide-react';
 import { useState, useMemo } from 'react';
 import { format, isWithinInterval, startOfDay, endOfDay, startOfWeek, startOfMonth, subDays } from 'date-fns';
@@ -21,7 +21,6 @@ import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContai
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { QACoachingAudioPlayer } from '@/components/qa/QACoachingAudioPlayer';
-import { CoachingAudioPlayer } from '@/components/coaching/CoachingAudioPlayer';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 type DateRange = 'today' | 'week' | 'month' | 'all';
@@ -676,8 +675,8 @@ export default function QADashboard() {
         <DialogContent className="max-w-2xl max-h-[80vh]">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <Headphones className="w-5 h-5 text-primary" />
-              {selectedAgentName}'s Coaching Review
+              <Volume2 className="w-5 h-5 text-pink-500" />
+              {selectedAgentName}'s QA Coaching
             </DialogTitle>
           </DialogHeader>
           
@@ -691,7 +690,7 @@ export default function QADashboard() {
                 {selectedAgentCoachingBookings
                   .sort((a, b) => new Date(b.bookingDate).getTime() - new Date(a.bookingDate).getTime())
                   .map((booking) => (
-                    <div key={booking.id} className="border rounded-lg p-4 space-y-4">
+                    <div key={booking.id} className="border rounded-lg p-4 space-y-3">
                       <div className="flex items-center justify-between">
                         <div>
                           <p className="font-medium">{booking.memberName || 'Unknown Member'}</p>
@@ -706,35 +705,6 @@ export default function QADashboard() {
                               {booking.qaScores.percentage}%
                             </Badge>
                           )}
-                        </div>
-                      </div>
-                      
-                      {/* Jeff's Performance Coaching */}
-                      <div className="space-y-2">
-                        <div className="flex items-center gap-2 text-sm font-medium text-orange-600 dark:text-orange-400">
-                          <Mic className="w-4 h-4" />
-                          Jeff's Performance Coaching
-                          {booking.coachingAudioListenedAt && (
-                            <Badge variant="outline" className="bg-green-500/10 text-green-600 border-green-500/20 text-xs">
-                              <CheckCircle className="w-3 h-3 mr-1" />
-                              Listened
-                            </Badge>
-                          )}
-                        </div>
-                        <CoachingAudioPlayer
-                          bookingId={booking.bookingId}
-                          audioUrl={booking.coachingAudioUrl}
-                          listenedAt={booking.coachingAudioListenedAt}
-                          variant="button"
-                          agentUserId={booking.agentUserId}
-                        />
-                      </div>
-                      
-                      {/* Katty's QA Coaching */}
-                      <div className="space-y-2">
-                        <div className="flex items-center gap-2 text-sm font-medium text-pink-600 dark:text-pink-400">
-                          <Volume2 className="w-4 h-4" />
-                          Katty's QA Coaching
                           {booking.qaCoachingAudioListenedAt && (
                             <Badge variant="outline" className="bg-green-500/10 text-green-600 border-green-500/20 text-xs">
                               <CheckCircle className="w-3 h-3 mr-1" />
@@ -742,15 +712,16 @@ export default function QADashboard() {
                             </Badge>
                           )}
                         </div>
-                        <QACoachingAudioPlayer
-                          bookingId={booking.bookingId}
-                          audioUrl={booking.qaCoachingAudioUrl}
-                          listenedAt={booking.qaCoachingAudioListenedAt}
-                          qaScore={booking.qaScores?.percentage}
-                          variant="button"
-                          agentUserId={booking.agentUserId}
-                        />
                       </div>
+                      
+                      <QACoachingAudioPlayer
+                        bookingId={booking.bookingId}
+                        audioUrl={booking.qaCoachingAudioUrl}
+                        listenedAt={booking.qaCoachingAudioListenedAt}
+                        qaScore={booking.qaScores?.percentage}
+                        variant="button"
+                        agentUserId={booking.agentUserId}
+                      />
                     </div>
                   ))}
               </div>
