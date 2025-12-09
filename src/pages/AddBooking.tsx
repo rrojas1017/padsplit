@@ -27,7 +27,7 @@ import { CalendarIcon, Save, PlusCircle, ArrowLeft } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 const bookingTypes: Booking['bookingType'][] = ['Inbound', 'Outbound', 'Referral'];
-const statuses: Booking['status'][] = ['Pending Move-In', 'Moved In', 'Member Rejected', 'No Show', 'Cancelled'];
+const statuses: Booking['status'][] = ['Pending Move-In', 'Moved In', 'Member Rejected', 'No Show', 'Cancelled', 'Postponed'];
 const commMethods: Booking['communicationMethod'][] = ['Phone', 'SMS', 'LC', 'Email'];
 
 export default function AddBooking() {

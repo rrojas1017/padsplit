@@ -49,6 +49,7 @@ const statusOptions = [
   { label: 'Member Rejected', value: 'Member Rejected' },
   { label: 'No Show', value: 'No Show' },
   { label: 'Cancelled', value: 'Cancelled' },
+  { label: 'Postponed', value: 'Postponed' },
 ];
 
 const bookingTypeOptions = [
@@ -347,6 +348,7 @@ export default function Reports() {
     'Member Rejected': 'bg-destructive/20 text-destructive',
     'No Show': 'bg-muted text-muted-foreground',
     'Cancelled': 'bg-muted text-muted-foreground',
+    'Postponed': 'bg-primary/20 text-primary',
   };
 
   const selectedSiteLabel = siteFilter === 'all' ? 'All Sites' : sites.find(s => s.id === siteFilter)?.name || 'All Sites';
@@ -389,8 +391,9 @@ export default function Reports() {
     const movedIn = filteredBookings.filter(b => b.status === 'Moved In').length;
     const memberRejected = filteredBookings.filter(b => b.status === 'Member Rejected').length;
     const noShowCancelled = filteredBookings.filter(b => b.status === 'No Show' || b.status === 'Cancelled').length;
+    const postponed = filteredBookings.filter(b => b.status === 'Postponed').length;
     
-    return { total, pendingMoveIn, movedIn, memberRejected, noShowCancelled };
+    return { total, pendingMoveIn, movedIn, memberRejected, noShowCancelled, postponed };
   }, [filteredBookings]);
 
   return (
@@ -399,7 +402,7 @@ export default function Reports() {
       subtitle="Detailed booking data and exports"
     >
       {/* Summary Cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 mb-6">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-6">
         <div className="bg-card rounded-xl p-4 border border-border shadow-sm">
           <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Total Bookings</p>
           <p className="text-2xl font-bold text-foreground mt-1">{summaryStats.total}</p>
@@ -410,6 +413,13 @@ export default function Reports() {
             <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Pending Move-In</p>
           </div>
           <p className="text-2xl font-bold text-warning mt-1">{summaryStats.pendingMoveIn}</p>
+        </div>
+        <div className="bg-card rounded-xl p-4 border border-border shadow-sm">
+          <div className="flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-primary"></span>
+            <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Postponed</p>
+          </div>
+          <p className="text-2xl font-bold text-primary mt-1">{summaryStats.postponed}</p>
         </div>
         <div className="bg-card rounded-xl p-4 border border-border shadow-sm">
           <div className="flex items-center gap-2">
