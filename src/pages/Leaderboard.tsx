@@ -13,7 +13,7 @@ export default function Leaderboard() {
   usePageTracking('view_leaderboard');
   const { bookings, isLoading: bookingsLoading } = useBookings();
   const { agents, isLoading: agentsLoading } = useAgents();
-  const [dateRange, setDateRange] = useState<DateRangeFilterType>('7d');
+  const [dateRange, setDateRange] = useState<DateRangeFilterType>('today');
   const [customDates, setCustomDates] = useState<CalcCustomDateRange | undefined>(undefined);
 
   const handleRangeChange = (range: DateFilterValue, dates?: CustomDateRange) => {
@@ -31,7 +31,7 @@ export default function Leaderboard() {
     >
       <div className="flex items-center gap-3 mb-6">
         <DateRangeFilter 
-          defaultValue="7d" 
+          defaultValue="today" 
           onRangeChange={handleRangeChange}
           includeAllTime={true}
           includeCustom={true}

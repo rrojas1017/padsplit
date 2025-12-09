@@ -19,7 +19,7 @@ import InvoiceHistory from '@/components/billing/InvoiceHistory';
 
 const Billing = () => {
   const { hasRole, isLoading: authLoading } = useAuth();
-  const [dateFilter, setDateFilter] = useState<DateFilterValue>('month');
+  const [dateFilter, setDateFilter] = useState<DateFilterValue>('today');
   const [customDates, setCustomDates] = useState<CustomDateRange | undefined>(undefined);
 
   const handleRangeChange = (range: DateFilterValue, dates?: CustomDateRange) => {
@@ -105,7 +105,7 @@ const Billing = () => {
           </div>
           
           <DateRangeFilter 
-            defaultValue="month"
+            defaultValue="today"
             onRangeChange={handleRangeChange}
             includeAllTime={true}
             includeCustom={true}

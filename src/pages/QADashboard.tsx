@@ -29,7 +29,7 @@ export default function QADashboard() {
   usePageTracking('view_qa_dashboard');
   const { user, hasRole } = useAuth();
   const { agents } = useAgents();
-  const [dateRange, setDateRange] = useState<DateFilterValue>('month');
+  const [dateRange, setDateRange] = useState<DateFilterValue>('today');
   const [customDates, setCustomDates] = useState<CustomDateRange | undefined>(undefined);
   const [selectedAgent, setSelectedAgent] = useState<string>('all');
   const [isBatchScoring, setIsBatchScoring] = useState(false);
@@ -249,7 +249,7 @@ export default function QADashboard() {
         <div className="flex flex-wrap justify-between items-center gap-4">
           <div className="flex items-center gap-3">
             <DateRangeFilter 
-              defaultValue="month"
+              defaultValue="today"
               onRangeChange={handleRangeChange}
               includeAllTime={true}
               includeCustom={true}

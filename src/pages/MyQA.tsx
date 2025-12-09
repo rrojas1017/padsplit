@@ -21,7 +21,7 @@ export default function MyQA() {
   usePageTracking('view_my_qa');
   const { user } = useAuth();
   const { agents } = useAgents();
-  const [dateRange, setDateRange] = useState<DateFilterValue>('month');
+  const [dateRange, setDateRange] = useState<DateFilterValue>('today');
   const [customDates, setCustomDates] = useState<CustomDateRange | undefined>(undefined);
 
   const handleRangeChange = (range: DateFilterValue, dates?: CustomDateRange) => {
@@ -222,7 +222,7 @@ export default function MyQA() {
         {/* Controls */}
         <div className="flex flex-wrap justify-between items-center gap-4">
           <DateRangeFilter 
-            defaultValue="month"
+            defaultValue="today"
             onRangeChange={handleRangeChange}
             includeAllTime={true}
             includeCustom={true}
