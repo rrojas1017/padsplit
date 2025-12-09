@@ -142,7 +142,7 @@ export default function QADashboard() {
     }
     
     return filtered.filter(b => {
-      const bookingDate = new Date(b.bookingDate + 'T00:00:00');
+      const bookingDate = b.bookingDate;
       return isWithinInterval(bookingDate, { start: startDate, end: endDate });
     });
   }, [qaCoachingBookings, dateRange, selectedAgent, customDates]);
