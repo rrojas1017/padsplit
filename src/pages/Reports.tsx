@@ -69,6 +69,12 @@ const communicationMethodOptions = [
   { label: 'Email', value: 'Email' },
 ];
 
+const rebookingFilterOptions = [
+  { label: 'All Bookings', value: 'all' },
+  { label: 'New Bookings Only', value: 'new' },
+  { label: 'Rebookings Only', value: 'rebooking' },
+];
+
 export default function Reports() {
   usePageTracking('view_reports');
   const { bookings, refreshBookings, updateBooking } = useBookings();
@@ -99,6 +105,7 @@ export default function Reports() {
   const [typeFilter, setTypeFilter] = useState('all');
   const [methodFilter, setMethodFilter] = useState('all');
   const [agentFilter, setAgentFilter] = useState('all');
+  const [rebookingFilter, setRebookingFilter] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
 
   // Clear all filters
@@ -110,6 +117,7 @@ export default function Reports() {
     setTypeFilter('all');
     setMethodFilter('all');
     setAgentFilter('all');
+    setRebookingFilter('all');
     setSearchQuery('');
   };
 
@@ -117,7 +125,7 @@ export default function Reports() {
     moveInDateRange.from || moveInDateRange.to ||
     siteFilter !== 'all' || statusFilter !== 'all' || 
     typeFilter !== 'all' || methodFilter !== 'all' || 
-    agentFilter !== 'all' || searchQuery !== '';
+    agentFilter !== 'all' || rebookingFilter !== 'all' || searchQuery !== '';
 
   // Sorting (primary and secondary)
   const [sortColumn, setSortColumn] = useState<SortColumn>('bookingDate');
@@ -224,6 +232,10 @@ export default function Reports() {
       // Agent filter
       if (agentFilter !== 'all' && booking.agentId !== agentFilter) return false;
 
+      // Rebooking filter
+      if (rebookingFilter === 'new' && booking.isRebooking) return false;
+      if (rebookingFilter === 'rebooking' && !booking.isRebooking) return false;
+
       // Search filter
       if (searchQuery) {
         const query = searchQuery.toLowerCase();
@@ -237,7 +249,7 @@ export default function Reports() {
 
       return true;
     });
-  }, [bookings, bookingDateRange, moveInDateRange, siteFilter, statusFilter, typeFilter, methodFilter, agentFilter, searchQuery, agents]);
+  }, [bookings, bookingDateRange, moveInDateRange, siteFilter, statusFilter, typeFilter, methodFilter, agentFilter, rebookingFilter, searchQuery, agents]);
 
   // Helper to get sort value for a booking by column
   const getSortValue = (booking: typeof filteredBookings[0], column: SortColumn): string | number => {
@@ -394,8 +406,10 @@ export default function Reports() {
     const memberRejected = filteredBookings.filter(b => b.status === 'Member Rejected').length;
     const noShowCancelled = filteredBookings.filter(b => b.status === 'No Show' || b.status === 'Cancelled').length;
     const postponed = filteredBookings.filter(b => b.status === 'Postponed').length;
+    const rebookings = filteredBookings.filter(b => b.isRebooking).length;
+    const newBookings = total - rebookings;
     
-    return { total, pendingMoveIn, movedIn, memberRejected, noShowCancelled, postponed };
+    return { total, pendingMoveIn, movedIn, memberRejected, noShowCancelled, postponed, rebookings, newBookings };
   }, [filteredBookings]);
 
   return (
@@ -404,10 +418,15 @@ export default function Reports() {
       subtitle="Detailed booking data and exports"
     >
       {/* Summary Cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-6">
+      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3 mb-6">
         <div className="bg-card rounded-xl p-4 border border-border shadow-sm">
           <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Total Bookings</p>
           <p className="text-2xl font-bold text-foreground mt-1">{summaryStats.total}</p>
+          {summaryStats.rebookings > 0 && (
+            <p className="text-xs text-muted-foreground mt-1">
+              {summaryStats.newBookings} new, {summaryStats.rebookings} rebookings
+            </p>
+          )}
         </div>
         <div className="bg-card rounded-xl p-4 border border-border shadow-sm">
           <div className="flex items-center gap-2">
@@ -583,6 +602,28 @@ export default function Reports() {
             ))}
           </DropdownMenuContent>
         </DropdownMenu>
+
+        {/* Rebooking Filter */}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="outline" className="gap-2">
+              <RotateCcw className="w-4 h-4" />
+              {rebookingFilterOptions.find(r => r.value === rebookingFilter)?.label}
+              <ChevronDown className="w-4 h-4" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="w-48">
+            {rebookingFilterOptions.map((option) => (
+              <DropdownMenuItem
+                key={option.value}
+                onClick={() => setRebookingFilter(option.value)}
+                className={rebookingFilter === option.value ? 'bg-accent/20' : ''}
+              >
+                {option.label}
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
 
       {/* Filters Row 2 */}
@@ -675,7 +716,15 @@ export default function Reports() {
                       {format(booking.moveInDate, 'MMM d, yyyy')}
                     </td>
                     <td className="py-3 px-4 text-sm font-medium text-foreground">
-                      {booking.memberName}
+                      <div className="flex items-center gap-2">
+                        {booking.memberName}
+                        {booking.isRebooking && (
+                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-medium bg-primary/10 text-primary">
+                            <RotateCcw className="h-3 w-3" />
+                            Rebooking
+                          </span>
+                        )}
+                      </div>
                     </td>
                     <td className="py-3 px-4 text-sm text-foreground">
                       {getAgentName(agents, booking.agentId)}
