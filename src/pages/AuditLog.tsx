@@ -1,6 +1,6 @@
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { format, startOfDay, isToday } from 'date-fns';
-import { LogIn, LogOut, Eye, Download, UserCog, Database, LayoutDashboard, FileText, Brain, Trophy, Tv, ChartBar, Users, Settings, Link, Upload, ClipboardList, PlusCircle, Pencil, Filter } from 'lucide-react';
+import { LogIn, LogOut, Eye, Download, UserCog, Database, LayoutDashboard, FileText, Brain, Trophy, Tv, ChartBar, Users, Settings, Link, Upload, ClipboardList, PlusCircle, Pencil, Filter, RefreshCw } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/integrations/supabase/client';
 import { useEffect, useState, useMemo } from 'react';
@@ -8,6 +8,9 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { usePageTracking } from '@/hooks/usePageTracking';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Card, CardContent } from '@/components/ui/card';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { useAgents } from '@/contexts/AgentsContext';
+import { getAgentName } from '@/utils/agentUtils';
 
 interface AccessLog {
   id: string;
@@ -19,7 +22,24 @@ interface AccessLog {
   ip_address: string | null;
 }
 
+interface BookingEditLog {
+  id: string;
+  booking_id: string;
+  agent_id: string | null;
+  user_id: string;
+  user_name: string;
+  field_changed: string;
+  old_value: string | null;
+  new_value: string | null;
+  edit_reason: string;
+  created_at: string;
+  booking?: {
+    member_name: string;
+  };
+}
+
 type DateFilter = 'today' | 'yesterday' | '7d' | 'all';
+type TabValue = 'access' | 'bookingEdits';
 
 const ACTION_CONFIG: Record<string, { icon: React.ReactNode; label: string; colorClass: string }> = {
   login: { icon: <LogIn className="w-4 h-4" />, label: 'Login', colorClass: 'bg-success/20 text-success' },
@@ -46,27 +66,49 @@ const ACTION_CONFIG: Record<string, { icon: React.ReactNode; label: string; colo
 
 export default function AuditLog() {
   usePageTracking('view_audit_log');
+  const { agents } = useAgents();
   const [logs, setLogs] = useState<AccessLog[]>([]);
+  const [bookingEditLogs, setBookingEditLogs] = useState<BookingEditLog[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [actionFilter, setActionFilter] = useState<string>('all');
   const [userFilter, setUserFilter] = useState<string>('all');
   const [dateFilter, setDateFilter] = useState<DateFilter>('today');
+  const [activeTab, setActiveTab] = useState<TabValue>('access');
+  const [editLogAgentFilter, setEditLogAgentFilter] = useState<string>('all');
 
   useEffect(() => {
-    const fetchLogs = async () => {
-      const { data, error } = await supabase
+    const fetchData = async () => {
+      setIsLoading(true);
+      
+      // Fetch access logs
+      const { data: accessData } = await supabase
         .from('access_logs')
         .select('*')
         .order('created_at', { ascending: false })
         .limit(500);
 
-      if (!error && data) {
-        setLogs(data);
+      if (accessData) {
+        setLogs(accessData);
       }
+
+      // Fetch booking edit logs
+      const { data: editData } = await supabase
+        .from('booking_edit_logs')
+        .select(`
+          *,
+          booking:bookings(member_name)
+        `)
+        .order('created_at', { ascending: false })
+        .limit(500);
+
+      if (editData) {
+        setBookingEditLogs(editData as BookingEditLog[]);
+      }
+
       setIsLoading(false);
     };
 
-    fetchLogs();
+    fetchData();
   }, []);
 
   // Get unique users for filter dropdown
@@ -128,6 +170,41 @@ export default function AuditLog() {
 
     return { pageViews, activeUsers, logins, topSectionLabel };
   }, [logs]);
+
+  // Filter booking edit logs
+  const filteredEditLogs = useMemo(() => {
+    return bookingEditLogs.filter(log => {
+      // Agent filter
+      if (editLogAgentFilter !== 'all' && log.agent_id !== editLogAgentFilter) return false;
+
+      // Date filter
+      const logDate = new Date(log.created_at);
+      const today = startOfDay(new Date());
+      if (dateFilter === 'today' && !isToday(logDate)) return false;
+      if (dateFilter === 'yesterday') {
+        const yesterday = new Date(today);
+        yesterday.setDate(yesterday.getDate() - 1);
+        const logDay = startOfDay(logDate);
+        if (logDay.getTime() !== yesterday.getTime()) return false;
+      }
+      if (dateFilter === '7d') {
+        const weekAgo = new Date(today);
+        weekAgo.setDate(weekAgo.getDate() - 7);
+        if (logDate < weekAgo) return false;
+      }
+
+      return true;
+    });
+  }, [bookingEditLogs, editLogAgentFilter, dateFilter]);
+
+  // Get unique agents for edit log filter
+  const uniqueEditLogAgents = useMemo(() => {
+    const agentIds = new Set(bookingEditLogs.map(log => log.agent_id).filter(Boolean));
+    return Array.from(agentIds).map(id => ({
+      id: id!,
+      name: getAgentName(agents, id!),
+    }));
+  }, [bookingEditLogs, agents]);
 
   const getActionDisplay = (action: string) => {
     const config = ACTION_CONFIG[action];
@@ -208,115 +285,225 @@ export default function AuditLog() {
           <CardContent className="pt-4">
             <div className="flex items-center gap-3">
               <div className="p-2 rounded-lg bg-warning/10">
-                <LogIn className="w-5 h-5 text-warning" />
+                <Pencil className="w-5 h-5 text-warning" />
               </div>
               <div>
-                <p className="text-2xl font-bold text-foreground">{stats.logins}</p>
-                <p className="text-sm text-muted-foreground">Logins Today</p>
+                <p className="text-2xl font-bold text-foreground">{filteredEditLogs.length}</p>
+                <p className="text-sm text-muted-foreground">Booking Edits</p>
               </div>
             </div>
           </CardContent>
         </Card>
       </div>
 
-      {/* Filters */}
-      <div className="flex flex-wrap items-center gap-3 mb-4">
-        <div className="flex items-center gap-2">
-          <Filter className="w-4 h-4 text-muted-foreground" />
-          <span className="text-sm text-muted-foreground">Filters:</span>
-        </div>
-        <Select value={actionFilter} onValueChange={setActionFilter}>
-          <SelectTrigger className="w-40">
-            <SelectValue placeholder="All Actions" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Actions</SelectItem>
-            <SelectItem value="auth">Login / Logout</SelectItem>
-            <SelectItem value="page_views">Page Views</SelectItem>
-            <SelectItem value="data">Data Actions</SelectItem>
-          </SelectContent>
-        </Select>
-        <Select value={userFilter} onValueChange={setUserFilter}>
-          <SelectTrigger className="w-40">
-            <SelectValue placeholder="All Users" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Users</SelectItem>
-            {uniqueUsers.map(user => (
-              <SelectItem key={user.id} value={user.id}>{user.name}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <Select value={dateFilter} onValueChange={(v) => setDateFilter(v as DateFilter)}>
-          <SelectTrigger className="w-40">
-            <SelectValue placeholder="Date Range" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="today">Today</SelectItem>
-            <SelectItem value="yesterday">Yesterday</SelectItem>
-            <SelectItem value="7d">Last 7 Days</SelectItem>
-            <SelectItem value="all">All Time</SelectItem>
-          </SelectContent>
-        </Select>
-        <span className="text-sm text-muted-foreground ml-auto">
-          {filteredLogs.length} {filteredLogs.length === 1 ? 'entry' : 'entries'}
-        </span>
-      </div>
+      {/* Tabs for Access Logs vs Booking Edits */}
+      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as TabValue)} className="space-y-4">
+        <TabsList className="bg-muted/50">
+          <TabsTrigger value="access">Access Logs</TabsTrigger>
+          <TabsTrigger value="bookingEdits">Booking Edits</TabsTrigger>
+        </TabsList>
 
-      {/* Log Table */}
-      <div className="bg-card rounded-xl border border-border shadow-card overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead>
-              <tr className="border-b border-border bg-muted/30">
-                <th className="text-left py-3 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Timestamp (EST)</th>
-                <th className="text-left py-3 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">User</th>
-                <th className="text-left py-3 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Action</th>
-                <th className="text-left py-3 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Resource</th>
-                <th className="text-left py-3 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">IP Address</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border">
-              {filteredLogs.length === 0 ? (
-                <tr>
-                  <td colSpan={5} className="py-8 text-center text-muted-foreground">
-                    No audit logs found
-                  </td>
-                </tr>
-              ) : (
-                filteredLogs.map((log) => {
-                  const actionDisplay = getActionDisplay(log.action);
-                  return (
-                    <tr key={log.id} className="hover:bg-muted/30 transition-colors">
-                      <td className="py-3 px-4 text-sm text-foreground">
-                        {format(new Date(log.created_at), 'MMM d, yyyy HH:mm:ss')} EST
-                      </td>
-                      <td className="py-3 px-4 text-sm font-medium text-foreground">
-                        {log.user_name || 'Unknown'}
-                      </td>
-                      <td className="py-3 px-4">
-                        <span className={cn(
-                          "inline-flex items-center gap-1.5 px-2 py-1 rounded-full text-xs font-medium",
-                          actionDisplay.colorClass
-                        )}>
-                          {actionDisplay.icon}
-                          {actionDisplay.label}
-                        </span>
-                      </td>
-                      <td className="py-3 px-4 text-sm text-muted-foreground font-mono">
-                        {log.resource || '/'}
-                      </td>
-                      <td className="py-3 px-4 text-sm text-muted-foreground font-mono">
-                        {log.ip_address || 'N/A'}
+        <TabsContent value="access" className="space-y-4">
+          {/* Access Logs Filters */}
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="flex items-center gap-2">
+              <Filter className="w-4 h-4 text-muted-foreground" />
+              <span className="text-sm text-muted-foreground">Filters:</span>
+            </div>
+            <Select value={actionFilter} onValueChange={setActionFilter}>
+              <SelectTrigger className="w-40">
+                <SelectValue placeholder="All Actions" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Actions</SelectItem>
+                <SelectItem value="auth">Login / Logout</SelectItem>
+                <SelectItem value="page_views">Page Views</SelectItem>
+                <SelectItem value="data">Data Actions</SelectItem>
+              </SelectContent>
+            </Select>
+            <Select value={userFilter} onValueChange={setUserFilter}>
+              <SelectTrigger className="w-40">
+                <SelectValue placeholder="All Users" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Users</SelectItem>
+                {uniqueUsers.map(user => (
+                  <SelectItem key={user.id} value={user.id}>{user.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select value={dateFilter} onValueChange={(v) => setDateFilter(v as DateFilter)}>
+              <SelectTrigger className="w-40">
+                <SelectValue placeholder="Date Range" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="today">Today</SelectItem>
+                <SelectItem value="yesterday">Yesterday</SelectItem>
+                <SelectItem value="7d">Last 7 Days</SelectItem>
+                <SelectItem value="all">All Time</SelectItem>
+              </SelectContent>
+            </Select>
+            <span className="text-sm text-muted-foreground ml-auto">
+              {filteredLogs.length} {filteredLogs.length === 1 ? 'entry' : 'entries'}
+            </span>
+          </div>
+
+          {/* Access Log Table */}
+          <div className="bg-card rounded-xl border border-border shadow-card overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead>
+                  <tr className="border-b border-border bg-muted/30">
+                    <th className="text-left py-3 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Timestamp (EST)</th>
+                    <th className="text-left py-3 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">User</th>
+                    <th className="text-left py-3 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Action</th>
+                    <th className="text-left py-3 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Resource</th>
+                    <th className="text-left py-3 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">IP Address</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border">
+                  {filteredLogs.length === 0 ? (
+                    <tr>
+                      <td colSpan={5} className="py-8 text-center text-muted-foreground">
+                        No audit logs found
                       </td>
                     </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
+                  ) : (
+                    filteredLogs.map((log) => {
+                      const actionDisplay = getActionDisplay(log.action);
+                      return (
+                        <tr key={log.id} className="hover:bg-muted/30 transition-colors">
+                          <td className="py-3 px-4 text-sm text-foreground">
+                            {format(new Date(log.created_at), 'MMM d, yyyy HH:mm:ss')} EST
+                          </td>
+                          <td className="py-3 px-4 text-sm font-medium text-foreground">
+                            {log.user_name || 'Unknown'}
+                          </td>
+                          <td className="py-3 px-4">
+                            <span className={cn(
+                              "inline-flex items-center gap-1.5 px-2 py-1 rounded-full text-xs font-medium",
+                              actionDisplay.colorClass
+                            )}>
+                              {actionDisplay.icon}
+                              {actionDisplay.label}
+                            </span>
+                          </td>
+                          <td className="py-3 px-4 text-sm text-muted-foreground font-mono">
+                            {log.resource || '/'}
+                          </td>
+                          <td className="py-3 px-4 text-sm text-muted-foreground font-mono">
+                            {log.ip_address || 'N/A'}
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </TabsContent>
+
+        <TabsContent value="bookingEdits" className="space-y-4">
+          {/* Booking Edits Filters */}
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="flex items-center gap-2">
+              <Filter className="w-4 h-4 text-muted-foreground" />
+              <span className="text-sm text-muted-foreground">Filters:</span>
+            </div>
+            <Select value={editLogAgentFilter} onValueChange={setEditLogAgentFilter}>
+              <SelectTrigger className="w-48">
+                <SelectValue placeholder="All Agents" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Agents</SelectItem>
+                {uniqueEditLogAgents.map(agent => (
+                  <SelectItem key={agent.id} value={agent.id}>{agent.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select value={dateFilter} onValueChange={(v) => setDateFilter(v as DateFilter)}>
+              <SelectTrigger className="w-40">
+                <SelectValue placeholder="Date Range" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="today">Today</SelectItem>
+                <SelectItem value="yesterday">Yesterday</SelectItem>
+                <SelectItem value="7d">Last 7 Days</SelectItem>
+                <SelectItem value="all">All Time</SelectItem>
+              </SelectContent>
+            </Select>
+            <span className="text-sm text-muted-foreground ml-auto">
+              {filteredEditLogs.length} {filteredEditLogs.length === 1 ? 'edit' : 'edits'}
+            </span>
+          </div>
+
+          {/* Booking Edits Table */}
+          <div className="bg-card rounded-xl border border-border shadow-card overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead>
+                  <tr className="border-b border-border bg-muted/30">
+                    <th className="text-left py-3 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Timestamp (EST)</th>
+                    <th className="text-left py-3 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Agent</th>
+                    <th className="text-left py-3 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Booking</th>
+                    <th className="text-left py-3 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Change</th>
+                    <th className="text-left py-3 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider min-w-[300px]">Reason</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border">
+                  {filteredEditLogs.length === 0 ? (
+                    <tr>
+                      <td colSpan={5} className="py-8 text-center text-muted-foreground">
+                        No booking edits found
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredEditLogs.map((log) => (
+                      <tr key={log.id} className="hover:bg-muted/30 transition-colors">
+                        <td className="py-3 px-4 text-sm text-foreground">
+                          {format(new Date(log.created_at), 'MMM d, yyyy HH:mm:ss')} EST
+                        </td>
+                        <td className="py-3 px-4 text-sm font-medium text-foreground">
+                          {log.user_name}
+                        </td>
+                        <td className="py-3 px-4 text-sm text-foreground">
+                          {(log.booking as any)?.member_name || 'Unknown Member'}
+                        </td>
+                        <td className="py-3 px-4">
+                          <div className="flex items-center gap-2">
+                            <span className={cn(
+                              "inline-flex items-center px-2 py-1 rounded-full text-xs font-medium",
+                              "bg-muted text-muted-foreground"
+                            )}>
+                              {log.old_value || 'N/A'}
+                            </span>
+                            <RefreshCw className="w-3 h-3 text-muted-foreground" />
+                            <span className={cn(
+                              "inline-flex items-center px-2 py-1 rounded-full text-xs font-medium",
+                              log.new_value === 'Moved In' && 'bg-success/20 text-success',
+                              log.new_value === 'Postponed' && 'bg-primary/20 text-primary',
+                              log.new_value === 'No Show' && 'bg-muted text-muted-foreground',
+                              log.new_value === 'Cancelled' && 'bg-muted text-muted-foreground',
+                              log.new_value === 'Member Rejected' && 'bg-destructive/20 text-destructive',
+                              !['Moved In', 'Postponed', 'No Show', 'Cancelled', 'Member Rejected'].includes(log.new_value || '') && 'bg-accent/20 text-accent'
+                            )}>
+                              {log.new_value || 'N/A'}
+                            </span>
+                          </div>
+                        </td>
+                        <td className="py-3 px-4 text-sm text-muted-foreground">
+                          {log.edit_reason}
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </TabsContent>
+      </Tabs>
     </DashboardLayout>
   );
 }

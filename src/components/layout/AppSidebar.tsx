@@ -19,7 +19,8 @@ import {
   ClipboardCheck,
   Target,
   DollarSign,
-  Headphones
+  Headphones,
+  ClipboardList
 } from 'lucide-react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
@@ -53,6 +54,13 @@ const menuItems: MenuItem[] = [
     icon: BarChart3, 
     label: 'My Performance', 
     path: '/my-performance',
+    roles: ['agent'],
+    group: 'core'
+  },
+  {
+    icon: ClipboardList,
+    label: 'My Bookings',
+    path: '/my-bookings',
     roles: ['agent'],
     group: 'core'
   },
