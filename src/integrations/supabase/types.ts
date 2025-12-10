@@ -314,6 +314,60 @@ export type Database = {
           },
         ]
       }
+      booking_edit_logs: {
+        Row: {
+          agent_id: string | null
+          booking_id: string
+          created_at: string
+          edit_reason: string
+          field_changed: string
+          id: string
+          new_value: string | null
+          old_value: string | null
+          user_id: string
+          user_name: string
+        }
+        Insert: {
+          agent_id?: string | null
+          booking_id: string
+          created_at?: string
+          edit_reason: string
+          field_changed: string
+          id?: string
+          new_value?: string | null
+          old_value?: string | null
+          user_id: string
+          user_name: string
+        }
+        Update: {
+          agent_id?: string | null
+          booking_id?: string
+          created_at?: string
+          edit_reason?: string
+          field_changed?: string
+          id?: string
+          new_value?: string | null
+          old_value?: string | null
+          user_id?: string
+          user_name?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "booking_edit_logs_agent_id_fkey"
+            columns: ["agent_id"]
+            isOneToOne: false
+            referencedRelation: "agents"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "booking_edit_logs_booking_id_fkey"
+            columns: ["booking_id"]
+            isOneToOne: false
+            referencedRelation: "bookings"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       booking_transcriptions: {
         Row: {
           agent_feedback: Json | null
