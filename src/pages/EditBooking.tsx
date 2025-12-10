@@ -22,9 +22,11 @@ import { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { toast } from '@/hooks/use-toast';
 import { format } from 'date-fns';
-import { CalendarIcon, Save, ArrowLeft, RotateCcw } from 'lucide-react';
+import { CalendarIcon, Save, ArrowLeft, RotateCcw, History } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { CallInsights } from '@/components/booking/CallInsights';
+import { BookingHistoryTimeline } from '@/components/booking/BookingHistoryTimeline';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 
 const bookingTypes: Booking['bookingType'][] = ['Inbound', 'Outbound', 'Referral'];
 const statuses: Booking['status'][] = ['Pending Move-In', 'Moved In', 'Member Rejected', 'No Show', 'Cancelled', 'Postponed'];
@@ -484,6 +486,30 @@ export default function EditBooking() {
             <div className="bg-card rounded-xl border border-border p-6 shadow-card">
               <CallInsights booking={booking} onTranscriptionComplete={refreshBookings} />
             </div>
+          )}
+
+          {/* Booking History Section */}
+          {booking && (
+            <Collapsible defaultOpen={false}>
+              <div className="bg-card rounded-xl border border-border shadow-card overflow-hidden">
+                <CollapsibleTrigger className="flex items-center justify-between w-full p-6 hover:bg-muted/30 transition-colors">
+                  <div className="flex items-center gap-2">
+                    <History className="w-5 h-5 text-primary" />
+                    <h3 className="text-lg font-semibold text-foreground">Booking History</h3>
+                  </div>
+                  <span className="text-xs text-muted-foreground">Click to expand</span>
+                </CollapsibleTrigger>
+                <CollapsibleContent>
+                  <div className="px-6 pb-6 pt-2 border-t border-border">
+                    <BookingHistoryTimeline
+                      bookingId={booking.id}
+                      bookingCreatedAt={booking.createdAt}
+                      initialStatus="Pending Move-In"
+                    />
+                  </div>
+                </CollapsibleContent>
+              </div>
+            </Collapsible>
           )}
 
           {/* Actions */}
