@@ -402,6 +402,7 @@ export type Database = {
           created_by: string | null
           hubspot_link: string | null
           id: string
+          is_rebooking: boolean
           kixie_link: string | null
           market_city: string | null
           market_state: string | null
@@ -409,6 +410,7 @@ export type Database = {
           move_in_date: string
           move_in_day_reach_out: boolean | null
           notes: string | null
+          original_booking_id: string | null
           status: string
           transcribed_at: string | null
           transcription_error_message: string | null
@@ -434,6 +436,7 @@ export type Database = {
           created_by?: string | null
           hubspot_link?: string | null
           id?: string
+          is_rebooking?: boolean
           kixie_link?: string | null
           market_city?: string | null
           market_state?: string | null
@@ -441,6 +444,7 @@ export type Database = {
           move_in_date: string
           move_in_day_reach_out?: boolean | null
           notes?: string | null
+          original_booking_id?: string | null
           status?: string
           transcribed_at?: string | null
           transcription_error_message?: string | null
@@ -466,6 +470,7 @@ export type Database = {
           created_by?: string | null
           hubspot_link?: string | null
           id?: string
+          is_rebooking?: boolean
           kixie_link?: string | null
           market_city?: string | null
           market_state?: string | null
@@ -473,6 +478,7 @@ export type Database = {
           move_in_date?: string
           move_in_day_reach_out?: boolean | null
           notes?: string | null
+          original_booking_id?: string | null
           status?: string
           transcribed_at?: string | null
           transcription_error_message?: string | null
@@ -499,6 +505,13 @@ export type Database = {
             columns: ["created_by"]
             isOneToOne: false
             referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "bookings_original_booking_id_fkey"
+            columns: ["original_booking_id"]
+            isOneToOne: false
+            referencedRelation: "bookings"
             referencedColumns: ["id"]
           },
         ]

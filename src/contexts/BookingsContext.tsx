@@ -57,7 +57,8 @@ export function BookingsProvider({ children }: { children: ReactNode }) {
             notes, hubspot_link, kixie_link, admin_profile_link, move_in_day_reach_out,
             created_by, created_at,
             transcription_status, transcription_error_message, transcribed_at, 
-            call_duration_seconds, call_type_id
+            call_duration_seconds, call_type_id,
+            is_rebooking, original_booking_id
           `)
           .gte('booking_date', dateLimit)
           .order('booking_date', { ascending: false })
@@ -105,6 +106,8 @@ export function BookingsProvider({ children }: { children: ReactNode }) {
         coachingAudioUrl: undefined,
         coachingAudioGeneratedAt: undefined,
         callTypeId: b.call_type_id || undefined,
+        isRebooking: b.is_rebooking || false,
+        originalBookingId: b.original_booking_id || undefined,
       }));
 
       setBookings(transformedBookings);
@@ -188,6 +191,8 @@ export function BookingsProvider({ children }: { children: ReactNode }) {
       admin_profile_link: booking.adminProfileLink || null,
       move_in_day_reach_out: booking.moveInDayReachOut || false,
       created_by: userData.user?.id || null,
+      is_rebooking: booking.isRebooking || false,
+      original_booking_id: booking.originalBookingId || null,
     }).select('id').single();
 
     if (error) {
@@ -222,6 +227,8 @@ export function BookingsProvider({ children }: { children: ReactNode }) {
     if (updates.kixieLink !== undefined) updateData.kixie_link = updates.kixieLink;
     if (updates.adminProfileLink !== undefined) updateData.admin_profile_link = updates.adminProfileLink;
     if (updates.moveInDayReachOut !== undefined) updateData.move_in_day_reach_out = updates.moveInDayReachOut;
+    if (updates.isRebooking !== undefined) updateData.is_rebooking = updates.isRebooking;
+    if (updates.originalBookingId !== undefined) updateData.original_booking_id = updates.originalBookingId;
 
     const { error } = await supabase
       .from('bookings')

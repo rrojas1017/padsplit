@@ -82,6 +82,9 @@ export interface Booking {
   moveInDayReachOut?: boolean;
   createdBy?: string;
   createdAt?: Date;
+  // Rebooking tracking
+  isRebooking?: boolean;
+  originalBookingId?: string;
   // Call transcription fields
   callTranscription?: string;
   callSummary?: string;

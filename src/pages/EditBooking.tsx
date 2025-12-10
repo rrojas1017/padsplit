@@ -22,7 +22,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { toast } from '@/hooks/use-toast';
 import { format } from 'date-fns';
-import { CalendarIcon, Save, ArrowLeft } from 'lucide-react';
+import { CalendarIcon, Save, ArrowLeft, RotateCcw } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { CallInsights } from '@/components/booking/CallInsights';
 
@@ -52,6 +52,8 @@ export default function EditBooking() {
   const [kixieLink, setKixieLink] = useState('');
   const [adminProfileLink, setAdminProfileLink] = useState('');
   const [moveInDayReachOut, setMoveInDayReachOut] = useState(false);
+  const [isRebooking, setIsRebooking] = useState(false);
+  const [originalBookingId, setOriginalBookingId] = useState<string | undefined>();
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Find the booking
@@ -100,6 +102,8 @@ export default function EditBooking() {
       setKixieLink(booking.kixieLink || '');
       setAdminProfileLink(booking.adminProfileLink || '');
       setMoveInDayReachOut(booking.moveInDayReachOut || false);
+      setIsRebooking(booking.isRebooking || false);
+      setOriginalBookingId(booking.originalBookingId || undefined);
     }
   }, [booking]);
 
@@ -143,6 +147,8 @@ export default function EditBooking() {
         kixieLink: kixieLink.trim() || undefined,
         adminProfileLink: adminProfileLink.trim() || undefined,
         moveInDayReachOut,
+        isRebooking,
+        originalBookingId: isRebooking ? originalBookingId : undefined,
       });
 
       toast({
@@ -296,14 +302,58 @@ export default function EditBooking() {
           {/* Member Info Section */}
           <div className="bg-card rounded-xl border border-border p-6 shadow-card">
             <h3 className="text-lg font-semibold text-foreground mb-4">Member Information</h3>
-            <div className="space-y-2">
-              <Label htmlFor="memberName">Member Name *</Label>
-              <Input
-                id="memberName"
-                value={memberName}
-                onChange={(e) => setMemberName(e.target.value)}
-                placeholder="Enter member's full name"
-              />
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="memberName">Member Name *</Label>
+                <Input
+                  id="memberName"
+                  value={memberName}
+                  onChange={(e) => setMemberName(e.target.value)}
+                  placeholder="Enter member's full name"
+                />
+              </div>
+              
+              {/* Rebooking Section */}
+              <div className="space-y-3 pt-2 border-t border-border">
+                <div className="flex items-center space-x-2">
+                  <Checkbox
+                    id="isRebooking"
+                    checked={isRebooking}
+                    onCheckedChange={(checked) => {
+                      setIsRebooking(checked === true);
+                      if (!checked) setOriginalBookingId(undefined);
+                    }}
+                  />
+                  <Label htmlFor="isRebooking" className="text-sm font-normal cursor-pointer flex items-center gap-2">
+                    <RotateCcw className="w-4 h-4 text-muted-foreground" />
+                    This is a rebooking (member previously booked)
+                  </Label>
+                </div>
+                
+                {isRebooking && (
+                  <div className="space-y-2 pl-6">
+                    <Label>Link to Original Booking (Optional)</Label>
+                    <Select value={originalBookingId || ''} onValueChange={(v) => setOriginalBookingId(v || undefined)}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select original booking..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {bookings
+                          .filter(b => b.id !== id && (b.status === 'Cancelled' || b.status === 'Postponed' || b.status === 'No Show' || b.status === 'Member Rejected'))
+                          .slice(0, 50)
+                          .map(b => (
+                            <SelectItem key={b.id} value={b.id}>
+                              {b.memberName} - {format(b.bookingDate, 'PP')} ({b.status})
+                            </SelectItem>
+                          ))}
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-muted-foreground">
+                      Linking helps track member history and won't count as a duplicate booking.
+                    </p>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
 
