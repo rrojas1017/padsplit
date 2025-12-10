@@ -4,7 +4,7 @@ import { usePageTracking } from '@/hooks/usePageTracking';
 import { useAuth } from '@/contexts/AuthContext';
 import { useAgents } from '@/contexts/AgentsContext';
 import { Button } from '@/components/ui/button';
-import { Search, PlusCircle, MoreHorizontal, Clock, CheckCircle, CalendarX, XCircle, Ban, ExternalLink, Phone, UserCircle, Headphones, FileText, Loader2, RotateCcw } from 'lucide-react';
+import { Search, PlusCircle, MoreHorizontal, Clock, CheckCircle, CalendarX, XCircle, Ban, ExternalLink, Phone, UserCircle, Headphones, FileText, Loader2, RotateCcw, History } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { format, startOfDay, endOfDay, isWithinInterval } from 'date-fns';
 import { cn } from '@/lib/utils';
@@ -13,8 +13,10 @@ import { useState, useMemo } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { TranscriptionModal } from '@/components/booking/TranscriptionModal';
 import { BookingEditReasonDialog } from '@/components/booking/BookingEditReasonDialog';
+import { BookingHistoryTimeline } from '@/components/booking/BookingHistoryTimeline';
 import { Booking } from '@/types';
 import { getAgentName } from '@/utils/agentUtils';
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -60,6 +62,10 @@ export default function MyBookings() {
     memberName: string;
   } | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // History sheet state
+  const [historySheetOpen, setHistorySheetOpen] = useState(false);
+  const [historyBooking, setHistoryBooking] = useState<Booking | null>(null);
 
   // Filter states
   const [bookingDateRange, setBookingDateRange] = useState<DateRange>({
@@ -451,6 +457,13 @@ export default function MyBookings() {
                             Mark as Cancelled
                           </DropdownMenuItem>
                           <DropdownMenuSeparator />
+                          <DropdownMenuItem onClick={() => {
+                            setHistoryBooking(booking);
+                            setHistorySheetOpen(true);
+                          }}>
+                            <History className="w-4 h-4 mr-2 text-primary" />
+                            View History
+                          </DropdownMenuItem>
                           <DropdownMenuItem onClick={() => navigate(`/edit-booking/${booking.id}`)}>
                             Edit Full Details...
                           </DropdownMenuItem>
@@ -486,6 +499,33 @@ export default function MyBookings() {
           onTranscriptionComplete={() => {}}
         />
       )}
+
+      {/* History Sheet */}
+      <Sheet open={historySheetOpen} onOpenChange={setHistorySheetOpen}>
+        <SheetContent className="sm:max-w-md overflow-y-auto">
+          <SheetHeader>
+            <SheetTitle className="flex items-center gap-2">
+              <History className="w-5 h-5 text-primary" />
+              Booking History
+            </SheetTitle>
+          </SheetHeader>
+          {historyBooking && (
+            <div className="mt-6">
+              <div className="mb-4 p-3 rounded-lg bg-muted/50">
+                <p className="text-sm font-medium text-foreground">{historyBooking.memberName}</p>
+                <p className="text-xs text-muted-foreground">
+                  Booked {format(new Date(historyBooking.bookingDate), 'MMM d, yyyy')}
+                </p>
+              </div>
+              <BookingHistoryTimeline
+                bookingId={historyBooking.id}
+                bookingCreatedAt={historyBooking.createdAt}
+                initialStatus="Pending Move-In"
+              />
+            </div>
+          )}
+        </SheetContent>
+      </Sheet>
     </DashboardLayout>
   );
 }
