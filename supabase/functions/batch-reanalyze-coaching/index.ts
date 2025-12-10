@@ -97,11 +97,10 @@ serve(async (req) => {
           });
 
           if (response.ok) {
-            successCount++;
-            console.log(`Successfully re-analyzed booking ${transcription.booking_id}`);
+            console.log(`[STEP 1/4] ✓ Re-analyzed booking ${transcription.booking_id}`);
             
-            // After successful re-analysis, trigger coaching audio generation
-            console.log(`Triggering coaching audio generation for booking ${transcription.booking_id}`);
+            // Step 2: Generate Jeff's coaching audio
+            console.log(`[STEP 2/4] Generating Jeff coaching audio for ${transcription.booking_id}...`);
             const audioResponse = await fetch(`${SUPABASE_URL}/functions/v1/generate-coaching-audio`, {
               method: 'POST',
               headers: {
@@ -112,18 +111,57 @@ serve(async (req) => {
             });
 
             if (audioResponse.ok) {
-              console.log(`Successfully generated coaching audio for booking ${transcription.booking_id}`);
+              console.log(`[STEP 2/4] ✓ Jeff audio generated for ${transcription.booking_id}`);
             } else {
               const errorText = await audioResponse.text();
-              console.error(`Failed to generate coaching audio for booking ${transcription.booking_id}:`, errorText);
+              console.error(`[STEP 2/4] ✗ Failed Jeff audio for ${transcription.booking_id}:`, errorText);
             }
+
+            // Step 3: Generate QA scores
+            console.log(`[STEP 3/4] Generating QA scores for ${transcription.booking_id}...`);
+            const qaResponse = await fetch(`${SUPABASE_URL}/functions/v1/generate-qa-scores`, {
+              method: 'POST',
+              headers: {
+                'Authorization': `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({ bookingId: transcription.booking_id }),
+            });
+
+            if (qaResponse.ok) {
+              console.log(`[STEP 3/4] ✓ QA scores generated for ${transcription.booking_id}`);
+              
+              // Step 4: Generate Katty's QA coaching audio
+              console.log(`[STEP 4/4] Generating Katty coaching audio for ${transcription.booking_id}...`);
+              const kattyResponse = await fetch(`${SUPABASE_URL}/functions/v1/generate-qa-coaching-audio`, {
+                method: 'POST',
+                headers: {
+                  'Authorization': `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+                  'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ bookingId: transcription.booking_id }),
+              });
+
+              if (kattyResponse.ok) {
+                console.log(`[STEP 4/4] ✓ Katty audio generated for ${transcription.booking_id}`);
+              } else {
+                const errorText = await kattyResponse.text();
+                console.error(`[STEP 4/4] ✗ Failed Katty audio for ${transcription.booking_id}:`, errorText);
+              }
+            } else {
+              const errorText = await qaResponse.text();
+              console.error(`[STEP 3/4] ✗ Failed QA scores for ${transcription.booking_id}:`, errorText);
+            }
+
+            successCount++;
+            console.log(`✓ COMPLETE: All 4 steps processed for ${transcription.booking_id}`);
           } else {
             const errorText = await response.text();
-            console.error(`Failed to re-analyze booking ${transcription.booking_id}:`, errorText);
+            console.error(`[STEP 1/4] ✗ Failed re-analyze for ${transcription.booking_id}:`, errorText);
             failCount++;
           }
         } catch (error) {
-          console.error(`Error processing booking ${transcription.booking_id}:`, error);
+          console.error(`ERROR processing booking ${transcription.booking_id}:`, error);
           failCount++;
         }
 

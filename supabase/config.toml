@@ -59,3 +59,6 @@ verify_jwt = false
 
 [functions.batch-reanalyze-coaching]
 verify_jwt = false
+
+[functions.fix-incomplete-bookings]
+verify_jwt = false
