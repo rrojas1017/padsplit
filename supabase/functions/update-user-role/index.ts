@@ -153,7 +153,36 @@ serve(async (req) => {
       // Don't fail the request, role was updated successfully
     }
 
-    console.log(`Role updated: ${userId} from ${previousRole} to ${newRole}`);
+    // Get target user's info for audit log
+    const { data: targetUserData } = await supabaseAdmin
+      .from('profiles')
+      .select('name, email')
+      .eq('id', userId)
+      .single();
+
+    // Get requesting user's info for audit log
+    const { data: requestingUserData } = await supabaseAdmin
+      .from('profiles')
+      .select('name')
+      .eq('id', requestingUser.id)
+      .single();
+
+    // Log the role change to access_logs
+    const { error: logError } = await supabaseAdmin
+      .from('access_logs')
+      .insert({
+        action: 'role_change',
+        resource: `Changed role for ${targetUserData?.name || targetUserData?.email || userId} from ${previousRole} to ${newRole}`,
+        user_id: requestingUser.id,
+        user_name: requestingUserData?.name || requestingUser.email,
+      });
+
+    if (logError) {
+      console.error('Error logging role change:', logError);
+      // Don't fail the request, role was updated successfully
+    }
+
+    console.log(`Role updated: ${userId} from ${previousRole} to ${newRole} by ${requestingUser.id}`);
 
     return new Response(
       JSON.stringify({ 
