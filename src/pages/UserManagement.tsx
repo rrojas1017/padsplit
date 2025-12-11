@@ -90,6 +90,13 @@ export default function UserManagement() {
   const [userToDelete, setUserToDelete] = useState<UserWithRole | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
 
+  // Edit role state
+  const [isEditRoleDialogOpen, setIsEditRoleDialogOpen] = useState(false);
+  const [userToEditRole, setUserToEditRole] = useState<UserWithRole | null>(null);
+  const [editRoleValue, setEditRoleValue] = useState<string>('');
+  const [editRoleSiteId, setEditRoleSiteId] = useState<string>('');
+  const [isUpdatingRole, setIsUpdatingRole] = useState(false);
+
   const isSuperAdmin = hasRole(['super_admin']);
   const isAdmin = hasRole(['admin']);
   const isSupervisor = hasRole(['supervisor']);
@@ -417,15 +424,75 @@ export default function UserManagement() {
       setIsDeleteDialogOpen(false);
       setUserToDelete(null);
       fetchUsers();
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error deleting user:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Failed to delete user';
       toast({
         title: 'Error',
-        description: error.message || 'Failed to delete user',
+        description: errorMessage,
         variant: 'destructive',
       });
     } finally {
       setIsDeleting(false);
+    }
+  };
+
+  const handleOpenEditRoleDialog = (user: UserWithRole) => {
+    setUserToEditRole(user);
+    setEditRoleValue(user.role);
+    setEditRoleSiteId(user.site_id || '');
+    setIsEditRoleDialogOpen(true);
+  };
+
+  const handleUpdateRole = async () => {
+    if (!userToEditRole || !editRoleValue) return;
+
+    // Validate site for supervisor/agent
+    if ((editRoleValue === 'supervisor' || editRoleValue === 'agent') && !editRoleSiteId) {
+      toast({
+        title: 'Validation Error',
+        description: 'Site is required for supervisor and agent roles',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setIsUpdatingRole(true);
+    try {
+      const response = await supabase.functions.invoke('update-user-role', {
+        body: {
+          userId: userToEditRole.id,
+          newRole: editRoleValue,
+          siteId: (editRoleValue === 'supervisor' || editRoleValue === 'agent') ? editRoleSiteId : null,
+        },
+      });
+
+      if (response.error) {
+        throw new Error(response.error.message || 'Failed to update role');
+      }
+
+      if (response.data?.error) {
+        throw new Error(response.data.error);
+      }
+
+      toast({
+        title: 'Success',
+        description: `Role changed from ${roleLabels[response.data.previousRole]} to ${roleLabels[response.data.newRole]}`,
+      });
+
+      setIsEditRoleDialogOpen(false);
+      setUserToEditRole(null);
+      fetchUsers();
+    } catch (error: unknown) {
+      console.error('Error updating role:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Failed to update role';
+      toast({
+        title: 'Error',
+        description: errorMessage,
+        variant: 'destructive',
+      });
+    } finally {
+      setIsUpdatingRole(false);
     }
   };
 
@@ -567,7 +634,12 @@ export default function UserManagement() {
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
                               <DropdownMenuItem>Edit User</DropdownMenuItem>
-                              <DropdownMenuItem>Change Role</DropdownMenuItem>
+                              {isSuperAdmin && user.id !== currentUser?.id && (
+                                <DropdownMenuItem onClick={() => handleOpenEditRoleDialog(user)}>
+                                  <Pencil className="w-4 h-4 mr-2" />
+                                  Change Role
+                                </DropdownMenuItem>
+                              )}
                               <DropdownMenuItem className="text-destructive">Deactivate</DropdownMenuItem>
                               {user.id !== currentUser?.id && !isSupervisor && (
                                 <DropdownMenuItem 
@@ -713,6 +785,12 @@ export default function UserManagement() {
                                         <DropdownMenuItem onClick={() => handleEditAgent(linkedAgent)}>
                                           <Pencil className="w-4 h-4 mr-2" />
                                           Edit Agent
+                                        </DropdownMenuItem>
+                                      )}
+                                      {isSuperAdmin && user.id !== currentUser?.id && (
+                                        <DropdownMenuItem onClick={() => handleOpenEditRoleDialog(user)}>
+                                          <Shield className="w-4 h-4 mr-2" />
+                                          Change Role
                                         </DropdownMenuItem>
                                       )}
                                       {user.id !== currentUser?.id && !isSupervisor && (
@@ -877,6 +955,90 @@ export default function UserManagement() {
             <Button onClick={handleCreateUser} disabled={isSubmitting}>
               {isSubmitting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
               Create User
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Role Dialog */}
+      <Dialog open={isEditRoleDialogOpen} onOpenChange={setIsEditRoleDialogOpen}>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle>Change User Role</DialogTitle>
+            <DialogDescription>
+              Update the role for this user. Site is required for supervisor and agent roles.
+            </DialogDescription>
+          </DialogHeader>
+          {userToEditRole && (
+            <div className="space-y-4 py-4">
+              <div className="bg-muted/30 border border-border rounded-lg p-4">
+                <p className="font-medium text-foreground">{userToEditRole.name}</p>
+                <p className="text-sm text-muted-foreground">{userToEditRole.email}</p>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Current Role: <span className={cn(
+                    "inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ml-1",
+                    getRoleColor(userToEditRole.role)
+                  )}>
+                    {getRoleIcon(userToEditRole.role)}
+                    {roleLabels[userToEditRole.role]}
+                  </span>
+                </p>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="newRole">New Role</Label>
+                <Select value={editRoleValue} onValueChange={(value) => {
+                  setEditRoleValue(value);
+                  if (value === 'super_admin' || value === 'admin') {
+                    setEditRoleSiteId('');
+                  }
+                }}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select role" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="super_admin">Super Admin</SelectItem>
+                    <SelectItem value="admin">Admin</SelectItem>
+                    <SelectItem value="supervisor">Supervisor</SelectItem>
+                    <SelectItem value="agent">Agent</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              {(editRoleValue === 'supervisor' || editRoleValue === 'agent') && (
+                <div className="space-y-2">
+                  <Label htmlFor="editSite">Site *</Label>
+                  <Select value={editRoleSiteId} onValueChange={setEditRoleSiteId}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select site" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {sites.map((site) => (
+                        <SelectItem key={site.id} value={site.id}>
+                          {site.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+            </div>
+          )}
+          <DialogFooter>
+            <Button 
+              variant="outline" 
+              onClick={() => {
+                setIsEditRoleDialogOpen(false);
+                setUserToEditRole(null);
+              }}
+              disabled={isUpdatingRole}
+            >
+              Cancel
+            </Button>
+            <Button 
+              onClick={handleUpdateRole}
+              disabled={isUpdatingRole || editRoleValue === userToEditRole?.role}
+            >
+              {isUpdatingRole && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+              Update Role
             </Button>
           </DialogFooter>
         </DialogContent>
