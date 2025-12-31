@@ -379,11 +379,13 @@ export type Database = {
           coaching_audio_listened_at: string | null
           coaching_audio_regenerated_at: string | null
           coaching_audio_url: string | null
+          coaching_quiz_passed_at: string | null
           created_at: string | null
           id: string
           qa_coaching_audio_generated_at: string | null
           qa_coaching_audio_listened_at: string | null
           qa_coaching_audio_url: string | null
+          qa_coaching_quiz_passed_at: string | null
           qa_scores: Json | null
           stt_provider: string | null
           updated_at: string | null
@@ -398,11 +400,13 @@ export type Database = {
           coaching_audio_listened_at?: string | null
           coaching_audio_regenerated_at?: string | null
           coaching_audio_url?: string | null
+          coaching_quiz_passed_at?: string | null
           created_at?: string | null
           id?: string
           qa_coaching_audio_generated_at?: string | null
           qa_coaching_audio_listened_at?: string | null
           qa_coaching_audio_url?: string | null
+          qa_coaching_quiz_passed_at?: string | null
           qa_scores?: Json | null
           stt_provider?: string | null
           updated_at?: string | null
@@ -417,11 +421,13 @@ export type Database = {
           coaching_audio_listened_at?: string | null
           coaching_audio_regenerated_at?: string | null
           coaching_audio_url?: string | null
+          coaching_quiz_passed_at?: string | null
           created_at?: string | null
           id?: string
           qa_coaching_audio_generated_at?: string | null
           qa_coaching_audio_listened_at?: string | null
           qa_coaching_audio_url?: string | null
+          qa_coaching_quiz_passed_at?: string | null
           qa_scores?: Json | null
           stt_provider?: string | null
           updated_at?: string | null
@@ -694,6 +700,63 @@ export type Database = {
           updated_at?: string | null
         }
         Relationships: []
+      }
+      coaching_quiz_results: {
+        Row: {
+          answers: Json
+          attempts: number
+          booking_id: string
+          completed_at: string | null
+          created_at: string
+          id: string
+          passed: boolean
+          questions: Json
+          quiz_type: string
+          score: number
+          user_id: string
+        }
+        Insert: {
+          answers?: Json
+          attempts?: number
+          booking_id: string
+          completed_at?: string | null
+          created_at?: string
+          id?: string
+          passed?: boolean
+          questions?: Json
+          quiz_type: string
+          score?: number
+          user_id: string
+        }
+        Update: {
+          answers?: Json
+          attempts?: number
+          booking_id?: string
+          completed_at?: string | null
+          created_at?: string
+          id?: string
+          passed?: boolean
+          questions?: Json
+          quiz_type?: string
+          score?: number
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "coaching_quiz_results_booking_id_fkey"
+            columns: ["booking_id"]
+            isOneToOne: false
+            referencedRelation: "bookings"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "coaching_quiz_results_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       company_knowledge: {
         Row: {
