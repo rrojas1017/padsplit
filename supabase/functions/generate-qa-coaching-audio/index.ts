@@ -35,9 +35,19 @@ async function logApiCost(supabase: any, params: {
         cost = params.character_count * 0.00015;
       }
     } else if (params.service_provider === 'lovable_ai') {
-      // Gemini Flash: ~$0.0001 per 1K input, ~$0.0003 per 1K output
-      const inputCost = ((params.input_tokens || 0) / 1000) * 0.0001;
-      const outputCost = ((params.output_tokens || 0) / 1000) * 0.0003;
+      // Model-aware pricing for Lovable AI
+      const model = params.metadata?.model || 'google/gemini-2.5-flash';
+      let inputRate = 0.0001;  // Flash default: ~$0.0001 per 1K input
+      let outputRate = 0.0003; // Flash default: ~$0.0003 per 1K output
+      
+      if (model.includes('gemini-2.5-pro')) {
+        // Gemini Pro: ~$0.00125 per 1K input, ~$0.005 per 1K output
+        inputRate = 0.00125;
+        outputRate = 0.005;
+      }
+      
+      const inputCost = ((params.input_tokens || 0) / 1000) * inputRate;
+      const outputCost = ((params.output_tokens || 0) / 1000) * outputRate;
       cost = inputCost + outputCost;
     }
 
@@ -286,13 +296,11 @@ Generate ONLY the spoken coaching script. No formatting, no quotes around the sc
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'google/gemini-2.5-flash',
+        model: 'google/gemini-2.5-pro',
         messages: [
           { role: 'system', content: 'You are Katty, an empathetic QA coach. Generate only the spoken coaching script, nothing else.' },
           { role: 'user', content: kattyPrompt }
         ],
-        max_tokens: 500,
-        temperature: 0.7
       }),
     });
 
@@ -323,7 +331,7 @@ Generate ONLY the spoken coaching script. No formatting, no quotes around the sc
       site_id: siteId,
       input_tokens: estimatedInputTokens,
       output_tokens: estimatedOutputTokens,
-      metadata: { model: 'google/gemini-2.5-flash', script_length: coachingScript.length }
+      metadata: { model: 'google/gemini-2.5-pro', script_length: coachingScript.length }
     });
 
     // Generate audio with ElevenLabs using Sarah's voice
