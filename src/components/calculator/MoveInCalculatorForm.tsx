@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -6,7 +6,7 @@ import { Switch } from '@/components/ui/switch';
 import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Button } from '@/components/ui/button';
-import { CalendarIcon, DollarSign, Home, Truck } from 'lucide-react';
+import { CalendarIcon, DollarSign, Home, Truck, MapPin } from 'lucide-react';
 import { format, addDays } from 'date-fns';
 import { cn } from '@/lib/utils';
 import { PromoCodeInput } from './PromoCodeInput';
@@ -18,6 +18,7 @@ export function MoveInCalculatorForm() {
   const [weeklyRent, setWeeklyRent] = useState<number>(297);
   const [movingFee, setMovingFee] = useState<number>(0);
   const [paymentFrequency, setPaymentFrequency] = useState<'weekly' | 'biweekly'>('weekly');
+  const [moveInDate, setMoveInDate] = useState<Date>(addDays(new Date(), 3));
   const [firstRentDueDate, setFirstRentDueDate] = useState<Date>(addDays(new Date(), 7));
   const [promoValidation, setPromoValidation] = useState<PromoCodeValidation>({
     isValid: false,
@@ -37,6 +38,24 @@ export function MoveInCalculatorForm() {
   const handleMovingFeeChange = (value: string) => {
     const num = parseFloat(value) || 0;
     setMovingFee(Math.max(0, num));
+  };
+
+  const handleMoveInDateChange = (date: Date | undefined) => {
+    if (!date) return;
+    setMoveInDate(date);
+    // Auto-adjust first rent due date if move-in date is after it
+    if (date > firstRentDueDate) {
+      setFirstRentDueDate(addDays(date, 4));
+    }
+  };
+
+  const handleFirstRentDueDateChange = (date: Date | undefined) => {
+    if (!date) return;
+    setFirstRentDueDate(date);
+    // Auto-adjust move-in date if it's after the new first rent due date
+    if (moveInDate > date) {
+      setMoveInDate(addDays(date, -4));
+    }
   };
 
   return (
@@ -120,6 +139,35 @@ export function MoveInCalculatorForm() {
               </div>
             </div>
 
+            {/* Move-In Date */}
+            <div className="space-y-2">
+              <Label className="text-sm font-medium flex items-center gap-2">
+                <MapPin className="w-4 h-4" />
+                Move-In Date
+              </Label>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    className="w-full justify-start text-left font-normal"
+                  >
+                    <CalendarIcon className="mr-2 h-4 w-4" />
+                    {format(moveInDate, 'PPP')}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="start">
+                  <Calendar
+                    mode="single"
+                    selected={moveInDate}
+                    onSelect={handleMoveInDateChange}
+                    initialFocus
+                    disabled={(date) => date < new Date()}
+                    className={cn("p-3 pointer-events-auto")}
+                  />
+                </PopoverContent>
+              </Popover>
+            </div>
+
             {/* First Rent Due Date */}
             <div className="space-y-2">
               <Label className="text-sm font-medium flex items-center gap-2">
@@ -140,9 +188,10 @@ export function MoveInCalculatorForm() {
                   <Calendar
                     mode="single"
                     selected={firstRentDueDate}
-                    onSelect={(date) => date && setFirstRentDueDate(date)}
+                    onSelect={handleFirstRentDueDateChange}
                     initialFocus
                     disabled={(date) => date < new Date()}
+                    className={cn("p-3 pointer-events-auto")}
                   />
                 </PopoverContent>
               </Popover>
@@ -164,7 +213,9 @@ export function MoveInCalculatorForm() {
         <PaymentSchedulePreview
           weeklyRent={weeklyRent}
           paymentFrequency={paymentFrequency}
+          moveInDate={moveInDate}
           firstRentDueDate={firstRentDueDate}
+          totalDueToday={totalDueToday}
         />
       </div>
     </div>
