@@ -65,23 +65,54 @@ serve(async (req) => {
       // No body or invalid JSON - will scan all
     }
 
+    // If specific booking IDs provided with includeUntranscribed, check if they need transcription
+    let untranscribedBookings: Array<{ booking_id: string; kixie_link: string }> = [];
+    
+    if (bookingIds.length > 0 && includeUntranscribed) {
+      // Check if these bookings exist but have no transcription record
+      const { data: bookings, error: bookingsError } = await supabase
+        .from('bookings')
+        .select('id, kixie_link, transcription_status')
+        .in('id', bookingIds)
+        .not('kixie_link', 'is', null);
+      
+      if (!bookingsError && bookings) {
+        for (const booking of bookings) {
+          // Check if transcription record exists
+          const { data: existing } = await supabase
+            .from('booking_transcriptions')
+            .select('booking_id')
+            .eq('booking_id', booking.id)
+            .single();
+          
+          if (!existing && booking.kixie_link) {
+            untranscribedBookings.push({ 
+              booking_id: booking.id, 
+              kixie_link: booking.kixie_link 
+            });
+            console.log(`[FIX-INCOMPLETE] Found untranscribed booking: ${booking.id}`);
+          }
+        }
+      }
+    }
+
     // Query for bookings with transcriptions
     let query = supabase
       .from('booking_transcriptions')
-      .select('booking_id, call_transcription, agent_feedback, qa_scores, coaching_audio_url, qa_coaching_audio_url')
-      .not('call_transcription', 'is', null);
+      .select('booking_id, call_transcription, agent_feedback, qa_scores, coaching_audio_url, qa_coaching_audio_url');
 
     if (bookingIds.length > 0) {
       query = query.in('booking_id', bookingIds);
     } else {
-      query = query.limit(100);
+      query = query.not('call_transcription', 'is', null).limit(100);
     }
 
     const { data: transcriptions, error } = await query;
 
     if (error) throw new Error(`Failed to fetch transcriptions: ${error.message}`);
 
-    if (!transcriptions || transcriptions.length === 0) {
+    // If no transcription records but we have untranscribed bookings, we'll process those
+    if ((!transcriptions || transcriptions.length === 0) && untranscribedBookings.length === 0) {
       console.log('[FIX-INCOMPLETE] No transcriptions found to check');
       return new Response(
         JSON.stringify({ success: true, checked: 0, incomplete: 0, message: 'No transcriptions found' }),
@@ -89,52 +120,73 @@ serve(async (req) => {
       );
     }
 
-    console.log(`[FIX-INCOMPLETE] Checking ${transcriptions.length} transcriptions...`);
+    console.log(`[FIX-INCOMPLETE] Checking ${transcriptions?.length || 0} transcriptions, ${untranscribedBookings.length} untranscribed...`);
 
     // Analyze each booking for missing steps
     const incompleteBookings: Array<{
       booking_id: string;
       missingSteps: string[];
       details: ProcessingStep[];
+      kixie_link?: string;
     }> = [];
 
-    for (const t of transcriptions as IncompleteBooking[]) {
-      const steps: ProcessingStep[] = [
-        { 
-          name: 'transcription', 
-          missing: !t.call_transcription 
-        },
-        { 
-          name: 'jeff_feedback', 
-          missing: !t.agent_feedback,
-          dependency: 'transcription'
-        },
-        { 
-          name: 'jeff_audio', 
-          missing: !t.coaching_audio_url,
-          dependency: 'jeff_feedback'
-        },
-        { 
-          name: 'qa_scores', 
-          missing: !t.qa_scores,
-          dependency: 'transcription'
-        },
-        { 
-          name: 'katty_audio', 
-          missing: !t.qa_coaching_audio_url,
-          dependency: 'qa_scores'
-        },
-      ];
+    // Add untranscribed bookings first (they need full pipeline)
+    for (const ub of untranscribedBookings) {
+      incompleteBookings.push({
+        booking_id: ub.booking_id,
+        missingSteps: ['transcription', 'jeff_feedback', 'jeff_audio', 'qa_scores', 'katty_audio'],
+        details: [
+          { name: 'transcription', missing: true },
+          { name: 'jeff_feedback', missing: true, dependency: 'transcription' },
+          { name: 'jeff_audio', missing: true, dependency: 'jeff_feedback' },
+          { name: 'qa_scores', missing: true, dependency: 'transcription' },
+          { name: 'katty_audio', missing: true, dependency: 'qa_scores' },
+        ],
+        kixie_link: ub.kixie_link
+      });
+      console.log(`[FIX-INCOMPLETE] Untranscribed booking ${ub.booking_id} needs full pipeline`);
+    }
 
-      const missingSteps = steps.filter(s => s.missing).map(s => s.name);
-      
-      if (missingSteps.length > 0) {
-        incompleteBookings.push({
-          booking_id: t.booking_id,
-          missingSteps,
-          details: steps
-        });
-        console.log(`[FIX-INCOMPLETE] Booking ${t.booking_id} missing: ${missingSteps.join(', ')}`);
+    // Analyze existing transcriptions for missing steps
+    if (transcriptions) {
+      for (const t of transcriptions as IncompleteBooking[]) {
+        const steps: ProcessingStep[] = [
+          { 
+            name: 'transcription', 
+            missing: !t.call_transcription 
+          },
+          { 
+            name: 'jeff_feedback', 
+            missing: !t.agent_feedback,
+            dependency: 'transcription'
+          },
+          { 
+            name: 'jeff_audio', 
+            missing: !t.coaching_audio_url,
+            dependency: 'jeff_feedback'
+          },
+          { 
+            name: 'qa_scores', 
+            missing: !t.qa_scores,
+            dependency: 'transcription'
+          },
+          { 
+            name: 'katty_audio', 
+            missing: !t.qa_coaching_audio_url,
+            dependency: 'qa_scores'
+          },
+        ];
+
+        const missingSteps = steps.filter(s => s.missing).map(s => s.name);
+        
+        if (missingSteps.length > 0) {
+          incompleteBookings.push({
+            booking_id: t.booking_id,
+            missingSteps,
+            details: steps
+          });
+          console.log(`[FIX-INCOMPLETE] Booking ${t.booking_id} missing: ${missingSteps.join(', ')}`);
+        }
       }
     }
 
@@ -143,7 +195,7 @@ serve(async (req) => {
       return new Response(
         JSON.stringify({ 
           success: true, 
-          checked: transcriptions.length, 
+          checked: (transcriptions?.length || 0) + untranscribedBookings.length, 
           incomplete: 0, 
           message: 'All bookings are complete' 
         }),
@@ -158,7 +210,7 @@ serve(async (req) => {
         JSON.stringify({
           success: true,
           dryRun: true,
-          checked: transcriptions.length,
+          checked: (transcriptions?.length || 0) + untranscribedBookings.length,
           incomplete: incompleteBookings.length,
           bookings: incompleteBookings
         }),
@@ -178,10 +230,41 @@ serve(async (req) => {
 
         try {
           // Determine what needs to run based on dependencies
+          const needsTranscription = booking.missingSteps.includes('transcription');
           const needsJeffFeedback = booking.missingSteps.includes('jeff_feedback');
           const needsJeffAudio = booking.missingSteps.includes('jeff_audio');
           const needsQAScores = booking.missingSteps.includes('qa_scores');
           const needsKattyAudio = booking.missingSteps.includes('katty_audio');
+
+          // Step 0: If missing transcription, trigger transcribe-call
+          if (needsTranscription) {
+            console.log(`[FIX-INCOMPLETE] Step 0: Triggering transcription for kixie_link: ${booking.kixie_link}`);
+            const response = await fetch(`${SUPABASE_URL}/functions/v1/transcribe-call`, {
+              method: 'POST',
+              headers: {
+                'Authorization': `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({ bookingId: booking.booking_id, kixieUrl: booking.kixie_link }),
+            });
+
+            if (!response.ok) {
+              const errorText = await response.text();
+              console.error(`[FIX-INCOMPLETE] FAILED transcribe-call: ${errorText}`);
+              failCount++;
+              continue; // Skip this booking - can't proceed without transcription
+            }
+            console.log(`[FIX-INCOMPLETE] ✓ Transcription triggered (auto-coaching will handle remaining steps)`);
+            successCount++;
+            
+            // Transcribe-call will auto-trigger the rest of the pipeline via check-auto-transcription
+            // so we can skip to the next booking
+            if (i < incompleteBookings.length - 1) {
+              console.log('[FIX-INCOMPLETE] Waiting 15 seconds before next booking...');
+              await new Promise(resolve => setTimeout(resolve, 15000));
+            }
+            continue;
+          }
 
           // Step 1: If missing Jeff feedback, reanalyze
           if (needsJeffFeedback) {
