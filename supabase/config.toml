@@ -65,3 +65,6 @@ verify_jwt = false
 
 [functions.fix-incomplete-bookings]
 verify_jwt = false
+
+[functions.generate-coaching-quiz]
+verify_jwt = true

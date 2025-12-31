@@ -1,10 +1,12 @@
 import { useState, useRef, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
-import { Headphones, Play, Pause, Loader2, Volume2 } from 'lucide-react';
+import { Headphones, Play, Pause, Loader2, Volume2, CheckCircle, Target } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/contexts/AuthContext';
+import { CoachingQuizModal } from './CoachingQuizModal';
 
 interface CoachingAudioPlayerProps {
   bookingId: string;
@@ -15,6 +17,8 @@ interface CoachingAudioPlayerProps {
   listenedAt?: string | null;
   onListened?: () => void;
   agentUserId?: string; // The user_id of the agent this coaching belongs to
+  quizPassedAt?: string | null; // When the quiz was passed
+  onQuizPassed?: () => void;
 }
 
 export function CoachingAudioPlayer({
@@ -26,6 +30,8 @@ export function CoachingAudioPlayer({
   listenedAt,
   onListened,
   agentUserId,
+  quizPassedAt,
+  onQuizPassed,
 }: CoachingAudioPlayerProps) {
   const { user } = useAuth();
   const [isGenerating, setIsGenerating] = useState(false);
@@ -34,15 +40,21 @@ export function CoachingAudioPlayer({
   const [progress, setProgress] = useState(0);
   const [duration, setDuration] = useState(0);
   const [hasBeenListened, setHasBeenListened] = useState(!!listenedAt);
+  const [hasPassedQuiz, setHasPassedQuiz] = useState(!!quizPassedAt);
+  const [showQuizModal, setShowQuizModal] = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
   useEffect(() => {
     setHasBeenListened(!!listenedAt);
-  }, [listenedAt]);
+    setHasPassedQuiz(!!quizPassedAt);
+  }, [listenedAt, quizPassedAt]);
 
   useEffect(() => {
     setCurrentAudioUrl(audioUrl || null);
   }, [audioUrl]);
+
+  // Check if the current user is the owning agent
+  const isOwningAgent = agentUserId && user?.id === agentUserId;
 
   const handleGenerateAudio = async () => {
     if (isGenerating) return;
@@ -81,21 +93,6 @@ export function CoachingAudioPlayer({
       audioRef.current.pause();
     } else {
       audioRef.current.play();
-      
-      // Mark as listened on first play - only if current user is the owning agent
-      const isOwningAgent = agentUserId && user?.id === agentUserId;
-      if (!hasBeenListened && currentAudioUrl && isOwningAgent) {
-        setHasBeenListened(true);
-        try {
-          await supabase
-            .from('booking_transcriptions')
-            .update({ coaching_audio_listened_at: new Date().toISOString() })
-            .eq('booking_id', bookingId);
-          onListened?.();
-        } catch (error) {
-          console.error('Failed to mark audio as listened:', error);
-        }
-      }
     }
     setIsPlaying(!isPlaying);
   };
@@ -112,15 +109,72 @@ export function CoachingAudioPlayer({
     }
   };
 
-  const handleEnded = () => {
+  const handleEnded = async () => {
     setIsPlaying(false);
     setProgress(0);
+    
+    // If the owning agent finished listening and hasn't passed the quiz yet, show the quiz
+    if (isOwningAgent && !hasPassedQuiz && currentAudioUrl) {
+      // Mark as listened first
+      if (!hasBeenListened) {
+        setHasBeenListened(true);
+        try {
+          await supabase
+            .from('booking_transcriptions')
+            .update({ coaching_audio_listened_at: new Date().toISOString() })
+            .eq('booking_id', bookingId);
+          onListened?.();
+        } catch (error) {
+          console.error('Failed to mark audio as listened:', error);
+        }
+      }
+      
+      // Show the quiz
+      setShowQuizModal(true);
+    }
+  };
+
+  const handleQuizPassed = () => {
+    setHasPassedQuiz(true);
+    onQuizPassed?.();
+    toast.success('Quiz passed! Great job understanding your coaching! 🎉');
+  };
+
+  const handleReplayRequested = () => {
+    // Restart playback
+    if (audioRef.current) {
+      audioRef.current.currentTime = 0;
+      audioRef.current.play();
+      setIsPlaying(true);
+    }
   };
 
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
     const secs = Math.floor(seconds % 60);
     return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  // Determine quiz status badge for this booking
+  const getQuizStatusBadge = () => {
+    if (!isOwningAgent) return null;
+    if (hasPassedQuiz) {
+      return (
+        <Badge variant="outline" className="bg-green-500/10 text-green-600 border-green-500/20 text-xs">
+          <CheckCircle className="h-3 w-3 mr-1" />
+          Quiz Passed
+        </Badge>
+      );
+    }
+    if (hasBeenListened) {
+      return (
+        <Badge variant="outline" className="bg-amber-500/10 text-amber-600 border-amber-500/20 text-xs">
+          <Target className="h-3 w-3 mr-1" />
+          Quiz Pending
+        </Badge>
+      );
+    }
+    return null;
   };
 
   // If no audio exists, show generate button
@@ -212,9 +266,12 @@ export function CoachingAudioPlayer({
                 <Volume2 className="h-4 w-4 text-accent" />
                 Your Coaching Feedback
               </span>
-              <span className="text-xs text-muted-foreground">
-                {formatTime(duration)}
-              </span>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-muted-foreground">
+                  {formatTime(duration)}
+                </span>
+                {getQuizStatusBadge()}
+              </div>
             </div>
             <div className="w-full bg-muted rounded-full h-2">
               <div
@@ -275,6 +332,16 @@ export function CoachingAudioPlayer({
           )}
         </Button>
       )}
+
+      {/* Quiz Modal */}
+      <CoachingQuizModal
+        open={showQuizModal}
+        onOpenChange={setShowQuizModal}
+        bookingId={bookingId}
+        quizType="jeff_coaching"
+        onQuizPassed={handleQuizPassed}
+        onReplayRequested={handleReplayRequested}
+      />
     </div>
   );
 }

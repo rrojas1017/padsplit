@@ -1,11 +1,12 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Play, Pause, Volume2, Loader2, CheckCircle, Sparkles } from 'lucide-react';
+import { Play, Pause, Volume2, Loader2, CheckCircle, Sparkles, Target } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/contexts/AuthContext';
+import { CoachingQuizModal } from '@/components/coaching/CoachingQuizModal';
 
 interface QACoachingAudioPlayerProps {
   bookingId: string;
@@ -15,7 +16,9 @@ interface QACoachingAudioPlayerProps {
   qaScore?: number;
   weakestAreas?: string[];
   variant?: 'button' | 'card';
-  agentUserId?: string; // The user_id of the agent this coaching belongs to
+  agentUserId?: string;
+  quizPassedAt?: string | null;
+  onQuizPassed?: () => void;
 }
 
 export const QACoachingAudioPlayer: React.FC<QACoachingAudioPlayerProps> = ({
@@ -27,6 +30,8 @@ export const QACoachingAudioPlayer: React.FC<QACoachingAudioPlayerProps> = ({
   weakestAreas = [],
   variant = 'card',
   agentUserId,
+  quizPassedAt,
+  onQuizPassed,
 }) => {
   const { user } = useAuth();
   const [isPlaying, setIsPlaying] = useState(false);
@@ -35,12 +40,17 @@ export const QACoachingAudioPlayer: React.FC<QACoachingAudioPlayerProps> = ({
   const [duration, setDuration] = useState(0);
   const [currentAudioUrl, setCurrentAudioUrl] = useState(audioUrl);
   const [hasListened, setHasListened] = useState(!!listenedAt);
+  const [hasPassedQuiz, setHasPassedQuiz] = useState(!!quizPassedAt);
+  const [showQuizModal, setShowQuizModal] = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+
+  const isOwningAgent = agentUserId && user?.id === agentUserId;
 
   useEffect(() => {
     setCurrentAudioUrl(audioUrl);
     setHasListened(!!listenedAt);
-  }, [audioUrl, listenedAt]);
+    setHasPassedQuiz(!!quizPassedAt);
+  }, [audioUrl, listenedAt, quizPassedAt]);
 
   const handlePlayPause = async () => {
     if (!audioRef.current || !currentAudioUrl) return;
@@ -52,12 +62,6 @@ export const QACoachingAudioPlayer: React.FC<QACoachingAudioPlayerProps> = ({
       try {
         await audioRef.current.play();
         setIsPlaying(true);
-
-        // Mark as listened on first play - only if current user is the owning agent
-        const isOwningAgent = agentUserId && user?.id === agentUserId;
-        if (!hasListened && isOwningAgent) {
-          await markAsListened();
-        }
       } catch (error) {
         console.error('Error playing audio:', error);
         toast.error('Failed to play audio');
@@ -94,9 +98,16 @@ export const QACoachingAudioPlayer: React.FC<QACoachingAudioPlayerProps> = ({
     }
   };
 
-  const handleEnded = () => {
+  const handleEnded = async () => {
     setIsPlaying(false);
     setProgress(0);
+    
+    if (isOwningAgent && !hasPassedQuiz && currentAudioUrl) {
+      if (!hasListened) {
+        await markAsListened();
+      }
+      setShowQuizModal(true);
+    }
   };
 
   const handleGenerateAudio = async () => {
@@ -120,10 +131,45 @@ export const QACoachingAudioPlayer: React.FC<QACoachingAudioPlayerProps> = ({
     }
   };
 
+  const handleQuizPassed = () => {
+    setHasPassedQuiz(true);
+    onQuizPassed?.();
+    toast.success('Quiz passed! Great job understanding Katty\'s feedback! 🎉');
+  };
+
+  const handleReplayRequested = () => {
+    if (audioRef.current) {
+      audioRef.current.currentTime = 0;
+      audioRef.current.play();
+      setIsPlaying(true);
+    }
+  };
+
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
     const secs = Math.floor(seconds % 60);
     return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  const getQuizStatusBadge = () => {
+    if (!isOwningAgent) return null;
+    if (hasPassedQuiz) {
+      return (
+        <Badge variant="outline" className="bg-green-500/10 text-green-600 border-green-500/20 text-xs">
+          <CheckCircle className="h-3 w-3 mr-1" />
+          Quiz Passed
+        </Badge>
+      );
+    }
+    if (hasListened) {
+      return (
+        <Badge variant="outline" className="bg-amber-500/10 text-amber-600 border-amber-500/20 text-xs">
+          <Target className="h-3 w-3 mr-1" />
+          Quiz Pending
+        </Badge>
+      );
+    }
+    return null;
   };
 
   // Button variant - matches Jeff's coaching button style
@@ -246,12 +292,7 @@ export const QACoachingAudioPlayer: React.FC<QACoachingAudioPlayerProps> = ({
               <span className="text-xs text-muted-foreground">
                 {formatTime(duration)}
               </span>
-              {hasListened && (
-                <Badge variant="outline" className="bg-green-500/10 text-green-600 border-green-500/20 text-xs">
-                  <CheckCircle className="h-3 w-3 mr-1" />
-                  Listened
-                </Badge>
-              )}
+              {getQuizStatusBadge()}
             </div>
           </div>
           <div className="w-full bg-muted rounded-full h-2">
@@ -262,6 +303,16 @@ export const QACoachingAudioPlayer: React.FC<QACoachingAudioPlayerProps> = ({
           </div>
         </div>
       </div>
+
+      {/* Quiz Modal */}
+      <CoachingQuizModal
+        open={showQuizModal}
+        onOpenChange={setShowQuizModal}
+        bookingId={bookingId}
+        quizType="katty_qa"
+        onQuizPassed={handleQuizPassed}
+        onReplayRequested={handleReplayRequested}
+      />
 
       {weakestAreas.length > 0 && (
         <div className="px-1">
