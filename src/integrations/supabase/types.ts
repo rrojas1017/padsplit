@@ -52,6 +52,48 @@ export type Database = {
           },
         ]
       }
+      admin_notifications: {
+        Row: {
+          created_at: string | null
+          id: string
+          is_read: boolean | null
+          is_resolved: boolean | null
+          message: string
+          metadata: Json | null
+          notification_type: string
+          resolved_at: string | null
+          service: string
+          severity: string
+          title: string
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          is_read?: boolean | null
+          is_resolved?: boolean | null
+          message: string
+          metadata?: Json | null
+          notification_type: string
+          resolved_at?: string | null
+          service: string
+          severity?: string
+          title: string
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          is_read?: boolean | null
+          is_resolved?: boolean | null
+          message?: string
+          metadata?: Json | null
+          notification_type?: string
+          resolved_at?: string | null
+          service?: string
+          severity?: string
+          title?: string
+        }
+        Relationships: []
+      }
       agent_goals: {
         Row: {
           agent_id: string
