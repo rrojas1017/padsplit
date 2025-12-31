@@ -37,6 +37,8 @@ import AgentGoals from "./pages/AgentGoals";
 import Billing from "./pages/Billing";
 import CoachingEngagement from "./pages/CoachingEngagement";
 import MyBookings from "./pages/MyBookings";
+import MoveInCalculator from "./pages/MoveInCalculator";
+import PromoCodeSettings from "./pages/PromoCodeSettings";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -237,6 +239,22 @@ const App = () => (
                 <ProtectedRoute allowedRoles={['super_admin', 'admin', 'supervisor']}>
                   <DataProviders>
                     <CoachingEngagement />
+                  </DataProviders>
+                </ProtectedRoute>
+              } />
+
+              <Route path="/tools/move-in-calculator" element={
+                <ProtectedRoute>
+                  <DataProviders>
+                    <MoveInCalculator />
+                  </DataProviders>
+                </ProtectedRoute>
+              } />
+
+              <Route path="/settings/promo-codes" element={
+                <ProtectedRoute allowedRoles={['super_admin', 'admin']}>
+                  <DataProviders>
+                    <PromoCodeSettings />
                   </DataProviders>
                 </ProtectedRoute>
               } />

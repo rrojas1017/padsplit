@@ -20,7 +20,9 @@ import {
   Target,
   DollarSign,
   Headphones,
-  ClipboardList
+  ClipboardList,
+  Calculator,
+  Tag
 } from 'lucide-react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
@@ -127,6 +129,13 @@ const menuItems: MenuItem[] = [
     roles: ['super_admin', 'admin', 'supervisor'],
     group: 'core'
   },
+  {
+    icon: Calculator,
+    label: 'Move-In Calculator',
+    path: '/tools/move-in-calculator',
+    roles: ['super_admin', 'admin', 'supervisor', 'agent'],
+    group: 'core'
+  },
   // Admin items - collapsible group
   {
     icon: Users, 
@@ -182,6 +191,13 @@ const menuItems: MenuItem[] = [
     label: 'Cost & Billing',
     path: '/billing',
     roles: ['super_admin'],
+    group: 'admin'
+  },
+  {
+    icon: Tag,
+    label: 'Promo Codes',
+    path: '/settings/promo-codes',
+    roles: ['super_admin', 'admin'],
     group: 'admin'
   },
 ];
