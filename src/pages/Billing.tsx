@@ -7,8 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { DateRangeFilter, DateFilterValue, CustomDateRange } from '@/components/dashboard/DateRangeFilter';
 import { Skeleton } from '@/components/ui/skeleton';
-import { DollarSign, TrendingUp, Zap, FileText, Users, BarChart3 } from 'lucide-react';
-import { formatCurrency, SERVICE_TYPE_LABELS, FUNCTION_LABELS } from '@/utils/billingCalculations';
+import { FileText, Users, BarChart3 } from 'lucide-react';
 import CostOverviewCards from '@/components/billing/CostOverviewCards';
 import CostBreakdownCharts from '@/components/billing/CostBreakdownCharts';
 import FunctionCostsTable from '@/components/billing/FunctionCostsTable';
@@ -16,6 +15,7 @@ import CostTrendChart from '@/components/billing/CostTrendChart';
 import ClientManagement from '@/components/billing/ClientManagement';
 import InvoiceGenerator from '@/components/billing/InvoiceGenerator';
 import InvoiceHistory from '@/components/billing/InvoiceHistory';
+import { AdminNotifications } from '@/components/billing/AdminNotifications';
 
 const Billing = () => {
   const { hasRole, isLoading: authLoading } = useAuth();
@@ -131,6 +131,9 @@ const Billing = () => {
 
           {/* Costs Tab */}
           <TabsContent value="costs" className="space-y-6">
+            {/* Admin Notifications */}
+            <AdminNotifications />
+
             {/* Overview Cards */}
             <CostOverviewCards summary={summary} costs={costs} dateRange={dateFilter} />
 
