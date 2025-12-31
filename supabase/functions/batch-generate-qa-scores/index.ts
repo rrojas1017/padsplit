@@ -36,8 +36,19 @@ async function logApiCost(supabase: any, params: {
         cost += params.character_count * 0.0003;
       }
     } else if (params.service_provider === 'lovable_ai') {
-      const inputCost = ((params.input_tokens || 0) / 1000) * 0.0001;
-      const outputCost = ((params.output_tokens || 0) / 1000) * 0.0003;
+      // Model-aware pricing for Lovable AI
+      const model = params.metadata?.model || 'google/gemini-2.5-flash';
+      let inputRate = 0.0001;  // Flash default: ~$0.0001 per 1K input
+      let outputRate = 0.0003; // Flash default: ~$0.0003 per 1K output
+      
+      if (model.includes('gemini-2.5-pro')) {
+        // Gemini Pro: ~$0.00125 per 1K input, ~$0.005 per 1K output
+        inputRate = 0.00125;
+        outputRate = 0.005;
+      }
+      
+      const inputCost = ((params.input_tokens || 0) / 1000) * inputRate;
+      const outputCost = ((params.output_tokens || 0) / 1000) * outputRate;
       cost = inputCost + outputCost;
     }
 
@@ -148,7 +159,7 @@ ${categories.map(cat => `    "${cat.name}": <score 0-${cat.maxPoints}>`).join(',
               'Content-Type': 'application/json',
             },
             body: JSON.stringify({
-              model: 'google/gemini-2.5-flash',
+              model: 'google/gemini-2.5-pro',
               messages: [
                 { role: 'system', content: 'You are a professional QA analyst. Return only valid JSON with no additional text.' },
                 { role: 'user', content: prompt }
@@ -177,7 +188,7 @@ ${categories.map(cat => `    "${cat.name}": <score 0-${cat.maxPoints}>`).join(',
             site_id: siteId,
             input_tokens: inputTokens,
             output_tokens: outputTokens,
-            metadata: { model: 'google/gemini-2.5-flash', batch: true }
+            metadata: { model: 'google/gemini-2.5-pro', batch: true }
           });
 
           // Parse scores
