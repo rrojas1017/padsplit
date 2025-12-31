@@ -7,7 +7,7 @@ import { Switch } from '@/components/ui/switch';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useAuth } from '@/contexts/AuthContext';
-import { Database, Bell, Moon, Sun, Upload, Key, FileText, Download, Brain, Phone, BookOpen, Shield, ScrollText, Zap, Volume2, Loader2, ClipboardCheck } from 'lucide-react';
+import { Database, Bell, Moon, Sun, Upload, Key, FileText, Download, Brain, Phone, BookOpen, Shield, ScrollText, Zap, Volume2, Loader2, ClipboardCheck, RefreshCw, AlertTriangle } from 'lucide-react';
 import { generateRoleDocumentationPDF } from '@/utils/roleDocumentation';
 import { generateQADocumentationPDF } from '@/utils/qaDocumentation';
 import { CallTypeList } from '@/components/ai-management/CallTypeList';
@@ -19,13 +19,15 @@ import { QARubricSettings } from '@/components/ai-management/QARubricSettings';
 import { KattyQASettings } from '@/components/ai-management/KattyQASettings';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 
 export default function Settings() {
   usePageTracking('view_settings');
   const { theme, toggleTheme } = useTheme();
   const { hasRole } = useAuth();
   const [isGeneratingAudio, setIsGeneratingAudio] = useState(false);
+  const [isRetryingTranscriptions, setIsRetryingTranscriptions] = useState(false);
+  const [failedTranscriptionCount, setFailedTranscriptionCount] = useState<number | null>(null);
   
   const canAccessAIManagement = hasRole(['super_admin', 'admin']);
 
@@ -56,6 +58,62 @@ export default function Settings() {
       toast.error('Failed to generate coaching audio. Please try again.');
     } finally {
       setIsGeneratingAudio(false);
+    }
+  };
+
+  // Check for failed transcriptions on mount
+  useEffect(() => {
+    if (canAccessAIManagement) {
+      checkFailedTranscriptions();
+    }
+  }, [canAccessAIManagement]);
+
+  const checkFailedTranscriptions = async () => {
+    try {
+      const { count, error } = await supabase
+        .from('bookings')
+        .select('*', { count: 'exact', head: true })
+        .not('kixie_link', 'is', null)
+        .in('transcription_status', ['failed', 'pending']);
+      
+      if (!error && count !== null) {
+        setFailedTranscriptionCount(count);
+      }
+    } catch (error) {
+      console.error('Error checking failed transcriptions:', error);
+    }
+  };
+
+  const handleBatchRetryTranscriptions = async () => {
+    setIsRetryingTranscriptions(true);
+    toast.info('Starting batch retry of failed transcriptions...', { duration: 5000 });
+    
+    try {
+      const { data, error } = await supabase.functions.invoke('batch-retry-transcriptions', {
+        body: { dryRun: false, limit: 50 }
+      });
+      
+      if (error) {
+        throw error;
+      }
+      
+      if (data?.success) {
+        if (data.queued > 0) {
+          toast.success(
+            `Started re-transcription for ${data.queued} bookings. Processing in background with 30-second pacing.`,
+            { duration: 10000 }
+          );
+          // Refresh count
+          setTimeout(checkFailedTranscriptions, 2000);
+        } else {
+          toast.info(data.message || 'No failed transcriptions found to retry');
+        }
+      }
+    } catch (error) {
+      console.error('Batch retry transcriptions error:', error);
+      toast.error('Failed to start batch retry. Please try again.');
+    } finally {
+      setIsRetryingTranscriptions(false);
     }
   };
 
@@ -290,6 +348,59 @@ export default function Settings() {
                       </>
                     )}
                   </Button>
+                </div>
+              </div>
+
+              {/* Batch Retry Failed Transcriptions */}
+              <div className="bg-card rounded-xl border border-border p-6 shadow-card">
+                <div className="flex items-center gap-3 mb-6">
+                  <RefreshCw className="w-5 h-5 text-accent" />
+                  <div>
+                    <h3 className="text-lg font-semibold text-foreground">Retry Failed Transcriptions</h3>
+                    <p className="text-sm text-muted-foreground">Re-attempt transcription for bookings that failed to process</p>
+                  </div>
+                </div>
+                <div className="space-y-4">
+                  {failedTranscriptionCount !== null && failedTranscriptionCount > 0 && (
+                    <div className="flex items-center gap-2 p-3 rounded-lg bg-amber-500/10 border border-amber-500/20">
+                      <AlertTriangle className="w-4 h-4 text-amber-500" />
+                      <span className="text-sm text-amber-600 dark:text-amber-400">
+                        {failedTranscriptionCount} booking{failedTranscriptionCount === 1 ? '' : 's'} with failed/pending transcriptions
+                      </span>
+                    </div>
+                  )}
+                  <p className="text-sm text-muted-foreground">
+                    This will find bookings with failed or pending transcription status that never got processed,
+                    and retry the transcription pipeline. Processing uses 30-second pacing to avoid rate limits.
+                  </p>
+                  <div className="flex gap-3">
+                    <Button 
+                      onClick={handleBatchRetryTranscriptions}
+                      disabled={isRetryingTranscriptions}
+                      variant="outline"
+                      className="gap-2"
+                    >
+                      {isRetryingTranscriptions ? (
+                        <>
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                          Retrying...
+                        </>
+                      ) : (
+                        <>
+                          <RefreshCw className="w-4 h-4" />
+                          Retry Failed Transcriptions
+                        </>
+                      )}
+                    </Button>
+                    <Button 
+                      onClick={checkFailedTranscriptions}
+                      variant="ghost"
+                      size="icon"
+                      title="Refresh count"
+                    >
+                      <RefreshCw className="w-4 h-4" />
+                    </Button>
+                  </div>
                 </div>
               </div>
 

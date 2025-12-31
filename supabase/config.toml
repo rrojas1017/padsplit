@@ -68,3 +68,6 @@ verify_jwt = false
 
 [functions.generate-coaching-quiz]
 verify_jwt = true
+
+[functions.batch-retry-transcriptions]
+verify_jwt = false

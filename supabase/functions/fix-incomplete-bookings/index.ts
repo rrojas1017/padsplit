@@ -46,6 +46,7 @@ serve(async (req) => {
     // Check if specific booking IDs were provided
     let bookingIds: string[] = [];
     let dryRun = false;
+    let includeUntranscribed = false;
     try {
       const body = await req.json();
       if (body.bookingIds && Array.isArray(body.bookingIds)) {
@@ -55,6 +56,10 @@ serve(async (req) => {
       if (body.dryRun === true) {
         dryRun = true;
         console.log('[FIX-INCOMPLETE] DRY RUN MODE - will only report, not fix');
+      }
+      if (body.includeUntranscribed === true) {
+        includeUntranscribed = true;
+        console.log('[FIX-INCOMPLETE] Including un-transcribed bookings');
       }
     } catch {
       // No body or invalid JSON - will scan all

@@ -931,18 +931,12 @@ async function processTranscription(bookingId: string, kixieUrl: string) {
   } catch (error) {
     // Clear timeout on error
     clearTimeout(timeoutId);
-    console.error(`[Background] Transcription failed for booking ${bookingId}:`, error);
+    const errorMessage = error instanceof Error ? error.message : 'Unknown transcription error';
+    console.error(`[Background] Transcription failed for booking ${bookingId}:`, errorMessage);
     
-    // Update status to failed
-    try {
-      await supabase
-        .from('bookings')
-        .update({ transcription_status: 'failed' })
-        .eq('id', bookingId);
-      console.log(`[Background] Status updated to failed for booking ${bookingId}`);
-    } catch (e) {
-      console.error('[Background] Failed to update status to failed:', e);
-    }
+    // Update status to failed WITH error message for debugging
+    await updateBookingError(supabase, bookingId, errorMessage);
+    console.log(`[Background] Status updated to failed for booking ${bookingId} with error: ${errorMessage}`);
   }
 }
 
