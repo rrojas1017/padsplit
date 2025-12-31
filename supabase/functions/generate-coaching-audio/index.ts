@@ -303,7 +303,73 @@ Generate ONLY the spoken script, no stage directions or formatting.`;
     if (!ttsResponse.ok) {
       const errorText = await ttsResponse.text();
       console.error("ElevenLabs API error:", errorText);
-      throw new Error("Failed to generate audio from ElevenLabs");
+      
+      // Parse error for specific handling
+      let errorDetails: any = {};
+      try {
+        errorDetails = JSON.parse(errorText);
+      } catch { /* ignore parse errors */ }
+      
+      const status = errorDetails?.detail?.status;
+      const message = errorDetails?.detail?.message || errorText;
+      
+      // Detect billing/payment issues
+      if (status === 'payment_issue' || ttsResponse.status === 402) {
+        console.error('[BILLING ALERT] ElevenLabs payment issue detected:', message);
+        
+        // Create admin notification (avoid duplicates)
+        const { data: existing } = await supabase
+          .from('admin_notifications')
+          .select('id')
+          .eq('notification_type', 'billing_alert')
+          .eq('service', 'elevenlabs')
+          .eq('is_resolved', false)
+          .limit(1);
+          
+        if (!existing || existing.length === 0) {
+          await supabase.from('admin_notifications').insert({
+            notification_type: 'billing_alert',
+            service: 'elevenlabs',
+            title: 'ElevenLabs Payment Issue',
+            message: `Coaching audio generation is failing due to a billing problem: ${message}`,
+            severity: 'critical',
+            metadata: { status, booking_id: bookingId, raw_error: errorText.substring(0, 500) }
+          });
+          console.log('[Billing Alert] Created critical notification for ElevenLabs payment issue');
+        }
+        
+        throw new Error(`ElevenLabs billing issue: ${message}. Please check your ElevenLabs subscription.`);
+      }
+      
+      // Detect quota exceeded
+      if (status === 'quota_exceeded' || message.toLowerCase().includes('quota')) {
+        console.error('[QUOTA ALERT] ElevenLabs usage limit reached:', message);
+        
+        const { data: existing } = await supabase
+          .from('admin_notifications')
+          .select('id')
+          .eq('notification_type', 'billing_alert')
+          .eq('service', 'elevenlabs')
+          .eq('title', 'ElevenLabs Quota Exceeded')
+          .eq('is_resolved', false)
+          .limit(1);
+          
+        if (!existing || existing.length === 0) {
+          await supabase.from('admin_notifications').insert({
+            notification_type: 'billing_alert',
+            service: 'elevenlabs',
+            title: 'ElevenLabs Quota Exceeded',
+            message: `Coaching audio quota has been exceeded: ${message}`,
+            severity: 'warning',
+            metadata: { status, booking_id: bookingId }
+          });
+          console.log('[Billing Alert] Created warning notification for ElevenLabs quota exceeded');
+        }
+        
+        throw new Error(`ElevenLabs quota exceeded: ${message}`);
+      }
+      
+      throw new Error(`ElevenLabs TTS error: ${ttsResponse.status} - ${message}`);
     }
 
     // Log ElevenLabs TTS cost
