@@ -123,10 +123,10 @@ const menuItems: MenuItem[] = [
     roles: ['super_admin', 'admin', 'supervisor'],
     group: 'core'
   },
-  {
-    icon: Phone,
-    label: 'Call Insights',
-    path: '/call-insights',
+    {
+      icon: Phone,
+      label: 'Non Booking Insights',
+      path: '/call-insights',
     roles: ['super_admin', 'admin', 'supervisor'],
     group: 'core'
   },

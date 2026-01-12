@@ -102,7 +102,7 @@ export default function CallInsights() {
   };
 
   return (
-    <DashboardLayout title="Call Insights" subtitle="Analyze all calls including non-booking calls for coaching insights">
+    <DashboardLayout title="Non Booking Insights" subtitle="Analyze non-booking calls for coaching and missed opportunity insights">
       <div className="space-y-6">
         {/* Refresh Button */}
         <div className="flex justify-end">
