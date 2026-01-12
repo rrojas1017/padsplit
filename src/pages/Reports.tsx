@@ -4,7 +4,7 @@ import { usePageTracking } from '@/hooks/usePageTracking';
 import { useAuth } from '@/contexts/AuthContext';
 import { useAgents } from '@/contexts/AgentsContext';
 import { Button } from '@/components/ui/button';
-import { Download, Search, PlusCircle, Pencil, ChevronDown, Building2, User, MessageSquare, Tag, CheckCircle, RotateCcw, ArrowUp, ArrowDown, ArrowUpDown, X, ExternalLink, Phone, UserCircle, Headphones, FileText, Loader2, MoreHorizontal, Clock, CalendarX, XCircle, Ban } from 'lucide-react';
+import { Download, Search, PlusCircle, Pencil, ChevronDown, Building2, User, MessageSquare, Tag, CheckCircle, RotateCcw, ArrowUp, ArrowDown, ArrowUpDown, X, ExternalLink, Phone, UserCircle, Headphones, FileText, Loader2, MoreHorizontal, Clock, CalendarX, XCircle, Ban, AlertTriangle } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { format, startOfDay, endOfDay, isWithinInterval } from 'date-fns';
 import { cn } from '@/lib/utils';
@@ -774,6 +774,8 @@ export default function Reports() {
                             title={
                               booking.transcriptionStatus === 'completed' ? 'View Call Insights' :
                               booking.transcriptionStatus === 'processing' ? 'Transcription in progress...' :
+                              booking.transcriptionStatus === 'failed' ? `Failed: ${booking.transcriptionErrorMessage || 'Unknown error'} - Click to retry` :
+                              booking.transcriptionStatus === 'pending' ? 'Transcription pending...' :
                               'Transcribe Call'
                             }
                             className="hover:opacity-80 transition-opacity"
@@ -782,6 +784,10 @@ export default function Reports() {
                               <FileText className="h-4 w-4 text-purple-500" />
                             ) : booking.transcriptionStatus === 'processing' ? (
                               <Loader2 className="h-4 w-4 text-amber-500 animate-spin" />
+                            ) : booking.transcriptionStatus === 'failed' ? (
+                              <AlertTriangle className="h-4 w-4 text-destructive" />
+                            ) : booking.transcriptionStatus === 'pending' ? (
+                              <Loader2 className="h-4 w-4 text-muted-foreground animate-spin" />
                             ) : (
                               <Headphones className="h-4 w-4 text-muted-foreground hover:text-purple-500 transition-colors" />
                             )}
