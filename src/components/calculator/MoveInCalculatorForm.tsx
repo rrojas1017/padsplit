@@ -15,8 +15,8 @@ import { PaymentSchedulePreview } from './PaymentSchedulePreview';
 import { PromoCodeValidation } from '@/hooks/usePromoCodes';
 
 export function MoveInCalculatorForm() {
-  const [weeklyRent, setWeeklyRent] = useState<number>(297);
-  const [movingFee, setMovingFee] = useState<number>(0);
+  const [weeklyRentInput, setWeeklyRentInput] = useState<string>('297');
+  const [movingFeeInput, setMovingFeeInput] = useState<string>('');
   const [paymentFrequency, setPaymentFrequency] = useState<'weekly' | 'biweekly'>('weekly');
   const [moveInDate, setMoveInDate] = useState<Date>(addDays(new Date(), 3));
   const [firstRentDueDate, setFirstRentDueDate] = useState<Date>(addDays(new Date(), 7));
@@ -27,17 +27,21 @@ export function MoveInCalculatorForm() {
     savings: null,
   });
 
+  const weeklyRent = parseFloat(weeklyRentInput) || 0;
+  const movingFee = parseFloat(movingFeeInput) || 0;
   const promoDiscount = promoValidation.savings || 0;
   const totalDueToday = Math.max(0, weeklyRent - promoDiscount + movingFee);
 
   const handleWeeklyRentChange = (value: string) => {
-    const num = parseFloat(value) || 0;
-    setWeeklyRent(Math.max(0, num));
+    if (value === '' || /^\d*\.?\d*$/.test(value)) {
+      setWeeklyRentInput(value);
+    }
   };
 
   const handleMovingFeeChange = (value: string) => {
-    const num = parseFloat(value) || 0;
-    setMovingFee(Math.max(0, num));
+    if (value === '' || /^\d*\.?\d*$/.test(value)) {
+      setMovingFeeInput(value);
+    }
   };
 
   const handleMoveInDateChange = (date: Date | undefined) => {
@@ -80,12 +84,12 @@ export function MoveInCalculatorForm() {
                 <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">$</span>
                 <Input
                   id="weekly-rent"
-                  type="number"
-                  value={weeklyRent}
+                  type="text"
+                  inputMode="decimal"
+                  value={weeklyRentInput}
                   onChange={(e) => handleWeeklyRentChange(e.target.value)}
                   className="pl-7 text-lg font-semibold"
-                  min={0}
-                  step={0.01}
+                  placeholder="0.00"
                 />
               </div>
             </div>
@@ -100,12 +104,12 @@ export function MoveInCalculatorForm() {
                 <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">$</span>
                 <Input
                   id="moving-fee"
-                  type="number"
-                  value={movingFee}
+                  type="text"
+                  inputMode="decimal"
+                  value={movingFeeInput}
                   onChange={(e) => handleMovingFeeChange(e.target.value)}
                   className="pl-7"
-                  min={0}
-                  step={0.01}
+                  placeholder="0.00"
                 />
               </div>
             </div>
