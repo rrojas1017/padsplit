@@ -22,7 +22,8 @@ import {
   Headphones,
   ClipboardList,
   Calculator,
-  Tag
+  Tag,
+  Phone
 } from 'lucide-react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
@@ -119,6 +120,13 @@ const menuItems: MenuItem[] = [
     icon: Headphones,
     label: 'Coaching Engagement',
     path: '/coaching-engagement',
+    roles: ['super_admin', 'admin', 'supervisor'],
+    group: 'core'
+  },
+  {
+    icon: Phone,
+    label: 'Call Insights',
+    path: '/call-insights',
     roles: ['super_admin', 'admin', 'supervisor'],
     group: 'core'
   },

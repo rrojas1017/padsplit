@@ -618,6 +618,71 @@ export type Database = {
           },
         ]
       }
+      call_transcriptions: {
+        Row: {
+          agent_feedback: Json | null
+          call_id: string
+          call_key_points: Json | null
+          call_summary: string | null
+          call_transcription: string | null
+          coaching_audio_generated_at: string | null
+          coaching_audio_listened_at: string | null
+          coaching_audio_url: string | null
+          created_at: string
+          id: string
+          qa_coaching_audio_generated_at: string | null
+          qa_coaching_audio_listened_at: string | null
+          qa_coaching_audio_url: string | null
+          qa_scores: Json | null
+          stt_provider: string | null
+          updated_at: string
+        }
+        Insert: {
+          agent_feedback?: Json | null
+          call_id: string
+          call_key_points?: Json | null
+          call_summary?: string | null
+          call_transcription?: string | null
+          coaching_audio_generated_at?: string | null
+          coaching_audio_listened_at?: string | null
+          coaching_audio_url?: string | null
+          created_at?: string
+          id?: string
+          qa_coaching_audio_generated_at?: string | null
+          qa_coaching_audio_listened_at?: string | null
+          qa_coaching_audio_url?: string | null
+          qa_scores?: Json | null
+          stt_provider?: string | null
+          updated_at?: string
+        }
+        Update: {
+          agent_feedback?: Json | null
+          call_id?: string
+          call_key_points?: Json | null
+          call_summary?: string | null
+          call_transcription?: string | null
+          coaching_audio_generated_at?: string | null
+          coaching_audio_listened_at?: string | null
+          coaching_audio_url?: string | null
+          created_at?: string
+          id?: string
+          qa_coaching_audio_generated_at?: string | null
+          qa_coaching_audio_listened_at?: string | null
+          qa_coaching_audio_url?: string | null
+          qa_scores?: Json | null
+          stt_provider?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "call_transcriptions_call_id_fkey"
+            columns: ["call_id"]
+            isOneToOne: true
+            referencedRelation: "calls"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       call_type_rules: {
         Row: {
           ai_instruction: string | null
@@ -706,6 +771,108 @@ export type Database = {
           updated_at?: string | null
         }
         Relationships: []
+      }
+      calls: {
+        Row: {
+          agent_id: string | null
+          booking_id: string | null
+          call_date: string
+          call_status: string
+          call_type: string
+          contact_email: string | null
+          contact_name: string | null
+          contact_phone: string | null
+          created_at: string
+          disposition: string | null
+          duration_seconds: number | null
+          from_number: string | null
+          hubspot_link: string | null
+          id: string
+          kixie_agent_email: string | null
+          kixie_agent_name: string | null
+          kixie_call_id: string | null
+          outcome_category: string | null
+          raw_webhook_data: Json | null
+          recording_url: string | null
+          source: string
+          to_number: string | null
+          transcribed_at: string | null
+          transcription_error_message: string | null
+          transcription_status: string | null
+          updated_at: string
+        }
+        Insert: {
+          agent_id?: string | null
+          booking_id?: string | null
+          call_date?: string
+          call_status?: string
+          call_type?: string
+          contact_email?: string | null
+          contact_name?: string | null
+          contact_phone?: string | null
+          created_at?: string
+          disposition?: string | null
+          duration_seconds?: number | null
+          from_number?: string | null
+          hubspot_link?: string | null
+          id?: string
+          kixie_agent_email?: string | null
+          kixie_agent_name?: string | null
+          kixie_call_id?: string | null
+          outcome_category?: string | null
+          raw_webhook_data?: Json | null
+          recording_url?: string | null
+          source?: string
+          to_number?: string | null
+          transcribed_at?: string | null
+          transcription_error_message?: string | null
+          transcription_status?: string | null
+          updated_at?: string
+        }
+        Update: {
+          agent_id?: string | null
+          booking_id?: string | null
+          call_date?: string
+          call_status?: string
+          call_type?: string
+          contact_email?: string | null
+          contact_name?: string | null
+          contact_phone?: string | null
+          created_at?: string
+          disposition?: string | null
+          duration_seconds?: number | null
+          from_number?: string | null
+          hubspot_link?: string | null
+          id?: string
+          kixie_agent_email?: string | null
+          kixie_agent_name?: string | null
+          kixie_call_id?: string | null
+          outcome_category?: string | null
+          raw_webhook_data?: Json | null
+          recording_url?: string | null
+          source?: string
+          to_number?: string | null
+          transcribed_at?: string | null
+          transcription_error_message?: string | null
+          transcription_status?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "calls_agent_id_fkey"
+            columns: ["agent_id"]
+            isOneToOne: false
+            referencedRelation: "agents"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "calls_booking_id_fkey"
+            columns: ["booking_id"]
+            isOneToOne: false
+            referencedRelation: "bookings"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       clients: {
         Row: {
@@ -1362,6 +1529,50 @@ export type Database = {
           voice_id?: string
         }
         Relationships: []
+      }
+      webhook_settings: {
+        Row: {
+          auto_transcribe: boolean
+          created_at: string
+          created_by: string | null
+          id: string
+          is_active: boolean
+          min_duration_seconds: number | null
+          provider: string
+          updated_at: string
+          webhook_secret: string | null
+        }
+        Insert: {
+          auto_transcribe?: boolean
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          is_active?: boolean
+          min_duration_seconds?: number | null
+          provider: string
+          updated_at?: string
+          webhook_secret?: string | null
+        }
+        Update: {
+          auto_transcribe?: boolean
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          is_active?: boolean
+          min_duration_seconds?: number | null
+          provider?: string
+          updated_at?: string
+          webhook_secret?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "webhook_settings_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
       }
     }
     Views: {
