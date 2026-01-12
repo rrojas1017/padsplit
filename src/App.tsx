@@ -39,6 +39,7 @@ import CoachingEngagement from "./pages/CoachingEngagement";
 import MyBookings from "./pages/MyBookings";
 import MoveInCalculator from "./pages/MoveInCalculator";
 import PromoCodeSettings from "./pages/PromoCodeSettings";
+import CallInsights from "./pages/CallInsights";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -231,6 +232,14 @@ const App = () => (
                 <ProtectedRoute allowedRoles={['super_admin']}>
                   <DataProviders>
                     <Billing />
+                  </DataProviders>
+                </ProtectedRoute>
+              } />
+
+              <Route path="/call-insights" element={
+                <ProtectedRoute allowedRoles={['super_admin', 'admin', 'supervisor']}>
+                  <DataProviders>
+                    <CallInsights />
                   </DataProviders>
                 </ProtectedRoute>
               } />
