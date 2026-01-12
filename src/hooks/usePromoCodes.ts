@@ -40,6 +40,32 @@ export function usePromoCodes() {
   });
 }
 
+export function useActivePromoCodes() {
+  return useQuery({
+    queryKey: ['promo-codes', 'active'],
+    queryFn: async () => {
+      const today = new Date().toISOString().split('T')[0];
+      
+      const { data, error } = await supabase
+        .from('promo_codes')
+        .select('code, discount_amount, discount_type, description, max_uses, current_uses, valid_from, valid_until')
+        .eq('is_active', true);
+
+      if (error) throw error;
+      
+      // Filter to only show currently valid codes that haven't exceeded usage limits
+      return (data || []).filter(code => {
+        // Check validity dates
+        if (code.valid_from && today < code.valid_from) return false;
+        if (code.valid_until && today > code.valid_until) return false;
+        // Check usage limits
+        if (code.max_uses !== null && code.current_uses >= code.max_uses) return false;
+        return true;
+      }) as Pick<PromoCode, 'code' | 'discount_amount' | 'discount_type' | 'description' | 'max_uses' | 'current_uses' | 'valid_from' | 'valid_until'>[];
+    },
+  });
+}
+
 export function useValidatePromoCode() {
   return useMutation({
     mutationFn: async ({ code, weeklyRent }: { code: string; weeklyRent: number }): Promise<PromoCodeValidation> => {
