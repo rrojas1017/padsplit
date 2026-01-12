@@ -644,6 +644,19 @@ async function processTranscription(bookingId: string, kixieUrl: string) {
       return;
     }
     
+    // Check content type before downloading - detect HTML pages (wrong URL type)
+    const contentType = audioResponse.headers.get('content-type') || '';
+    console.log(`[Background] Response content-type: ${contentType}`);
+    
+    if (contentType.includes('text/html') || contentType.includes('application/json')) {
+      console.error('[Background] Received non-audio content type:', contentType);
+      clearTimeout(timeoutId);
+      await updateBookingError(supabase, bookingId, 
+        'Invalid recording URL - received a webpage instead of audio. Please check the Kixie link. ' +
+        'Expected format: https://calls.kixie.com/...wav (not a HubSpot or other webpage link)');
+      return;
+    }
+    
     const audioBlob = await audioResponse.blob();
     const fileSizeMB = audioBlob.size / (1024 * 1024);
     console.log(`[Background] Audio downloaded, size: ${audioBlob.size} bytes (${fileSizeMB.toFixed(2)} MB)`);
@@ -653,6 +666,17 @@ async function processTranscription(bookingId: string, kixieUrl: string) {
       console.error('[Background] Audio file too small, likely invalid');
       clearTimeout(timeoutId);
       await updateBookingError(supabase, bookingId, 'Audio file is empty or corrupted. The recording may not have been saved properly.');
+      return;
+    }
+    
+    // Additional check: if the content looks like HTML despite content-type header
+    const firstBytes = await audioBlob.slice(0, 100).text();
+    if (firstBytes.includes('<!DOCTYPE') || firstBytes.includes('<html') || firstBytes.includes('<!doctype')) {
+      console.error('[Background] Content appears to be HTML despite content-type header');
+      clearTimeout(timeoutId);
+      await updateBookingError(supabase, bookingId, 
+        'Invalid recording URL - the link points to a webpage, not an audio file. ' +
+        'Please paste the actual Kixie recording URL (format: https://calls.kixie.com/...wav)');
       return;
     }
 

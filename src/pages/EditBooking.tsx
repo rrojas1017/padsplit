@@ -434,13 +434,19 @@ export default function EditBooking() {
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="kixieLink">Kixie Link</Label>
+                <Label htmlFor="kixieLink">Kixie Recording Link</Label>
                 <Input
                   id="kixieLink"
                   value={kixieLink}
                   onChange={(e) => setKixieLink(e.target.value)}
-                  placeholder="https://..."
+                  placeholder="https://calls.kixie.com/abc123.wav"
+                  className={kixieLink && !kixieLink.includes('kixie.com') && !kixieLink.includes('.wav') && !kixieLink.includes('.mp3') ? 'border-amber-500 focus-visible:ring-amber-500' : ''}
                 />
+                {kixieLink && !kixieLink.includes('kixie.com') && !kixieLink.includes('.wav') && !kixieLink.includes('.mp3') && (
+                  <p className="text-xs text-amber-600 dark:text-amber-400">
+                    ⚠️ This doesn't look like a Kixie recording URL. Expected format: https://calls.kixie.com/...wav
+                  </p>
+                )}
               </div>
               <div className="space-y-2">
                 <Label htmlFor="adminProfileLink">Admin Profile Link</Label>
