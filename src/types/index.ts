@@ -144,6 +144,8 @@ export interface LeaderboardEntry {
   agentName: string;
   siteName: string;
   bookings: number;
+  newBookings: number;
+  rebookings: number;
   bookingsPerDay: number;
   pending: number;
   rejected: number;

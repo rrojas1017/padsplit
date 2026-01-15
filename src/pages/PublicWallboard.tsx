@@ -342,7 +342,9 @@ export default function PublicWallboard() {
                   <div className="flex items-end justify-between">
                     <div>
                       <p className="text-2xl lg:text-3xl font-bold text-foreground">{entry.bookings}</p>
-                      <p className="text-xs text-muted-foreground">bookings</p>
+                      <p className="text-xs text-muted-foreground">
+                        {entry.newBookings} new{entry.rebookings > 0 && ` • ${entry.rebookings} rebook${entry.rebookings !== 1 ? 's' : ''}`}
+                      </p>
                     </div>
                     <div className={cn(
                       "flex items-center gap-0.5 text-xs font-medium",
