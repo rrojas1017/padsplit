@@ -127,12 +127,14 @@ export default function MyBookings() {
   // Summary statistics
   const summaryStats = useMemo(() => {
     const total = filteredBookings.length;
+    const newBookings = filteredBookings.filter(b => !b.isRebooking).length;
+    const rebookings = filteredBookings.filter(b => b.isRebooking).length;
     const pendingMoveIn = filteredBookings.filter(b => b.status === 'Pending Move-In').length;
     const movedIn = filteredBookings.filter(b => b.status === 'Moved In').length;
     const postponed = filteredBookings.filter(b => b.status === 'Postponed').length;
     const noShowCancelled = filteredBookings.filter(b => b.status === 'No Show' || b.status === 'Cancelled' || b.status === 'Member Rejected').length;
     
-    return { total, pendingMoveIn, movedIn, postponed, noShowCancelled };
+    return { total, newBookings, rebookings, pendingMoveIn, movedIn, postponed, noShowCancelled };
   }, [filteredBookings]);
 
   const statusColors: Record<string, string> = {
@@ -252,10 +254,27 @@ export default function MyBookings() {
       subtitle="Manage and follow up on your bookings"
     >
       {/* Summary Cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 mb-6">
+      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3 mb-6">
         <div className="bg-card rounded-xl p-4 border border-border shadow-sm">
           <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Total</p>
           <p className="text-2xl font-bold text-foreground mt-1">{summaryStats.total}</p>
+          <p className="text-xs text-muted-foreground mt-1">
+            {summaryStats.newBookings} new • {summaryStats.rebookings} rebooks
+          </p>
+        </div>
+        <div className="bg-card rounded-xl p-4 border border-border shadow-sm">
+          <div className="flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-accent"></span>
+            <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">New</p>
+          </div>
+          <p className="text-2xl font-bold text-accent mt-1">{summaryStats.newBookings}</p>
+        </div>
+        <div className="bg-card rounded-xl p-4 border border-border shadow-sm">
+          <div className="flex items-center gap-2">
+            <RotateCcw className="w-3 h-3 text-primary" />
+            <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Rebooks</p>
+          </div>
+          <p className="text-2xl font-bold text-primary mt-1">{summaryStats.rebookings}</p>
         </div>
         <div className="bg-card rounded-xl p-4 border border-border shadow-sm">
           <div className="flex items-center gap-2">
