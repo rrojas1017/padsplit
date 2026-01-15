@@ -215,6 +215,10 @@ export const calculateLeaderboard = (
     const agentBookingsList = agentBookings.get(agent.id) || [];
     const pending = agentBookingsList.filter(b => b.status === 'Pending Move-In').length;
     const rejected = agentBookingsList.filter(b => b.status === 'Member Rejected').length;
+    
+    // Separate new bookings from rebookings
+    const newBookings = agentBookingsList.filter(b => !b.isRebooking).length;
+    const rebookings = agentBookingsList.filter(b => b.isRebooking).length;
 
     // Calculate change: current period vs previous equivalent period
     const periodDays = Math.max(1, Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1);
@@ -239,6 +243,8 @@ export const calculateLeaderboard = (
       agentName: agent.name,
       siteName: agent.siteName,
       bookings: agentBookingsList.length,
+      newBookings,
+      rebookings,
       bookingsPerDay: Math.round((agentBookingsList.length / Math.max(weekdaysInPeriod, 1)) * 10) / 10,
       pending,
       rejected,

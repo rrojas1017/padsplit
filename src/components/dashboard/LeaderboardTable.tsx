@@ -37,7 +37,9 @@ export function LeaderboardTable({ data, showAll = false }: LeaderboardTableProp
               <th className="text-left py-3 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Rank</th>
               <th className="text-left py-3 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Agent</th>
               <th className="text-left py-3 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Site</th>
-              <th className="text-right py-3 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Bookings</th>
+              <th className="text-right py-3 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Total</th>
+              <th className="text-right py-3 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">New</th>
+              <th className="text-right py-3 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Rebooks</th>
               <th className="text-right py-3 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Per Day</th>
               <th className="text-right py-3 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Pending</th>
               <th className="text-right py-3 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Change</th>
@@ -79,6 +81,12 @@ export function LeaderboardTable({ data, showAll = false }: LeaderboardTableProp
                 </td>
                 <td className="py-4 px-4 text-right">
                   <span className="font-semibold text-foreground">{entry.bookings}</span>
+                </td>
+                <td className="py-4 px-4 text-right">
+                  <span className="font-medium text-success">{entry.newBookings}</span>
+                </td>
+                <td className="py-4 px-4 text-right">
+                  <span className="text-muted-foreground">{entry.rebookings}</span>
                 </td>
                 <td className="py-4 px-4 text-right">
                   <span className="text-muted-foreground">{entry.bookingsPerDay}</span>

@@ -200,20 +200,26 @@ export default function MyPerformance() {
     return Math.round((current - previous) / previous * 100);
   };
 
-  const kpiData: { label: string; value: number; previousValue: number; change: number; changeType: 'increase' | 'decrease' | 'neutral' }[] = [
+  // Calculate new bookings vs rebookings for the agent
+  const newBookingsCount = periodBookings.filter(b => !b.isRebooking).length;
+  const rebookingsCount = periodBookings.filter(b => b.isRebooking).length;
+  const prevNewBookingsCount = prevPeriodBookings.filter(b => !b.isRebooking).length;
+
+  const kpiData: { label: string; value: number; previousValue: number; change: number; changeType: 'increase' | 'decrease' | 'neutral'; subtitle?: string }[] = [
     {
       label: `${getFilterLabel(dateFilter)} Bookings`,
       value: periodBookings.length,
       previousValue: prevPeriodBookings.length,
       change: dateFilter === 'all' ? 0 : calculateChange(periodBookings.length, prevPeriodBookings.length),
       changeType: dateFilter === 'all' ? 'neutral' : (periodBookings.length >= prevPeriodBookings.length ? 'increase' : 'decrease'),
+      subtitle: rebookingsCount > 0 ? `${newBookingsCount} new • ${rebookingsCount} rebook${rebookingsCount !== 1 ? 's' : ''}` : undefined,
     },
     {
-      label: 'Pending Move-Ins',
-      value: periodBookings.filter(b => b.status === 'Pending Move-In').length,
-      previousValue: prevPeriodBookings.filter(b => b.status === 'Pending Move-In').length,
-      change: 0,
-      changeType: 'neutral',
+      label: 'New Bookings',
+      value: newBookingsCount,
+      previousValue: prevNewBookingsCount,
+      change: dateFilter === 'all' ? 0 : calculateChange(newBookingsCount, prevNewBookingsCount),
+      changeType: dateFilter === 'all' ? 'neutral' : (newBookingsCount >= prevNewBookingsCount ? 'increase' : 'decrease'),
     },
     {
       label: 'Confirmed Move-Ins',
@@ -236,7 +242,7 @@ export default function MyPerformance() {
 
   const icons = [
     <CalendarDays className="w-5 h-5" />,
-    <Clock className="w-5 h-5" />,
+    <TrendingUp className="w-5 h-5" />,
     <CheckCircle2 className="w-5 h-5" />,
     <Trophy className="w-5 h-5" />,
   ];
@@ -409,12 +415,18 @@ export default function MyPerformance() {
       {/* KPI Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
         {kpiData.map((kpi, index) => (
-          <KPICard 
-            key={kpi.label} 
-            data={kpi} 
-            icon={icons[index]}
-            delay={index * 100}
-          />
+          <div key={kpi.label} className="relative">
+            <KPICard 
+              data={kpi} 
+              icon={icons[index]}
+              delay={index * 100}
+            />
+            {kpi.subtitle && (
+              <p className="absolute bottom-2 left-6 text-xs text-muted-foreground">
+                {kpi.subtitle}
+              </p>
+            )}
+          </div>
         ))}
       </div>
 
