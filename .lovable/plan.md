@@ -1,171 +1,112 @@
 
 
-## Plan: Add Cost Breakdown Section to Dashboard
+## Plan: Fix Role Change 401 Error
 
-### Overview
-Add a cost overview section on the Executive Dashboard that shows API processing costs for the selected date range. This gives super admins visibility into processing costs without navigating to the Billing page.
+### Problem Summary
+When trying to change Franco's role from Agent to Admin, you're getting a 401 "Unauthorized" error. This is happening even though you (Roberto Rojas) ARE a super_admin.
+
+---
+
+### Root Cause Analysis
+
+The `update-user-role` edge function has a bug in how it checks the requesting user's role. It uses the USER's authenticated client (with anon key) to query the `user_roles` table, which can fail due to RLS policy timing.
+
+**Current broken code** (update-user-role lines 38-49):
+```typescript
+// Uses USER client - subject to RLS policies
+const { data: roleData, error: roleError } = await supabaseClient
+  .from('user_roles')
+  .select('role')
+  .eq('user_id', requestingUser.id)
+  .single();
+
+if (roleError || roleData?.role !== 'super_admin') {
+  // Returns 403 "Only super admins can change user roles"
+}
+```
+
+**Working code in create-user** (lines 89-96):
+```typescript
+// Uses SERVICE ROLE client - bypasses RLS  
+const adminClient = createClient(supabaseUrl, supabaseServiceKey)
+
+const { data: userRole } = await adminClient
+  .from('user_roles')
+  .select('role')
+  .eq('user_id', requestingUser.id)
+  .single()
+```
+
+The difference: `create-user` uses the service role client to check permissions, which bypasses RLS and works reliably.
 
 ---
 
 ### Changes Required
 
-#### 1. Integrate `useBillingData` Hook into Dashboard
-**File: `src/pages/Dashboard.tsx`**
+#### 1. Fix Role Permission Check
+**File: `supabase/functions/update-user-role/index.ts`**
 
-Import and use the billing data hook, converting the date range format:
+Use the service role client to check the requesting user's role:
 
 ```typescript
-import { useBillingData } from '@/hooks/useBillingData';
-import { formatCurrency } from '@/utils/billingCalculations';
-import { DollarSign, Timer, FileCheck, TrendingDown } from 'lucide-react';
-
-// Convert DateRangeFilter value to useBillingData format
-const getBillingDateRange = (range: DateRangeFilterType): 'today' | 'yesterday' | 'thisWeek' | 'thisMonth' | 'last30Days' | 'allTime' | 'custom' => {
-  switch (range) {
-    case 'today': return 'today';
-    case 'yesterday': return 'yesterday';
-    case 'last7Days': return 'thisWeek';
-    case 'last30Days': return 'last30Days';
-    case 'thisMonth': return 'thisMonth';
-    case 'allTime': return 'allTime';
-    case 'custom': return 'custom';
-    default: return 'today';
-  }
-};
-
-const { summary: costSummary, costs, isLoading: costsLoading, isSuperAdmin } = useBillingData(
-  getBillingDateRange(dateRange),
-  customDates?.start,
-  customDates?.end
+// Use service role for all privileged operations (move BEFORE role check)
+const supabaseAdmin = createClient(
+  Deno.env.get('SUPABASE_URL') ?? '',
+  Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
 );
+
+// Check if requesting user is super_admin using SERVICE ROLE client
+const { data: roleData, error: roleError } = await supabaseAdmin
+  .from('user_roles')
+  .select('role')
+  .eq('user_id', requestingUser.id)
+  .single();
+
+if (roleError || roleData?.role !== 'super_admin') {
+  return new Response(
+    JSON.stringify({ error: 'Only super admins can change user roles' }),
+    { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+  );
+}
 ```
 
 ---
 
-#### 2. Add Cost Breakdown Cards Section (Super Admin Only)
-**File: `src/pages/Dashboard.tsx`**
+#### 2. Update CORS Headers
+**File: `supabase/functions/update-user-role/index.ts`**
 
-Add a new section below the Insights panel, visible only to super admins:
+Add the missing Supabase client headers to prevent CORS issues:
 
-```jsx
-{/* Cost Breakdown - Super Admin Only */}
-{isSuperAdmin && (
-  <div className="mt-6 p-6 rounded-xl bg-card border border-border animate-slide-up" style={{ animationDelay: '600ms' }}>
-    <div className="flex items-center justify-between mb-4">
-      <h3 className="text-lg font-semibold text-foreground flex items-center gap-2">
-        <DollarSign className="w-5 h-5 text-accent" />
-        Cost Breakdown
-      </h3>
-      <a href="/billing" className="text-sm text-primary hover:underline">
-        View Full Billing →
-      </a>
-    </div>
-    
-    {costsLoading ? (
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        {[1, 2, 3, 4].map((i) => (
-          <Skeleton key={i} className="h-20 rounded-lg" />
-        ))}
-      </div>
-    ) : (
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        {/* Total Cost */}
-        <div className="p-4 rounded-lg bg-primary/10 border border-primary/20">
-          <div className="flex items-center gap-2 mb-1">
-            <DollarSign className="w-4 h-4 text-primary" />
-            <p className="text-xs text-muted-foreground font-medium uppercase">Total Cost</p>
-          </div>
-          <p className="text-xl font-bold text-primary">{formatCurrency(costSummary.totalCost)}</p>
-          <p className="text-xs text-muted-foreground">{costs.length} API calls</p>
-        </div>
-        
-        {/* Bookings Processed */}
-        <div className="p-4 rounded-lg bg-accent/10 border border-accent/20">
-          <div className="flex items-center gap-2 mb-1">
-            <FileCheck className="w-4 h-4 text-accent" />
-            <p className="text-xs text-muted-foreground font-medium uppercase">Processed</p>
-          </div>
-          <p className="text-xl font-bold text-accent">{costSummary.uniqueBookingsProcessed}</p>
-          <p className="text-xs text-muted-foreground">bookings analyzed</p>
-        </div>
-        
-        {/* Talk Time */}
-        <div className="p-4 rounded-lg bg-amber-500/10 border border-amber-500/20">
-          <div className="flex items-center gap-2 mb-1">
-            <Timer className="w-4 h-4 text-amber-500" />
-            <p className="text-xs text-muted-foreground font-medium uppercase">Talk Time</p>
-          </div>
-          <p className="text-xl font-bold text-amber-500">
-            {Math.round(costSummary.totalTalkTimeSeconds / 60)}m
-          </p>
-          <p className="text-xs text-muted-foreground">audio transcribed</p>
-        </div>
-        
-        {/* Cost per Booking */}
-        <div className="p-4 rounded-lg bg-purple-500/10 border border-purple-500/20">
-          <div className="flex items-center gap-2 mb-1">
-            <TrendingDown className="w-4 h-4 text-purple-500" />
-            <p className="text-xs text-muted-foreground font-medium uppercase">Per Booking</p>
-          </div>
-          <p className="text-xl font-bold text-purple-500">
-            {costSummary.uniqueBookingsProcessed > 0 
-              ? formatCurrency(costSummary.costPerBooking) 
-              : '—'}
-          </p>
-          <p className="text-xs text-muted-foreground">avg processing cost</p>
-        </div>
-      </div>
-    )}
-  </div>
-)}
+```typescript
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version',
+};
 ```
 
 ---
 
-#### 3. Update Loading Skeleton
-**File: `src/pages/Dashboard.tsx`**
+#### 3. Add Better Logging
+**File: `supabase/functions/update-user-role/index.ts`**
 
-Add skeleton for cost section in loading state (for super admins):
+Add logging to help debug future issues:
 
-```jsx
-{isSuperAdmin && <Skeleton className="h-32 rounded-xl mt-6" />}
+```typescript
+console.log(`Role change request from user ${requestingUser.id} (${requestingUser.email})`);
+console.log(`Requesting user role: ${roleData?.role}`);
 ```
 
 ---
 
-### Visual Layout
+### Technical Summary of All Changes
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  Executive Dashboard                                                        │
-├─────────────────────────────────────────────────────────────────────────────┤
-│  [Date Filter] [Site Filter]                         Last updated: 2:30 PM  │
-├──────────────────┬──────────────────┬──────────────────┬────────────────────┤
-│  Total Bookings  │  Active Agents   │  Avg per Day     │  Pending Move-ins  │
-│       45         │       12         │      3.8         │       8            │
-└──────────────────┴──────────────────┴──────────────────┴────────────────────┘
+```text
+File: supabase/functions/update-user-role/index.ts
 
-┌─────────────────────────────────────────┬───────────────────────────────────┐
-│  Bookings Trend Chart                   │  Market Distribution              │
-└─────────────────────────────────────────┴───────────────────────────────────┘
-
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  Agent Leaderboard                                                          │
-└─────────────────────────────────────────────────────────────────────────────┘
-
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  Today's Insights                                                           │
-│  [5 insight cards]                                                          │
-└─────────────────────────────────────────────────────────────────────────────┘
-
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  💰 Cost Breakdown                                    View Full Billing →   │
-├──────────────────┬──────────────────┬──────────────────┬────────────────────┤
-│  Total Cost      │   Processed      │   Talk Time      │  Per Booking       │
-│    $12.47        │      28          │     156m         │    $0.45           │
-│  342 API calls   │ bookings analyzed│ audio transcribed│ avg processing     │
-└──────────────────┴──────────────────┴──────────────────┴────────────────────┘
-   ⬆️ Only visible to Super Admins
+Line 4-6:   Update CORS headers to include all Supabase client headers
+Line 38-50: Move supabaseAdmin creation BEFORE role check
+            Change role check to use supabaseAdmin instead of supabaseClient
+            Add logging for debugging
 ```
 
 ---
@@ -174,16 +115,14 @@ Add skeleton for cost section in loading state (for super admins):
 
 | File | Changes |
 |------|---------|
-| `src/pages/Dashboard.tsx` | Import `useBillingData` hook, add cost breakdown section (super admin only), add skeleton loading state |
+| `supabase/functions/update-user-role/index.ts` | Fix permission check to use service role client, update CORS headers, add logging |
 
 ---
 
 ### Result
-Super admins will see a cost breakdown section at the bottom of the Dashboard showing:
-- **Total Cost**: Total API processing costs for the period
-- **Processed**: Number of unique bookings that were processed
-- **Talk Time**: Total audio minutes transcribed
-- **Per Booking**: Average cost per booking processed
-
-The section includes a link to the full Billing page for detailed analysis. Regular admins and agents won't see this section.
+After this fix:
+- Role changes will work correctly for super admins
+- The edge function will use the service role client to verify permissions (same pattern as create-user)
+- CORS headers will include all required Supabase client headers
+- Better logging will help diagnose any future issues
 
