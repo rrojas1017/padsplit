@@ -67,28 +67,25 @@ Deno.serve(async (req) => {
       })
     }
 
-    // Create a client with the user's token to verify their role
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!
-    const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY')!
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
 
-    const userClient = createClient(supabaseUrl, supabaseAnonKey, {
-      global: { headers: { Authorization: authHeader } },
-    })
+    // Use service role client for all operations
+    const adminClient = createClient(supabaseUrl, supabaseServiceKey)
 
-    // Get the requesting user
-    const { data: { user: requestingUser }, error: userError } = await userClient.auth.getUser()
+    // Extract the token and verify the requesting user
+    const token = authHeader.replace('Bearer ', '')
+    const { data: { user: requestingUser }, error: userError } = await adminClient.auth.getUser(token)
+    
     if (userError || !requestingUser) {
-      console.log('Unauthorized user attempt');
+      console.log('Unauthorized user attempt:', userError?.message);
       return new Response(JSON.stringify({ error: 'Unauthorized' }), {
         status: 401,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       })
     }
 
-    // Use service role client to check if user has appropriate role
-    const adminClient = createClient(supabaseUrl, supabaseServiceKey)
-    
+    // Check if user has appropriate role
     const { data: userRole } = await adminClient
       .from('user_roles')
       .select('role')
