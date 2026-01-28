@@ -7,13 +7,29 @@ import { LeaderboardTable } from '@/components/dashboard/LeaderboardTable';
 import { MarketChart } from '@/components/dashboard/MarketChart';
 import { DateRangeFilter, DateFilterValue, CustomDateRange } from '@/components/dashboard/DateRangeFilter';
 import { SiteFilter } from '@/components/dashboard/SiteFilter';
-import { CalendarDays, Users, Clock, CheckCircle2 } from 'lucide-react';
+import { CalendarDays, Users, Clock, CheckCircle2, DollarSign, Timer, FileCheck, TrendingDown } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useBookings } from '@/contexts/BookingsContext';
 import { useAgents } from '@/contexts/AgentsContext';
-import { Navigate } from 'react-router-dom';
+import { Navigate, Link } from 'react-router-dom';
 import { calculateKPIData, calculateChartData, calculateLeaderboard, calculateMarketData, calculateInsightsData, DateRangeFilter as DateRangeFilterType, CustomDateRange as CalcCustomDateRange } from '@/utils/dashboardCalculations';
 import { Skeleton } from '@/components/ui/skeleton';
+import { useBillingData, DateRangeType } from '@/hooks/useBillingData';
+import { formatCurrency } from '@/utils/billingCalculations';
+
+// Convert DateRangeFilter value to useBillingData format
+const getBillingDateRange = (range: DateRangeFilterType): DateRangeType => {
+  switch (range) {
+    case 'today': return 'today';
+    case 'yesterday': return 'yesterday';
+    case '7d': return 'thisWeek';
+    case '30d': return 'last30Days';
+    case 'month': return 'thisMonth';
+    case 'all': return 'allTime';
+    case 'custom': return 'custom';
+    default: return 'today';
+  }
+};
 
 export default function Dashboard() {
   usePageTracking('view_dashboard');
@@ -23,6 +39,13 @@ export default function Dashboard() {
   const [dateRange, setDateRange] = useState<DateRangeFilterType>('today');
   const [customDates, setCustomDates] = useState<CalcCustomDateRange | undefined>(undefined);
   const [selectedSiteId, setSelectedSiteId] = useState<string | null>(null);
+
+  // Billing data for cost breakdown (super admin only)
+  const { summary: costSummary, costs, isLoading: costsLoading, isSuperAdmin } = useBillingData(
+    getBillingDateRange(dateRange),
+    customDates?.from,
+    customDates?.to
+  );
 
   // Redirect agents to their performance page
   if (user?.role === 'agent') {
@@ -82,6 +105,7 @@ export default function Dashboard() {
           <Skeleton className="h-80 rounded-xl" />
         </div>
         <Skeleton className="h-96 rounded-xl" />
+        {isSuperAdmin && <Skeleton className="h-32 rounded-xl mt-6" />}
       </DashboardLayout>
     );
   }
@@ -179,6 +203,77 @@ export default function Dashboard() {
           </div>
         </div>
       </div>
+
+      {/* Cost Breakdown - Super Admin Only */}
+      {isSuperAdmin && (
+        <div className="mt-6 p-6 rounded-xl bg-card border border-border animate-slide-up" style={{ animationDelay: '600ms' }}>
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-semibold text-foreground flex items-center gap-2">
+              <DollarSign className="w-5 h-5 text-accent" />
+              Cost Breakdown
+            </h3>
+            <Link to="/billing" className="text-sm text-primary hover:underline">
+              View Full Billing →
+            </Link>
+          </div>
+          
+          {costsLoading ? (
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              {[1, 2, 3, 4].map((i) => (
+                <Skeleton key={i} className="h-20 rounded-lg" />
+              ))}
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              {/* Total Cost */}
+              <div className="p-4 rounded-lg bg-primary/10 border border-primary/20">
+                <div className="flex items-center gap-2 mb-1">
+                  <DollarSign className="w-4 h-4 text-primary" />
+                  <p className="text-xs text-muted-foreground font-medium uppercase">Total Cost</p>
+                </div>
+                <p className="text-xl font-bold text-primary">{formatCurrency(costSummary.totalCost)}</p>
+                <p className="text-xs text-muted-foreground">{costs.length} API calls</p>
+              </div>
+              
+              {/* Bookings Processed */}
+              <div className="p-4 rounded-lg bg-accent/10 border border-accent/20">
+                <div className="flex items-center gap-2 mb-1">
+                  <FileCheck className="w-4 h-4 text-accent" />
+                  <p className="text-xs text-muted-foreground font-medium uppercase">Processed</p>
+                </div>
+                <p className="text-xl font-bold text-accent">{costSummary.uniqueBookingsProcessed}</p>
+                <p className="text-xs text-muted-foreground">bookings analyzed</p>
+              </div>
+              
+              {/* Talk Time */}
+              <div className="p-4 rounded-lg bg-amber-500/10 border border-amber-500/20">
+                <div className="flex items-center gap-2 mb-1">
+                  <Timer className="w-4 h-4 text-amber-500" />
+                  <p className="text-xs text-muted-foreground font-medium uppercase">Talk Time</p>
+                </div>
+                <p className="text-xl font-bold text-amber-500">
+                  {Math.round(costSummary.totalTalkTimeSeconds / 60)}m
+                </p>
+                <p className="text-xs text-muted-foreground">audio transcribed</p>
+              </div>
+              
+              {/* Cost per Booking */}
+              <div className="p-4 rounded-lg bg-purple-500/10 border border-purple-500/20">
+                <div className="flex items-center gap-2 mb-1">
+                  <TrendingDown className="w-4 h-4 text-purple-500" />
+                  <p className="text-xs text-muted-foreground font-medium uppercase">Per Booking</p>
+                </div>
+                <p className="text-xl font-bold text-purple-500">
+                  {costSummary.uniqueBookingsProcessed > 0 
+                    ? formatCurrency(costSummary.costPerBooking) 
+                    : '—'}
+                </p>
+                <p className="text-xs text-muted-foreground">avg processing cost</p>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
     </DashboardLayout>
   );
 }
