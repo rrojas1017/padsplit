@@ -3,7 +3,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version',
 };
 
 serve(async (req) => {
@@ -35,12 +35,21 @@ serve(async (req) => {
       );
     }
 
-    // Check if requesting user is super_admin
-    const { data: roleData, error: roleError } = await supabaseClient
+    // Use service role for all privileged operations (bypasses RLS)
+    const supabaseAdmin = createClient(
+      Deno.env.get('SUPABASE_URL') ?? '',
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+    );
+
+    // Check if requesting user is super_admin using SERVICE ROLE client
+    const { data: roleData, error: roleError } = await supabaseAdmin
       .from('user_roles')
       .select('role')
       .eq('user_id', requestingUser.id)
       .single();
+
+    console.log(`Role change request from user ${requestingUser.id} (${requestingUser.email})`);
+    console.log(`Requesting user role: ${roleData?.role}`);
 
     if (roleError || roleData?.role !== 'super_admin') {
       return new Response(
@@ -101,11 +110,7 @@ serve(async (req) => {
       );
     }
 
-    // Use service role for privileged operations
-    const supabaseAdmin = createClient(
-      Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
-    );
+    // supabaseAdmin is already created above for role checking
 
     // Get current role
     const { data: currentRoleData, error: currentRoleError } = await supabaseAdmin
