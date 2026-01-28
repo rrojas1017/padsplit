@@ -1,130 +1,103 @@
 
-## Plan: Fix Update-User-Role Edge Function 401 Error
+## Plan: Fix User Role and Delete Functions - Auth Session Issue
 
 ### Root Cause Analysis
-The edge function is returning 401 "Unauthorized" but **the console.log statements never appear in logs**, which proves the function code is NOT executing at all. The 401 is happening at the Supabase runtime level.
 
-I compared with the working `create-user` function and found these differences:
+After careful analysis of the edge function logs and code, I've identified the root cause:
 
-| Aspect | update-user-role (broken) | create-user (working) |
-|--------|--------------------------|----------------------|
-| Server | `serve()` from std@0.168.0 | `Deno.serve()` native |
-| CORS headers | Extended headers | Basic headers |
-| Syntax | Older pattern | Modern pattern |
-
-The `std@0.168.0` module may have compatibility issues with the current Supabase edge runtime.
-
----
-
-### Changes Required
-
-#### 1. Update Edge Function to Use Modern Deno.serve
-**File: `supabase/functions/update-user-role/index.ts`**
-
-Replace the old `serve` import with modern `Deno.serve`:
-
-```typescript
-// REMOVE this line:
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-
-// CHANGE:
-serve(async (req) => { ... });
-
-// TO:
-Deno.serve(async (req) => { ... });
+**The logs consistently show:**
+```
+"Auth session missing!"
 ```
 
-This matches the pattern used in `create-user` which works correctly.
+This happens because:
+
+1. **`update-user-role` uses a non-existent method**: `supabaseWithAuth.auth.getClaims(token)` - This method does NOT exist in the standard Supabase JS client API!
+
+2. **`delete-user` uses the correct pattern** but still fails because it uses `getUser(token)` which has been unreliable
+
+3. **The working `create-user` function** uses `adminClient.auth.getUser(token)` with the service role client - the same pattern as delete-user, but it might be working inconsistently
+
+**The Real Issue**: The `getClaims()` method was introduced in the last fix but this is NOT a valid Supabase JS client method. This causes the function to fail immediately.
 
 ---
 
-#### 2. Full Updated Edge Function
+### Solution: Align All Edge Functions with Proven Pattern
+
+I'll update both `update-user-role` and `delete-user` to use the exact same verified auth pattern that exists in `create-user`:
 
 ```typescript
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+// Use service role client to verify user token
+const adminClient = createClient(supabaseUrl, supabaseServiceKey)
+const token = authHeader.replace('Bearer ', '')
+const { data: { user: requestingUser }, error: userError } = await adminClient.auth.getUser(token)
+```
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-};
+This pattern:
+- Uses the service role client (NOT anon key)
+- Passes the extracted token directly to `getUser()`
+- This is how Supabase recommends verifying JWTs in edge functions
 
-Deno.serve(async (req) => {
-  if (req.method === 'OPTIONS') {
-    return new Response(null, { headers: corsHeaders });
-  }
+---
 
-  try {
-    const authHeader = req.headers.get('Authorization');
-    if (!authHeader) {
-      console.log('Missing authorization header');
-      return new Response(
-        JSON.stringify({ error: 'No authorization header' }),
-        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
+### Files to Modify
 
-    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-    const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY')!;
-    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+#### 1. `supabase/functions/update-user-role/index.ts`
 
-    // Create client with user's auth
-    const supabaseClient = createClient(supabaseUrl, supabaseAnonKey, {
-      global: { headers: { Authorization: authHeader } },
-    });
+**Remove:**
+- The non-existent `getClaims()` call
+- The `supabaseWithAuth` client using anon key
+- The separate `requestingUserId` and `requestingUserEmail` variables
 
-    const { data: { user: requestingUser }, error: userError } = await supabaseClient.auth.getUser();
-    if (userError || !requestingUser) {
-      console.log('Failed to get user from token');
-      return new Response(
-        JSON.stringify({ error: 'Unauthorized' }),
-        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
+**Add:**
+- Use service role client for `getUser(token)` like create-user
+- Use `requestingUser.id` and `requestingUser.email` directly
 
-    // Use service role client for privileged operations
-    const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
+```typescript
+// Before (BROKEN - getClaims doesn't exist)
+const supabaseWithAuth = createClient(supabaseUrl, supabaseAnonKey, {
+  global: { headers: { Authorization: authHeader } },
+})
+const { data: claimsData, error: claimsError } = await supabaseWithAuth.auth.getClaims(token)
 
-    // Check if requesting user is super_admin
-    const { data: roleData, error: roleError } = await supabaseAdmin
-      .from('user_roles')
-      .select('role')
-      .eq('user_id', requestingUser.id)
-      .single();
-
-    console.log(`Role change request from ${requestingUser.email}, role: ${roleData?.role}`);
-
-    if (roleError || roleData?.role !== 'super_admin') {
-      return new Response(
-        JSON.stringify({ error: 'Only super admins can change user roles' }),
-        { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-
-    // ... rest of the function remains the same
-  } catch (error) {
-    // ... error handling
-  }
-});
+// After (WORKING - same as create-user)
+const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey)
+const { data: { user: requestingUser }, error: userError } = await supabaseAdmin.auth.getUser(token)
 ```
 
 ---
 
-#### 3. Force Re-deploy Edge Function
-After the code change, the function needs to be explicitly re-deployed to ensure the new code is running.
+#### 2. `supabase/functions/delete-user/index.ts`
+
+This function already uses the correct pattern but I'll ensure it matches exactly with create-user for consistency.
 
 ---
 
-### Technical Summary
+### Technical Changes Summary
 
 | File | Change |
 |------|--------|
-| `supabase/functions/update-user-role/index.ts` | Replace `serve` from std@0.168.0 with native `Deno.serve()`, simplify CORS headers |
+| `supabase/functions/update-user-role/index.ts` | Remove fake `getClaims()` method, use `adminClient.auth.getUser(token)` pattern from create-user |
+| `supabase/functions/delete-user/index.ts` | Verify pattern matches create-user exactly |
 
 ---
 
-### Expected Result
-After this fix:
-- The edge function will use the modern `Deno.serve()` pattern (same as working `create-user`)
-- Console logs will appear in function logs for debugging
-- Role changes will work correctly for super admins
-- You'll be able to change Franco's role from Agent to Admin
+### After Implementation
+
+1. Deploy both edge functions
+2. Test role change: Change Franco from Agent to Admin
+3. Test deletion: Delete the test agent
+
+---
+
+### Why This Will Work
+
+The `create-user` function works correctly because:
+1. It uses the **service role key** to create the admin client
+2. It calls `adminClient.auth.getUser(token)` with the extracted JWT
+3. The service role client has permission to verify any user's token
+
+The previous attempts failed because:
+- `getClaims()` is not a real Supabase method
+- Using the anon key client with custom headers doesn't work for token verification
+- The auth client needs service role privileges to verify tokens from other users
