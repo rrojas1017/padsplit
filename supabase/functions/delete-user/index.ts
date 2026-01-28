@@ -5,6 +5,18 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
+// Decode JWT to get user info (JWT is already verified by verify_jwt=true in config.toml)
+function decodeJWT(token: string): { sub: string; email?: string } | null {
+  try {
+    const parts = token.split('.')
+    if (parts.length !== 3) return null
+    const payload = JSON.parse(atob(parts[1]))
+    return payload
+  } catch {
+    return null
+  }
+}
+
 Deno.serve(async (req) => {
   // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
@@ -25,28 +37,31 @@ Deno.serve(async (req) => {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
 
-    // Use service role client for all operations
-    const adminClient = createClient(supabaseUrl, supabaseServiceKey)
-
-    // Extract the token and verify the requesting user
+    // Extract the token and decode it (JWT is already verified by gateway)
     const token = authHeader.replace('Bearer ', '')
-    const { data: { user: requestingUser }, error: authError } = await adminClient.auth.getUser(token)
+    const decoded = decodeJWT(token)
     
-    if (authError || !requestingUser) {
-      console.log('Failed to get user from token:', authError?.message)
+    if (!decoded || !decoded.sub) {
+      console.log('Failed to decode JWT')
       return new Response(
         JSON.stringify({ error: 'Invalid token' }),
         { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
     }
 
-    console.log('Requesting user:', requestingUser.id, requestingUser.email)
+    const requestingUserId = decoded.sub
+    const requestingUserEmail = decoded.email
+
+    console.log('Requesting user:', requestingUserId, requestingUserEmail)
+
+    // Service role client for privileged database operations
+    const adminClient = createClient(supabaseUrl, supabaseServiceKey)
 
     // Check if requesting user is super_admin or admin
     const { data: roleData, error: roleError } = await adminClient
       .from('user_roles')
       .select('role')
-      .eq('user_id', requestingUser.id)
+      .eq('user_id', requestingUserId)
       .single()
 
     console.log(`Requesting user role: ${roleData?.role}`)
@@ -87,7 +102,7 @@ Deno.serve(async (req) => {
     }
 
     // Prevent self-deletion
-    if (userId === requestingUser.id) {
+    if (userId === requestingUserId) {
       return new Response(
         JSON.stringify({ error: 'Cannot delete your own account' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
