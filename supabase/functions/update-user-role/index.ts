@@ -21,15 +21,15 @@ Deno.serve(async (req) => {
     }
 
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!
-    const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY')!
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
 
-    // Create client with user's auth to verify they exist
-    const supabaseClient = createClient(supabaseUrl, supabaseAnonKey, {
-      global: { headers: { Authorization: authHeader } },
-    })
+    // Use service role client for all operations
+    const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey)
 
-    const { data: { user: requestingUser }, error: userError } = await supabaseClient.auth.getUser()
+    // Extract the token and verify the requesting user
+    const token = authHeader.replace('Bearer ', '')
+    const { data: { user: requestingUser }, error: userError } = await supabaseAdmin.auth.getUser(token)
+    
     if (userError || !requestingUser) {
       console.log('Failed to get user from token:', userError?.message)
       return new Response(
@@ -38,10 +38,7 @@ Deno.serve(async (req) => {
       )
     }
 
-    // Use service role client for all privileged operations (bypasses RLS)
-    const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey)
-
-    // Check if requesting user is super_admin using SERVICE ROLE client
+    // Check if requesting user is super_admin
     const { data: roleData, error: roleError } = await supabaseAdmin
       .from('user_roles')
       .select('role')

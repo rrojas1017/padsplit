@@ -15,41 +15,41 @@ Deno.serve(async (req) => {
     // Get the authorization header
     const authHeader = req.headers.get('Authorization')
     if (!authHeader) {
-      console.error('No authorization header provided')
+      console.log('No authorization header provided')
       return new Response(
         JSON.stringify({ error: 'No authorization header' }),
         { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
     }
 
-    // Create Supabase client with user's token
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!
-    const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY')!
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
 
-    const userClient = createClient(supabaseUrl, supabaseAnonKey, {
-      global: { headers: { Authorization: authHeader } }
-    })
+    // Use service role client for all operations
+    const adminClient = createClient(supabaseUrl, supabaseServiceKey)
 
-    // Verify the requesting user
-    const { data: { user: requestingUser }, error: authError } = await userClient.auth.getUser()
+    // Extract the token and verify the requesting user
+    const token = authHeader.replace('Bearer ', '')
+    const { data: { user: requestingUser }, error: authError } = await adminClient.auth.getUser(token)
+    
     if (authError || !requestingUser) {
-      console.error('Auth error:', authError)
+      console.log('Failed to get user from token:', authError?.message)
       return new Response(
         JSON.stringify({ error: 'Invalid token' }),
         { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
     }
 
-    console.log('Requesting user:', requestingUser.id)
+    console.log('Requesting user:', requestingUser.id, requestingUser.email)
 
     // Check if requesting user is super_admin or admin
-    const adminClient = createClient(supabaseUrl, supabaseServiceKey)
     const { data: roleData, error: roleError } = await adminClient
       .from('user_roles')
       .select('role')
       .eq('user_id', requestingUser.id)
       .single()
+
+    console.log(`Requesting user role: ${roleData?.role}`)
 
     if (roleError || !roleData) {
       console.error('Role check error:', roleError)
@@ -60,7 +60,7 @@ Deno.serve(async (req) => {
     }
 
     if (!['super_admin', 'admin'].includes(roleData.role)) {
-      console.error('User does not have admin privileges:', roleData.role)
+      console.log('User does not have admin privileges:', roleData.role)
       return new Response(
         JSON.stringify({ error: 'Insufficient privileges. Only super_admin or admin can delete users.' }),
         { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
