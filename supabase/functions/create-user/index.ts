@@ -9,6 +9,18 @@ const corsHeaders = {
 const VALID_ROLES = ['super_admin', 'admin', 'supervisor', 'agent'] as const;
 type ValidRole = typeof VALID_ROLES[number];
 
+// Decode JWT to get user info (JWT is already verified by verify_jwt=true in config.toml)
+function decodeJWT(token: string): { sub: string; email?: string } | null {
+  try {
+    const parts = token.split('.')
+    if (parts.length !== 3) return null
+    const payload = JSON.parse(atob(parts[1]))
+    return payload
+  } catch {
+    return null
+  }
+}
+
 // Validation functions
 function isValidEmail(email: string): boolean {
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -70,31 +82,33 @@ Deno.serve(async (req) => {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
 
-    // Use service role client for all operations
-    const adminClient = createClient(supabaseUrl, supabaseServiceKey)
-
-    // Extract the token and verify the requesting user
+    // Extract the token and decode it (JWT is already verified by gateway)
     const token = authHeader.replace('Bearer ', '')
-    const { data: { user: requestingUser }, error: userError } = await adminClient.auth.getUser(token)
+    const decoded = decodeJWT(token)
     
-    if (userError || !requestingUser) {
-      console.log('Unauthorized user attempt:', userError?.message);
+    if (!decoded || !decoded.sub) {
+      console.log('Failed to decode JWT');
       return new Response(JSON.stringify({ error: 'Unauthorized' }), {
         status: 401,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       })
     }
 
+    const requestingUserId = decoded.sub
+
+    // Service role client for privileged database operations
+    const adminClient = createClient(supabaseUrl, supabaseServiceKey)
+
     // Check if user has appropriate role
     const { data: userRole } = await adminClient
       .from('user_roles')
       .select('role')
-      .eq('user_id', requestingUser.id)
+      .eq('user_id', requestingUserId)
       .single()
 
     // Allow super_admin, admin, and supervisor
     if (!userRole || !['super_admin', 'admin', 'supervisor'].includes(userRole.role)) {
-      console.log(`Insufficient permissions for user ${requestingUser.id}`);
+      console.log(`Insufficient permissions for user ${requestingUserId}`);
       return new Response(JSON.stringify({ error: 'Insufficient permissions' }), {
         status: 403,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -107,13 +121,13 @@ Deno.serve(async (req) => {
       const { data: supervisorProfile } = await adminClient
         .from('profiles')
         .select('site_id')
-        .eq('id', requestingUser.id)
+        .eq('id', requestingUserId)
         .single();
       
       supervisorSiteId = supervisorProfile?.site_id || null;
       
       if (!supervisorSiteId) {
-        console.log(`Supervisor ${requestingUser.id} has no site assigned`);
+        console.log(`Supervisor ${requestingUserId} has no site assigned`);
         return new Response(JSON.stringify({ error: 'Supervisor must have a site assigned' }), {
           status: 403,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -191,7 +205,7 @@ Deno.serve(async (req) => {
 
     // Supervisor can only create agent users
     if (userRole.role === 'supervisor' && role !== 'agent') {
-      console.log(`Supervisor ${requestingUser.id} attempted to create ${role} user`);
+      console.log(`Supervisor ${requestingUserId} attempted to create ${role} user`);
       return new Response(JSON.stringify({ error: 'Supervisors can only create agent users' }), {
         status: 403,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -200,7 +214,7 @@ Deno.serve(async (req) => {
 
     // Only super_admin can create admin or super_admin users
     if ((role === 'super_admin' || role === 'admin') && userRole.role !== 'super_admin') {
-      console.log(`User ${requestingUser.id} attempted to create ${role} without super_admin privileges`);
+      console.log(`User ${requestingUserId} attempted to create ${role} without super_admin privileges`);
       return new Response(JSON.stringify({ error: 'Only super admins can create admin users' }), {
         status: 403,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -261,7 +275,7 @@ Deno.serve(async (req) => {
 
       // Supervisors can only link agents from their own site
       if (userRole.role === 'supervisor' && existingAgent.site_id !== supervisorSiteId) {
-        console.log(`Supervisor ${requestingUser.id} attempted to link agent from different site`);
+        console.log(`Supervisor ${requestingUserId} attempted to link agent from different site`);
         return new Response(JSON.stringify({ error: 'You can only link agents from your own site' }), {
           status: 403,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },

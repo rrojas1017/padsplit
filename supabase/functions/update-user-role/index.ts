@@ -5,6 +5,18 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
+// Decode JWT to get user info (JWT is already verified by verify_jwt=true in config.toml)
+function decodeJWT(token: string): { sub: string; email?: string } | null {
+  try {
+    const parts = token.split('.')
+    if (parts.length !== 3) return null
+    const payload = JSON.parse(atob(parts[1]))
+    return payload
+  } catch {
+    return null
+  }
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders })
@@ -23,28 +35,31 @@ Deno.serve(async (req) => {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
 
-    // Use service role client for all operations (same pattern as create-user)
-    const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey)
-
-    // Extract the token and verify the requesting user
+    // Extract the token and decode it (JWT is already verified by gateway)
     const token = authHeader.replace('Bearer ', '')
-    const { data: { user: requestingUser }, error: userError } = await supabaseAdmin.auth.getUser(token)
+    const decoded = decodeJWT(token)
 
-    if (userError || !requestingUser) {
-      console.log('Failed to get user from token:', userError?.message)
+    if (!decoded || !decoded.sub) {
+      console.log('Failed to decode JWT')
       return new Response(
-        JSON.stringify({ error: 'Unauthorized' }),
+        JSON.stringify({ error: 'Invalid token' }),
         { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
     }
 
-    console.log(`Role change request from user ${requestingUser.id} (${requestingUser.email})`)
+    const requestingUserId = decoded.sub
+    const requestingUserEmail = decoded.email
+
+    console.log(`Role change request from user ${requestingUserId} (${requestingUserEmail})`)
+
+    // Service role client for privileged database operations
+    const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey)
 
     // Check if requesting user is super_admin
     const { data: roleData, error: roleError } = await supabaseAdmin
       .from('user_roles')
       .select('role')
-      .eq('user_id', requestingUser.id)
+      .eq('user_id', requestingUserId)
       .single()
 
     console.log(`Requesting user role: ${roleData?.role}`)
@@ -78,7 +93,7 @@ Deno.serve(async (req) => {
     }
 
     // Prevent self-role change
-    if (userId === requestingUser.id) {
+    if (userId === requestingUserId) {
       return new Response(
         JSON.stringify({ error: 'Cannot change your own role' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -166,7 +181,7 @@ Deno.serve(async (req) => {
     const { data: requestingUserData } = await supabaseAdmin
       .from('profiles')
       .select('name')
-      .eq('id', requestingUser.id)
+      .eq('id', requestingUserId)
       .single()
 
     // Log the role change to access_logs
@@ -175,8 +190,8 @@ Deno.serve(async (req) => {
       .insert({
         action: 'role_change',
         resource: `Changed role for ${targetUserData?.name || targetUserData?.email || userId} from ${previousRole} to ${newRole}`,
-        user_id: requestingUser.id,
-        user_name: requestingUserData?.name || requestingUser.email,
+        user_id: requestingUserId,
+        user_name: requestingUserData?.name || requestingUserEmail,
       })
 
     if (logError) {
@@ -184,7 +199,7 @@ Deno.serve(async (req) => {
       // Don't fail the request, role was updated successfully
     }
 
-    console.log(`Role updated: ${userId} from ${previousRole} to ${newRole} by ${requestingUser.id}`)
+    console.log(`Role updated: ${userId} from ${previousRole} to ${newRole} by ${requestingUserId}`)
 
     return new Response(
       JSON.stringify({ 
