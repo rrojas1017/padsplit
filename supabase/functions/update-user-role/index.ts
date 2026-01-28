@@ -21,33 +21,42 @@ Deno.serve(async (req) => {
     }
 
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!
+    const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY')!
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
 
     // Extract token
     const token = authHeader.replace('Bearer ', '')
     
-    // Use service role client for all operations
-    const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey)
+    // Create client with user's auth header to verify claims
+    const supabaseWithAuth = createClient(supabaseUrl, supabaseAnonKey, {
+      global: { headers: { Authorization: authHeader } },
+    })
     
-    // Verify the user by passing token directly to getUser
-    const { data: { user: requestingUser }, error: userError } = await supabaseAdmin.auth.getUser(token)
+    // Verify the user using getClaims (modern approach)
+    const { data: claimsData, error: claimsError } = await supabaseWithAuth.auth.getClaims(token)
     
-    if (userError || !requestingUser) {
-      console.log('Failed to get user from token:', userError?.message)
+    if (claimsError || !claimsData?.claims) {
+      console.log('Failed to get claims from token:', claimsError?.message)
       return new Response(
         JSON.stringify({ error: 'Unauthorized' }),
         { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
     }
 
+    const requestingUserId = claimsData.claims.sub as string
+    const requestingUserEmail = claimsData.claims.email as string
+    console.log(`Role change request from user ${requestingUserId} (${requestingUserEmail})`)
+
+    // Use service role client for privileged operations
+    const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey)
+
     // Check if requesting user is super_admin
     const { data: roleData, error: roleError } = await supabaseAdmin
       .from('user_roles')
       .select('role')
-      .eq('user_id', requestingUser.id)
+      .eq('user_id', requestingUserId)
       .single()
 
-    console.log(`Role change request from user ${requestingUser.id} (${requestingUser.email})`)
     console.log(`Requesting user role: ${roleData?.role}`)
 
     if (roleError || roleData?.role !== 'super_admin') {
@@ -79,7 +88,7 @@ Deno.serve(async (req) => {
     }
 
     // Prevent self-role change
-    if (userId === requestingUser.id) {
+    if (userId === requestingUserId) {
       return new Response(
         JSON.stringify({ error: 'Cannot change your own role' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -167,7 +176,7 @@ Deno.serve(async (req) => {
     const { data: requestingUserData } = await supabaseAdmin
       .from('profiles')
       .select('name')
-      .eq('id', requestingUser.id)
+      .eq('id', requestingUserId)
       .single()
 
     // Log the role change to access_logs
@@ -176,8 +185,8 @@ Deno.serve(async (req) => {
       .insert({
         action: 'role_change',
         resource: `Changed role for ${targetUserData?.name || targetUserData?.email || userId} from ${previousRole} to ${newRole}`,
-        user_id: requestingUser.id,
-        user_name: requestingUserData?.name || requestingUser.email,
+        user_id: requestingUserId,
+        user_name: requestingUserData?.name || requestingUserEmail,
       })
 
     if (logError) {
@@ -185,7 +194,7 @@ Deno.serve(async (req) => {
       // Don't fail the request, role was updated successfully
     }
 
-    console.log(`Role updated: ${userId} from ${previousRole} to ${newRole} by ${requestingUser.id}`)
+    console.log(`Role updated: ${userId} from ${previousRole} to ${newRole} by ${requestingUserId}`)
 
     return new Response(
       JSON.stringify({ 
