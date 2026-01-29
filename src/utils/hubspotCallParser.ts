@@ -291,7 +291,11 @@ export function parseHubspotCSV(csvContent: string): ParseResult {
     callOutcome: headers.findIndex(h => h.includes('call outcome') || h.includes('outcome')),
     callDuration: headers.findIndex(h => h.includes('call duration') || h.includes('duration')),
     callDirection: headers.findIndex(h => h.includes('call direction') || h.includes('direction')),
-    callSummary: headers.findIndex(h => h.includes('call summary') || h.includes('summary')),
+    callSummary: headers.findIndex(h => 
+      h.includes('call summary') || 
+      h.includes('meeting notes') || 
+      h.includes('notes')
+    ),
   };
   
   // Check required columns
