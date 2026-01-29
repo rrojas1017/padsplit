@@ -2,8 +2,7 @@ import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
+import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -14,11 +13,11 @@ import { CallDetailsModal } from '@/components/call-insights/CallDetailsModal';
 import { CallsTable } from '@/components/call-insights/CallsTable';
 import { CallInsightsStats } from '@/components/call-insights/CallInsightsStats';
 import { 
-  Phone, PhoneIncoming, PhoneOutgoing, PhoneMissed, Search, Filter,
-  RefreshCw, AlertCircle
+  Phone, Search, RefreshCw, AlertCircle
 } from 'lucide-react';
-import { format, subDays, startOfDay, endOfDay } from 'date-fns';
+import { subDays, startOfDay } from 'date-fns';
 
+// Interface matching the Call type expected by child components
 export interface Call {
   id: string;
   kixie_call_id: string | null;
@@ -47,20 +46,20 @@ export default function CallInsights() {
   const [searchQuery, setSearchQuery] = useState('');
   const [agentFilter, setAgentFilter] = useState<string>('all');
   const [statusFilter, setStatusFilter] = useState<string>('all');
-  const [outcomeFilter, setOutcomeFilter] = useState<string>('all');
   const [dateRange, setDateRange] = useState<string>('7');
 
-  // Fetch calls
+  // Fetch non-booking records from bookings table
   const { data: calls, isLoading, refetch } = useQuery({
-    queryKey: ['calls', agentFilter, statusFilter, outcomeFilter, dateRange],
+    queryKey: ['non-booking-calls', agentFilter, statusFilter, dateRange],
     queryFn: async () => {
       const startDate = startOfDay(subDays(new Date(), parseInt(dateRange)));
       
       let query = supabase
-        .from('calls')
+        .from('bookings')
         .select('*')
-        .gte('call_date', startDate.toISOString())
-        .order('call_date', { ascending: false })
+        .eq('status', 'Non Booking')
+        .gte('booking_date', startDate.toISOString().split('T')[0])
+        .order('booking_date', { ascending: false })
         .limit(500);
 
       if (agentFilter !== 'all') {
@@ -69,17 +68,32 @@ export default function CallInsights() {
       if (statusFilter !== 'all') {
         query = query.eq('transcription_status', statusFilter);
       }
-      if (outcomeFilter !== 'all') {
-        if (outcomeFilter === 'booking') {
-          query = query.not('booking_id', 'is', null);
-        } else if (outcomeFilter === 'no_booking') {
-          query = query.is('booking_id', null);
-        }
-      }
 
       const { data, error } = await query;
       if (error) throw error;
-      return data as Call[];
+      
+      // Map bookings to Call interface for compatibility with existing components
+      return (data || []).map((booking): Call => ({
+        id: booking.id,
+        kixie_call_id: null,
+        recording_url: booking.kixie_link,
+        call_type: booking.booking_type,
+        call_status: 'completed',
+        call_date: booking.booking_date,
+        duration_seconds: booking.call_duration_seconds,
+        from_number: null,
+        to_number: null,
+        kixie_agent_name: null,
+        agent_id: booking.agent_id,
+        contact_name: booking.member_name,
+        contact_phone: null,
+        disposition: booking.notes,
+        outcome_category: 'Non Booking',
+        booking_id: null, // These are non-booking records
+        transcription_status: booking.transcription_status,
+        source: 'historical_import',
+        created_at: booking.created_at,
+      }));
     },
   });
 
@@ -122,7 +136,7 @@ export default function CallInsights() {
               <div className="flex-1 relative">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <Input
-                  placeholder="Search by name, phone, or disposition..."
+                  placeholder="Search by name, phone, or notes..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   className="pl-10"
@@ -137,6 +151,7 @@ export default function CallInsights() {
                   <SelectItem value="14">Last 14 days</SelectItem>
                   <SelectItem value="30">Last 30 days</SelectItem>
                   <SelectItem value="90">Last 90 days</SelectItem>
+                  <SelectItem value="365">Last year</SelectItem>
                 </SelectContent>
               </Select>
               <Select value={agentFilter} onValueChange={setAgentFilter}>
@@ -161,16 +176,6 @@ export default function CallInsights() {
                   <SelectItem value="failed">Failed</SelectItem>
                 </SelectContent>
               </Select>
-              <Select value={outcomeFilter} onValueChange={setOutcomeFilter}>
-                <SelectTrigger className="w-[180px]">
-                  <SelectValue placeholder="All Outcomes" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Outcomes</SelectItem>
-                  <SelectItem value="booking">With Booking</SelectItem>
-                  <SelectItem value="no_booking">No Booking</SelectItem>
-                </SelectContent>
-              </Select>
             </div>
           </CardContent>
         </Card>
@@ -180,11 +185,11 @@ export default function CallInsights() {
           <TabsList>
             <TabsTrigger value="all" className="gap-2">
               <Phone className="h-4 w-4" />
-              All Calls ({filteredCalls.length})
+              All Non-Booking Calls ({filteredCalls.length})
             </TabsTrigger>
-            <TabsTrigger value="no-booking" className="gap-2">
+            <TabsTrigger value="with-recording" className="gap-2">
               <AlertCircle className="h-4 w-4" />
-              No Booking ({filteredCalls.filter(c => !c.booking_id).length})
+              With Recordings ({filteredCalls.filter(c => c.recording_url).length})
             </TabsTrigger>
           </TabsList>
 
@@ -206,7 +211,7 @@ export default function CallInsights() {
             )}
           </TabsContent>
 
-          <TabsContent value="no-booking">
+          <TabsContent value="with-recording">
             {isLoading ? (
               <Card>
                 <CardContent className="py-8 space-y-4">
@@ -217,7 +222,7 @@ export default function CallInsights() {
               </Card>
             ) : (
               <CallsTable 
-                calls={filteredCalls.filter(c => !c.booking_id)} 
+                calls={filteredCalls.filter(c => c.recording_url)} 
                 agents={agents}
                 onSelectCall={setSelectedCall}
               />

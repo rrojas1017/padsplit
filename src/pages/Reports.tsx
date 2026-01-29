@@ -52,6 +52,7 @@ const statusOptions = [
   { label: 'No Show', value: 'No Show' },
   { label: 'Cancelled', value: 'Cancelled' },
   { label: 'Postponed', value: 'Postponed' },
+  { label: 'Non Booking', value: 'Non Booking' },
 ];
 
 const bookingTypeOptions = [
@@ -363,6 +364,7 @@ export default function Reports() {
     'No Show': 'bg-muted text-muted-foreground',
     'Cancelled': 'bg-muted text-muted-foreground',
     'Postponed': 'bg-primary/20 text-primary',
+    'Non Booking': 'bg-slate-500/20 text-slate-500',
   };
 
   const selectedSiteLabel = siteFilter === 'all' ? 'All Sites' : sites.find(s => s.id === siteFilter)?.name || 'All Sites';
@@ -406,10 +408,11 @@ export default function Reports() {
     const memberRejected = filteredBookings.filter(b => b.status === 'Member Rejected').length;
     const noShowCancelled = filteredBookings.filter(b => b.status === 'No Show' || b.status === 'Cancelled').length;
     const postponed = filteredBookings.filter(b => b.status === 'Postponed').length;
+    const nonBooking = filteredBookings.filter(b => b.status === 'Non Booking').length;
     const rebookings = filteredBookings.filter(b => b.isRebooking).length;
-    const newBookings = total - rebookings;
+    const newBookings = total - rebookings - nonBooking;
     
-    return { total, pendingMoveIn, movedIn, memberRejected, noShowCancelled, postponed, rebookings, newBookings };
+    return { total, pendingMoveIn, movedIn, memberRejected, noShowCancelled, postponed, nonBooking, rebookings, newBookings };
   }, [filteredBookings]);
 
   return (
@@ -418,9 +421,9 @@ export default function Reports() {
       subtitle="Detailed booking data and exports"
     >
       {/* Summary Cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3 mb-6">
+      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3 mb-6">
         <div className="bg-card rounded-xl p-4 border border-border shadow-sm">
-          <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Total Bookings</p>
+          <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Total Records</p>
           <p className="text-2xl font-bold text-foreground mt-1">{summaryStats.total}</p>
           {summaryStats.rebookings > 0 && (
             <p className="text-xs text-muted-foreground mt-1">
@@ -462,6 +465,13 @@ export default function Reports() {
             <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">No Show / Cancelled</p>
           </div>
           <p className="text-2xl font-bold text-muted-foreground mt-1">{summaryStats.noShowCancelled}</p>
+        </div>
+        <div className="bg-card rounded-xl p-4 border border-border shadow-sm">
+          <div className="flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-slate-500"></span>
+            <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Non Booking</p>
+          </div>
+          <p className="text-2xl font-bold text-slate-500 mt-1">{summaryStats.nonBooking}</p>
         </div>
       </div>
 

@@ -180,6 +180,13 @@ const menuItems: MenuItem[] = [
     roles: ['super_admin', 'admin'],
     group: 'admin'
   },
+  {
+    icon: Upload,
+    label: 'Historical Import',
+    path: '/historical-import',
+    roles: ['super_admin', 'admin'],
+    group: 'admin'
+  },
   { 
     icon: Shield, 
     label: 'Audit Log', 

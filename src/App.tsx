@@ -40,6 +40,7 @@ import MyBookings from "./pages/MyBookings";
 import MoveInCalculator from "./pages/MoveInCalculator";
 import PromoCodeSettings from "./pages/PromoCodeSettings";
 import CallInsights from "./pages/CallInsights";
+import HistoricalImport from "./pages/HistoricalImport";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -264,6 +265,14 @@ const App = () => (
                 <ProtectedRoute allowedRoles={['super_admin', 'admin']}>
                   <DataProviders>
                     <PromoCodeSettings />
+                  </DataProviders>
+                </ProtectedRoute>
+              } />
+
+              <Route path="/historical-import" element={
+                <ProtectedRoute allowedRoles={['super_admin', 'admin']}>
+                  <DataProviders>
+                    <HistoricalImport />
                   </DataProviders>
                 </ProtectedRoute>
               } />
