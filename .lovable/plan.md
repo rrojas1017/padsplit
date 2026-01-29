@@ -1,79 +1,98 @@
 
-# Add Batch Deletion Before Re-Import
+
+# Fix Batch Record Count Limit
 
 ## Problem
-You need to delete the existing ~5,163 imported records before re-importing the CSV to capture email and phone data. Currently, the delete button only appears after completing a new import.
+
+The "Existing Import Batches" section shows only **1,000 records** instead of the actual **5,018 records** because:
+
+1. The current code fetches individual rows: `supabase.from('bookings').select('import_batch_id, created_at')`
+2. Supabase has a **default limit of 1,000 rows** per query
+3. The code then counts rows in JavaScript, giving an inaccurate total
+
+**Verified from database**: The actual counts are:
+- `IMPORT-20260129-002412`: **5,018 records**
+- `IMPORT-20260129-235838`: **145 records**
+
+---
 
 ## Solution
-Add a "Manage Existing Batches" section to the Historical Import upload step that shows existing import batches and allows deletion before starting a new import.
+
+Create a database function (RPC) that uses `GROUP BY` and `COUNT(*)` directly in SQL, bypassing the row limit issue.
 
 ---
 
 ## Implementation
 
-### Update Historical Import Page
+### Step 1: Database Migration
+
+Create an RPC function that returns accurate batch counts:
+
+```sql
+CREATE OR REPLACE FUNCTION get_import_batch_counts()
+RETURNS TABLE (
+  import_batch_id text,
+  record_count bigint,
+  imported_at timestamptz
+) AS $$
+BEGIN
+  RETURN QUERY
+  SELECT 
+    b.import_batch_id,
+    COUNT(*)::bigint as record_count,
+    MIN(b.created_at) as imported_at
+  FROM bookings b
+  WHERE b.import_batch_id IS NOT NULL
+  GROUP BY b.import_batch_id
+  ORDER BY MIN(b.created_at) DESC;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+```
+
+### Step 2: Update Historical Import Page
 
 **File: `src/pages/HistoricalImport.tsx`**
 
-Add a new section on the upload step that:
+Replace the current `fetchExistingBatches` function:
 
-1. **Fetches existing import batches** on page load:
+**Before** (hitting 1,000 row limit):
 ```typescript
-// Query distinct import_batch_ids with record counts
-SELECT import_batch_id, COUNT(*) as record_count, MIN(created_at) as imported_at
-FROM bookings
-WHERE import_batch_id IS NOT NULL
-GROUP BY import_batch_id
-ORDER BY imported_at DESC
+const { data, error } = await supabase
+  .from('bookings')
+  .select('import_batch_id, created_at')
+  .not('import_batch_id', 'is', null);
+// Then count in JavaScript...
 ```
 
-2. **Displays batch list** with:
-   - Batch ID (e.g., `IMPORT-20260129-002412`)
-   - Record count (e.g., "5,163 records")
-   - Import date
-   - Delete button
+**After** (accurate count via RPC):
+```typescript
+const { data, error } = await supabase.rpc('get_import_batch_counts');
 
-3. **Delete batch function**:
-   - Confirm dialog: "Delete 5,163 records from batch IMPORT-20260129-002412?"
-   - Delete all records with that batch ID
-   - Refresh the batch list
+if (error) throw error;
 
-### UI Layout
+const batches: ExistingBatch[] = (data || []).map((row: any) => ({
+  import_batch_id: row.import_batch_id,
+  record_count: Number(row.record_count),
+  imported_at: row.imported_at,
+}));
 
-On the upload step, above the file drop zone:
-
-```text
-┌─────────────────────────────────────────────────────┐
-│  📦 Existing Import Batches                         │
-├─────────────────────────────────────────────────────┤
-│  IMPORT-20260129-002412                             │
-│  5,163 records • Imported Jan 29, 2026              │
-│                                        [🗑️ Delete]  │
-├─────────────────────────────────────────────────────┤
-│  (No other batches)                                 │
-└─────────────────────────────────────────────────────┘
-
-┌─────────────────────────────────────────────────────┐
-│  📤 Upload HubSpot Export                           │
-│  [Drop zone as before]                              │
-└─────────────────────────────────────────────────────┘
+setExistingBatches(batches);
 ```
 
 ---
 
-## Files to Modify
+## Files to Create/Modify
 
-| File | Changes |
-|------|---------|
-| `src/pages/HistoricalImport.tsx` | Add batch list state, fetch on mount, render batch cards, delete function |
+| File | Action |
+|------|--------|
+| Database migration (RPC function) | CREATE |
+| `src/pages/HistoricalImport.tsx` | MODIFY (lines 80-119) |
 
 ---
 
-## Workflow After Implementation
+## Expected Result
 
-1. Open **Historical Import** page
-2. See existing batch: `IMPORT-20260129-002412` (5,163 records)
-3. Click **Delete** → Confirm → Records removed
-4. Upload the same HubSpot CSV file
-5. Complete import → All records now have email and phone populated
-6. View in **Reports** page with new Email/Phone columns
+After the fix, the batch display will show:
+- `IMPORT-20260129-002412`: **5,018 records** (not 1,000)
+- `IMPORT-20260129-235838`: **145 records**
+
