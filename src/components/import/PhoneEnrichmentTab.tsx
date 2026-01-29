@@ -84,19 +84,32 @@ export function PhoneEnrichmentTab() {
 
       setRecordsNeedingPhone(count || 0);
 
-      // Check potential matches
-      const { data: bookingsWithEmail } = await supabase
-        .from('bookings')
-        .select('contact_email')
-        .is('contact_phone', null)
-        .not('contact_email', 'is', null);
+      // Fetch ALL bookings needing phone enrichment using pagination
+      let allBookingsWithEmail: { contact_email: string | null }[] = [];
+      let previewPage = 0;
+      const previewPageSize = 1000;
+
+      while (true) {
+        const { data: batch } = await supabase
+          .from('bookings')
+          .select('contact_email')
+          .is('contact_phone', null)
+          .not('contact_email', 'is', null)
+          .range(previewPage * previewPageSize, (previewPage + 1) * previewPageSize - 1);
+
+        if (!batch || batch.length === 0) break;
+        
+        allBookingsWithEmail = [...allBookingsWithEmail, ...batch];
+        
+        // If we got less than pageSize, we've reached the end
+        if (batch.length < previewPageSize) break;
+        previewPage++;
+      }
 
       let matches = 0;
-      if (bookingsWithEmail) {
-        for (const booking of bookingsWithEmail) {
-          if (booking.contact_email && lookup.has(booking.contact_email.toLowerCase().trim())) {
-            matches++;
-          }
+      for (const booking of allBookingsWithEmail) {
+        if (booking.contact_email && lookup.has(booking.contact_email.toLowerCase().trim())) {
+          matches++;
         }
       }
       setPotentialMatches(matches);
@@ -121,20 +134,37 @@ export function PhoneEnrichmentTab() {
     };
 
     try {
-      // Fetch all bookings needing phone enrichment
-      const { data: bookings, error } = await supabase
-        .from('bookings')
-        .select('id, contact_email')
-        .is('contact_phone', null)
-        .not('contact_email', 'is', null);
+      // Fetch ALL bookings needing phone enrichment using pagination
+      let allBookings: { id: string; contact_email: string | null }[] = [];
+      let page = 0;
+      const pageSize = 1000;
 
-      if (error) throw error;
-      if (!bookings || bookings.length === 0) {
+      while (true) {
+        const { data: batch, error } = await supabase
+          .from('bookings')
+          .select('id, contact_email')
+          .is('contact_phone', null)
+          .not('contact_email', 'is', null)
+          .range(page * pageSize, (page + 1) * pageSize - 1);
+
+        if (error) throw error;
+        if (!batch || batch.length === 0) break;
+        
+        allBookings = [...allBookings, ...batch];
+        
+        // If we got less than pageSize, we've reached the end
+        if (batch.length < pageSize) break;
+        page++;
+      }
+
+      if (allBookings.length === 0) {
         toast.info('No records to enrich');
         setStep('complete');
         setResults(enrichResults);
         return;
       }
+
+      const bookings = allBookings;
 
       const total = bookings.length;
       const batchSize = 50;
