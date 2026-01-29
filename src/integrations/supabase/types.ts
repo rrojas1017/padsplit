@@ -1599,6 +1599,14 @@ export type Database = {
         Args: { _site_id: string }
         Returns: string[]
       }
+      get_import_batch_counts: {
+        Args: never
+        Returns: {
+          import_batch_id: string
+          imported_at: string
+          record_count: number
+        }[]
+      }
       get_my_role: { Args: never; Returns: string }
       get_my_site_id: { Args: never; Returns: string }
       get_user_role: {
