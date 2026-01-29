@@ -5,16 +5,18 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { Badge } from '@/components/ui/badge';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useAgents } from '@/contexts/AgentsContext';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { 
   Upload, FileText, CheckCircle, AlertTriangle, Users, Play, 
-  ArrowRight, Loader2, FileSpreadsheet, X, Trash2, Copy, Package
+  ArrowRight, Loader2, FileSpreadsheet, X, Trash2, Copy, Package, Phone
 } from 'lucide-react';
 import { parseHubspotCSV, ParsedCallRecord, toBookingInsert, ParseResult, generateImportBatchId } from '@/utils/hubspotCallParser';
 import { AgentMappingDialog, AgentMapping } from '@/components/import/AgentMappingDialog';
 import { ImportClassificationSummary } from '@/components/import/ImportClassificationSummary';
+import { PhoneEnrichmentTab } from '@/components/import/PhoneEnrichmentTab';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -380,31 +382,44 @@ export default function HistoricalImport() {
   return (
     <DashboardLayout 
       title="Historical Import" 
-      subtitle="Import HubSpot call recordings into the booking system"
+      subtitle="Import data and enrich existing records"
     >
       <div className="max-w-4xl mx-auto space-y-6">
-        {/* Step Indicator */}
-        <div className="flex items-center gap-2 text-sm">
-          {['Upload', 'Parse', 'Agents', 'Review', 'Import', 'Complete'].map((label, i) => {
-            const stepOrder: ImportStep[] = ['upload', 'parsing', 'agent-mapping', 'summary', 'importing', 'complete'];
-            const currentIndex = stepOrder.indexOf(step);
-            const isActive = i === currentIndex;
-            const isComplete = i < currentIndex;
-            
-            return (
-              <div key={label} className="flex items-center gap-2">
-                {i > 0 && <div className="w-8 h-px bg-border" />}
-                <div className={`flex items-center gap-1.5 px-2 py-1 rounded-full ${
-                  isActive ? 'bg-primary text-primary-foreground' : 
-                  isComplete ? 'bg-success/20 text-success' : 
-                  'bg-muted text-muted-foreground'
-                }`}>
-                  {isComplete ? <CheckCircle className="w-3 h-3" /> : <span className="w-4 text-center">{i + 1}</span>}
-                  <span className="hidden sm:inline">{label}</span>
-                </div>
-              </div>
-            );
-          })}
+        <Tabs defaultValue="hubspot" className="space-y-6">
+          <TabsList className="grid w-full grid-cols-2">
+            <TabsTrigger value="hubspot" className="flex items-center gap-2">
+              <Upload className="w-4 h-4" />
+              HubSpot Import
+            </TabsTrigger>
+            <TabsTrigger value="phone-enrichment" className="flex items-center gap-2">
+              <Phone className="w-4 h-4" />
+              Phone Enrichment
+            </TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="hubspot" className="space-y-6">
+            {/* Step Indicator */}
+            <div className="flex items-center gap-2 text-sm">
+              {['Upload', 'Parse', 'Agents', 'Review', 'Import', 'Complete'].map((label, i) => {
+                const stepOrder: ImportStep[] = ['upload', 'parsing', 'agent-mapping', 'summary', 'importing', 'complete'];
+                const currentIndex = stepOrder.indexOf(step);
+                const isActive = i === currentIndex;
+                const isComplete = i < currentIndex;
+                
+                return (
+                  <div key={label} className="flex items-center gap-2">
+                    {i > 0 && <div className="w-8 h-px bg-border" />}
+                    <div className={`flex items-center gap-1.5 px-2 py-1 rounded-full ${
+                      isActive ? 'bg-primary text-primary-foreground' : 
+                      isComplete ? 'bg-success/20 text-success' : 
+                      'bg-muted text-muted-foreground'
+                    }`}>
+                      {isComplete ? <CheckCircle className="w-3 h-3" /> : <span className="w-4 text-center">{i + 1}</span>}
+                      <span className="hidden sm:inline">{label}</span>
+                    </div>
+                  </div>
+                );
+              })}
         </div>
         
         {/* Upload Step */}
@@ -636,8 +651,13 @@ export default function HistoricalImport() {
             </CardContent>
           </Card>
         )}
+          </TabsContent>
+
+          <TabsContent value="phone-enrichment">
+            <PhoneEnrichmentTab />
+          </TabsContent>
+        </Tabs>
       </div>
-      
       {/* Agent Mapping Dialog */}
       <AgentMappingDialog
         open={showAgentMapping}
