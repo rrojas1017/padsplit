@@ -352,11 +352,23 @@ export function parseHubspotCSV(csvContent: string): ParseResult {
 }
 
 /**
+ * Generate a unique import batch ID
+ * Format: IMPORT-YYYYMMDD-HHMMSS
+ */
+export function generateImportBatchId(): string {
+  const now = new Date();
+  const datePart = now.toISOString().split('T')[0].replace(/-/g, '');
+  const timePart = now.toTimeString().split(' ')[0].replace(/:/g, '');
+  return `IMPORT-${datePart}-${timePart}`;
+}
+
+/**
  * Convert parsed record to booking insert format
  */
 export function toBookingInsert(
   record: ParsedCallRecord,
-  agentId: string
+  agentId: string,
+  importBatchId?: string
 ): Record<string, unknown> {
   return {
     agent_id: agentId,
@@ -371,5 +383,6 @@ export function toBookingInsert(
     call_duration_seconds: record.callDurationSeconds,
     notes: record.callSummary,
     transcription_status: null,
+    import_batch_id: importBatchId || null,
   };
 }

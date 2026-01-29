@@ -504,6 +504,7 @@ export type Database = {
           created_by: string | null
           hubspot_link: string | null
           id: string
+          import_batch_id: string | null
           is_rebooking: boolean
           kixie_link: string | null
           market_city: string | null
@@ -538,6 +539,7 @@ export type Database = {
           created_by?: string | null
           hubspot_link?: string | null
           id?: string
+          import_batch_id?: string | null
           is_rebooking?: boolean
           kixie_link?: string | null
           market_city?: string | null
@@ -572,6 +574,7 @@ export type Database = {
           created_by?: string | null
           hubspot_link?: string | null
           id?: string
+          import_batch_id?: string | null
           is_rebooking?: boolean
           kixie_link?: string | null
           market_city?: string | null

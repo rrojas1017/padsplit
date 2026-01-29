@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -41,8 +41,6 @@ export function AgentMappingDialog({
   sites,
   onConfirm,
 }: AgentMappingDialogProps) {
-  const defaultSiteId = sites.find(s => s.name.toLowerCase().includes('vixicom'))?.id || sites[0]?.id || '';
-  
   // Match status for each CSV agent name
   const matchStatus = useMemo(() => {
     const status: Record<string, { matched: boolean; matchedAgent?: Agent; suggestions: Agent[] }> = {};
@@ -91,8 +89,20 @@ export function AgentMappingDialog({
   // Track which agents to skip
   const [skipAgents, setSkipAgents] = useState<Set<string>>(new Set());
   
-  // Site for auto-created agents
-  const [createSiteId, setCreateSiteId] = useState(defaultSiteId);
+  // Site for auto-created agents - default to PadSplit Internal
+  const [createSiteId, setCreateSiteId] = useState('');
+  
+  // Update site ID when sites become available (fix race condition)
+  useEffect(() => {
+    if (sites.length > 0 && !createSiteId) {
+      // Default to PadSplit Internal for unmatched agents
+      const padsplitSite = sites.find(s => 
+        s.name.toLowerCase().includes('padsplit') && 
+        s.name.toLowerCase().includes('internal')
+      );
+      setCreateSiteId(padsplitSite?.id || sites[0].id);
+    }
+  }, [sites, createSiteId]);
   
   const unmatchedAgents = csvAgentNames.filter(name => !matchStatus[name]?.matched);
   const matchedAgents = csvAgentNames.filter(name => matchStatus[name]?.matched);
