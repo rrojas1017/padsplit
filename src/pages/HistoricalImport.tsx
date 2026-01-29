@@ -10,11 +10,27 @@ import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { 
   Upload, FileText, CheckCircle, AlertTriangle, Users, Play, 
-  ArrowRight, Loader2, FileSpreadsheet, X, Trash2, Copy
+  ArrowRight, Loader2, FileSpreadsheet, X, Trash2, Copy, Package
 } from 'lucide-react';
 import { parseHubspotCSV, ParsedCallRecord, toBookingInsert, ParseResult, generateImportBatchId } from '@/utils/hubspotCallParser';
 import { AgentMappingDialog, AgentMapping } from '@/components/import/AgentMappingDialog';
 import { ImportClassificationSummary } from '@/components/import/ImportClassificationSummary';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+
+interface ExistingBatch {
+  import_batch_id: string;
+  record_count: number;
+  imported_at: string;
+}
 
 type ImportStep = 'upload' | 'parsing' | 'agent-mapping' | 'summary' | 'importing' | 'complete';
 
@@ -45,6 +61,12 @@ export default function HistoricalImport() {
     failed: number;
   } | null>(null);
   
+  // Existing batches management
+  const [existingBatches, setExistingBatches] = useState<ExistingBatch[]>([]);
+  const [loadingBatches, setLoadingBatches] = useState(true);
+  const [batchToDelete, setBatchToDelete] = useState<ExistingBatch | null>(null);
+  const [isDeletingExistingBatch, setIsDeletingExistingBatch] = useState(false);
+  
   // Fetch sites on mount
   useEffect(() => {
     const fetchSites = async () => {
@@ -53,6 +75,75 @@ export default function HistoricalImport() {
     };
     fetchSites();
   }, []);
+  
+  // Fetch existing import batches on mount
+  const fetchExistingBatches = useCallback(async () => {
+    setLoadingBatches(true);
+    try {
+      const { data, error } = await supabase
+        .from('bookings')
+        .select('import_batch_id, created_at')
+        .not('import_batch_id', 'is', null);
+      
+      if (error) throw error;
+      
+      // Group by import_batch_id and count
+      const batchMap = new Map<string, { count: number; earliestDate: string }>();
+      for (const row of data || []) {
+        const batchId = row.import_batch_id!;
+        const existing = batchMap.get(batchId);
+        if (existing) {
+          existing.count++;
+          if (row.created_at < existing.earliestDate) {
+            existing.earliestDate = row.created_at;
+          }
+        } else {
+          batchMap.set(batchId, { count: 1, earliestDate: row.created_at });
+        }
+      }
+      
+      // Convert to array and sort by date descending
+      const batches: ExistingBatch[] = Array.from(batchMap.entries())
+        .map(([id, info]) => ({
+          import_batch_id: id,
+          record_count: info.count,
+          imported_at: info.earliestDate,
+        }))
+        .sort((a, b) => new Date(b.imported_at).getTime() - new Date(a.imported_at).getTime());
+      
+      setExistingBatches(batches);
+    } catch (err) {
+      console.error('Failed to fetch existing batches:', err);
+    } finally {
+      setLoadingBatches(false);
+    }
+  }, []);
+  
+  useEffect(() => {
+    fetchExistingBatches();
+  }, [fetchExistingBatches]);
+  
+  // Delete an existing batch
+  const deleteExistingBatch = async (batch: ExistingBatch) => {
+    setIsDeletingExistingBatch(true);
+    try {
+      const { error } = await supabase
+        .from('bookings')
+        .delete()
+        .eq('import_batch_id', batch.import_batch_id);
+      
+      if (error) throw error;
+      
+      toast.success(`Deleted ${batch.record_count.toLocaleString()} records from batch ${batch.import_batch_id}`);
+      setBatchToDelete(null);
+      fetchExistingBatches();
+    } catch (err) {
+      console.error('Failed to delete batch:', err);
+      toast.error('Failed to delete batch');
+    } finally {
+      setIsDeletingExistingBatch(false);
+    }
+  };
   
   // Handle file drop/select
   const handleFileSelect = useCallback((selectedFile: File) => {
@@ -339,37 +430,97 @@ export default function HistoricalImport() {
         
         {/* Upload Step */}
         {step === 'upload' && (
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Upload className="w-5 h-5" />
-                Upload HubSpot Export
-              </CardTitle>
-              <CardDescription>
-                Upload a CSV or Excel file exported from HubSpot containing call recordings.
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div
-                onDrop={handleDrop}
-                onDragOver={(e) => e.preventDefault()}
-                className="border-2 border-dashed border-border rounded-xl p-12 text-center hover:border-primary/50 transition-colors cursor-pointer"
-                onClick={() => document.getElementById('file-input')?.click()}
-              >
-                <FileSpreadsheet className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
-                <p className="text-lg font-medium">Drop your file here</p>
-                <p className="text-sm text-muted-foreground mt-1">or click to browse</p>
-                <p className="text-xs text-muted-foreground mt-4">Supports CSV and Excel files</p>
-                <input
-                  id="file-input"
-                  type="file"
-                  accept=".csv,.xlsx"
-                  onChange={handleFileInput}
-                  className="hidden"
-                />
-              </div>
-            </CardContent>
-          </Card>
+          <div className="space-y-6">
+            {/* Existing Import Batches */}
+            {(existingBatches.length > 0 || loadingBatches) && (
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Package className="w-5 h-5" />
+                    Existing Import Batches
+                  </CardTitle>
+                  <CardDescription>
+                    Delete a batch before re-importing to avoid duplicates
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {loadingBatches ? (
+                    <div className="flex items-center justify-center py-4">
+                      <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
+                    </div>
+                  ) : existingBatches.length === 0 ? (
+                    <p className="text-sm text-muted-foreground text-center py-4">
+                      No existing import batches found
+                    </p>
+                  ) : (
+                    <div className="space-y-3">
+                      {existingBatches.map((batch) => (
+                        <div
+                          key={batch.import_batch_id}
+                          className="flex items-center justify-between p-3 bg-muted/50 rounded-lg"
+                        >
+                          <div>
+                            <Badge variant="outline" className="font-mono text-xs">
+                              {batch.import_batch_id}
+                            </Badge>
+                            <p className="text-sm text-muted-foreground mt-1">
+                              {batch.record_count.toLocaleString()} records • Imported{' '}
+                              {new Date(batch.imported_at).toLocaleDateString('en-US', {
+                                month: 'short',
+                                day: 'numeric',
+                                year: 'numeric',
+                              })}
+                            </p>
+                          </div>
+                          <Button
+                            variant="destructive"
+                            size="sm"
+                            onClick={() => setBatchToDelete(batch)}
+                          >
+                            <Trash2 className="w-4 h-4 mr-1" />
+                            Delete
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            )}
+            
+            {/* Upload Card */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Upload className="w-5 h-5" />
+                  Upload HubSpot Export
+                </CardTitle>
+                <CardDescription>
+                  Upload a CSV or Excel file exported from HubSpot containing call recordings.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div
+                  onDrop={handleDrop}
+                  onDragOver={(e) => e.preventDefault()}
+                  className="border-2 border-dashed border-border rounded-xl p-12 text-center hover:border-primary/50 transition-colors cursor-pointer"
+                  onClick={() => document.getElementById('file-input')?.click()}
+                >
+                  <FileSpreadsheet className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
+                  <p className="text-lg font-medium">Drop your file here</p>
+                  <p className="text-sm text-muted-foreground mt-1">or click to browse</p>
+                  <p className="text-xs text-muted-foreground mt-4">Supports CSV and Excel files</p>
+                  <input
+                    id="file-input"
+                    type="file"
+                    accept=".csv,.xlsx"
+                    onChange={handleFileInput}
+                    className="hidden"
+                  />
+                </div>
+              </CardContent>
+            </Card>
+          </div>
         )}
         
         {/* Parsing Step */}
@@ -517,6 +668,41 @@ export default function HistoricalImport() {
         sites={sites}
         onConfirm={handleAgentMappingConfirm}
       />
+      
+      {/* Delete Batch Confirmation Dialog */}
+      <AlertDialog open={!!batchToDelete} onOpenChange={(open) => !open && setBatchToDelete(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Import Batch?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently delete{' '}
+              <strong>{batchToDelete?.record_count.toLocaleString()}</strong> records from batch{' '}
+              <code className="bg-muted px-1 rounded">{batchToDelete?.import_batch_id}</code>.
+              This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isDeletingExistingBatch}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => batchToDelete && deleteExistingBatch(batchToDelete)}
+              disabled={isDeletingExistingBatch}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {isDeletingExistingBatch ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Deleting...
+                </>
+              ) : (
+                <>
+                  <Trash2 className="w-4 h-4 mr-2" />
+                  Delete {batchToDelete?.record_count.toLocaleString()} Records
+                </>
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </DashboardLayout>
   );
 }
