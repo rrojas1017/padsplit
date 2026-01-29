@@ -71,3 +71,6 @@ verify_jwt = true
 
 [functions.batch-retry-transcriptions]
 verify_jwt = false
+
+[functions.batch-enrich-contacts]
+verify_jwt = false

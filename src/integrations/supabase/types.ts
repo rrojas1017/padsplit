@@ -500,6 +500,8 @@ export type Database = {
           coaching_audio_regenerated_at: string | null
           coaching_audio_url: string | null
           communication_method: string | null
+          contact_email: string | null
+          contact_phone: string | null
           created_at: string
           created_by: string | null
           hubspot_link: string | null
@@ -535,6 +537,8 @@ export type Database = {
           coaching_audio_regenerated_at?: string | null
           coaching_audio_url?: string | null
           communication_method?: string | null
+          contact_email?: string | null
+          contact_phone?: string | null
           created_at?: string
           created_by?: string | null
           hubspot_link?: string | null
@@ -570,6 +574,8 @@ export type Database = {
           coaching_audio_regenerated_at?: string | null
           coaching_audio_url?: string | null
           communication_method?: string | null
+          contact_email?: string | null
+          contact_phone?: string | null
           created_at?: string
           created_by?: string | null
           hubspot_link?: string | null

@@ -186,7 +186,9 @@ export function useReportsData(
           call_type_id,
           import_batch_id,
           created_by,
-          created_at
+          created_at,
+          contact_email,
+          contact_phone
         `, { count: 'exact' });
 
       // Apply record date range filter (only if dates are set)
@@ -304,6 +306,8 @@ export function useReportsData(
         callTypeId: row.call_type_id || undefined,
         createdBy: row.created_by || undefined,
         createdAt: row.created_at ? new Date(row.created_at) : undefined,
+        contactEmail: row.contact_email || undefined,
+        contactPhone: row.contact_phone || undefined,
       }));
 
       setRecords(transformedRecords);

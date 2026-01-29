@@ -219,12 +219,26 @@ export default function Reports() {
   const totalPages = Math.ceil(totalCount / itemsPerPage);
   const startIndex = (currentPage - 1) * itemsPerPage;
 
+  // Format phone number helper
+  const formatPhone = (phone: string): string => {
+    const digits = phone.replace(/\D/g, '');
+    if (digits.length === 10) {
+      return `${digits.slice(0,3)}-${digits.slice(3,6)}-${digits.slice(6)}`;
+    }
+    if (digits.length === 11 && digits[0] === '1') {
+      return `${digits.slice(1,4)}-${digits.slice(4,7)}-${digits.slice(7)}`;
+    }
+    return phone;
+  };
+
   // Export CSV
   const exportCSV = () => {
     const headers = [
       'Record Date',
       'Move-In Date',
       'Contact Name',
+      'Contact Email',
+      'Contact Phone',
       'Agent',
       'Market City',
       'Market State',
@@ -241,6 +255,8 @@ export default function Reports() {
       format(booking.bookingDate, 'yyyy-MM-dd'),
       booking.status === 'Non Booking' ? '' : format(booking.moveInDate, 'yyyy-MM-dd'),
       booking.memberName,
+      booking.contactEmail || '',
+      booking.contactPhone || '',
       getAgentName(agents, booking.agentId),
       booking.marketCity || '',
       booking.marketState || '',
@@ -333,6 +349,8 @@ export default function Reports() {
           <td className="py-3 px-4"><Skeleton className="h-4 w-24" /></td>
           <td className="py-3 px-4"><Skeleton className="h-4 w-24" /></td>
           <td className="py-3 px-4"><Skeleton className="h-4 w-32" /></td>
+          <td className="py-3 px-4"><Skeleton className="h-4 w-36" /></td>
+          <td className="py-3 px-4"><Skeleton className="h-4 w-24" /></td>
           <td className="py-3 px-4"><Skeleton className="h-4 w-28" /></td>
           <td className="py-3 px-4"><Skeleton className="h-4 w-24" /></td>
           <td className="py-3 px-4"><Skeleton className="h-4 w-20" /></td>
@@ -664,6 +682,8 @@ export default function Reports() {
                 <SortableHeader column="bookingDate" label="Record Date" />
                 <SortableHeader column="moveInDate" label="Move-In Date" />
                 <SortableHeader column="memberName" label="Contact" />
+                <th className="text-left py-3 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Email</th>
+                <th className="text-left py-3 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Phone</th>
                 <th className="text-left py-3 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Agent</th>
                 <SortableHeader column="market" label="Market" />
                 <SortableHeader column="bookingType" label="Type" />
@@ -678,7 +698,7 @@ export default function Reports() {
                 <TableSkeleton />
               ) : records.length === 0 ? (
                 <tr>
-                  <td colSpan={10} className="py-8 text-center text-muted-foreground">
+                  <td colSpan={12} className="py-8 text-center text-muted-foreground">
                     No records found matching your filters
                   </td>
                 </tr>
@@ -705,6 +725,31 @@ export default function Reports() {
                           </span>
                         )}
                       </div>
+                    </td>
+                    <td className="py-3 px-4 text-sm">
+                      {booking.contactEmail ? (
+                        <a 
+                          href={`mailto:${booking.contactEmail}`} 
+                          className="text-primary hover:underline truncate max-w-[180px] block"
+                          title={booking.contactEmail}
+                        >
+                          {booking.contactEmail}
+                        </a>
+                      ) : (
+                        <span className="text-muted-foreground">—</span>
+                      )}
+                    </td>
+                    <td className="py-3 px-4 text-sm">
+                      {booking.contactPhone ? (
+                        <a 
+                          href={`tel:${booking.contactPhone}`} 
+                          className="text-primary hover:underline whitespace-nowrap"
+                        >
+                          {formatPhone(booking.contactPhone)}
+                        </a>
+                      ) : (
+                        <span className="text-muted-foreground">—</span>
+                      )}
                     </td>
                     <td className="py-3 px-4 text-sm text-foreground">
                       {getAgentName(agents, booking.agentId)}

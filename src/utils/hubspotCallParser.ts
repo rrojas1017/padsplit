@@ -12,6 +12,7 @@ export interface ParsedCallRecord {
   recordingUrl: string | null;
   contactName: string;
   contactEmail: string | null;
+  contactPhone: string | null;
   callOutcome: string;
   callDurationSeconds: number;
   callDirection: string;
@@ -101,6 +102,30 @@ function parseContactName(contactStr: string): { name: string; email: string | n
   }
   
   return { name: contactStr.trim(), email: null };
+}
+
+/**
+ * Extract phone number from call notes based on call direction
+ * For outbound calls: returns the TO number (agent called the contact)
+ * For inbound calls: returns the FROM number (contact called the agent)
+ */
+function extractPhoneFromNotes(notes: string, direction: string): string | null {
+  if (!notes) return null;
+  
+  // Pattern: "call was made from +1XXXXXXXXXX to +1YYYYYYYYYY"
+  const match = notes.match(/call was made from (\+?\d{10,14}) to (\+?\d{10,14})/i);
+  if (!match) return null;
+  
+  const fromNumber = match[1];
+  const toNumber = match[2];
+  
+  // Outbound: agent called TO the contact → return TO number
+  // Inbound: contact called FROM their phone → return FROM number
+  if (direction.toLowerCase().includes('outbound')) {
+    return toNumber;
+  } else {
+    return fromNumber;
+  }
 }
 
 /**
@@ -318,6 +343,10 @@ export function parseHubspotCSV(csvContent: string): ParseResult {
       const bookingType: 'Inbound' | 'Outbound' = 
         callDirection.toLowerCase().includes('outbound') ? 'Outbound' : 'Inbound';
       
+      // Extract phone from call notes (direction-aware)
+      const cleanedCallSummary = stripHtml(callSummary);
+      const contactPhone = extractPhoneFromNotes(cleanedCallSummary, callDirection);
+      
       records.push({
         recordId: recordId.trim(),
         activityDate,
@@ -325,10 +354,11 @@ export function parseHubspotCSV(csvContent: string): ParseResult {
         recordingUrl: recordingUrl?.trim() || null,
         contactName,
         contactEmail,
+        contactPhone,
         callOutcome: callOutcome.trim(),
         callDurationSeconds: parseDuration(durationStr),
         callDirection: callDirection.trim(),
-        callSummary: stripHtml(callSummary),
+        callSummary: cleanedCallSummary,
         hubspotLink: constructHubspotLink(recordId),
         status,
         bookingType,
@@ -384,5 +414,7 @@ export function toBookingInsert(
     notes: record.callSummary,
     transcription_status: null,
     import_batch_id: importBatchId || null,
+    contact_email: record.contactEmail || null,
+    contact_phone: record.contactPhone || null,
   };
 }

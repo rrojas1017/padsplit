@@ -99,6 +99,8 @@ export interface Booking {
   coachingAudioUrl?: string;
   coachingAudioGeneratedAt?: Date;
   callTypeId?: string;
+  contactEmail?: string | null;
+  contactPhone?: string | null;
 }
 
 export interface DailyMetrics {
