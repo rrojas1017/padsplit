@@ -1,59 +1,148 @@
 
-# Fix ElevenLabs Plan Check Function
+# Fix: Member Insights Analysis Stopping When Changing Views
 
-## Problem Summary
-The `check-elevenlabs-plan` edge function returns 401 because it calls the `/v1/user` endpoint, which isn't accessible with Workspace/Service Account API keys. Your key DOES work - the ElevenLabs logs show successful 200 responses to `/v1/voices` and `/v1/service-accounts`.
+## Problem Identified
 
-## Solution
-Update the `check-elevenlabs-plan` function to use an endpoint that's compatible with workspace/service account keys, such as `/v1/voices` or `/v1/user/subscription`.
+The `analyze-member-insights` edge function is being terminated when you navigate away from the page. The logs show:
+- 03:33:06 - "Sending data to AI for analysis..."
+- 03:33:33 - "shutdown" (27 seconds later, before AI could respond)
 
-## Implementation Steps
+The analysis for 600+ calls requires 1-3 minutes, but the function is killed mid-execution.
 
-### Step 1: Update the Edge Function
-Modify `supabase/functions/check-elevenlabs-plan/index.ts` to:
-1. Try the `/v1/user` endpoint first (for personal keys)
-2. If that fails with 401, fall back to `/v1/voices` or `/v1/user/subscription` endpoint
-3. Return useful information about the account status either way
+## Root Cause
 
-```text
-┌─────────────────────────────────────────────────────────────┐
-│                    check-elevenlabs-plan                    │
-├─────────────────────────────────────────────────────────────┤
-│  1. Try /v1/user endpoint                                   │
-│     └── Success? Return full subscription info              │
-│     └── 401 Error? Continue to fallback...                  │
-│                                                             │
-│  2. Fallback: Try /v1/voices endpoint                       │
-│     └── Success? Key is valid (workspace key)               │
-│     └── Return basic confirmation + note about key type     │
-│                                                             │
-│  3. Both fail? Report actual error                          │
-└─────────────────────────────────────────────────────────────┘
-```
+1. **Frontend awaits the response synchronously** - the `runAnalysis` function waits for the edge function to complete
+2. **Component unmounts on navigation** - when you change views, the React component unmounts and the fetch request is aborted
+3. **Edge function terminates** - without a client connection, the function shuts down
 
-### Step 2: Code Changes
-File: `supabase/functions/check-elevenlabs-plan/index.ts`
+## Solution: Background Task Pattern
 
-- Add a fallback request to `/v1/voices` when `/v1/user` returns 401
-- Return a clear message indicating whether it's a personal key or workspace key
-- Still return success=true if the key works for any endpoint
+Convert the analysis to run as a true background task that continues even if the user navigates away.
+
+### Changes Required
+
+**1. Update Edge Function to Use Background Tasks**
+
+Modify `analyze-member-insights` to:
+- Immediately return a response with a "processing" status
+- Use `EdgeRuntime.waitUntil()` to continue processing in the background
+- Create a status record the frontend can poll
+
+**2. Add Analysis Status Tracking**
+
+Create a simple status tracking mechanism in the `member_insights` table or a new table to track:
+- Analysis ID
+- Status: `processing` | `completed` | `failed`
+- Progress info (optional)
+
+**3. Update Frontend to Poll for Completion**
+
+Modify `MemberInsights.tsx` to:
+- Trigger analysis and receive an immediate response
+- Show a persistent status indicator (even if navigating away and back)
+- Poll for completion or use a toast notification
 
 ---
 
-## Technical Details
+## Technical Implementation
 
-### Why This Works
-- Workspace API keys and service account keys can access most ElevenLabs endpoints EXCEPT `/v1/user`
-- The `/v1/voices` endpoint is accessible with any valid key type
-- Your TTS and STT functionality will work regardless of key type
+### Edge Function Changes
 
-### Files Modified
-| File | Change |
-|------|--------|
-| `supabase/functions/check-elevenlabs-plan/index.ts` | Add fallback endpoint logic |
+```typescript
+// Immediate response with background processing
+Deno.serve(async (req) => {
+  // ... validation and setup ...
+  
+  // Create a pending insight record immediately
+  const { data: pendingInsight } = await supabase
+    .from('member_insights')
+    .insert({
+      analysis_period,
+      date_range_start,
+      date_range_end,
+      status: 'processing',  // New field
+      created_by
+    })
+    .select()
+    .single();
+  
+  // Start background processing
+  EdgeRuntime.waitUntil(processAnalysis(supabase, pendingInsight.id, ...));
+  
+  // Return immediately
+  return new Response(JSON.stringify({
+    success: true,
+    insight_id: pendingInsight.id,
+    status: 'processing',
+    message: 'Analysis started. You can navigate away - check back for results.'
+  }));
+});
+```
 
-### Expected Outcome
-After this change:
-- ✅ Diagnostic check will pass and confirm key validity
-- ✅ Will identify if using workspace vs personal key
-- ✅ TTS/STT functionality continues to work as expected
+### Frontend Changes
+
+```typescript
+const runAnalysis = async () => {
+  setIsAnalyzing(true);
+  try {
+    const { data, error } = await supabase.functions.invoke('analyze-member-insights', {...});
+    
+    if (data.status === 'processing') {
+      toast.info('Analysis started! This may take a few minutes. You can navigate away.');
+      // Start polling or just refresh on next page visit
+      pollForCompletion(data.insight_id);
+    }
+  } finally {
+    setIsAnalyzing(false);
+  }
+};
+
+const pollForCompletion = async (insightId: string) => {
+  // Poll every 10 seconds until complete
+  const interval = setInterval(async () => {
+    const { data } = await supabase
+      .from('member_insights')
+      .select('status, total_calls_analyzed')
+      .eq('id', insightId)
+      .single();
+    
+    if (data?.status === 'completed') {
+      clearInterval(interval);
+      toast.success(`Analysis complete! Analyzed ${data.total_calls_analyzed} calls`);
+      fetchInsights(); // Refresh the list
+    } else if (data?.status === 'failed') {
+      clearInterval(interval);
+      toast.error('Analysis failed');
+    }
+  }, 10000);
+};
+```
+
+### Database Migration
+
+Add a `status` column to the `member_insights` table:
+
+```sql
+ALTER TABLE member_insights 
+ADD COLUMN status text DEFAULT 'completed' 
+CHECK (status IN ('processing', 'completed', 'failed'));
+
+-- Mark existing records as completed
+UPDATE member_insights SET status = 'completed' WHERE status IS NULL;
+```
+
+---
+
+## Benefits
+
+1. **No more interrupted analysis** - The edge function continues running even if you navigate away
+2. **Better UX** - Users see immediate feedback and can continue working
+3. **Resilient** - Analysis completes regardless of browser state
+4. **Progress visibility** - Can check status on return to the page
+
+## Estimated Effort
+
+- Database migration: 1 minute
+- Edge function refactor: 10 minutes
+- Frontend polling logic: 10 minutes
+- Testing: 5 minutes
