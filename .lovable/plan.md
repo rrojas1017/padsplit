@@ -1,158 +1,128 @@
 
-# Reports Page Updates: Contact Name & Move-In Date Handling
+# Add Contact Email & Phone to Reports
 
 ## Overview
 
-Two terminology and data display issues need to be addressed on the Reports page:
-
-1. **"Member" → "Contact"**: The column currently shows "Member" but now includes both actual members and non-booking callers
-2. **Move-In Date on Non-Bookings**: All 3,214 non-booking records show a move-in date identical to the record date, which is meaningless and confusing
+Extract and display contact email and phone from HubSpot import data. The phone number extraction logic will be direction-aware:
+- **Outbound calls**: Capture the TO number (agent called the contact)
+- **Inbound calls**: Capture the FROM number (contact called the agent)
 
 ---
 
-## Root Cause Analysis
+## Implementation Steps
 
-The historical import (`hubspotCallParser.ts` line 376) sets move-in date equal to activity date for ALL records:
+### Step 1: Database Migration
+
+Add two new columns to the `bookings` table:
+
+```sql
+ALTER TABLE bookings 
+ADD COLUMN IF NOT EXISTS contact_email text,
+ADD COLUMN IF NOT EXISTS contact_phone text;
+```
+
+---
+
+### Step 2: Update HubSpot Parser
+
+**File: `src/utils/hubspotCallParser.ts`**
+
+Add direction-aware phone extraction:
 
 ```typescript
-move_in_date: record.activityDate.toISOString().split('T')[0],
+function extractPhoneFromNotes(notes: string, direction: string): string | null {
+  if (!notes) return null;
+  
+  // Pattern: "call was made from +1XXXXXXXXXX to +1YYYYYYYYYY"
+  const match = notes.match(/call was made from (\+?\d{10,14}) to (\+?\d{10,14})/i);
+  if (!match) return null;
+  
+  const fromNumber = match[1];
+  const toNumber = match[2];
+  
+  // Outbound: agent called TO the contact → return TO number
+  // Inbound: contact called FROM their phone → return FROM number
+  if (direction.toLowerCase().includes('outbound')) {
+    return toNumber;
+  } else {
+    return fromNumber;
+  }
+}
 ```
 
-This was a design decision because the database requires a `move_in_date` (NOT NULL constraint), but semantically non-booking calls don't have a move-in date.
+Update `ParsedCallRecord` interface to include `contactPhone`.
 
-**Database state:**
-| Status | Count | Move-In = Record Date | Has Meaningful Move-In |
-|--------|-------|----------------------|------------------------|
-| Non Booking | 3,214 | 3,214 (100%) | No |
-| Pending Move-In | 1,804 | 1,804 (100%) | Depends on data source |
+Update parsing loop to extract phone with direction awareness.
+
+Update `toBookingInsert()` to include both `contact_email` and `contact_phone`.
 
 ---
 
-## Solution
+### Step 3: Backfill Edge Function
 
-### Change 1: Column Header "Member" → "Contact"
+**New file: `supabase/functions/batch-enrich-contacts/index.ts`**
 
-Simple label update in the table header and CSV export.
-
-**Files affected:** `src/pages/Reports.tsx`
-
-| Location | Current | New |
-|----------|---------|-----|
-| Table header (line 666) | `label="Member"` | `label="Contact"` |
-| CSV export headers (line 228) | `'Member Name'` | `'Contact Name'` |
-
----
-
-### Change 2: Hide Move-In Date for Non-Booking Records
-
-Display logic update to show "—" or hide the date when the record status is "Non Booking".
-
-**Option A: Show dash for non-bookings**
-```text
-Record Date | Move-In Date | Contact | ...
-Jan 15, 2025 | —            | John Smith | Non Booking
-Jan 15, 2025 | Jan 20, 2025 | Jane Doe  | Pending Move-In
-```
-
-**Option B: Show "N/A" for non-bookings**
-```text
-Record Date | Move-In Date | Contact | ...  
-Jan 15, 2025 | N/A          | John Smith | Non Booking
-Jan 15, 2025 | Jan 20, 2025 | Jane Doe   | Pending Move-In
-```
-
-Recommendation: **Option A (dash)** - cleaner and takes less space.
+Process existing 5,163 imported records:
+1. Query records with null contact_email or contact_phone
+2. For each record:
+   - Extract email from member_name if it contains email pattern
+   - Extract phone from notes using direction-aware logic (check booking_type for Inbound/Outbound)
+3. Update bookings table
+4. 10-second pacing between batches
 
 ---
 
-### Change 3: Update CSV Export for Non-Bookings
+### Step 4: Update Types
 
-When exporting, leave the Move-In Date cell empty for non-booking records rather than outputting a meaningless date.
+**File: `src/types/index.ts`**
 
----
-
-## Implementation Details
-
-### Reports.tsx Updates
-
-1. **Line 666** - Update table header:
+Add to Booking interface:
 ```typescript
-// Before
-<SortableHeader column="memberName" label="Member" />
-
-// After
-<SortableHeader column="memberName" label="Contact" />
-```
-
-2. **Line 691-692** - Conditional move-in date display:
-```typescript
-// Before
-<td className="py-3 px-4 text-sm text-foreground">
-  {format(booking.moveInDate, 'MMM d, yyyy')}
-</td>
-
-// After
-<td className="py-3 px-4 text-sm text-foreground">
-  {booking.status === 'Non Booking' ? (
-    <span className="text-muted-foreground">—</span>
-  ) : (
-    format(booking.moveInDate, 'MMM d, yyyy')
-  )}
-</td>
-```
-
-3. **Lines 223-254** - Update CSV export:
-```typescript
-// Update headers
-const headers = [
-  'Record Date',
-  'Move-In Date',
-  'Contact Name',  // Changed from 'Member Name'
-  // ... rest unchanged
-];
-
-// Update row generation
-const rows = records.map(booking => [
-  format(booking.bookingDate, 'yyyy-MM-dd'),
-  booking.status === 'Non Booking' ? '' : format(booking.moveInDate, 'yyyy-MM-dd'),
-  booking.memberName,
-  // ... rest unchanged
-]);
+contactEmail?: string | null;
+contactPhone?: string | null;
 ```
 
 ---
 
-## Future Consideration (Not in This Change)
+### Step 5: Update Data Fetching
 
-The historical import parser could be updated to set `move_in_date` to NULL for non-bookings, but this would require:
-1. Database schema change to make `move_in_date` nullable
-2. Migration of existing data
-3. Updates throughout the application where `moveInDate` is assumed to exist
+**File: `src/hooks/useReportsData.ts`**
 
-This is a larger change that can be addressed separately if needed.
+Add `contact_email` and `contact_phone` to SELECT query and transform.
 
 ---
 
-## Files to Modify
+### Step 6: Update Reports Page
 
-| File | Changes |
-|------|---------|
-| `src/pages/Reports.tsx` | Update "Member" → "Contact" header, conditional move-in date display, CSV export updates |
+**File: `src/pages/Reports.tsx`**
+
+Add Email and Phone columns to table (after Contact):
+- Email: Clickable mailto link or "—"
+- Phone: Formatted with tel link or "—"
+
+Add phone formatting helper for display (XXX-XXX-XXXX format).
+
+Update CSV export to include Contact Email and Contact Phone columns.
 
 ---
 
-## Visual Result
+## Files to Create/Modify
 
-**Before:**
+| File | Action |
+|------|--------|
+| Database migration | CREATE |
+| `src/utils/hubspotCallParser.ts` | MODIFY |
+| `supabase/functions/batch-enrich-contacts/index.ts` | CREATE |
+| `src/types/index.ts` | MODIFY |
+| `src/hooks/useReportsData.ts` | MODIFY |
+| `src/pages/Reports.tsx` | MODIFY |
+
+---
+
+## Expected Result
+
 ```text
-Record Date   | Move-In Date  | Member       | Status
-Jan 15, 2025  | Jan 15, 2025  | John Smith   | Non Booking
-Jan 15, 2025  | Jan 20, 2025  | Jane Doe     | Pending Move-In
-```
-
-**After:**
-```text
-Record Date   | Move-In Date  | Contact      | Status
-Jan 15, 2025  | —             | John Smith   | Non Booking
-Jan 15, 2025  | Jan 20, 2025  | Jane Doe     | Pending Move-In
+Record Date | Move-In | Contact      | Email                | Phone        | Agent | ...
+Jan 23, 2026| —       | Keith Barnes | k7275062@gmail.com   | 463-280-7980 | Win   | ...
+Jan 23, 2026| —       | Tina Ross    | polarbabe67@gmail.com| 702-468-9613 | Win   | ...
 ```
