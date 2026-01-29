@@ -1,98 +1,59 @@
 
 
-# Fix Batch Record Count Limit
+# Fix Phone Number Import from HubSpot Call Notes
 
 ## Problem
 
-The "Existing Import Batches" section shows only **1,000 records** instead of the actual **5,018 records** because:
+Phone numbers aren't being imported because the parser can't find the call notes column. The current code looks for columns named "call summary" or "summary":
 
-1. The current code fetches individual rows: `supabase.from('bookings').select('import_batch_id, created_at')`
-2. Supabase has a **default limit of 1,000 rows** per query
-3. The code then counts rows in JavaScript, giving an inaccurate total
+```typescript
+callSummary: headers.findIndex(h => h.includes('call summary') || h.includes('summary')),
+```
 
-**Verified from database**: The actual counts are:
-- `IMPORT-20260129-002412`: **5,018 records**
-- `IMPORT-20260129-235838`: **145 records**
+But HubSpot exports use "Call and meeting notes" as the column name, so it returns -1 (not found), and no notes are captured.
+
+Since the phone number extraction relies on parsing text from the notes field (e.g., "call was made from +1XXXXXXXXXX to +1YYYYYYYYYY"), without notes there's no phone.
 
 ---
 
 ## Solution
 
-Create a database function (RPC) that uses `GROUP BY` and `COUNT(*)` directly in SQL, bypassing the row limit issue.
+Update the column matching in `hubspotCallParser.ts` to include "notes" as a search term:
+
+```typescript
+// Before
+callSummary: headers.findIndex(h => h.includes('call summary') || h.includes('summary')),
+
+// After  
+callSummary: headers.findIndex(h => 
+  h.includes('call summary') || 
+  h.includes('meeting notes') || 
+  h.includes('notes')
+),
+```
 
 ---
 
 ## Implementation
 
-### Step 1: Database Migration
+### Update Parser
 
-Create an RPC function that returns accurate batch counts:
+**File: `src/utils/hubspotCallParser.ts`**
 
-```sql
-CREATE OR REPLACE FUNCTION get_import_batch_counts()
-RETURNS TABLE (
-  import_batch_id text,
-  record_count bigint,
-  imported_at timestamptz
-) AS $$
-BEGIN
-  RETURN QUERY
-  SELECT 
-    b.import_batch_id,
-    COUNT(*)::bigint as record_count,
-    MIN(b.created_at) as imported_at
-  FROM bookings b
-  WHERE b.import_batch_id IS NOT NULL
-  GROUP BY b.import_batch_id
-  ORDER BY MIN(b.created_at) DESC;
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
-```
+Modify line 294 to match more column name variations:
 
-### Step 2: Update Historical Import Page
-
-**File: `src/pages/HistoricalImport.tsx`**
-
-Replace the current `fetchExistingBatches` function:
-
-**Before** (hitting 1,000 row limit):
-```typescript
-const { data, error } = await supabase
-  .from('bookings')
-  .select('import_batch_id, created_at')
-  .not('import_batch_id', 'is', null);
-// Then count in JavaScript...
-```
-
-**After** (accurate count via RPC):
-```typescript
-const { data, error } = await supabase.rpc('get_import_batch_counts');
-
-if (error) throw error;
-
-const batches: ExistingBatch[] = (data || []).map((row: any) => ({
-  import_batch_id: row.import_batch_id,
-  record_count: Number(row.record_count),
-  imported_at: row.imported_at,
-}));
-
-setExistingBatches(batches);
-```
+| Search Term | Matches |
+|-------------|---------|
+| `call summary` | "Call Summary" |
+| `meeting notes` | "Call and meeting notes" |
+| `notes` | "Notes", "Call notes" |
 
 ---
 
-## Files to Create/Modify
+## After the Fix
 
-| File | Action |
-|------|--------|
-| Database migration (RPC function) | CREATE |
-| `src/pages/HistoricalImport.tsx` | MODIFY (lines 80-119) |
-
----
-
-## Expected Result
-
-After the fix, the batch display will show:
-- `IMPORT-20260129-002412`: **5,018 records** (not 1,000)
-- `IMPORT-20260129-235838`: **145 records**
+1. Re-import the HubSpot CSV
+2. The notes column will be properly mapped
+3. Phone numbers will be extracted from the notes text
+4. Both Email and Phone columns will be populated in Reports
 
