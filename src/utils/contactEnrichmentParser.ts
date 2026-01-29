@@ -44,16 +44,29 @@ function detectColumns(headers: string[]): { nameCol: number; emailCol: number; 
   
   for (let i = 0; i < lowerHeaders.length; i++) {
     const h = lowerHeaders[i];
+    
+    // Match "contact name", "name", "contact"
     if (nameCol === -1 && (h.includes('name') || h === 'contact')) {
       nameCol = i;
     }
+    
+    // Match "email", "e-mail"
     if (emailCol === -1 && h.includes('email')) {
       emailCol = i;
     }
+    
+    // Match "phone number", "phone", "mobile", "tel"
     if (phoneCol === -1 && (h.includes('phone') || h.includes('mobile') || h.includes('tel'))) {
       phoneCol = i;
     }
   }
+  
+  // Fallback: assume standard order if detection fails
+  if (nameCol === -1 && headers.length >= 1) nameCol = 0;
+  if (emailCol === -1 && headers.length >= 2) emailCol = 1;
+  if (phoneCol === -1 && headers.length >= 3) phoneCol = 2;
+  
+  console.log('Detected columns:', { nameCol, emailCol, phoneCol, headers: lowerHeaders });
   
   return { nameCol, emailCol, phoneCol };
 }
@@ -63,12 +76,19 @@ function detectColumns(headers: string[]): { nameCol: number; emailCol: number; 
  */
 export function parseCSV(content: string): ContactParseResult {
   const lines = content.split(/\r?\n/).filter(line => line.trim());
+  
+  console.log('CSV parsing - Total lines:', lines.length);
+  console.log('First line (headers):', lines[0]);
+  if (lines[1]) console.log('Second line (first data):', lines[1]);
+  
   if (lines.length === 0) {
     return { contacts: [], totalRows: 0, withPhone: 0, withEmail: 0 };
   }
   
-  // Parse header row
-  const headers = lines[0].split(',').map(h => h.trim().replace(/^"|"$/g, ''));
+  // Parse header row - handle quoted headers
+  const headers = parseCSVRow(lines[0]);
+  console.log('Parsed headers:', headers);
+  
   const { nameCol, emailCol, phoneCol } = detectColumns(headers);
   
   const contacts: ContactRecord[] = [];
