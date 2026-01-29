@@ -1,4 +1,3 @@
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
@@ -50,13 +49,11 @@ async function logApiCost(supabase: any, params: {
         cost += params.character_count * 0.0003;
       }
     } else if (params.service_provider === 'lovable_ai') {
-      // Model-aware pricing for Lovable AI
       const model = params.metadata?.model || 'google/gemini-2.5-flash';
-      let inputRate = 0.0001;  // Flash default: ~$0.0001 per 1K input
-      let outputRate = 0.0003; // Flash default: ~$0.0003 per 1K output
+      let inputRate = 0.0001;
+      let outputRate = 0.0003;
       
       if (model.includes('gemini-2.5-pro')) {
-        // Gemini Pro: ~$0.00125 per 1K input, ~$0.005 per 1K output
         inputRate = 0.00125;
         outputRate = 0.005;
       }
@@ -76,25 +73,22 @@ async function logApiCost(supabase: any, params: {
   }
 }
 
-serve(async (req) => {
-  if (req.method === 'OPTIONS') {
-    return new Response(null, { headers: corsHeaders });
-  }
-
+// Background processing function
+async function processAnalysis(
+  supabaseUrl: string,
+  supabaseServiceKey: string,
+  lovableApiKey: string,
+  insightId: string,
+  analysis_period: string,
+  date_range_start: string,
+  date_range_end: string
+) {
+  const supabase = createClient(supabaseUrl, supabaseServiceKey);
+  
   try {
-    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-    const lovableApiKey = Deno.env.get('LOVABLE_API_KEY');
+    console.log(`[Background] Starting analysis for insight ${insightId}`);
     
-    const supabase = createClient(supabaseUrl, supabaseServiceKey);
-
-    // Parse request body
-    const { analysis_period = 'manual', date_range_start, date_range_end, created_by } = await req.json();
-
-    console.log(`Starting ${analysis_period} member insights analysis from ${date_range_start} to ${date_range_end}`);
-
     // Fetch all bookings with completed transcriptions in date range
-    // Join with booking_transcriptions table where call_key_points are stored
     const { data: bookingsRaw, error: bookingsError } = await supabase
       .from('bookings')
       .select(`
@@ -111,39 +105,33 @@ serve(async (req) => {
       .lte('booking_date', date_range_end);
 
     if (bookingsError) {
-      console.error('Error fetching bookings:', bookingsError);
+      console.error('[Background] Error fetching bookings:', bookingsError);
       throw new Error(`Failed to fetch bookings: ${bookingsError.message}`);
     }
 
-    console.log(`Raw bookings fetched: ${bookingsRaw?.length || 0}`);
-    if (bookingsRaw && bookingsRaw.length > 0) {
-      console.log('Sample booking structure:', JSON.stringify(bookingsRaw[0], null, 2));
-    }
+    console.log(`[Background] Raw bookings fetched: ${bookingsRaw?.length || 0}`);
 
     // Filter to only include bookings with call_key_points
-    // Note: booking_transcriptions is a 1-to-1 relationship, so it returns an object (or array with single item)
     const bookings = (bookingsRaw || []).filter((b: any) => {
-      // Handle both array and object responses from Supabase
       const transcription = Array.isArray(b.booking_transcriptions) 
         ? b.booking_transcriptions[0] 
         : b.booking_transcriptions;
       return transcription?.call_key_points;
     }) as BookingWithTranscription[];
 
-    console.log(`Filtered bookings with call_key_points: ${bookings.length}`);
+    console.log(`[Background] Filtered bookings with call_key_points: ${bookings.length}`);
 
     if (bookings.length === 0) {
-      console.log('No transcribed bookings found in date range');
-      return new Response(JSON.stringify({ 
-        success: false, 
-        message: 'No transcribed calls found in the selected date range' 
-      }), {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: 400
-      });
+      console.log('[Background] No transcribed bookings found in date range');
+      await supabase
+        .from('member_insights')
+        .update({ 
+          status: 'failed', 
+          error_message: 'No transcribed calls found in the selected date range' 
+        })
+        .eq('id', insightId);
+      return;
     }
-
-    console.log(`Found ${bookings.length} transcribed bookings to analyze`);
 
     // Aggregate all call data
     const allConcerns: string[] = [];
@@ -152,12 +140,9 @@ serve(async (req) => {
     const sentimentCounts = { positive: 0, neutral: 0, negative: 0 };
     const readinessCounts = { high: 0, medium: 0, low: 0 };
     const marketData: Record<string, { concerns: string[], objections: string[], preferences: string[], count: number }> = {};
-
-    // Track member names for journey insights
     const memberCallCounts: Record<string, number> = {};
 
     for (const booking of bookings) {
-      // Handle both array and object responses
       const transcription = Array.isArray(booking.booking_transcriptions)
         ? booking.booking_transcriptions[0]
         : booking.booking_transcriptions;
@@ -191,7 +176,6 @@ serve(async (req) => {
       }
     }
 
-    // Calculate sentiment percentages
     const totalCalls = bookings.length;
     const sentimentDistribution = {
       positive: Math.round((sentimentCounts.positive / totalCalls) * 100),
@@ -279,9 +263,8 @@ IMPORTANT:
 - Market breakdown should only include markets with 3+ calls
 - Recommendations should be specific and measurable`;
 
-    console.log('Sending data to AI for analysis...');
+    console.log('[Background] Sending data to AI for analysis...');
 
-    // Call Lovable AI Gateway
     const aiResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -300,7 +283,7 @@ IMPORTANT:
 
     if (!aiResponse.ok) {
       const errorText = await aiResponse.text();
-      console.error('AI API error:', aiResponse.status, errorText);
+      console.error('[Background] AI API error:', aiResponse.status, errorText);
       throw new Error(`AI analysis failed: ${aiResponse.status}`);
     }
 
@@ -323,7 +306,7 @@ IMPORTANT:
       }
     });
     
-    console.log('AI response received, parsing...');
+    console.log('[Background] AI response received, parsing...');
 
     // Parse AI response
     let parsedAnalysis;
@@ -335,8 +318,7 @@ IMPORTANT:
         throw new Error('No JSON found in response');
       }
     } catch (parseError) {
-      console.error('Failed to parse AI response:', parseError);
-      console.log('Raw response:', analysisText);
+      console.error('[Background] Failed to parse AI response:', parseError);
       parsedAnalysis = {
         pain_points: [],
         payment_insights: [],
@@ -364,13 +346,10 @@ IMPORTANT:
       }];
     }
 
-    // Insert analysis results into database
-    const { data: insertedInsight, error: insertError } = await supabase
+    // Update the insight record with results
+    const { error: updateError } = await supabase
       .from('member_insights')
-      .insert({
-        analysis_period,
-        date_range_start,
-        date_range_end,
+      .update({
         total_calls_analyzed: totalCalls,
         pain_points: parsedAnalysis.pain_points || [],
         payment_insights: parsedAnalysis.payment_insights || [],
@@ -384,23 +363,90 @@ IMPORTANT:
         ai_recommendations: parsedAnalysis.ai_recommendations || [],
         member_journey_insights: parsedAnalysis.member_journey_insights || [],
         raw_analysis: analysisText,
+        status: 'completed'
+      })
+      .eq('id', insightId);
+
+    if (updateError) {
+      console.error('[Background] Error updating insights:', updateError);
+      throw new Error(`Failed to save insights: ${updateError.message}`);
+    }
+
+    console.log(`[Background] Analysis completed successfully. ID: ${insightId}, Calls: ${totalCalls}`);
+
+  } catch (error) {
+    console.error('[Background] Error in analysis:', error);
+    
+    // Update status to failed
+    const supabase = createClient(supabaseUrl, supabaseServiceKey);
+    await supabase
+      .from('member_insights')
+      .update({ 
+        status: 'failed', 
+        error_message: error instanceof Error ? error.message : 'Unknown error' 
+      })
+      .eq('id', insightId);
+  }
+}
+
+Deno.serve(async (req) => {
+  if (req.method === 'OPTIONS') {
+    return new Response(null, { headers: corsHeaders });
+  }
+
+  try {
+    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    const lovableApiKey = Deno.env.get('LOVABLE_API_KEY')!;
+    
+    const supabase = createClient(supabaseUrl, supabaseServiceKey);
+
+    // Parse request body
+    const { analysis_period = 'manual', date_range_start, date_range_end, created_by } = await req.json();
+
+    console.log(`Starting ${analysis_period} member insights analysis from ${date_range_start} to ${date_range_end}`);
+
+    // Create a pending insight record immediately
+    const { data: pendingInsight, error: insertError } = await supabase
+      .from('member_insights')
+      .insert({
+        analysis_period,
+        date_range_start,
+        date_range_end,
+        status: 'processing',
+        total_calls_analyzed: 0,
         created_by
       })
       .select()
       .single();
 
     if (insertError) {
-      console.error('Error inserting insights:', insertError);
-      throw new Error(`Failed to save insights: ${insertError.message}`);
+      console.error('Error creating pending insight:', insertError);
+      throw new Error(`Failed to create insight record: ${insertError.message}`);
     }
 
-    console.log(`Member insights analysis completed successfully. ID: ${insertedInsight.id}`);
+    console.log(`Created pending insight record: ${pendingInsight.id}`);
 
+    // Start background processing using EdgeRuntime.waitUntil
+    // @ts-ignore - EdgeRuntime is available in Deno Deploy
+    EdgeRuntime.waitUntil(
+      processAnalysis(
+        supabaseUrl,
+        supabaseServiceKey,
+        lovableApiKey,
+        pendingInsight.id,
+        analysis_period,
+        date_range_start,
+        date_range_end
+      )
+    );
+
+    // Return immediately with processing status
     return new Response(JSON.stringify({ 
       success: true, 
-      insight_id: insertedInsight.id,
-      total_calls_analyzed: totalCalls,
-      message: `Successfully analyzed ${totalCalls} calls`
+      insight_id: pendingInsight.id,
+      status: 'processing',
+      message: 'Analysis started. You can navigate away - check back for results.'
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });

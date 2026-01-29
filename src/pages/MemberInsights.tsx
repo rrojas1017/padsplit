@@ -1,8 +1,9 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePageTracking } from '@/hooks/usePageTracking';
 import { supabase } from '@/integrations/supabase/client';
 import { deduplicatedQuery } from '@/utils/databaseCircuitBreaker';
+import { useMemberInsightsPolling } from '@/hooks/useMemberInsightsPolling';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -37,6 +38,7 @@ interface MemberInsight {
   ai_recommendations: any[];
   member_journey_insights: any[];
   created_at: string;
+  status?: 'processing' | 'completed' | 'failed';
 }
 
 type DateRangeOption = 'last7days' | 'last30days' | 'thisMonth' | 'last3months' | 'allTime';
@@ -52,8 +54,25 @@ const MemberInsights = () => {
   const [dateRange, setDateRange] = useState<DateRangeOption>('last30days');
   const [dbSlowMode, setDbSlowMode] = useState(false);
 
-  useEffect(() => {
+  const fetchInsightsCallback = useCallback(() => {
     fetchInsights();
+    setIsAnalyzing(false);
+  }, []);
+
+  const { startPolling, checkExistingAnalysis } = useMemberInsightsPolling({
+    onComplete: fetchInsightsCallback
+  });
+
+  useEffect(() => {
+    const init = async () => {
+      await fetchInsights();
+      // Check if there's an analysis in progress
+      const existingId = await checkExistingAnalysis();
+      if (existingId) {
+        setIsAnalyzing(true);
+      }
+    };
+    init();
   }, []);
 
   // Phase 1: Fetch only lightweight metadata for the list
@@ -62,7 +81,7 @@ const MemberInsights = () => {
       const result = await deduplicatedQuery('member_insights_list', async () => {
         return await supabase
           .from('member_insights')
-          .select('id, analysis_period, date_range_start, date_range_end, total_calls_analyzed, created_at')
+          .select('id, analysis_period, date_range_start, date_range_end, total_calls_analyzed, created_at, status')
           .order('created_at', { ascending: false })
           .limit(10);
       });
@@ -90,7 +109,17 @@ const MemberInsights = () => {
         market_breakdown: {},
         ai_recommendations: [],
         member_journey_insights: [],
+        status: d.status || 'completed',
       })) as MemberInsight[];
+      
+      setInsights(listData);
+      
+      // Check if the most recent is still processing
+      if (listData.length > 0 && listData[0].status === 'processing') {
+        setIsAnalyzing(true);
+      } else {
+        setIsAnalyzing(false);
+      }
       
       setInsights(listData);
       
@@ -199,16 +228,22 @@ const MemberInsights = () => {
 
       if (error) throw error;
 
-      if (data.success) {
+      if (data.status === 'processing') {
+        toast.info('Analysis started! This may take 1-3 minutes. You can navigate away safely.');
+        startPolling(data.insight_id);
+        // Refresh the list to show the processing entry
+        await fetchInsights();
+      } else if (data.success) {
         toast.success(`Analysis complete! Analyzed ${data.total_calls_analyzed} calls`);
+        setIsAnalyzing(false);
         await fetchInsights();
       } else {
         toast.error(data.message || 'Analysis failed');
+        setIsAnalyzing(false);
       }
     } catch (error) {
       console.error('Error running analysis:', error);
-      toast.error('Failed to run analysis');
-    } finally {
+      toast.error('Failed to start analysis');
       setIsAnalyzing(false);
     }
   };
