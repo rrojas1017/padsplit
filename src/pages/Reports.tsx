@@ -1,12 +1,13 @@
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
-import { useBookings } from '@/contexts/BookingsContext';
 import { usePageTracking } from '@/hooks/usePageTracking';
 import { useAuth } from '@/contexts/AuthContext';
 import { useAgents } from '@/contexts/AgentsContext';
+import { useBookings } from '@/contexts/BookingsContext';
+import { useReportsData, ReportsFilters, ReportsPagination, ReportsSorting, SortColumn, SortDirection } from '@/hooks/useReportsData';
 import { Button } from '@/components/ui/button';
-import { Download, Search, PlusCircle, Pencil, ChevronDown, Building2, User, MessageSquare, Tag, CheckCircle, RotateCcw, ArrowUp, ArrowDown, ArrowUpDown, X, ExternalLink, Phone, UserCircle, Headphones, FileText, Loader2, MoreHorizontal, Clock, CalendarX, XCircle, Ban, AlertTriangle } from 'lucide-react';
+import { Download, Search, PlusCircle, Pencil, ChevronDown, Building2, User, MessageSquare, Tag, CheckCircle, RotateCcw, ArrowUp, ArrowDown, ArrowUpDown, X, ExternalLink, Phone, UserCircle, Headphones, FileText, Loader2, MoreHorizontal, Clock, CalendarX, XCircle, Ban, AlertTriangle, Package } from 'lucide-react';
 import { Input } from '@/components/ui/input';
-import { format, startOfDay, endOfDay, isWithinInterval } from 'date-fns';
+import { format, startOfDay, endOfDay } from 'date-fns';
 import { cn } from '@/lib/utils';
 import { useNavigate } from 'react-router-dom';
 import { useState, useMemo, useEffect } from 'react';
@@ -30,6 +31,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { DateRangePicker } from '@/components/dashboard/DateRangePicker';
+import { Skeleton } from '@/components/ui/skeleton';
 
 type Site = {
   id: string;
@@ -40,9 +42,6 @@ interface DateRange {
   from: Date | undefined;
   to: Date | undefined;
 }
-
-type SortColumn = 'bookingDate' | 'moveInDate' | 'memberName' | 'agentName' | 'market' | 'bookingType' | 'status' | 'communicationMethod' | null;
-type SortDirection = 'asc' | 'desc';
 
 const statusOptions = [
   { label: 'All Statuses', value: 'all' },
@@ -71,14 +70,14 @@ const communicationMethodOptions = [
 ];
 
 const rebookingFilterOptions = [
-  { label: 'All Bookings', value: 'all' },
+  { label: 'All Records', value: 'all' },
   { label: 'New Bookings Only', value: 'new' },
   { label: 'Rebookings Only', value: 'rebooking' },
 ];
 
 export default function Reports() {
   usePageTracking('view_reports');
-  const { bookings, refreshBookings, updateBooking } = useBookings();
+  const { updateBooking } = useBookings();
   const { user } = useAuth();
   const { agents } = useAgents();
   const navigate = useNavigate();
@@ -90,15 +89,18 @@ export default function Reports() {
   // Sites from Supabase
   const [sites, setSites] = useState<Site[]>([]);
 
-  // Filter states - date ranges
-  const [bookingDateRange, setBookingDateRange] = useState<DateRange>({
-    from: startOfDay(new Date()),
-    to: endOfDay(new Date()),
+  // Filter states - date ranges (default to "All Time" - undefined)
+  const [recordDateRange, setRecordDateRange] = useState<DateRange>({
+    from: undefined,
+    to: undefined,
   });
   const [moveInDateRange, setMoveInDateRange] = useState<DateRange>({
     from: undefined,
     to: undefined,
   });
+
+  // Import batch filter
+  const [importBatchFilter, setImportBatchFilter] = useState('all');
 
   // Other filter states
   const [siteFilter, setSiteFilter] = useState('all');
@@ -106,13 +108,56 @@ export default function Reports() {
   const [typeFilter, setTypeFilter] = useState('all');
   const [methodFilter, setMethodFilter] = useState('all');
   const [agentFilter, setAgentFilter] = useState('all');
-  const [rebookingFilter, setRebookingFilter] = useState('all');
+  const [rebookingFilter, setRebookingFilter] = useState<'all' | 'new' | 'rebooking'>('all');
   const [searchQuery, setSearchQuery] = useState('');
+
+  // Sorting (primary only for server-side)
+  const [sortColumn, setSortColumn] = useState<SortColumn>('bookingDate');
+  const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
+
+  // Pagination
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState(50);
+
+  // Build filters object for hook
+  const filters: ReportsFilters = useMemo(() => ({
+    recordDateRange,
+    moveInDateRange,
+    importBatchFilter,
+    siteId: siteFilter,
+    status: statusFilter,
+    bookingType: typeFilter,
+    communicationMethod: methodFilter,
+    agentId: agentFilter,
+    rebookingFilter,
+    searchQuery,
+  }), [recordDateRange, moveInDateRange, importBatchFilter, siteFilter, statusFilter, typeFilter, methodFilter, agentFilter, rebookingFilter, searchQuery]);
+
+  const pagination: ReportsPagination = useMemo(() => ({
+    page: currentPage,
+    pageSize: itemsPerPage,
+  }), [currentPage, itemsPerPage]);
+
+  const sorting: ReportsSorting = useMemo(() => ({
+    column: sortColumn,
+    direction: sortDirection,
+  }), [sortColumn, sortDirection]);
+
+  // Use the server-side pagination hook
+  const { 
+    records, 
+    totalCount, 
+    isLoading, 
+    importBatches, 
+    manualRecordCount,
+    refetch 
+  } = useReportsData(filters, pagination, sorting);
 
   // Clear all filters
   const clearAllFilters = () => {
-    setBookingDateRange({ from: startOfDay(new Date()), to: endOfDay(new Date()) });
+    setRecordDateRange({ from: undefined, to: undefined });
     setMoveInDateRange({ from: undefined, to: undefined });
+    setImportBatchFilter('all');
     setSiteFilter('all');
     setStatusFilter('all');
     setTypeFilter('all');
@@ -120,51 +165,31 @@ export default function Reports() {
     setAgentFilter('all');
     setRebookingFilter('all');
     setSearchQuery('');
+    setCurrentPage(1);
   };
 
   const hasActiveFilters = 
+    recordDateRange.from || recordDateRange.to ||
     moveInDateRange.from || moveInDateRange.to ||
+    importBatchFilter !== 'all' ||
     siteFilter !== 'all' || statusFilter !== 'all' || 
     typeFilter !== 'all' || methodFilter !== 'all' || 
     agentFilter !== 'all' || rebookingFilter !== 'all' || searchQuery !== '';
 
-  // Sorting (primary and secondary)
-  const [sortColumn, setSortColumn] = useState<SortColumn>('bookingDate');
-  const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
-  const [secondarySortColumn, setSecondarySortColumn] = useState<SortColumn>(null);
-  const [secondarySortDirection, setSecondarySortDirection] = useState<SortDirection>('asc');
-
-  const handleSort = (column: SortColumn, isShiftClick: boolean = false) => {
-    if (isShiftClick && sortColumn && column !== sortColumn) {
-      // Shift+click: set secondary sort
-      if (secondarySortColumn === column) {
-        setSecondarySortDirection(prev => prev === 'asc' ? 'desc' : 'asc');
-      } else {
-        setSecondarySortColumn(column);
-        setSecondarySortDirection(column === 'bookingDate' || column === 'moveInDate' ? 'desc' : 'asc');
-      }
+  const handleSort = (column: SortColumn) => {
+    if (sortColumn === column) {
+      setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc');
     } else {
-      // Regular click: set primary sort
-      if (sortColumn === column) {
-        setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc');
-      } else {
-        setSortColumn(column);
-        setSortDirection(column === 'bookingDate' || column === 'moveInDate' ? 'desc' : 'asc');
-        // Clear secondary if it's the same as new primary
-        if (secondarySortColumn === column) {
-          setSecondarySortColumn(null);
-        }
-      }
+      setSortColumn(column);
+      setSortDirection(column === 'bookingDate' || column === 'moveInDate' ? 'desc' : 'asc');
     }
+    setCurrentPage(1); // Reset to first page on sort change
   };
 
-  const clearSecondarySort = () => {
-    setSecondarySortColumn(null);
-  };
-
-  // Pagination
-  const [currentPage, setCurrentPage] = useState(1);
-  const [itemsPerPage, setItemsPerPage] = useState(20);
+  // Reset to page 1 when filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [recordDateRange, moveInDateRange, importBatchFilter, siteFilter, statusFilter, typeFilter, methodFilter, agentFilter, searchQuery, rebookingFilter]);
 
   // Fetch sites from Supabase
   useEffect(() => {
@@ -190,131 +215,14 @@ export default function Reports() {
     return false;
   };
 
-  // Filter bookings
-  const filteredBookings = useMemo(() => {
-    return bookings.filter(booking => {
-      // Booking date range filter
-      if (bookingDateRange.from && bookingDateRange.to) {
-        const bookingDate = new Date(booking.bookingDate);
-        if (!isWithinInterval(bookingDate, { 
-          start: startOfDay(bookingDateRange.from), 
-          end: endOfDay(bookingDateRange.to) 
-        })) {
-          return false;
-        }
-      }
-
-      // Move-in date range filter
-      if (moveInDateRange.from && moveInDateRange.to) {
-        const moveInDate = new Date(booking.moveInDate);
-        if (!isWithinInterval(moveInDate, { 
-          start: startOfDay(moveInDateRange.from), 
-          end: endOfDay(moveInDateRange.to) 
-        })) {
-          return false;
-        }
-      }
-
-      // Site filter
-      if (siteFilter !== 'all') {
-        const agent = agents.find(a => a.id === booking.agentId);
-        if (agent?.siteId !== siteFilter) return false;
-      }
-
-      // Status filter
-      if (statusFilter !== 'all' && booking.status !== statusFilter) return false;
-
-      // Type filter
-      if (typeFilter !== 'all' && booking.bookingType !== typeFilter) return false;
-
-      // Method filter
-      if (methodFilter !== 'all' && booking.communicationMethod !== methodFilter) return false;
-
-      // Agent filter
-      if (agentFilter !== 'all' && booking.agentId !== agentFilter) return false;
-
-      // Rebooking filter
-      if (rebookingFilter === 'new' && booking.isRebooking) return false;
-      if (rebookingFilter === 'rebooking' && !booking.isRebooking) return false;
-
-      // Search filter
-      if (searchQuery) {
-        const query = searchQuery.toLowerCase();
-        const agentName = getAgentName(agents, booking.agentId);
-        const matchesMember = booking.memberName.toLowerCase().includes(query);
-        const matchesAgent = agentName.toLowerCase().includes(query);
-        const matchesCity = booking.marketCity?.toLowerCase().includes(query);
-        const matchesState = booking.marketState?.toLowerCase().includes(query);
-        if (!matchesMember && !matchesAgent && !matchesCity && !matchesState) return false;
-      }
-
-      return true;
-    });
-  }, [bookings, bookingDateRange, moveInDateRange, siteFilter, statusFilter, typeFilter, methodFilter, agentFilter, rebookingFilter, searchQuery, agents]);
-
-  // Helper to get sort value for a booking by column
-  const getSortValue = (booking: typeof filteredBookings[0], column: SortColumn): string | number => {
-    switch (column) {
-      case 'bookingDate':
-        return new Date(booking.bookingDate).getTime();
-      case 'moveInDate':
-        return new Date(booking.moveInDate).getTime();
-      case 'memberName':
-        return booking.memberName.toLowerCase();
-      case 'agentName':
-        return getAgentName(agents, booking.agentId).toLowerCase();
-      case 'market':
-        return `${booking.marketCity || ''} ${booking.marketState || ''}`.toLowerCase();
-      case 'bookingType':
-        return booking.bookingType.toLowerCase();
-      case 'status':
-        return booking.status.toLowerCase();
-      case 'communicationMethod':
-        return (booking.communicationMethod || '').toLowerCase();
-      default:
-        return 0;
-    }
-  };
-
-  // Sort bookings (with primary and secondary sort)
-  const sortedBookings = useMemo(() => {
-    if (!sortColumn) return filteredBookings;
-
-    return [...filteredBookings].sort((a, b) => {
-      // Primary sort
-      const aValue = getSortValue(a, sortColumn);
-      const bValue = getSortValue(b, sortColumn);
-
-      if (aValue < bValue) return sortDirection === 'asc' ? -1 : 1;
-      if (aValue > bValue) return sortDirection === 'asc' ? 1 : -1;
-
-      // Secondary sort (when primary values are equal)
-      if (secondarySortColumn) {
-        const aSecondary = getSortValue(a, secondarySortColumn);
-        const bSecondary = getSortValue(b, secondarySortColumn);
-
-        if (aSecondary < bSecondary) return secondarySortDirection === 'asc' ? -1 : 1;
-        if (aSecondary > bSecondary) return secondarySortDirection === 'asc' ? 1 : -1;
-      }
-
-      return 0;
-    });
-  }, [filteredBookings, sortColumn, sortDirection, secondarySortColumn, secondarySortDirection]);
-
   // Pagination calculations
-  const totalPages = Math.ceil(sortedBookings.length / itemsPerPage);
+  const totalPages = Math.ceil(totalCount / itemsPerPage);
   const startIndex = (currentPage - 1) * itemsPerPage;
-  const paginatedBookings = sortedBookings.slice(startIndex, startIndex + itemsPerPage);
-
-  // Reset to page 1 when filters or sort change
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [bookingDateRange, moveInDateRange, siteFilter, statusFilter, typeFilter, methodFilter, agentFilter, searchQuery, sortColumn, sortDirection, secondarySortColumn, secondarySortDirection]);
 
   // Export CSV
   const exportCSV = () => {
     const headers = [
-      'Booking Date',
+      'Record Date',
       'Move-In Date',
       'Member Name',
       'Agent',
@@ -329,7 +237,7 @@ export default function Reports() {
       'Admin Profile Link',
     ];
 
-    const rows = filteredBookings.map(booking => [
+    const rows = records.map(booking => [
       format(booking.bookingDate, 'yyyy-MM-dd'),
       format(booking.moveInDate, 'yyyy-MM-dd'),
       booking.memberName,
@@ -353,7 +261,7 @@ export default function Reports() {
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement('a');
     link.href = URL.createObjectURL(blob);
-    link.download = `bookings-report-${format(new Date(), 'yyyy-MM-dd')}.csv`;
+    link.download = `records-report-${format(new Date(), 'yyyy-MM-dd')}.csv`;
     link.click();
   };
 
@@ -369,28 +277,30 @@ export default function Reports() {
 
   const selectedSiteLabel = siteFilter === 'all' ? 'All Sites' : sites.find(s => s.id === siteFilter)?.name || 'All Sites';
 
+  // Get import batch label
+  const getImportBatchLabel = () => {
+    if (importBatchFilter === 'all') return 'All Records';
+    if (importBatchFilter === 'manual') return `Manual Entries (${manualRecordCount.toLocaleString()})`;
+    const batch = importBatches.find(b => b.id === importBatchFilter);
+    if (batch) return `${batch.id} (${batch.count.toLocaleString()})`;
+    return 'All Records';
+  };
+
   // Sortable header component
   const SortableHeader = ({ column, label }: { column: SortColumn; label: string }) => {
     const isPrimary = sortColumn === column;
-    const isSecondary = secondarySortColumn === column;
     
     return (
       <th
         className="text-left py-3 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider cursor-pointer hover:text-foreground transition-colors group select-none"
-        onClick={(e) => handleSort(column, e.shiftKey)}
-        title={isPrimary ? "Primary sort" : isSecondary ? "Secondary sort (click to change)" : "Click to sort, Shift+click for secondary sort"}
+        onClick={() => handleSort(column)}
+        title="Click to sort"
       >
         <div className="flex items-center gap-1">
           {label}
           {isPrimary ? (
             <span className="flex items-center">
               {sortDirection === 'asc' ? <ArrowUp className="w-3 h-3" /> : <ArrowDown className="w-3 h-3" />}
-              <span className="text-[10px] ml-0.5 text-primary font-bold">1</span>
-            </span>
-          ) : isSecondary ? (
-            <span className="flex items-center text-muted-foreground">
-              {secondarySortDirection === 'asc' ? <ArrowUp className="w-3 h-3" /> : <ArrowDown className="w-3 h-3" />}
-              <span className="text-[10px] ml-0.5 font-bold">2</span>
             </span>
           ) : (
             <ArrowUpDown className="w-3 h-3 opacity-0 group-hover:opacity-50" />
@@ -400,32 +310,52 @@ export default function Reports() {
     );
   };
 
-  // Summary statistics
+  // Summary statistics (computed from server count, not records)
   const summaryStats = useMemo(() => {
-    const total = filteredBookings.length;
-    const pendingMoveIn = filteredBookings.filter(b => b.status === 'Pending Move-In').length;
-    const movedIn = filteredBookings.filter(b => b.status === 'Moved In').length;
-    const memberRejected = filteredBookings.filter(b => b.status === 'Member Rejected').length;
-    const noShowCancelled = filteredBookings.filter(b => b.status === 'No Show' || b.status === 'Cancelled').length;
-    const postponed = filteredBookings.filter(b => b.status === 'Postponed').length;
-    const nonBooking = filteredBookings.filter(b => b.status === 'Non Booking').length;
-    const rebookings = filteredBookings.filter(b => b.isRebooking).length;
-    const newBookings = total - rebookings - nonBooking;
+    const total = totalCount;
+    const pendingMoveIn = records.filter(b => b.status === 'Pending Move-In').length;
+    const movedIn = records.filter(b => b.status === 'Moved In').length;
+    const memberRejected = records.filter(b => b.status === 'Member Rejected').length;
+    const noShowCancelled = records.filter(b => b.status === 'No Show' || b.status === 'Cancelled').length;
+    const postponed = records.filter(b => b.status === 'Postponed').length;
+    const nonBooking = records.filter(b => b.status === 'Non Booking').length;
+    const rebookings = records.filter(b => b.isRebooking).length;
+    const newBookings = records.length - rebookings - nonBooking;
     
     return { total, pendingMoveIn, movedIn, memberRejected, noShowCancelled, postponed, nonBooking, rebookings, newBookings };
-  }, [filteredBookings]);
+  }, [totalCount, records]);
+
+  // Loading skeleton for table rows
+  const TableSkeleton = () => (
+    <>
+      {Array.from({ length: 10 }).map((_, i) => (
+        <tr key={i} className="border-b border-border">
+          <td className="py-3 px-4"><Skeleton className="h-4 w-24" /></td>
+          <td className="py-3 px-4"><Skeleton className="h-4 w-24" /></td>
+          <td className="py-3 px-4"><Skeleton className="h-4 w-32" /></td>
+          <td className="py-3 px-4"><Skeleton className="h-4 w-28" /></td>
+          <td className="py-3 px-4"><Skeleton className="h-4 w-24" /></td>
+          <td className="py-3 px-4"><Skeleton className="h-4 w-20" /></td>
+          <td className="py-3 px-4"><Skeleton className="h-6 w-24 rounded-full" /></td>
+          <td className="py-3 px-4"><Skeleton className="h-4 w-16" /></td>
+          <td className="py-3 px-4"><Skeleton className="h-4 w-20" /></td>
+          <td className="py-3 px-4"><Skeleton className="h-8 w-8" /></td>
+        </tr>
+      ))}
+    </>
+  );
 
   return (
     <DashboardLayout 
       title="Reports" 
-      subtitle="Detailed booking data and exports"
+      subtitle="Detailed call records and exports"
     >
       {/* Summary Cards */}
       <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3 mb-6">
         <div className="bg-card rounded-xl p-4 border border-border shadow-sm">
           <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Total Records</p>
-          <p className="text-2xl font-bold text-foreground mt-1">{summaryStats.total}</p>
-          {summaryStats.rebookings > 0 && (
+          <p className="text-2xl font-bold text-foreground mt-1">{summaryStats.total.toLocaleString()}</p>
+          {!isLoading && summaryStats.rebookings > 0 && (
             <p className="text-xs text-muted-foreground mt-1">
               {summaryStats.newBookings} new, {summaryStats.rebookings} rebookings
             </p>
@@ -477,11 +407,11 @@ export default function Reports() {
 
       {/* Filters Row 1 */}
       <div className="flex flex-wrap items-center gap-3 mb-3">
-        {/* Booking Date Range Filter */}
+        {/* Record Date Range Filter */}
         <DateRangePicker
-          label="Booking Date"
-          dateRange={bookingDateRange}
-          onDateRangeChange={setBookingDateRange}
+          label="Record Date"
+          dateRange={recordDateRange}
+          onDateRangeChange={setRecordDateRange}
         />
 
         {/* Move-In Date Range Filter */}
@@ -490,6 +420,46 @@ export default function Reports() {
           dateRange={moveInDateRange}
           onDateRangeChange={setMoveInDateRange}
         />
+
+        {/* Import Batch Filter */}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="outline" className="gap-2">
+              <Package className="w-4 h-4" />
+              {getImportBatchLabel()}
+              <ChevronDown className="w-4 h-4" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="w-72 max-h-80 overflow-y-auto">
+            <DropdownMenuItem
+              onClick={() => setImportBatchFilter('all')}
+              className={importBatchFilter === 'all' ? 'bg-accent/20' : ''}
+            >
+              All Records
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onClick={() => setImportBatchFilter('manual')}
+              className={importBatchFilter === 'manual' ? 'bg-accent/20' : ''}
+            >
+              Manual Entries ({manualRecordCount.toLocaleString()} records)
+            </DropdownMenuItem>
+            {importBatches.length > 0 && <DropdownMenuSeparator />}
+            {importBatches.map((batch) => (
+              <DropdownMenuItem
+                key={batch.id}
+                onClick={() => setImportBatchFilter(batch.id)}
+                className={importBatchFilter === batch.id ? 'bg-accent/20' : ''}
+              >
+                <div className="flex flex-col">
+                  <span className="font-medium">{batch.id}</span>
+                  <span className="text-xs text-muted-foreground">
+                    {batch.count.toLocaleString()} records • {format(new Date(batch.earliestDate), 'MMM d')} - {format(new Date(batch.latestDate), 'MMM d, yyyy')}
+                  </span>
+                </div>
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
 
         {/* Site Filter */}
         <DropdownMenu>
@@ -626,7 +596,7 @@ export default function Reports() {
             {rebookingFilterOptions.map((option) => (
               <DropdownMenuItem
                 key={option.value}
-                onClick={() => setRebookingFilter(option.value)}
+                onClick={() => setRebookingFilter(option.value as 'all' | 'new' | 'rebooking')}
                 className={rebookingFilter === option.value ? 'bg-accent/20' : ''}
               >
                 {option.label}
@@ -657,21 +627,15 @@ export default function Reports() {
           </Button>
         )}
 
-        {/* Clear Secondary Sort */}
-        {secondarySortColumn && (
-          <Button variant="ghost" size="sm" className="gap-1.5 text-muted-foreground text-xs" onClick={clearSecondarySort}>
-            <X className="w-3 h-3" />
-            Clear 2nd sort
-          </Button>
-        )}
-
         {/* Items per page */}
-        <Select value={String(itemsPerPage)} onValueChange={(v) => setItemsPerPage(Number(v))}>
+        <Select value={String(itemsPerPage)} onValueChange={(v) => {
+          setItemsPerPage(Number(v));
+          setCurrentPage(1);
+        }}>
           <SelectTrigger className="w-[130px]">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="10">10 per page</SelectItem>
             <SelectItem value="20">20 per page</SelectItem>
             <SelectItem value="50">50 per page</SelectItem>
             <SelectItem value="100">100 per page</SelectItem>
@@ -679,7 +643,7 @@ export default function Reports() {
         </Select>
 
         {/* Export CSV */}
-        <Button variant="outline" className="gap-2" onClick={exportCSV}>
+        <Button variant="outline" className="gap-2" onClick={exportCSV} disabled={records.length === 0}>
           <Download className="w-4 h-4" />
           Export CSV
         </Button>
@@ -697,10 +661,10 @@ export default function Reports() {
           <table className="w-full">
             <thead>
               <tr className="border-b border-border bg-muted/30">
-                <SortableHeader column="bookingDate" label="Booking Date" />
+                <SortableHeader column="bookingDate" label="Record Date" />
                 <SortableHeader column="moveInDate" label="Move-In Date" />
                 <SortableHeader column="memberName" label="Member" />
-                <SortableHeader column="agentName" label="Agent" />
+                <th className="text-left py-3 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Agent</th>
                 <SortableHeader column="market" label="Market" />
                 <SortableHeader column="bookingType" label="Type" />
                 <SortableHeader column="status" label="Status" />
@@ -710,14 +674,16 @@ export default function Reports() {
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
-              {paginatedBookings.length === 0 ? (
+              {isLoading ? (
+                <TableSkeleton />
+              ) : records.length === 0 ? (
                 <tr>
                   <td colSpan={10} className="py-8 text-center text-muted-foreground">
-                    No bookings found matching your filters
+                    No records found matching your filters
                   </td>
                 </tr>
               ) : (
-                paginatedBookings.map((booking) => (
+                records.map((booking) => (
                   <tr key={booking.id} className="hover:bg-muted/30 transition-colors">
                     <td className="py-3 px-4 text-sm text-foreground">
                       {format(booking.bookingDate, 'MMM d, yyyy')}
@@ -822,6 +788,7 @@ export default function Reports() {
                               onClick={async () => {
                                 await updateBooking(booking.id, { status: 'Moved In' });
                                 toast.success('Status updated to Moved In');
+                                refetch();
                               }}
                               className="text-green-600 focus:text-green-600"
                               disabled={booking.status === 'Moved In'}
@@ -834,6 +801,7 @@ export default function Reports() {
                               onClick={async () => {
                                 await updateBooking(booking.id, { status: 'Postponed' });
                                 toast.success('Status updated to Postponed');
+                                refetch();
                               }}
                               className="text-primary focus:text-primary"
                               disabled={booking.status === 'Postponed'}
@@ -846,6 +814,7 @@ export default function Reports() {
                               onClick={async () => {
                                 await updateBooking(booking.id, { status: 'No Show' });
                                 toast.success('Status updated to No Show');
+                                refetch();
                               }}
                               className="text-muted-foreground focus:text-muted-foreground"
                               disabled={booking.status === 'No Show'}
@@ -858,6 +827,7 @@ export default function Reports() {
                               onClick={async () => {
                                 await updateBooking(booking.id, { status: 'Member Rejected' });
                                 toast.success('Status updated to Member Rejected');
+                                refetch();
                               }}
                               className="text-destructive focus:text-destructive"
                               disabled={booking.status === 'Member Rejected'}
@@ -870,6 +840,7 @@ export default function Reports() {
                               onClick={async () => {
                                 await updateBooking(booking.id, { status: 'Cancelled' });
                                 toast.success('Status updated to Cancelled');
+                                refetch();
                               }}
                               className="text-muted-foreground focus:text-muted-foreground"
                               disabled={booking.status === 'Cancelled'}
@@ -897,13 +868,13 @@ export default function Reports() {
         {/* Pagination */}
         <div className="p-4 border-t border-border flex items-center justify-between">
           <p className="text-sm text-muted-foreground">
-            Showing {sortedBookings.length === 0 ? 0 : startIndex + 1}-{Math.min(startIndex + itemsPerPage, sortedBookings.length)} of {sortedBookings.length} bookings
+            Showing {totalCount === 0 ? 0 : startIndex + 1}-{Math.min(startIndex + itemsPerPage, totalCount)} of {totalCount.toLocaleString()} records
           </p>
           <div className="flex items-center gap-2">
             <Button 
               variant="outline" 
               size="sm" 
-              disabled={currentPage === 1}
+              disabled={currentPage === 1 || isLoading}
               onClick={() => setCurrentPage(p => p - 1)}
             >
               Previous
@@ -914,7 +885,7 @@ export default function Reports() {
             <Button 
               variant="outline" 
               size="sm"
-              disabled={currentPage >= totalPages}
+              disabled={currentPage >= totalPages || isLoading}
               onClick={() => setCurrentPage(p => p + 1)}
             >
               Next
@@ -933,8 +904,8 @@ export default function Reports() {
             setSelectedBooking(null);
           }}
           onTranscriptionComplete={() => {
-            // Background refresh, no need to close modal
-            refreshBookings(false);
+            // Background refresh
+            refetch();
           }}
         />
       )}
