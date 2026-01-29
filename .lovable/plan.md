@@ -1,54 +1,79 @@
 
-# Re-Import HubSpot Data to Capture Contact Information
+# Add Batch Deletion Before Re-Import
 
-## Problem Identified
-
-The existing 5,163 imported records have:
-- **Empty `notes` field** - call summary/notes were not saved during original import  
-- **Plain `member_name`** without embedded email - only the extracted name was saved, not the original "Name (email)" format
-
-The backfill edge function can't extract data that doesn't exist in the database. The contact email and phone data is in the **source CSV file** but wasn't captured during the original imports.
+## Problem
+You need to delete the existing ~5,163 imported records before re-importing the CSV to capture email and phone data. Currently, the delete button only appears after completing a new import.
 
 ## Solution
+Add a "Manage Existing Batches" section to the Historical Import upload step that shows existing import batches and allows deletion before starting a new import.
 
-**Re-import the HubSpot CSV file** using the updated parser which now correctly captures:
+---
 
-| Data Point | Source in CSV | How It's Captured |
-|------------|---------------|-------------------|
-| **Email** | `Associated Contact`: "Keith Barnes (k7275062@gmail.com)" | Extracted from parentheses |
-| **Phone** | `Call notes`: "call was made from +17702307471 to +19044103644" | Direction-aware extraction (TO for outbound, FROM for inbound) |
+## Implementation
 
-## What Changed in the Parser
+### Update Historical Import Page
 
-The `toBookingInsert()` function now includes:
+**File: `src/pages/HistoricalImport.tsx`**
+
+Add a new section on the upload step that:
+
+1. **Fetches existing import batches** on page load:
 ```typescript
-contact_email: record.contactEmail || null,
-contact_phone: record.contactPhone || null,
+// Query distinct import_batch_ids with record counts
+SELECT import_batch_id, COUNT(*) as record_count, MIN(created_at) as imported_at
+FROM bookings
+WHERE import_batch_id IS NOT NULL
+GROUP BY import_batch_id
+ORDER BY imported_at DESC
 ```
 
-And the parser extracts:
-- Email from "Name (email)" format in the Associated Contact column
-- Phone from call notes using direction-aware logic
+2. **Displays batch list** with:
+   - Batch ID (e.g., `IMPORT-20260129-002412`)
+   - Record count (e.g., "5,163 records")
+   - Import date
+   - Delete button
 
-## Steps to Get Contact Data
+3. **Delete batch function**:
+   - Confirm dialog: "Delete 5,163 records from batch IMPORT-20260129-002412?"
+   - Delete all records with that batch ID
+   - Refresh the batch list
 
-1. **Delete the existing imported batch** (optional - use the batch ID to rollback)
-2. **Re-upload the HubSpot CSV** on the Historical Import page
-3. The updated parser will now capture email and phone for each record
-4. Records will appear in Reports with Email and Phone columns populated
+### UI Layout
 
-## Alternative: Update Existing Records Manually
+On the upload step, above the file drop zone:
 
-If you don't want to re-import, you could:
-1. Export the current records with their IDs
-2. Match against the original CSV by Record ID or Recording URL
-3. Run a SQL update to populate `contact_email` and `contact_phone`
+```text
+┌─────────────────────────────────────────────────────┐
+│  📦 Existing Import Batches                         │
+├─────────────────────────────────────────────────────┤
+│  IMPORT-20260129-002412                             │
+│  5,163 records • Imported Jan 29, 2026              │
+│                                        [🗑️ Delete]  │
+├─────────────────────────────────────────────────────┤
+│  (No other batches)                                 │
+└─────────────────────────────────────────────────────┘
 
-But **re-importing is simpler** since the parser now handles everything automatically.
+┌─────────────────────────────────────────────────────┐
+│  📤 Upload HubSpot Export                           │
+│  [Drop zone as before]                              │
+└─────────────────────────────────────────────────────┘
+```
 
-## Verification After Re-Import
+---
 
-The Reports page now has Email and Phone columns that will display:
-- Clickable `mailto:` links for emails
-- Clickable `tel:` links for formatted phone numbers
-- CSV export includes both fields
+## Files to Modify
+
+| File | Changes |
+|------|---------|
+| `src/pages/HistoricalImport.tsx` | Add batch list state, fetch on mount, render batch cards, delete function |
+
+---
+
+## Workflow After Implementation
+
+1. Open **Historical Import** page
+2. See existing batch: `IMPORT-20260129-002412` (5,163 records)
+3. Click **Delete** → Confirm → Records removed
+4. Upload the same HubSpot CSV file
+5. Complete import → All records now have email and phone populated
+6. View in **Reports** page with new Email/Phone columns
