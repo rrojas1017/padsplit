@@ -175,6 +175,65 @@ function parseCSVLine(line: string): string[] {
 }
 
 /**
+ * Detect and fix malformed single-line CSV exports from HubSpot
+ * HubSpot sometimes exports all records concatenated without line breaks
+ */
+function fixMalformedCSV(csvContent: string): string {
+  // Handle Windows line breaks
+  const normalizedContent = csvContent.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  
+  // Check if CSV appears properly formatted (more than 2 lines)
+  const lines = normalizedContent.split('\n').filter(line => line.trim());
+  if (lines.length > 2) {
+    return normalizedContent;
+  }
+  
+  // Find the header row - look for "Associated Contact" which is typically last column
+  const headerMatch = normalizedContent.match(/Associated Contact[s]?(?: IDs?)?/i);
+  if (!headerMatch || headerMatch.index === undefined) {
+    // Can't identify header, return as-is
+    return normalizedContent;
+  }
+  
+  // Find where the header ends (need to find the actual end of header row)
+  // The header ends where the first data record begins
+  // Records start with a Record ID pattern: scientific notation (1.02E+11) or 11+ digits
+  const headerEndSearch = normalizedContent.substring(headerMatch.index);
+  const firstRecordMatch = headerEndSearch.match(/(?:IDs?)?[,\s]*(\d+\.\d+E\+\d+|\d{11,}),\d{1,2}\//);
+  
+  if (!firstRecordMatch || firstRecordMatch.index === undefined) {
+    return normalizedContent;
+  }
+  
+  // Calculate positions
+  const headerEndPos = headerMatch.index + firstRecordMatch.index + (firstRecordMatch[0].match(/IDs?/i)?.[0]?.length || 0);
+  const headerRow = normalizedContent.substring(0, headerEndPos).replace(/IDs?$/i, 'IDs');
+  const dataPortion = normalizedContent.substring(headerEndPos).trim();
+  
+  // Split on Record ID patterns - look for patterns like "1.02E+11,1/15/25" or "102000000000,1/15/25"
+  // Use lookahead to keep the delimiter in the result
+  const recordSplitPattern = /(?=\d+\.\d+E\+\d+,\d{1,2}\/)|(?=\d{11,},\d{1,2}\/)/g;
+  const recordChunks = dataPortion.split(recordSplitPattern).filter(chunk => chunk.trim());
+  
+  if (recordChunks.length <= 1) {
+    // Couldn't split, return as-is
+    return normalizedContent;
+  }
+  
+  // Reconstruct CSV with proper line breaks
+  let fixedContent = headerRow;
+  for (const record of recordChunks) {
+    const trimmedRecord = record.trim();
+    if (trimmedRecord) {
+      fixedContent += '\n' + trimmedRecord;
+    }
+  }
+  
+  console.log(`Fixed malformed CSV: split into ${recordChunks.length} records`);
+  return fixedContent;
+}
+
+/**
  * Parse HubSpot CSV content
  */
 export function parseHubspotCSV(csvContent: string): ParseResult {
@@ -182,17 +241,11 @@ export function parseHubspotCSV(csvContent: string): ParseResult {
   const records: ParsedCallRecord[] = [];
   const agentNames = new Set<string>();
   
-  // Split into lines and handle potential malformed format
-  let lines = csvContent.split('\n').filter(line => line.trim());
+  // FIRST: Try to fix malformed single-line CSV
+  const fixedContent = fixMalformedCSV(csvContent);
   
-  // If there's only one line with data, try to detect and fix malformed format
-  if (lines.length <= 2) {
-    // Check if the content contains multiple Record IDs (indicating malformed single-line)
-    const recordIdMatches = csvContent.match(/\d{11,}/g);
-    if (recordIdMatches && recordIdMatches.length > 1) {
-      errors.push('Detected malformed single-line CSV format. Please ensure CSV is properly formatted with line breaks.');
-    }
-  }
+  // Split into lines
+  let lines = fixedContent.split('\n').filter(line => line.trim());
   
   if (lines.length < 2) {
     errors.push('CSV file appears to be empty or has no data rows');
