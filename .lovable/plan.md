@@ -1,132 +1,84 @@
 
+# Historical Import: Safe Import with Tracking & PadSplit Agent Support
 
-# Fix: HubSpot CSV Parser for Malformed Single-Line Format
+## Overview
+Add safeguards to the historical import process so you can:
+1. **Track all imported records** with a unique batch ID for easy identification and deletion
+2. **Default unmatched agents to PadSplit Internal** site instead of Vixicom
+3. **View and manage import batches** after completion
 
-## Problem
-HubSpot exports sometimes produce CSVs where all records are concatenated on a single line without proper line breaks. Your file has 5.8 million characters on one line, containing multiple records that cannot be parsed with a simple line-split approach.
+---
 
-## Solution
-Update the HubSpot CSV parser to detect and automatically split malformed single-line CSVs by identifying record boundaries using the Record ID pattern.
+## What This Adds
 
-## Implementation
+### 1. Import Batch Tracking
+- Each import creates a unique **batch ID** (e.g., `IMPORT-20260129-143022`)
+- All records from that import are tagged with this ID
+- Easy to identify: "These 500 records came from Tuesday's import"
 
-### 1. Update `hubspotCallParser.ts`
+### 2. Safe Rollback Capability  
+- One-click delete option for any import batch
+- Only deletes records from that specific import
+- Your existing 644 records remain untouched
 
-Add a new function to detect and fix malformed CSVs:
+### 3. PadSplit Agent Default
+- Unmatched agents will default to **PadSplit Internal** site instead of Vixicom
+- Makes sense since most unmatched agents are PadSplit's internal team
 
-```typescript
-function fixMalformedCSV(csvContent: string): string {
-  // Detect if CSV is malformed (single line with multiple records)
-  const lines = csvContent.split('\n').filter(line => line.trim());
-  
-  if (lines.length > 2) {
-    // CSV appears properly formatted
-    return csvContent;
-  }
-  
-  // Check for scientific notation Record IDs that indicate concatenated records
-  // Pattern: look for digit sequences like "1.02E+11" or full IDs like "102000000000"
-  // that appear after content and before a date pattern
-  
-  // Find header end position
-  const headerMatch = csvContent.match(/Associated Contact IDs?/i);
-  if (!headerMatch) return csvContent;
-  
-  const headerEndPos = headerMatch.index! + headerMatch[0].length;
-  const dataContent = csvContent.substring(headerEndPos);
-  
-  // Split on Record ID patterns (scientific notation at start of record)
-  // Pattern matches: number followed by date format (M/D/YY)
-  const recordPattern = /(\d+\.\d+E\+\d+|\d{11,}),(\d{1,2}\/\d{1,2}\/\d{2,4})/g;
-  
-  let fixedContent = csvContent.substring(0, headerEndPos);
-  let lastIndex = 0;
-  let match;
-  let isFirst = true;
-  
-  const dataPortion = csvContent.substring(headerEndPos);
-  
-  while ((match = recordPattern.exec(dataPortion)) !== null) {
-    if (isFirst) {
-      fixedContent += '\n';
-      isFirst = false;
-    } else {
-      // Add content from last match to this match
-      fixedContent += '\n';
-    }
-    // Content will be rebuilt with proper line breaks
-  }
-  
-  // More robust approach: split on the Record ID pattern
-  const records = dataPortion.split(/(?=\d+\.\d+E\+\d+,\d{1,2}\/|(?=\d{11,},\d{1,2}\/))/);
-  
-  fixedContent = csvContent.substring(0, headerEndPos);
-  for (const record of records) {
-    if (record.trim()) {
-      fixedContent += '\n' + record.trim();
-    }
-  }
-  
-  return fixedContent;
-}
+---
+
+## How It Will Work
+
+```text
++----------------+     +------------------+     +------------------+
+| Upload CSV     | --> | Agent Mapping    | --> | Review & Import  |
+| (Your file)    |     | (Default:        |     | (Batch ID shown) |
+|                |     |  PadSplit site)  |     |                  |
++----------------+     +------------------+     +------------------+
+                                                         |
+                                                         v
+                                          +-----------------------------+
+                                          | Import Complete             |
+                                          | Batch: IMPORT-20260129-...  |
+                                          | [View in Reports]           |
+                                          | [Delete This Batch]         |
+                                          +-----------------------------+
 ```
 
-### 2. Update `parseHubspotCSV` Function
+---
 
-Modify the main parsing function to call the fixer:
+## Technical Changes
 
-```typescript
-export function parseHubspotCSV(csvContent: string): ParseResult {
-  const errors: string[] = [];
-  const records: ParsedCallRecord[] = [];
-  const agentNames = new Set<string>();
-  
-  // FIRST: Try to fix malformed single-line CSV
-  const fixedContent = fixMalformedCSV(csvContent);
-  
-  // Split into lines
-  let lines = fixedContent.split('\n').filter(line => line.trim());
-  
-  // If still malformed, try alternative splitting
-  if (lines.length <= 2) {
-    // Try splitting on Record ID pattern directly
-    const recordIdPattern = /(?=\d+\.\d+E\+\d+,)|(?=\d{11,},)/g;
-    // ... alternative parsing logic
-  }
-  
-  // ... rest of existing parsing logic
-}
-```
-
-### 3. Alternative Approach: Smarter Record Detection
-
-Instead of relying on line breaks, parse records by detecting:
-1. Header row (everything before first Record ID in data)
-2. Each record starts with a Record ID pattern: `1.02E+11` or 11+ digit number
-3. Each record ends just before the next Record ID pattern
-
-This makes the parser resilient to malformed exports.
-
-## File Changes
-
-| File | Change |
+| Area | Change |
 |------|--------|
-| `src/utils/hubspotCallParser.ts` | Add `fixMalformedCSV()` function and update `parseHubspotCSV()` to handle single-line CSVs |
+| **Database** | Add `import_batch_id` column to `bookings` table (nullable, for backwards compatibility) |
+| **Agent Mapping Dialog** | Change default site from Vixicom to PadSplit Internal |
+| **Import Page** | Generate batch ID at start, include in all inserts |
+| **Completion Screen** | Show batch ID, add "Delete Batch" button |
+| **Parser Utility** | Update `toBookingInsert` to accept batch ID parameter |
 
-## Technical Details
+### Database Migration
+```sql
+ALTER TABLE bookings 
+ADD COLUMN import_batch_id TEXT DEFAULT NULL;
 
-The fix works by:
-1. Detecting if CSV has all data on one line
-2. Finding where the header ends (after "Associated Contact IDs")
-3. Using regex to find Record ID boundaries: `\d+\.\d+E\+\d+,\d{1,2}\/` (scientific notation + date)
-4. Inserting newlines before each Record ID to reconstruct proper CSV format
-5. Then proceeding with normal parsing
+CREATE INDEX idx_bookings_import_batch ON bookings(import_batch_id) 
+WHERE import_batch_id IS NOT NULL;
+```
 
-### Test Cases
-- Properly formatted CSV (should work as before)
-- Single-line malformed CSV (your current file)
-- Mixed line breaks (Windows `\r\n` vs Unix `\n`)
+### Batch ID Format
+`IMPORT-{YYYYMMDD}-{HHMMSS}` (e.g., `IMPORT-20260129-143022`)
 
-## Expected Result
-After this fix, your file with ~200+ records on a single line will be correctly split and parsed, showing the classification summary with bookings vs non-bookings.
+---
 
+## After Implementation
+
+**To delete a historical import:**
+1. Go to Historical Import page
+2. Click "Delete This Batch" after import completes
+3. Or query: `DELETE FROM bookings WHERE import_batch_id = 'IMPORT-...'`
+
+**Your existing data is safe:**
+- All 644 current records have `import_batch_id = NULL`
+- Only new imports will have batch IDs
+- Delete operations only target specific batch IDs
