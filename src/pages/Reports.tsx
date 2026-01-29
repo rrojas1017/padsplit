@@ -224,7 +224,7 @@ export default function Reports() {
     const headers = [
       'Record Date',
       'Move-In Date',
-      'Member Name',
+      'Contact Name',
       'Agent',
       'Market City',
       'Market State',
@@ -239,7 +239,7 @@ export default function Reports() {
 
     const rows = records.map(booking => [
       format(booking.bookingDate, 'yyyy-MM-dd'),
-      format(booking.moveInDate, 'yyyy-MM-dd'),
+      booking.status === 'Non Booking' ? '' : format(booking.moveInDate, 'yyyy-MM-dd'),
       booking.memberName,
       getAgentName(agents, booking.agentId),
       booking.marketCity || '',
@@ -663,7 +663,7 @@ export default function Reports() {
               <tr className="border-b border-border bg-muted/30">
                 <SortableHeader column="bookingDate" label="Record Date" />
                 <SortableHeader column="moveInDate" label="Move-In Date" />
-                <SortableHeader column="memberName" label="Member" />
+                <SortableHeader column="memberName" label="Contact" />
                 <th className="text-left py-3 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Agent</th>
                 <SortableHeader column="market" label="Market" />
                 <SortableHeader column="bookingType" label="Type" />
@@ -689,7 +689,11 @@ export default function Reports() {
                       {format(booking.bookingDate, 'MMM d, yyyy')}
                     </td>
                     <td className="py-3 px-4 text-sm text-foreground">
-                      {format(booking.moveInDate, 'MMM d, yyyy')}
+                      {booking.status === 'Non Booking' ? (
+                        <span className="text-muted-foreground">—</span>
+                      ) : (
+                        format(booking.moveInDate, 'MMM d, yyyy')
+                      )}
                     </td>
                     <td className="py-3 px-4 text-sm font-medium text-foreground">
                       <div className="flex items-center gap-2">
