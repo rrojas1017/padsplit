@@ -76,40 +76,19 @@ export default function HistoricalImport() {
     fetchSites();
   }, []);
   
-  // Fetch existing import batches on mount
+  // Fetch existing import batches on mount using RPC for accurate counts
   const fetchExistingBatches = useCallback(async () => {
     setLoadingBatches(true);
     try {
-      const { data, error } = await supabase
-        .from('bookings')
-        .select('import_batch_id, created_at')
-        .not('import_batch_id', 'is', null);
+      const { data, error } = await supabase.rpc('get_import_batch_counts');
       
       if (error) throw error;
       
-      // Group by import_batch_id and count
-      const batchMap = new Map<string, { count: number; earliestDate: string }>();
-      for (const row of data || []) {
-        const batchId = row.import_batch_id!;
-        const existing = batchMap.get(batchId);
-        if (existing) {
-          existing.count++;
-          if (row.created_at < existing.earliestDate) {
-            existing.earliestDate = row.created_at;
-          }
-        } else {
-          batchMap.set(batchId, { count: 1, earliestDate: row.created_at });
-        }
-      }
-      
-      // Convert to array and sort by date descending
-      const batches: ExistingBatch[] = Array.from(batchMap.entries())
-        .map(([id, info]) => ({
-          import_batch_id: id,
-          record_count: info.count,
-          imported_at: info.earliestDate,
-        }))
-        .sort((a, b) => new Date(b.imported_at).getTime() - new Date(a.imported_at).getTime());
+      const batches: ExistingBatch[] = (data || []).map((row: any) => ({
+        import_batch_id: row.import_batch_id,
+        record_count: Number(row.record_count),
+        imported_at: row.imported_at,
+      }));
       
       setExistingBatches(batches);
     } catch (err) {
