@@ -10,9 +10,9 @@ import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { 
   Upload, FileText, CheckCircle, AlertTriangle, Users, Play, 
-  ArrowRight, Loader2, FileSpreadsheet, X
+  ArrowRight, Loader2, FileSpreadsheet, X, Trash2, Copy
 } from 'lucide-react';
-import { parseHubspotCSV, ParsedCallRecord, toBookingInsert, ParseResult } from '@/utils/hubspotCallParser';
+import { parseHubspotCSV, ParsedCallRecord, toBookingInsert, ParseResult, generateImportBatchId } from '@/utils/hubspotCallParser';
 import { AgentMappingDialog, AgentMapping } from '@/components/import/AgentMappingDialog';
 import { ImportClassificationSummary } from '@/components/import/ImportClassificationSummary';
 
@@ -35,6 +35,8 @@ export default function HistoricalImport() {
   const [agentMapping, setAgentMapping] = useState<AgentMapping | null>(null);
   const [duplicateCount, setDuplicateCount] = useState(0);
   const [importProgress, setImportProgress] = useState(0);
+  const [importBatchId, setImportBatchId] = useState<string | null>(null);
+  const [isDeletingBatch, setIsDeletingBatch] = useState(false);
   const [importResults, setImportResults] = useState<{
     imported: number;
     bookings: number;
@@ -159,6 +161,10 @@ export default function HistoricalImport() {
   const executeImport = async () => {
     if (!parseResult || !agentMapping) return;
     
+    // Generate unique batch ID for this import
+    const batchId = generateImportBatchId();
+    setImportBatchId(batchId);
+    
     setStep('importing');
     setImportProgress(0);
     
@@ -203,7 +209,7 @@ export default function HistoricalImport() {
           }
         }
         
-        inserts.push(toBookingInsert(record, agentId));
+        inserts.push(toBookingInsert(record, agentId, batchId));
         
         if (record.status === 'Pending Move-In') {
           results.bookings++;
@@ -266,6 +272,39 @@ export default function HistoricalImport() {
     setDuplicateCount(0);
     setImportProgress(0);
     setImportResults(null);
+    setImportBatchId(null);
+  };
+  
+  // Delete imported batch
+  const deleteBatch = async () => {
+    if (!importBatchId) return;
+    
+    setIsDeletingBatch(true);
+    try {
+      const { error } = await supabase
+        .from('bookings')
+        .delete()
+        .eq('import_batch_id', importBatchId);
+      
+      if (error) {
+        toast.error(`Failed to delete batch: ${error.message}`);
+      } else {
+        toast.success(`Deleted ${importResults?.imported || 0} records from batch ${importBatchId}`);
+        resetImport();
+      }
+    } catch (err) {
+      toast.error('Failed to delete batch');
+      console.error(err);
+    } finally {
+      setIsDeletingBatch(false);
+    }
+  };
+  
+  const copyBatchId = () => {
+    if (importBatchId) {
+      navigator.clipboard.writeText(importBatchId);
+      toast.success('Batch ID copied to clipboard');
+    }
   };
   
   return (
@@ -392,6 +431,16 @@ export default function HistoricalImport() {
               <div className="text-center mb-6">
                 <CheckCircle className="w-16 h-16 mx-auto text-success mb-4" />
                 <h2 className="text-2xl font-bold">Import Complete!</h2>
+                {importBatchId && (
+                  <div className="mt-2 flex items-center justify-center gap-2">
+                    <Badge variant="outline" className="font-mono text-xs">
+                      {importBatchId}
+                    </Badge>
+                    <Button variant="ghost" size="icon" className="h-6 w-6" onClick={copyBatchId}>
+                      <Copy className="w-3 h-3" />
+                    </Button>
+                  </div>
+                )}
               </div>
               
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
@@ -403,8 +452,8 @@ export default function HistoricalImport() {
                   <div className="text-2xl font-bold text-warning">{importResults.bookings}</div>
                   <div className="text-sm text-muted-foreground">Bookings</div>
                 </div>
-                <div className="text-center p-4 bg-slate-500/10 rounded-lg">
-                  <div className="text-2xl font-bold text-slate-500">{importResults.nonBookings}</div>
+                <div className="text-center p-4 bg-muted/50 rounded-lg">
+                  <div className="text-2xl font-bold text-muted-foreground">{importResults.nonBookings}</div>
                   <div className="text-sm text-muted-foreground">Non-Bookings</div>
                 </div>
                 <div className="text-center p-4 bg-muted rounded-lg">
@@ -420,7 +469,16 @@ export default function HistoricalImport() {
                 </div>
               )}
               
-              <div className="flex gap-3 justify-center">
+              {/* Batch rollback info */}
+              <div className="mb-6 p-4 bg-muted/50 rounded-lg text-sm">
+                <p className="text-muted-foreground">
+                  <strong>Rollback available:</strong> All {importResults.imported} records are tagged with batch ID{' '}
+                  <code className="bg-muted px-1 rounded">{importBatchId}</code>.
+                  You can delete this entire batch if needed.
+                </p>
+              </div>
+              
+              <div className="flex flex-wrap gap-3 justify-center">
                 <Button variant="outline" onClick={resetImport}>
                   Import More
                 </Button>
@@ -431,6 +489,18 @@ export default function HistoricalImport() {
                 <Button variant="secondary" onClick={() => navigate('/call-insights')}>
                   View Non-Bookings
                   <ArrowRight className="w-4 h-4 ml-2" />
+                </Button>
+                <Button 
+                  variant="destructive" 
+                  onClick={deleteBatch}
+                  disabled={isDeletingBatch}
+                >
+                  {isDeletingBatch ? (
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  ) : (
+                    <Trash2 className="w-4 h-4 mr-2" />
+                  )}
+                  Delete This Batch
                 </Button>
               </div>
             </CardContent>
