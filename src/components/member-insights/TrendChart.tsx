@@ -6,6 +6,8 @@ import { format } from 'date-fns';
 interface MemberInsight {
   id: string;
   created_at: string;
+  date_range_start?: string;
+  date_range_end?: string;
   total_calls_analyzed: number;
   sentiment_distribution: { positive: number; neutral: number; negative: number };
   pain_points: any[];
@@ -17,25 +19,50 @@ interface TrendChartProps {
 
 const TrendChart = ({ insights }: TrendChartProps) => {
   // Reverse to show oldest first for trend line
-  const chartData = [...insights]
-    .reverse()
-    .slice(-10) // Last 10 analyses
-    .map((insight) => ({
-      date: format(new Date(insight.created_at), 'MMM d'),
-      fullDate: format(new Date(insight.created_at), 'MMM d, yyyy'),
+  const reversedInsights = [...insights].reverse().slice(-10);
+  
+  // Count occurrences of each date to detect duplicates
+  const dateCounts: Record<string, number> = {};
+  reversedInsights.forEach((insight) => {
+    const dateKey = format(new Date(insight.created_at), 'MMM d');
+    dateCounts[dateKey] = (dateCounts[dateKey] || 0) + 1;
+  });
+  
+  const chartData = reversedInsights.map((insight) => {
+    const dateKey = format(new Date(insight.created_at), 'MMM d');
+    const needsTime = dateCounts[dateKey] > 1;
+    
+    // Format date range for tooltip
+    let dateRangeText = '';
+    if (insight.date_range_start && insight.date_range_end) {
+      const start = format(new Date(insight.date_range_start), 'MMM d');
+      const end = format(new Date(insight.date_range_end), 'MMM d');
+      dateRangeText = `${start} - ${end}`;
+    }
+    
+    return {
+      date: needsTime 
+        ? format(new Date(insight.created_at), 'MMM d ha') // e.g., "Jan 30 4pm"
+        : dateKey,
+      fullDate: format(new Date(insight.created_at), 'MMM d, yyyy h:mm a'),
+      dateRange: dateRangeText,
       calls: insight.total_calls_analyzed,
       positive: insight.sentiment_distribution?.positive || 0,
       neutral: insight.sentiment_distribution?.neutral || 0,
       negative: insight.sentiment_distribution?.negative || 0,
       painPointCount: insight.pain_points?.length || 0,
-    }));
+    };
+  });
 
   const CustomTooltip = ({ active, payload, label }: any) => {
     if (active && payload && payload.length) {
       const data = payload[0].payload;
       return (
         <div className="bg-popover border rounded-lg p-3 shadow-lg">
-          <p className="font-medium mb-2">{data.fullDate}</p>
+          <p className="font-medium mb-1">{data.fullDate}</p>
+          {data.dateRange && (
+            <p className="text-xs text-muted-foreground mb-2">Period: {data.dateRange}</p>
+          )}
           <p className="text-sm text-muted-foreground">Calls Analyzed: {data.calls}</p>
           <div className="mt-2 space-y-1">
             <p className="text-sm">

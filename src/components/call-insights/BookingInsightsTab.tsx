@@ -90,7 +90,7 @@ export function BookingInsightsTab({ dateRange, onDateRangeChange }: BookingInsi
       const result = await deduplicatedQuery('member_insights_list', async () => {
         return await supabase
           .from('member_insights')
-          .select('id, analysis_period, date_range_start, date_range_end, total_calls_analyzed, created_at, status')
+          .select('id, analysis_period, date_range_start, date_range_end, total_calls_analyzed, created_at, status, sentiment_distribution')
           .order('created_at', { ascending: false })
           .limit(10);
       });
@@ -105,7 +105,7 @@ export function BookingInsightsTab({ dateRange, onDateRangeChange }: BookingInsi
 
       const listData = (data || []).map((d: any) => ({
         ...d,
-        sentiment_distribution: { positive: 0, neutral: 0, negative: 0 },
+        sentiment_distribution: d.sentiment_distribution || { positive: 0, neutral: 0, negative: 0 },
         pain_points: [],
         payment_insights: [],
         transportation_insights: [],
