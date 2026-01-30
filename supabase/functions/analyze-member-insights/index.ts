@@ -318,7 +318,7 @@ async function processAnalysis(
       negative: Math.round((sentimentCounts.negative / totalCalls) * 100)
     };
 
-    // Build AI prompt for analysis - ENHANCED with source tracking instructions
+    // Build AI prompt for analysis - ENHANCED with source tracking instructions and customer journeys
     const aiPrompt = `You are analyzing PadSplit member call data. PadSplit provides affordable room rentals for working-class individuals, typically single occupants with weekly budgets of $150-250.
 
 CONTEXT:
@@ -398,8 +398,38 @@ Analyze this data and return a JSON object with EXACTLY this structure. IMPORTAN
   ],
   "member_journey_insights": [
     {"pattern": "repeat caller behavior or journey insight", "frequency": 5, "implication": "what this means for PadSplit"}
+  ],
+  "customer_journeys": [
+    {
+      "persona_name": "The Urgent Relocator",
+      "frequency_percent": 28,
+      "trigger_quote": "I need to move by Friday",
+      "journey_stages": [
+        {"stage": "Crisis Trigger", "emotion": "stressed", "action": "emergency search"},
+        {"stage": "Quick Search", "emotion": "anxious", "friction": "too many options"},
+        {"stage": "Payment Confusion", "emotion": "frustrated", "friction": "unclear total fees"},
+        {"stage": "Decision Point", "emotion": "hesitant", "outcome": "booking or drop"}
+      ],
+      "intervention_points": [
+        "Show 'Move-in ASAP' filter prominently",
+        "Display total cost upfront on listing cards",
+        "Enable same-day host approval for verified hosts"
+      ],
+      "example_quotes": ["I'm getting evicted and need somewhere by end of week", "My landlord gave me 5 days notice"],
+      "related_pain_points": ["Payment & Fee Confusion", "Booking Process Speed"],
+      "market_concentration": {"Atlanta, GA": 35, "Dallas, TX": 25}
+    }
   ]
 }
+
+CUSTOMER JOURNEY REQUIREMENTS:
+- Generate 3-6 distinct customer journey personas based on patterns you observe in the data
+- Each persona should represent a real behavioral pattern (e.g., urgent relocators, budget-conscious shoppers, skeptical first-timers, transit-dependent members)
+- Journey stages should flow logically from trigger to outcome
+- Emotions should reflect the actual sentiment at each stage
+- Intervention points should be specific, actionable product/process improvements
+- Include actual quotes from the call data as examples
+- Market concentration shows which markets have higher percentages of this persona
 
 IMPORTANT:
 - Frequencies should be percentages of total calls analyzed
@@ -566,6 +596,7 @@ IMPORTANT:
         sentiment_distribution: sentimentDistribution,
         ai_recommendations: parsedAnalysis.ai_recommendations || [],
         member_journey_insights: parsedAnalysis.member_journey_insights || [],
+        customer_journeys: parsedAnalysis.customer_journeys || [],
         raw_analysis: analysisText,
         avg_call_duration_seconds: avgCallDurationSeconds,
         previous_insight_id: previousAnalysis?.id || null,

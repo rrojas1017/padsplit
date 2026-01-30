@@ -1123,6 +1123,7 @@ export type Database = {
           avg_call_duration_seconds: number | null
           created_at: string
           created_by: string | null
+          customer_journeys: Json | null
           date_range_end: string
           date_range_start: string
           emerging_issues: Json | null
@@ -1151,6 +1152,7 @@ export type Database = {
           avg_call_duration_seconds?: number | null
           created_at?: string
           created_by?: string | null
+          customer_journeys?: Json | null
           date_range_end: string
           date_range_start: string
           emerging_issues?: Json | null
@@ -1179,6 +1181,7 @@ export type Database = {
           avg_call_duration_seconds?: number | null
           created_at?: string
           created_by?: string | null
+          customer_journeys?: Json | null
           date_range_end?: string
           date_range_start?: string
           emerging_issues?: Json | null

@@ -18,6 +18,24 @@ import MarketInsights from '@/components/member-insights/MarketInsights';
 import RecommendationsPanel from '@/components/member-insights/RecommendationsPanel';
 import SentimentChart from '@/components/member-insights/SentimentChart';
 import TrendChart from '@/components/member-insights/TrendChart';
+import CustomerJourneyPanel from '@/components/member-insights/CustomerJourneyPanel';
+
+interface CustomerJourney {
+  persona_name: string;
+  frequency_percent: number;
+  trigger_quote: string;
+  journey_stages: Array<{
+    stage: string;
+    emotion: string;
+    action?: string;
+    friction?: string;
+    outcome?: string;
+  }>;
+  intervention_points: string[];
+  example_quotes: string[];
+  related_pain_points: string[];
+  market_concentration?: Record<string, number>;
+}
 
 interface MemberInsight {
   id: string;
@@ -36,6 +54,7 @@ interface MemberInsight {
   sentiment_distribution: { positive: number; neutral: number; negative: number };
   ai_recommendations: any[];
   member_journey_insights: any[];
+  customer_journeys?: CustomerJourney[];
   avg_call_duration_seconds?: number;
   created_at: string;
   status?: 'processing' | 'completed' | 'failed';
@@ -116,6 +135,7 @@ export function BookingInsightsTab({ dateRange, onDateRangeChange }: BookingInsi
         market_breakdown: {},
         ai_recommendations: [],
         member_journey_insights: [],
+        customer_journeys: [],
         status: d.status || 'completed',
       })) as MemberInsight[];
       
@@ -168,6 +188,7 @@ export function BookingInsightsTab({ dateRange, onDateRangeChange }: BookingInsi
         market_breakdown: data.market_breakdown as Record<string, any>,
         ai_recommendations: data.ai_recommendations as any[],
         member_journey_insights: data.member_journey_insights as any[],
+        customer_journeys: Array.isArray(data.customer_journeys) ? (data.customer_journeys as unknown as CustomerJourney[]) : [],
       } as MemberInsight;
 
       setSelectedInsight(typedData);
@@ -352,6 +373,14 @@ export function BookingInsightsTab({ dateRange, onDateRangeChange }: BookingInsi
             recommendations={selectedInsight.ai_recommendations}
             journeyInsights={selectedInsight.member_journey_insights}
           />
+
+          {/* Customer Journey Suggestions */}
+          {selectedInsight.customer_journeys && selectedInsight.customer_journeys.length > 0 && (
+            <CustomerJourneyPanel 
+              journeys={selectedInsight.customer_journeys}
+              totalCallsAnalyzed={selectedInsight.total_calls_analyzed}
+            />
+          )}
         </>
       ) : (
         <Card className="py-12">
