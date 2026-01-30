@@ -21,6 +21,7 @@ import {
   Home,
   Sparkles,
   AlertTriangle,
+  Mic,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { useContactCommunications } from '@/hooks/useContactCommunications';
@@ -94,6 +95,18 @@ export function ContactProfileHoverCard({
       logCommunication({
         bookingId,
         communicationType: 'sms',
+        recipientPhone: contactPhone,
+      });
+    }
+  };
+
+  const handleVoiceNoteClick = () => {
+    if (contactPhone && bookingId) {
+      const cleanPhone = contactPhone.replace(/\D/g, '');
+      window.location.href = `tel:${cleanPhone}`;
+      logCommunication({
+        bookingId,
+        communicationType: 'voice_note',
         recipientPhone: contactPhone,
       });
     }
@@ -297,6 +310,17 @@ export function ContactProfileHoverCard({
                 >
                   <MessageSquare className="h-3.5 w-3.5 mr-1.5" />
                   SMS
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="flex-1 h-8 text-xs"
+                  onClick={handleVoiceNoteClick}
+                  disabled={!contactPhone || !canSendCommunications}
+                  title={!canSendCommunications ? 'Communication permission required' : 'Call'}
+                >
+                  <Mic className="h-3.5 w-3.5 mr-1.5" />
+                  Voice
                 </Button>
               </div>
 
