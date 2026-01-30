@@ -278,7 +278,7 @@ export function useReportsData(
 
       // Transform to Booking type - get transcription data from joined table
       const transformedRecords: Booking[] = (data || []).map(row => {
-        const transcription = (row.booking_transcriptions as any)?.[0];
+        const transcription = row.booking_transcriptions as any;
         return {
           id: row.id,
           bookingDate: new Date(row.booking_date),
