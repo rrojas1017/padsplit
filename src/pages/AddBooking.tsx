@@ -23,7 +23,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from '@/hooks/use-toast';
 import { format } from 'date-fns';
-import { CalendarIcon, Save, PlusCircle, ArrowLeft, RotateCcw } from 'lucide-react';
+import { CalendarIcon, Save, PlusCircle, ArrowLeft, RotateCcw, Check } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 const bookingTypes: Booking['bookingType'][] = ['Inbound', 'Outbound', 'Referral'];
@@ -56,6 +56,17 @@ export default function AddBooking() {
   const [contactEmail, setContactEmail] = useState('');
   const [contactPhone, setContactPhone] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Validation helpers for real-time feedback
+  const isValidEmail = (email: string) => {
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    return email.trim() !== '' && emailRegex.test(email.trim());
+  };
+
+  const isValidPhone = (phone: string) => {
+    const phoneDigits = phone.replace(/\D/g, '');
+    return phoneDigits.length >= 10;
+  };
 
   // Get list of past bookings for rebooking dropdown
   const { bookings } = useBookings();
@@ -352,23 +363,35 @@ export default function AddBooking() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="contactEmail">Email Address *</Label>
-                <Input
-                  id="contactEmail"
-                  type="email"
-                  value={contactEmail}
-                  onChange={(e) => setContactEmail(e.target.value)}
-                  placeholder="member@email.com"
-                />
+                <div className="relative">
+                  <Input
+                    id="contactEmail"
+                    type="email"
+                    value={contactEmail}
+                    onChange={(e) => setContactEmail(e.target.value)}
+                    placeholder="member@email.com"
+                    className={isValidEmail(contactEmail) ? 'pr-10' : ''}
+                  />
+                  {isValidEmail(contactEmail) && (
+                    <Check className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-green-500" />
+                  )}
+                </div>
               </div>
               <div className="space-y-2">
                 <Label htmlFor="contactPhone">Phone Number *</Label>
-                <Input
-                  id="contactPhone"
-                  type="tel"
-                  value={contactPhone}
-                  onChange={(e) => setContactPhone(e.target.value)}
-                  placeholder="(000) 000-0000"
-                />
+                <div className="relative">
+                  <Input
+                    id="contactPhone"
+                    type="tel"
+                    value={contactPhone}
+                    onChange={(e) => setContactPhone(e.target.value)}
+                    placeholder="(000) 000-0000"
+                    className={isValidPhone(contactPhone) ? 'pr-10' : ''}
+                  />
+                  {isValidPhone(contactPhone) && (
+                    <Check className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-green-500" />
+                  )}
+                </div>
               </div>
             </div>
           </div>
