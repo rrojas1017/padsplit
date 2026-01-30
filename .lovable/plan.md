@@ -1,129 +1,145 @@
 
+# Add Avg. Call Duration Card to Booking Insights
 
-# Fix Non-Booking Analysis Stats Capped at 1,000 Rows
+## Overview
 
-## Problem
+Add an "Avg Duration" card to the Booking Insights summary cards to match the Non-Booking Analysis layout. This requires both database and UI changes since the `member_insights` table doesn't currently store average call duration.
 
-The Non-Booking Analysis tab shows incorrect statistics because the current implementation fetches all rows to count them locally. This hits the default Supabase limit of 1,000 rows, causing:
+## Current State Comparison
 
-| Metric | Showing | Actual |
-|--------|---------|--------|
-| Total Non-Booking Calls | 1,000 | 3,286 |
-| High Readiness | 284 | 949 |
-| Transcribed | 2 | 2 |
+| Card Position | Booking Insights | Non-Booking Analysis |
+|---------------|-----------------|---------------------|
+| 1 | Calls Analyzed | Non-Booking Calls |
+| 2 | Top Pain Point | Transcribed |
+| 3 | Overall Sentiment | High Readiness |
+| 4 | Top Objection | **Avg Duration** |
+| 5 | (none) | (none) |
 
-The Trend Chart also has this issue, potentially showing incomplete data.
+## Proposed Changes
 
-## Solution
+### Phase 1: Database Update
 
-Use server-side aggregation with SQL aggregate queries instead of fetching rows and counting client-side. This will:
-1. Return accurate counts regardless of dataset size
-2. Be more efficient (no need to transfer row data)
-3. Properly respect date range filters
-
-## Implementation Approach
-
-### Approach 1: Use Supabase count with `head: true` (for total count only)
-```typescript
-// Only returns count, no row data
-const { count } = await supabase
-  .from('bookings')
-  .select('*', { count: 'exact', head: true })
-  .eq('status', 'Non Booking');
-```
-
-### Approach 2: Use a database function for complex aggregations (recommended)
-Since we need multiple aggregated values (total, transcribed, high_readiness, avg_duration), create a database function that returns all stats in one call.
-
-**We will use Approach 2** because we need multiple aggregated values and conditional counts.
-
-## Changes Required
-
-### 1. Create Database Function
-
-Create a new SQL function `get_non_booking_stats` that accepts date range parameters and returns all aggregated stats:
+Add a new column to store average call duration:
 
 ```sql
-CREATE OR REPLACE FUNCTION get_non_booking_stats(
-  start_date DATE DEFAULT NULL
-)
-RETURNS TABLE(
-  total_calls BIGINT,
-  transcribed_calls BIGINT,
-  high_readiness_calls BIGINT,
-  avg_duration_seconds NUMERIC
-)
-LANGUAGE plpgsql
-SECURITY DEFINER
-AS $$
-BEGIN
-  RETURN QUERY
-  SELECT 
-    COUNT(*)::BIGINT as total_calls,
-    COUNT(CASE WHEN transcription_status = 'completed' THEN 1 END)::BIGINT as transcribed_calls,
-    COUNT(CASE WHEN call_duration_seconds > 300 THEN 1 END)::BIGINT as high_readiness_calls,
-    COALESCE(AVG(CASE WHEN call_duration_seconds > 0 THEN call_duration_seconds END), 0)::NUMERIC as avg_duration_seconds
-  FROM bookings
-  WHERE status = 'Non Booking'
-    AND (start_date IS NULL OR booking_date >= start_date);
-END;
-$$;
+ALTER TABLE member_insights 
+ADD COLUMN avg_call_duration_seconds NUMERIC DEFAULT 0;
 ```
 
-### 2. Update NonBookingAnalysisTab.tsx
+### Phase 2: Edge Function Update
 
-Replace the current client-side aggregation with a call to the database function:
+Update `analyze-member-insights` to:
+1. Include `call_duration_seconds` in the bookings query
+2. Calculate average duration from all analyzed calls
+3. Store it in the new column
 
+### Phase 3: UI Update
+
+Update `InsightsSummaryCards.tsx` to:
+1. Accept `avg_call_duration_seconds` in the insight prop
+2. Add a 5th card with Clock icon showing formatted duration
+3. Add the gradient bottom border styling for consistency with Non-Booking cards
+
+## Detailed Implementation
+
+### 1. Database Migration
+
+```sql
+ALTER TABLE member_insights 
+ADD COLUMN avg_call_duration_seconds NUMERIC DEFAULT 0;
+```
+
+### 2. Edge Function Changes (`analyze-member-insights/index.ts`)
+
+Update the bookings query to include duration:
 ```typescript
-// Before (hits 1000 row limit):
-const { data } = await supabase
+const { data: bookingsRaw, error: bookingsError } = await supabase
   .from('bookings')
-  .select('id, transcription_status, call_duration_seconds')
-  .eq('status', 'Non Booking');
-const totalCalls = data.length; // Max 1000!
-
-// After (accurate count):
-const { data } = await supabase.rpc('get_non_booking_stats', {
-  start_date: days !== null ? startDate.toISOString().split('T')[0] : null
-});
-// Returns: { total_calls: 3286, transcribed_calls: 2, ... }
+  .select(`
+    id, 
+    member_name, 
+    market_city, 
+    market_state,
+    call_duration_seconds,  // <-- ADD THIS
+    booking_transcriptions (
+      call_key_points
+    )
+  `)
 ```
 
-### 3. Update NonBookingTrendChart.tsx
+Calculate average in the aggregation loop:
+```typescript
+let totalDuration = 0;
+let durationCount = 0;
 
-For the trend chart, we still need row-level data for grouping by date. Two options:
+for (const booking of bookings) {
+  // ... existing logic ...
+  
+  if (booking.call_duration_seconds && booking.call_duration_seconds > 0) {
+    totalDuration += booking.call_duration_seconds;
+    durationCount++;
+  }
+}
 
-**Option A**: Paginate to fetch all rows (complex, slower)
-**Option B**: Create a second database function for trend data (cleaner)
+const avgCallDuration = durationCount > 0 ? totalDuration / durationCount : 0;
+```
 
-We'll use **Option B** - create `get_non_booking_trends` function that returns pre-aggregated daily/weekly data.
+Store it when updating the record:
+```typescript
+.update({
+  // ... existing fields ...
+  avg_call_duration_seconds: avgCallDuration,
+  status: 'completed'
+})
+```
 
-### 4. Update NonBookingMissedOpportunitiesPanel.tsx
+### 3. Update InsightsSummaryCards.tsx
 
-The panel receives `highReadinessCount` as a prop from the parent, so it will automatically show the correct value once the parent is fixed.
+```text
+Summary Cards Layout (Updated)
+├── Calls Analyzed (Phone icon, primary color)
+├── Top Pain Point (AlertTriangle icon, destructive color)
+├── Overall Sentiment (Smile icon, contextual color)
+├── Top Objection (TrendingDown icon, amber color)
+└── Avg Duration (Clock icon, primary color) <-- NEW
+```
+
+Changes:
+- Add `avg_call_duration_seconds` to interface
+- Add formatDuration helper function
+- Add 5th card with Clock icon
+- Add gradient bottom borders to all cards for visual consistency
+- Update grid to `lg:grid-cols-5` for 5 cards
+
+### 4. Update MemberInsight Interface
+
+In `BookingInsightsTab.tsx`, add to MemberInsight interface:
+```typescript
+interface MemberInsight {
+  // ... existing fields ...
+  avg_call_duration_seconds?: number;
+}
+```
+
+## Visual Consistency Updates
+
+Both tabs will have matching card styling:
+- 5 summary cards in a row
+- Each with gradient bottom border accent
+- Consistent icon/color patterns for similar metrics
 
 ## Files to Modify
 
-| File | Change |
-|------|--------|
-| Database Migration | Create `get_non_booking_stats` and `get_non_booking_trends` functions |
-| `src/components/call-insights/NonBookingAnalysisTab.tsx` | Use `supabase.rpc('get_non_booking_stats')` instead of fetching rows |
-| `src/components/call-insights/NonBookingTrendChart.tsx` | Use `supabase.rpc('get_non_booking_trends')` for accurate trend data |
-
-## Expected Results After Fix
-
-| Period | Metric | Before | After |
-|--------|--------|--------|-------|
-| All Time | Total Calls | 1,000 | 3,286 |
-| All Time | High Readiness | 284 | 949 |
-| All Time | Avg Duration | 4:40 | 4:43 |
-| Last 30 Days | Total Calls | ~347 | 347 |
-| Last 30 Days | High Readiness | ~112 | 112 |
+| File | Changes |
+|------|---------|
+| Database Migration | Add `avg_call_duration_seconds` column |
+| `supabase/functions/analyze-member-insights/index.ts` | Query duration, calculate avg, store it |
+| `src/components/member-insights/InsightsSummaryCards.tsx` | Add 5th card, update grid, add gradients |
+| `src/components/call-insights/BookingInsightsTab.tsx` | Update MemberInsight interface |
 
 ## Technical Notes
 
-- The database functions use `SECURITY DEFINER` to run with elevated privileges but still respect RLS on the underlying table
-- Using `BIGINT` for counts to handle large datasets
-- The `start_date` parameter is optional - passing `NULL` returns all-time stats
-- The trend function will return pre-grouped data to avoid client-side aggregation limits
-
+- Duration is stored in seconds and formatted as "MM:SS" for display
+- Grid changes from 4 to 5 columns on large screens
+- Existing insight records will have `avg_call_duration_seconds` default to 0
+- New analyses will calculate and populate the field
