@@ -20,10 +20,28 @@ interface BookingWithTranscription {
   member_name: string;
   market_city: string;
   market_state: string;
+  booking_date: string;
   call_duration_seconds: number | null;
   booking_transcriptions: Array<{
     call_key_points: CallKeyPoints;
   }>;
+}
+
+interface SourceBookingInfo {
+  booking_id: string;
+  quote: string;
+  market: string;
+  date: string;
+}
+
+interface PainPointWithSources {
+  category: string;
+  description: string;
+  frequency: number;
+  examples: string[];
+  source_bookings: SourceBookingInfo[];
+  trend_delta?: number;
+  is_emerging?: boolean;
 }
 
 // Cost logging helper
@@ -74,6 +92,73 @@ async function logApiCost(supabase: any, params: {
   }
 }
 
+// Fetch previous analysis for trend comparison
+async function fetchPreviousAnalysis(supabase: any, analysisPeriod: string, currentDateEnd: string) {
+  try {
+    const { data, error } = await supabase
+      .from('member_insights')
+      .select('id, pain_points, objection_patterns, date_range_start, date_range_end, total_calls_analyzed')
+      .eq('analysis_period', analysisPeriod)
+      .eq('status', 'completed')
+      .lt('date_range_end', currentDateEnd)
+      .order('date_range_end', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (error) {
+      console.error('[Previous] Error fetching previous analysis:', error);
+      return null;
+    }
+
+    console.log(`[Previous] Found previous analysis: ${data?.id || 'none'}`);
+    return data;
+  } catch (error) {
+    console.error('[Previous] Exception fetching previous analysis:', error);
+    return null;
+  }
+}
+
+// Calculate trend deltas between current and previous pain points
+function calculateTrendDeltas(
+  currentPainPoints: PainPointWithSources[],
+  previousPainPoints: any[]
+): { painPointsWithTrends: PainPointWithSources[], emergingIssues: string[] } {
+  const previousMap = new Map<string, number>();
+  const previousCategories = new Set<string>();
+  
+  for (const pp of previousPainPoints || []) {
+    const key = pp.category?.toLowerCase()?.trim();
+    if (key) {
+      previousMap.set(key, pp.frequency || 0);
+      previousCategories.add(key);
+    }
+  }
+
+  const emergingIssues: string[] = [];
+  const painPointsWithTrends = currentPainPoints.map(pp => {
+    const key = pp.category?.toLowerCase()?.trim();
+    const previousFreq = previousMap.get(key);
+    
+    if (previousFreq === undefined) {
+      // This is a new/emerging issue
+      emergingIssues.push(pp.category);
+      return {
+        ...pp,
+        trend_delta: pp.frequency, // All new
+        is_emerging: true
+      };
+    } else {
+      return {
+        ...pp,
+        trend_delta: pp.frequency - previousFreq,
+        is_emerging: false
+      };
+    }
+  });
+
+  return { painPointsWithTrends, emergingIssues };
+}
+
 // Background processing function
 async function processAnalysis(
   supabaseUrl: string,
@@ -89,6 +174,9 @@ async function processAnalysis(
   try {
     console.log(`[Background] Starting analysis for insight ${insightId}`);
     
+    // Fetch previous analysis for trend comparison
+    const previousAnalysis = await fetchPreviousAnalysis(supabase, analysis_period, date_range_end);
+    
     // Fetch all bookings with completed transcriptions in date range
     const { data: bookingsRaw, error: bookingsError } = await supabase
       .from('bookings')
@@ -97,6 +185,7 @@ async function processAnalysis(
         member_name, 
         market_city, 
         market_state,
+        booking_date,
         call_duration_seconds,
         booking_transcriptions (
           call_key_points
@@ -135,10 +224,10 @@ async function processAnalysis(
       return;
     }
 
-    // Aggregate all call data
-    const allConcerns: string[] = [];
-    const allPreferences: string[] = [];
-    const allObjections: string[] = [];
+    // Aggregate all call data - NOW WITH BOOKING IDS
+    const allConcerns: Array<{ text: string; booking_id: string; market: string; date: string }> = [];
+    const allPreferences: Array<{ text: string; booking_id: string; market: string; date: string }> = [];
+    const allObjections: Array<{ text: string; booking_id: string; market: string; date: string }> = [];
     const sentimentCounts = { positive: 0, neutral: 0, negative: 0 };
     const readinessCounts = { high: 0, medium: 0, low: 0 };
     const marketData: Record<string, { concerns: string[], objections: string[], preferences: string[], count: number }> = {};
@@ -153,9 +242,42 @@ async function processAnalysis(
       const keyPoints = transcription?.call_key_points;
       if (!keyPoints) continue;
 
-      if (keyPoints.memberConcerns) allConcerns.push(...keyPoints.memberConcerns);
-      if (keyPoints.memberPreferences) allPreferences.push(...keyPoints.memberPreferences);
-      if (keyPoints.objections) allObjections.push(...keyPoints.objections);
+      const market = `${booking.market_city || 'Unknown'}, ${booking.market_state || 'Unknown'}`;
+      const bookingDate = booking.booking_date;
+
+      // Track concerns with source booking info
+      if (keyPoints.memberConcerns) {
+        for (const concern of keyPoints.memberConcerns) {
+          allConcerns.push({
+            text: concern,
+            booking_id: booking.id,
+            market,
+            date: bookingDate
+          });
+        }
+      }
+
+      if (keyPoints.memberPreferences) {
+        for (const pref of keyPoints.memberPreferences) {
+          allPreferences.push({
+            text: pref,
+            booking_id: booking.id,
+            market,
+            date: bookingDate
+          });
+        }
+      }
+
+      if (keyPoints.objections) {
+        for (const obj of keyPoints.objections) {
+          allObjections.push({
+            text: obj,
+            booking_id: booking.id,
+            market,
+            date: bookingDate
+          });
+        }
+      }
 
       if (keyPoints.callSentiment) {
         sentimentCounts[keyPoints.callSentiment]++;
@@ -171,7 +293,7 @@ async function processAnalysis(
         durationCount++;
       }
 
-      const marketKey = `${booking.market_city || 'Unknown'}, ${booking.market_state || 'Unknown'}`;
+      const marketKey = market;
       if (!marketData[marketKey]) {
         marketData[marketKey] = { concerns: [], objections: [], preferences: [], count: 0 };
       }
@@ -196,7 +318,7 @@ async function processAnalysis(
       negative: Math.round((sentimentCounts.negative / totalCalls) * 100)
     };
 
-    // Build AI prompt for analysis
+    // Build AI prompt for analysis - ENHANCED with source tracking instructions
     const aiPrompt = `You are analyzing PadSplit member call data. PadSplit provides affordable room rentals for working-class individuals, typically single occupants with weekly budgets of $150-250.
 
 CONTEXT:
@@ -208,14 +330,14 @@ CONTEXT:
 
 ANALYSIS DATA FROM ${totalCalls} CALLS (${date_range_start} to ${date_range_end}):
 
-MEMBER CONCERNS (${allConcerns.length} total):
-${allConcerns.slice(0, 100).join('\n')}
+MEMBER CONCERNS (${allConcerns.length} total) - each entry includes the actual quote:
+${allConcerns.slice(0, 150).map(c => `"${c.text}" - ${c.market}, ${c.date}`).join('\n')}
 
 MEMBER PREFERENCES (${allPreferences.length} total):
-${allPreferences.slice(0, 100).join('\n')}
+${allPreferences.slice(0, 100).map(p => `"${p.text}" - ${p.market}`).join('\n')}
 
 OBJECTIONS (${allObjections.length} total):
-${allObjections.slice(0, 100).join('\n')}
+${allObjections.slice(0, 100).map(o => `"${o.text}" - ${o.market}`).join('\n')}
 
 SENTIMENT BREAKDOWN:
 - Positive: ${sentimentCounts.positive} calls (${sentimentDistribution.positive}%)
@@ -229,36 +351,47 @@ MOVE-IN READINESS:
 
 MARKET DATA:
 ${Object.entries(marketData).map(([market, data]) => 
-  `${market}: ${data.count} calls`
+  `${market}: ${data.count} calls, Top concerns: ${data.concerns.slice(0, 3).join('; ')}`
 ).join('\n')}
 
-Analyze this data and return a JSON object with EXACTLY this structure:
+${previousAnalysis ? `
+PREVIOUS ANALYSIS (${previousAnalysis.date_range_start} to ${previousAnalysis.date_range_end}):
+Previous pain point categories: ${(previousAnalysis.pain_points || []).map((p: any) => `${p.category} (${p.frequency}%)`).join(', ')}
+` : ''}
+
+Analyze this data and return a JSON object with EXACTLY this structure. IMPORTANT: Include actual verbatim quotes from the data in the "examples" arrays:
+
 {
   "pain_points": [
-    {"category": "Transportation", "description": "specific pain point", "frequency": 25, "examples": ["example1", "example2"]},
-    {"category": "Payment", "description": "specific pain point", "frequency": 20, "examples": ["example1"]}
+    {
+      "category": "Transportation", 
+      "description": "specific pain point description", 
+      "frequency": 25, 
+      "examples": ["actual quote from a call", "another actual quote"],
+      "market_breakdown": {"Atlanta, GA": 35, "Dallas, TX": 15}
+    }
   ],
   "payment_insights": [
-    {"insight": "specific insight about payment patterns", "frequency": 15, "impact": "high|medium|low"}
+    {"insight": "specific insight about payment patterns", "frequency": 15, "impact": "high|medium|low", "examples": ["quote"]}
   ],
   "transportation_insights": [
-    {"insight": "specific insight about transportation needs", "frequency": 12, "markets_affected": ["Atlanta", "Dallas"]}
+    {"insight": "specific insight about transportation needs", "frequency": 12, "markets_affected": ["Atlanta", "Dallas"], "examples": ["quote"]}
   ],
   "price_sensitivity": [
     {"pattern": "budget range or comparison behavior", "frequency": 18, "suggested_action": "what PadSplit could do"}
   ],
   "move_in_barriers": [
-    {"barrier": "what prevents/delays move-in", "frequency": 10, "impact_score": 8, "resolution": "how to address"}
+    {"barrier": "what prevents/delays move-in", "frequency": 10, "impact_score": 8, "resolution": "how to address", "examples": ["quote"]}
   ],
   "property_preferences": [
     {"preference": "amenity or feature preference", "frequency": 22, "priority": "must-have|nice-to-have"}
   ],
   "objection_patterns": [
-    {"objection": "common hesitation", "frequency": 15, "suggested_response": "how agents should handle"}
+    {"objection": "common hesitation", "frequency": 15, "suggested_response": "how agents should handle", "examples": ["quote"]}
   ],
   "market_breakdown": {
-    "Atlanta, GA": {"top_concern": "transportation", "unique_pattern": "description", "call_count": 10},
-    "Dallas, TX": {"top_concern": "pricing", "unique_pattern": "description", "call_count": 8}
+    "Atlanta, GA": {"top_concern": "transportation", "unique_pattern": "description", "call_count": 10, "pain_point_frequencies": {"Transportation": 35, "Payment": 25}},
+    "Dallas, TX": {"top_concern": "pricing", "unique_pattern": "description", "call_count": 8, "pain_point_frequencies": {"Payment": 40, "Transportation": 10}}
   },
   "ai_recommendations": [
     {"recommendation": "specific actionable item", "category": "Marketing|Retention|Operations|Training", "priority": "high|medium|low", "expected_impact": "description of potential impact"}
@@ -271,8 +404,8 @@ Analyze this data and return a JSON object with EXACTLY this structure:
 IMPORTANT:
 - Frequencies should be percentages of total calls analyzed
 - Include at least 3-5 items in each category if data supports it
-- Focus on actionable insights for marketing and retention
-- Identify patterns appearing in >10% of calls as significant
+- ALWAYS include real verbatim quotes in the "examples" arrays - these should be actual phrases from the call data provided
+- Include market_breakdown within pain_points to show how each pain point varies by market
 - Market breakdown should only include markets with 3+ calls
 - Recommendations should be specific and measurable`;
 
@@ -346,6 +479,64 @@ IMPORTANT:
       };
     }
 
+    // Build source booking IDs mapping for pain points
+    const sourceBookingIds: Record<string, string[]> = {};
+    
+    // Map examples in pain points back to booking IDs
+    for (const painPoint of parsedAnalysis.pain_points || []) {
+      const category = painPoint.category?.toLowerCase()?.trim() || '';
+      const matchingBookingIds: string[] = [];
+      
+      // Find bookings that match the examples
+      for (const example of painPoint.examples || []) {
+        const exampleLower = example.toLowerCase();
+        for (const concern of allConcerns) {
+          if (concern.text.toLowerCase().includes(exampleLower.slice(0, 30)) || 
+              exampleLower.includes(concern.text.toLowerCase().slice(0, 30))) {
+            if (!matchingBookingIds.includes(concern.booking_id)) {
+              matchingBookingIds.push(concern.booking_id);
+            }
+          }
+        }
+      }
+      
+      // Also find bookings by category keywords
+      const categoryKeywords = category.split(/[\s&]+/).filter((k: string) => k.length > 3);
+      for (const concern of allConcerns) {
+        const concernLower = concern.text.toLowerCase();
+        if (categoryKeywords.some((kw: string) => concernLower.includes(kw))) {
+          if (!matchingBookingIds.includes(concern.booking_id)) {
+            matchingBookingIds.push(concern.booking_id);
+          }
+        }
+      }
+      
+      if (matchingBookingIds.length > 0) {
+        sourceBookingIds[category] = matchingBookingIds.slice(0, 20); // Limit to 20 per category
+      }
+    }
+
+    // Calculate trend deltas if we have previous analysis
+    let painPointsWithTrends = parsedAnalysis.pain_points || [];
+    let emergingIssues: string[] = [];
+    let trendComparison = null;
+
+    if (previousAnalysis?.pain_points) {
+      const trendResult = calculateTrendDeltas(
+        parsedAnalysis.pain_points || [],
+        previousAnalysis.pain_points
+      );
+      painPointsWithTrends = trendResult.painPointsWithTrends;
+      emergingIssues = trendResult.emergingIssues;
+      
+      trendComparison = {
+        previous_insight_id: previousAnalysis.id,
+        previous_date_range: `${previousAnalysis.date_range_start} to ${previousAnalysis.date_range_end}`,
+        previous_total_calls: previousAnalysis.total_calls_analyzed,
+        current_total_calls: totalCalls
+      };
+    }
+
     // Calculate repeat callers for journey insights
     const repeatCallers = Object.entries(memberCallCounts)
       .filter(([_, count]) => count > 1)
@@ -364,7 +555,7 @@ IMPORTANT:
       .from('member_insights')
       .update({
         total_calls_analyzed: totalCalls,
-        pain_points: parsedAnalysis.pain_points || [],
+        pain_points: painPointsWithTrends,
         payment_insights: parsedAnalysis.payment_insights || [],
         transportation_insights: parsedAnalysis.transportation_insights || [],
         price_sensitivity: parsedAnalysis.price_sensitivity || [],
@@ -377,6 +568,10 @@ IMPORTANT:
         member_journey_insights: parsedAnalysis.member_journey_insights || [],
         raw_analysis: analysisText,
         avg_call_duration_seconds: avgCallDurationSeconds,
+        previous_insight_id: previousAnalysis?.id || null,
+        source_booking_ids: sourceBookingIds,
+        emerging_issues: emergingIssues,
+        trend_comparison: trendComparison,
         status: 'completed'
       })
       .eq('id', insightId);
@@ -386,7 +581,7 @@ IMPORTANT:
       throw new Error(`Failed to save insights: ${updateError.message}`);
     }
 
-    console.log(`[Background] Analysis completed successfully. ID: ${insightId}, Calls: ${totalCalls}`);
+    console.log(`[Background] Analysis completed successfully. ID: ${insightId}, Calls: ${totalCalls}, Emerging: ${emergingIssues.length}`);
 
   } catch (error) {
     console.error('[Background] Error in analysis:', error);

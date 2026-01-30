@@ -1,17 +1,52 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { MapPin, TrendingUp } from 'lucide-react';
+import { MapPin, ChevronDown } from 'lucide-react';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
+import { Button } from '@/components/ui/button';
+import { Progress } from '@/components/ui/progress';
+import { useState } from 'react';
 
 interface MarketData {
   top_concern: string;
   unique_pattern: string;
   call_count: number;
+  pain_point_frequencies?: Record<string, number>;
 }
 
 interface MarketInsightsProps {
   marketData: Record<string, MarketData>;
 }
+
+const PainPointBreakdown = ({ frequencies }: { frequencies?: Record<string, number> }) => {
+  const [isOpen, setIsOpen] = useState(false);
+  
+  if (!frequencies || Object.keys(frequencies).length === 0) return null;
+  
+  const sortedPainPoints = Object.entries(frequencies).sort(([, a], [, b]) => b - a);
+  
+  return (
+    <Collapsible open={isOpen} onOpenChange={setIsOpen}>
+      <CollapsibleTrigger asChild>
+        <Button variant="ghost" size="sm" className="h-auto p-1 text-xs text-muted-foreground hover:text-foreground">
+          <ChevronDown className={`h-3 w-3 mr-1 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+          {sortedPainPoints.length} pain points
+        </Button>
+      </CollapsibleTrigger>
+      <CollapsibleContent className="mt-2 space-y-1.5">
+        {sortedPainPoints.map(([painPoint, freq]) => (
+          <div key={painPoint} className="space-y-0.5">
+            <div className="flex items-center justify-between text-xs">
+              <span className="truncate text-muted-foreground">{painPoint}</span>
+              <span className="font-medium ml-2">{freq}%</span>
+            </div>
+            <Progress value={freq} className="h-1" />
+          </div>
+        ))}
+      </CollapsibleContent>
+    </Collapsible>
+  );
+};
 
 const MarketInsights = ({ marketData }: MarketInsightsProps) => {
   const markets = Object.entries(marketData || {})
@@ -35,7 +70,7 @@ const MarketInsights = ({ marketData }: MarketInsightsProps) => {
                   <TableHead>Market</TableHead>
                   <TableHead className="text-center">Calls</TableHead>
                   <TableHead>Top Concern</TableHead>
-                  <TableHead>Unique Pattern</TableHead>
+                  <TableHead>Details</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -65,10 +100,14 @@ const MarketInsights = ({ marketData }: MarketInsightsProps) => {
                         {data.top_concern || 'N/A'}
                       </Badge>
                     </TableCell>
-                    <TableCell className="max-w-[200px]">
-                      <p className="text-sm text-muted-foreground truncate" title={data.unique_pattern}>
-                        {data.unique_pattern || 'No unique patterns identified'}
-                      </p>
+                    <TableCell>
+                      {data.pain_point_frequencies ? (
+                        <PainPointBreakdown frequencies={data.pain_point_frequencies} />
+                      ) : (
+                        <p className="text-xs text-muted-foreground truncate max-w-[150px]" title={data.unique_pattern}>
+                          {data.unique_pattern || 'No unique patterns'}
+                        </p>
+                      )}
                     </TableCell>
                   </TableRow>
                 ))}
