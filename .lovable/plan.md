@@ -1,98 +1,67 @@
 
-# Fix Contact Profile Hover Card - Data Fetching
 
-## The Issue
+# Fix Contact Profile Hover Card - Array vs Object Access
 
-The **Contact Profile Hover Card** appears empty because the `call_key_points` data is stored in a separate table (`booking_transcriptions`) rather than directly in the `bookings` table. The Reports page query only reads from `bookings`, so the data is always `undefined`.
+## Root Cause
 
-## Data Architecture
+The **Contact Profile Hover Card** appears empty because of a data access mismatch:
+
+| Expected | Actual | Result |
+|----------|--------|--------|
+| `booking_transcriptions` as array `[{...}]` | `booking_transcriptions` as object `{...}` | Code accesses `[0]` which returns `undefined` |
+
+The Supabase embedded select returns a **single object** for one-to-one relationships, not an array. The current code incorrectly uses array indexing:
+
+```typescript
+// Current (BROKEN) - line 281 of useReportsData.ts
+const transcription = (row.booking_transcriptions as any)?.[0];  // Returns undefined!
+
+// API actually returns:
+"booking_transcriptions": { "call_summary": "...", "call_key_points": {...} }
+```
+
+## The Fix
+
+Change the data access from array notation to direct object access:
+
+```typescript
+// Fixed
+const transcription = row.booking_transcriptions as any;  // Direct object access
+```
+
+## File to Modify
+
+| File | Change |
+|------|--------|
+| `src/hooks/useReportsData.ts` | Line 281: Remove `?.[0]` array indexing |
+
+## Technical Change
 
 ```text
-┌─────────────────────────────────────────────────────────────────────┐
-│ Current Flow (BROKEN)                                               │
-├─────────────────────────────────────────────────────────────────────┤
-│                                                                     │
-│   useReportsData                                                    │
-│        │                                                            │
-│        ▼                                                            │
-│   SELECT call_key_points FROM bookings   →   NULL (always)         │
-│        │                                                            │
-│        ▼                                                            │
-│   ContactProfileHoverCard receives undefined  →  Shows empty       │
-│                                                                     │
-├─────────────────────────────────────────────────────────────────────┤
-│ Actual Data Location                                                │
-│                                                                     │
-│   booking_transcriptions                                            │
-│   ├── booking_id (FK to bookings.id)                               │
-│   ├── call_key_points  ✅ (has the data!)                          │
-│   ├── call_summary                                                  │
-│   ├── call_transcription                                            │
-│   └── agent_feedback                                               │
-└─────────────────────────────────────────────────────────────────────┘
+BEFORE (line 281):
+const transcription = (row.booking_transcriptions as any)?.[0];
+
+AFTER:
+const transcription = row.booking_transcriptions as any;
 ```
 
-## Solution
-
-Update `useReportsData` to JOIN with `booking_transcriptions` table and retrieve the heavy call data from there. Supabase supports this via the embedded select syntax.
-
-## Files to Modify
-
-| File | Changes |
-|------|---------|
-| `src/hooks/useReportsData.ts` | Add LEFT JOIN to `booking_transcriptions` and map data correctly |
-
-## Technical Changes
-
-### useReportsData.ts
-
-**Change the query to include the related transcription data:**
-
-```typescript
-// Current (broken)
-.select(`
-  id,
-  call_key_points,  // Always NULL in bookings table
-  ...
-`)
-
-// Fixed
-.select(`
-  id,
-  ...,
-  booking_transcriptions (
-    call_transcription,
-    call_summary,
-    call_key_points,
-    agent_feedback
-  )
-`)
-```
-
-**Update the transformation to use joined data:**
-
-```typescript
-// Map the joined data correctly
-const transcription = row.booking_transcriptions?.[0];
-return {
-  ...
-  callKeyPoints: transcription?.call_key_points || undefined,
-  callSummary: transcription?.call_summary || undefined,
-  callTranscription: transcription?.call_transcription || undefined,
-  agentFeedback: transcription?.agent_feedback || undefined,
-};
-```
-
-## Expected Result
+## Verification
 
 After this fix:
-1. Hover over any contact with a completed transcription
-2. The hover card will display rich insights (preferences, concerns, readiness, sentiment)
-3. Records without transcriptions will show the "No call insights available" empty state
+1. Hover over any contact with `transcription_status: completed`
+2. The hover card will display:
+   - Move-In Readiness badge (HIGH/MEDIUM/LOW)
+   - Sentiment indicator (positive/neutral/negative)
+   - Budget, household size, commitment
+   - Member preferences (top 3)
+   - Concerns raised (top 3)
+   - Objections (if any)
 
-## Why This Approach?
+## Why This Happened
 
-- Uses Supabase's built-in foreign key relationships (no extra queries)
-- Single efficient query with LEFT JOIN
-- Maintains backward compatibility
-- No database schema changes needed
+Supabase's PostgREST returns embedded foreign key relationships differently based on cardinality:
+- **One-to-many**: Returns an array `[{...}, {...}]`
+- **One-to-one**: Returns a single object `{...}`
+
+Since each booking has exactly one transcription record, Supabase returns an object, not an array.
+
