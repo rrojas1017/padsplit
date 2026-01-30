@@ -41,6 +41,7 @@ import MoveInCalculator from "./pages/MoveInCalculator";
 import PromoCodeSettings from "./pages/PromoCodeSettings";
 import CallInsights from "./pages/CallInsights";
 import HistoricalImport from "./pages/HistoricalImport";
+import BroadcastMessages from "./pages/BroadcastMessages";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -268,6 +269,14 @@ const App = () => (
                 <ProtectedRoute allowedRoles={['super_admin', 'admin']}>
                   <DataProviders>
                     <HistoricalImport />
+                  </DataProviders>
+                </ProtectedRoute>
+              } />
+
+              <Route path="/broadcasts" element={
+                <ProtectedRoute allowedRoles={['super_admin', 'admin', 'supervisor']}>
+                  <DataProviders>
+                    <BroadcastMessages />
                   </DataProviders>
                 </ProtectedRoute>
               } />

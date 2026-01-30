@@ -3,6 +3,7 @@ import { useBookings } from '@/contexts/BookingsContext';
 import { usePageTracking } from '@/hooks/usePageTracking';
 import { useAuth } from '@/contexts/AuthContext';
 import { useAgents } from '@/contexts/AgentsContext';
+import { BroadcastBanner } from '@/components/broadcast/BroadcastBanner';
 import { Button } from '@/components/ui/button';
 import { Search, PlusCircle, MoreHorizontal, Clock, CheckCircle, CalendarX, XCircle, Ban, ExternalLink, Phone, UserCircle, Headphones, FileText, Loader2, RotateCcw, History } from 'lucide-react';
 import { Input } from '@/components/ui/input';
@@ -253,6 +254,8 @@ export default function MyBookings() {
       title="My Bookings" 
       subtitle="Manage and follow up on your bookings"
     >
+      <BroadcastBanner />
+      
       {/* Summary Cards */}
       <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3 mb-6">
         <div className="bg-card rounded-xl p-4 border border-border shadow-sm">

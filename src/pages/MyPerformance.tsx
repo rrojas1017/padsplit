@@ -8,6 +8,7 @@ import { useBookings } from '@/contexts/BookingsContext';
 import { useAgents } from '@/contexts/AgentsContext';
 import { useCoachingData, CoachingBookingWithAudio } from '@/hooks/useCoachingData';
 import { useMyGoal } from '@/hooks/useAgentGoals';
+import { BroadcastBanner } from '@/components/broadcast/BroadcastBanner';
 import { CalendarDays, TrendingUp, Clock, CheckCircle2, Trophy, GraduationCap, ThumbsUp, Lightbulb, Star, Headphones, Timer, Check, Info, Target } from 'lucide-react';
 import { format, subDays, startOfMonth, startOfDay, endOfDay, differenceInDays } from 'date-fns';
 import { Area, AreaChart, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer } from 'recharts';
@@ -285,6 +286,8 @@ export default function MyPerformance() {
         />
       }
     >
+      <BroadcastBanner />
+      
       {/* Rank Banner */}
       <div className="mb-6 p-4 rounded-xl bg-gradient-to-r from-accent/20 to-accent/5 border border-accent/30 flex items-center gap-4 animate-slide-up">
         <div className="w-12 h-12 rounded-full bg-accent/20 flex items-center justify-center">
