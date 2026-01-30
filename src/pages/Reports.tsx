@@ -6,6 +6,7 @@ import { useBookings } from '@/contexts/BookingsContext';
 import { useReportsData, ReportsFilters, ReportsPagination, ReportsSorting, SortColumn, SortDirection } from '@/hooks/useReportsData';
 import { Button } from '@/components/ui/button';
 import { Download, Search, PlusCircle, Pencil, ChevronDown, Building2, User, MessageSquare, Tag, CheckCircle, RotateCcw, ArrowUp, ArrowDown, ArrowUpDown, X, ExternalLink, Phone, UserCircle, Headphones, FileText, Loader2, MoreHorizontal, Clock, CalendarX, XCircle, Ban, AlertTriangle, Package } from 'lucide-react';
+import { ContactProfileHoverCard } from '@/components/reports/ContactProfileHoverCard';
 import { Input } from '@/components/ui/input';
 import { format, startOfDay, endOfDay } from 'date-fns';
 import { cn } from '@/lib/utils';
@@ -716,15 +717,21 @@ export default function Reports() {
                       )}
                     </td>
                     <td className="py-3 px-4 text-sm font-medium text-foreground">
-                      <div className="flex items-center gap-2">
-                        {booking.memberName}
-                        {booking.isRebooking && (
-                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-medium bg-primary/10 text-primary">
-                            <RotateCcw className="h-3 w-3" />
-                            Rebooking
-                          </span>
-                        )}
-                      </div>
+                      <ContactProfileHoverCard
+                        memberName={booking.memberName}
+                        callKeyPoints={booking.callKeyPoints}
+                        transcriptionStatus={booking.transcriptionStatus}
+                      >
+                        <div className="flex items-center gap-2 cursor-default">
+                          <span className="hover:text-primary transition-colors">{booking.memberName}</span>
+                          {booking.isRebooking && (
+                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-medium bg-primary/10 text-primary">
+                              <RotateCcw className="h-3 w-3" />
+                              Rebooking
+                            </span>
+                          )}
+                        </div>
+                      </ContactProfileHoverCard>
                     </td>
                     <td className="py-3 px-4 text-sm">
                       {booking.contactEmail ? (
