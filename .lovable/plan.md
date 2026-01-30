@@ -1,71 +1,41 @@
 
+# Update Phone Number Placeholder
 
-# Fix Contact Info Masking in Reports
+## Issue
 
-## Issue Analysis
+The phone number field in the Add Booking form currently shows a real-looking phone number `(678) 463-1178` as placeholder text. This could cause confusion for agents entering new bookings.
 
-The masking code is correctly implemented, but it only activates for users with `role === 'agent'`. Based on your screenshot showing full email addresses, you are likely logged in as a non-agent role (super_admin, admin, or supervisor).
+## Solution
 
-**Current behavior:**
-| Role | Sees |
-|------|------|
-| super_admin | Full contact info |
-| admin | Full contact info |
-| supervisor | Full contact info |
-| agent | Masked contact info |
-
-## Clarification Needed
-
-There are two possible interpretations:
-
-### Option A: Masking is working correctly (current design)
-If you're logged in as admin/supervisor and seeing full emails, that's the expected behavior. To test masking, you would need to log in as an agent-role user.
-
-### Option B: You want to change the masking logic
-If you want ALL users (or specific roles) to see masked contact info, the `shouldMaskContactInfo` function needs to be updated.
+Change the placeholder to a clearly fake number format: `(000) 000-0000`
 
 ---
 
-## Proposed Fix (Option B - Mask for all roles)
+## Change Details
 
-If you want contact info masked for everyone, update `src/utils/contactPrivacy.ts`:
+| File | Line | Current | New |
+|------|------|---------|-----|
+| `src/pages/AddBooking.tsx` | 370 | `placeholder="(678) 463-1178"` | `placeholder="(000) 000-0000"` |
+
+---
+
+## Code Change
 
 ```typescript
-// Current: Only agents see masked data
-export function shouldMaskContactInfo(userRole: string | undefined): boolean {
-  return userRole === 'agent';
-}
-
-// Change to: Everyone sees masked data EXCEPT super_admin
-export function shouldMaskContactInfo(userRole: string | undefined): boolean {
-  return userRole !== 'super_admin';
-}
-
-// OR: Everyone sees masked data
-export function shouldMaskContactInfo(userRole: string | undefined): boolean {
-  return true;
-}
+// Line 370 - Update placeholder
+<Input
+  id="contactPhone"
+  type="tel"
+  value={contactPhone}
+  onChange={(e) => setContactPhone(e.target.value)}
+  placeholder="(000) 000-0000"  // Changed from (678) 463-1178
+/>
 ```
 
 ---
 
-## Files to Modify
+## Impact
 
-| File | Change |
-|------|--------|
-| `src/utils/contactPrivacy.ts` | Update `shouldMaskContactInfo` function logic |
-
----
-
-## Quick Test
-
-To verify masking works for agents:
-1. Log in as an agent-role user
-2. Navigate to Reports page
-3. Emails should appear as `tro***@gmail.com` instead of full address
-
-**Please confirm which behavior you want:**
-- A) Keep current design (only agents see masked info) - just need to test with agent account
-- B) Mask for all users except super_admin
-- C) Mask for everyone including super_admin
-
+- Agents will see a neutral placeholder that clearly indicates the expected format
+- No confusion with potentially real phone numbers
+- The validation logic remains unchanged (requires at least 10 digits)
