@@ -359,9 +359,31 @@ PREVIOUS ANALYSIS (${previousAnalysis.date_range_start} to ${previousAnalysis.da
 Previous pain point categories: ${(previousAnalysis.pain_points || []).map((p: any) => `${p.category} (${p.frequency}%)`).join(', ')}
 ` : ''}
 
-Analyze this data and return a JSON object with EXACTLY this structure. IMPORTANT: Include actual verbatim quotes from the data in the "examples" arrays:
+Analyze this data and return a JSON object with EXACTLY this structure. 
+
+CRITICAL: You MUST include the "customer_journeys" array - this is the MOST IMPORTANT output. Generate 3-6 distinct customer personas.
 
 {
+  "customer_journeys": [
+    {
+      "persona_name": "The Urgent Relocator",
+      "frequency_percent": 28,
+      "trigger_quote": "I need to move by Friday",
+      "journey_stages": [
+        {"stage": "Crisis Trigger", "emotion": "stressed", "action": "emergency search"},
+        {"stage": "Quick Search", "emotion": "anxious", "friction": "too many options"},
+        {"stage": "Payment Confusion", "emotion": "frustrated", "friction": "unclear total fees"},
+        {"stage": "Decision Point", "emotion": "hesitant", "outcome": "booking or drop"}
+      ],
+      "intervention_points": [
+        "Show 'Move-in ASAP' filter prominently",
+        "Display total cost upfront on listing cards"
+      ],
+      "example_quotes": ["I'm getting evicted...", "My landlord gave me 5 days..."],
+      "related_pain_points": ["Payment & Fee Confusion", "Booking Process Speed"],
+      "market_concentration": {"Atlanta, GA": 35, "Dallas, TX": 25}
+    }
+  ],
   "pain_points": [
     {
       "category": "Transportation", 
@@ -390,54 +412,28 @@ Analyze this data and return a JSON object with EXACTLY this structure. IMPORTAN
     {"objection": "common hesitation", "frequency": 15, "suggested_response": "how agents should handle", "examples": ["quote"]}
   ],
   "market_breakdown": {
-    "Atlanta, GA": {"top_concern": "transportation", "unique_pattern": "description", "call_count": 10, "pain_point_frequencies": {"Transportation": 35, "Payment": 25}},
-    "Dallas, TX": {"top_concern": "pricing", "unique_pattern": "description", "call_count": 8, "pain_point_frequencies": {"Payment": 40, "Transportation": 10}}
+    "Atlanta, GA": {"top_concern": "transportation", "unique_pattern": "description", "call_count": 10}
   },
   "ai_recommendations": [
-    {"recommendation": "specific actionable item", "category": "Marketing|Retention|Operations|Training", "priority": "high|medium|low", "expected_impact": "description of potential impact"}
+    {"recommendation": "specific actionable item", "category": "Marketing|Retention|Operations|Training", "priority": "high|medium|low", "expected_impact": "description"}
   ],
   "member_journey_insights": [
     {"pattern": "repeat caller behavior or journey insight", "frequency": 5, "implication": "what this means for PadSplit"}
-  ],
-  "customer_journeys": [
-    {
-      "persona_name": "The Urgent Relocator",
-      "frequency_percent": 28,
-      "trigger_quote": "I need to move by Friday",
-      "journey_stages": [
-        {"stage": "Crisis Trigger", "emotion": "stressed", "action": "emergency search"},
-        {"stage": "Quick Search", "emotion": "anxious", "friction": "too many options"},
-        {"stage": "Payment Confusion", "emotion": "frustrated", "friction": "unclear total fees"},
-        {"stage": "Decision Point", "emotion": "hesitant", "outcome": "booking or drop"}
-      ],
-      "intervention_points": [
-        "Show 'Move-in ASAP' filter prominently",
-        "Display total cost upfront on listing cards",
-        "Enable same-day host approval for verified hosts"
-      ],
-      "example_quotes": ["I'm getting evicted and need somewhere by end of week", "My landlord gave me 5 days notice"],
-      "related_pain_points": ["Payment & Fee Confusion", "Booking Process Speed"],
-      "market_concentration": {"Atlanta, GA": 35, "Dallas, TX": 25}
-    }
   ]
 }
 
-CUSTOMER JOURNEY REQUIREMENTS:
-- Generate 3-6 distinct customer journey personas based on patterns you observe in the data
-- Each persona should represent a real behavioral pattern (e.g., urgent relocators, budget-conscious shoppers, skeptical first-timers, transit-dependent members)
-- Journey stages should flow logically from trigger to outcome
-- Emotions should reflect the actual sentiment at each stage
-- Intervention points should be specific, actionable product/process improvements
+CUSTOMER JOURNEY REQUIREMENTS (MANDATORY - DO NOT SKIP):
+- Generate 3-6 distinct customer journey personas based on patterns you observe
+- Each persona should represent a real behavioral pattern (e.g., urgent relocators, budget-conscious shoppers, skeptical first-timers, transit-dependent members, denied-and-retrying)
+- Journey stages should flow logically from trigger to outcome (3-5 stages each)
 - Include actual quotes from the call data as examples
 - Market concentration shows which markets have higher percentages of this persona
 
-IMPORTANT:
+ADDITIONAL REQUIREMENTS:
 - Frequencies should be percentages of total calls analyzed
 - Include at least 3-5 items in each category if data supports it
-- ALWAYS include real verbatim quotes in the "examples" arrays - these should be actual phrases from the call data provided
-- Include market_breakdown within pain_points to show how each pain point varies by market
-- Market breakdown should only include markets with 3+ calls
-- Recommendations should be specific and measurable`;
+- ALWAYS include real verbatim quotes in the "examples" arrays
+- Market breakdown should only include markets with 3+ calls`;
 
     console.log('[Background] Sending data to AI for analysis...');
 
