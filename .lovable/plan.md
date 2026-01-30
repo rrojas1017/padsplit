@@ -1,173 +1,71 @@
 
 
-# Add Voice Notes Option & Mask Contact Info in Cards
+# Fix Contact Info Masking in Reports
 
-## Overview
+## Issue Analysis
 
-Add a "Voice Notes" button alongside the existing Email and SMS options in the Contact Profile Hover Card, and ensure contact information (email and phone) is properly masked for agent users in the card display.
+The masking code is correctly implemented, but it only activates for users with `role === 'agent'`. Based on your screenshot showing full email addresses, you are likely logged in as a non-agent role (super_admin, admin, or supervisor).
 
-## Changes Summary
+**Current behavior:**
+| Role | Sees |
+|------|------|
+| super_admin | Full contact info |
+| admin | Full contact info |
+| supervisor | Full contact info |
+| agent | Masked contact info |
 
-| Area | Change |
-|------|--------|
-| Database | Add `'voice_note'` to the `communication_type` check constraint |
-| TypeScript types | Extend `communicationType` to include `'voice_note'` |
-| Hover card UI | Add new "Voice Notes" button with phone icon/mic styling |
-| Voice action handler | Implement `handleVoiceNoteClick` to open `tel:` link and log the communication |
-| Masking | Already implemented via `shouldMaskContact` prop - verify it's passed correctly |
+## Clarification Needed
 
----
+There are two possible interpretations:
 
-## Implementation Details
+### Option A: Masking is working correctly (current design)
+If you're logged in as admin/supervisor and seeing full emails, that's the expected behavior. To test masking, you would need to log in as an agent-role user.
 
-### 1. Database Migration
-
-Add `'voice_note'` to the allowed communication types:
-
-```sql
--- Alter the check constraint to include voice_note
-ALTER TABLE public.contact_communications 
-DROP CONSTRAINT IF EXISTS contact_communications_communication_type_check;
-
-ALTER TABLE public.contact_communications 
-ADD CONSTRAINT contact_communications_communication_type_check 
-CHECK (communication_type IN ('sms', 'email', 'voice_note'));
-```
-
-### 2. Update TypeScript Types
-
-**File:** `src/hooks/useContactCommunications.ts`
-
-Update the `communicationType` type to include `'voice_note'`:
-
-```typescript
-// Line 10 - Interface
-communicationType: 'sms' | 'email' | 'voice_note';
-
-// Line 25 - Function parameter
-communicationType: 'sms' | 'email' | 'voice_note';
-
-// Line 83 - Type cast
-communicationType: row.communication_type as 'sms' | 'email' | 'voice_note',
-
-// Line 104 - Function parameter
-communicationType: 'sms' | 'email' | 'voice_note';
-
-// Line 141 - Type cast  
-communicationType: row.communication_type as 'sms' | 'email' | 'voice_note',
-```
-
-### 3. Add Voice Notes Button to Hover Card
-
-**File:** `src/components/reports/ContactProfileHoverCard.tsx`
-
-Add import for microphone/phone icon:
-
-```typescript
-import { ..., Mic } from 'lucide-react';
-```
-
-Add voice note handler (after `handleSmsClick`):
-
-```typescript
-const handleVoiceNoteClick = () => {
-  if (contactPhone && bookingId) {
-    const cleanPhone = contactPhone.replace(/\D/g, '');
-    window.location.href = `tel:${cleanPhone}`;
-    logCommunication({
-      bookingId,
-      communicationType: 'voice_note',
-      recipientPhone: contactPhone,
-    });
-  }
-};
-```
-
-Update the action buttons section (lines 278-300) to include Voice Notes:
-
-```typescript
-{/* Action Buttons */}
-<div className="flex gap-2">
-  <Button
-    variant="outline"
-    size="sm"
-    className="flex-1 h-8 text-xs"
-    onClick={handleEmailClick}
-    disabled={!contactEmail || !canSendCommunications}
-    title={!canSendCommunications ? 'Communication permission required' : 'Send Email'}
-  >
-    <Mail className="h-3.5 w-3.5 mr-1.5" />
-    Email
-  </Button>
-  <Button
-    variant="outline"
-    size="sm"
-    className="flex-1 h-8 text-xs"
-    onClick={handleSmsClick}
-    disabled={!contactPhone || !canSendCommunications}
-    title={!canSendCommunications ? 'Communication permission required' : 'Send SMS'}
-  >
-    <MessageSquare className="h-3.5 w-3.5 mr-1.5" />
-    SMS
-  </Button>
-  <Button
-    variant="outline"
-    size="sm"
-    className="flex-1 h-8 text-xs"
-    onClick={handleVoiceNoteClick}
-    disabled={!contactPhone || !canSendCommunications}
-    title={!canSendCommunications ? 'Communication permission required' : 'Voice Note'}
-  >
-    <Mic className="h-3.5 w-3.5 mr-1.5" />
-    Voice
-  </Button>
-</div>
-```
-
-### 4. Masking Status
-
-The contact masking is **already implemented** via the `shouldMaskContact` prop:
-- Lines 265 and 272 already conditionally apply `maskEmail()` and `maskPhone()` when `shouldMaskContact` is true
-- This prop is passed from `Reports.tsx` based on the user's role
+### Option B: You want to change the masking logic
+If you want ALL users (or specific roles) to see masked contact info, the `shouldMaskContactInfo` function needs to be updated.
 
 ---
 
-## UI Preview
+## Proposed Fix (Option B - Mask for all roles)
 
-### Contact Action Buttons (After)
+If you want contact info masked for everyone, update `src/utils/contactPrivacy.ts`:
 
-```text
-┌─────────────────────────────────────────────────────────┐
-│  [📧 Email]    [💬 SMS]    [🎤 Voice]                   │
-└─────────────────────────────────────────────────────────┘
-```
+```typescript
+// Current: Only agents see masked data
+export function shouldMaskContactInfo(userRole: string | undefined): boolean {
+  return userRole === 'agent';
+}
 
-### Agent View (Masked)
+// Change to: Everyone sees masked data EXCEPT super_admin
+export function shouldMaskContactInfo(userRole: string | undefined): boolean {
+  return userRole !== 'super_admin';
+}
 
-```text
-📧 jas***@email.com · 📱 678-***-1178
-
-[Email] [SMS] [Voice]
-
-✓ Buttons still functional with real data
+// OR: Everyone sees masked data
+export function shouldMaskContactInfo(userRole: string | undefined): boolean {
+  return true;
+}
 ```
 
 ---
 
 ## Files to Modify
 
-| File | Changes |
-|------|---------|
-| Database migration | Add `'voice_note'` to constraint |
-| `src/hooks/useContactCommunications.ts` | Extend type to include `'voice_note'` |
-| `src/components/reports/ContactProfileHoverCard.tsx` | Add `Mic` icon import, `handleVoiceNoteClick` handler, and Voice button |
+| File | Change |
+|------|--------|
+| `src/utils/contactPrivacy.ts` | Update `shouldMaskContactInfo` function logic |
 
 ---
 
-## Communication Logging
+## Quick Test
 
-When a user clicks "Voice", the system will:
-1. Open the device's phone dialer via `tel:` protocol
-2. Log the communication with `communicationType: 'voice_note'`
-3. Display in "Last contacted" as "via VOICE_NOTE"
+To verify masking works for agents:
+1. Log in as an agent-role user
+2. Navigate to Reports page
+3. Emails should appear as `tro***@gmail.com` instead of full address
+
+**Please confirm which behavior you want:**
+- A) Keep current design (only agents see masked info) - just need to test with agent account
+- B) Mask for all users except super_admin
+- C) Mask for everyone including super_admin
 
