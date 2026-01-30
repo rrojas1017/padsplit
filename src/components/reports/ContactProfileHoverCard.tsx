@@ -222,7 +222,7 @@ export function ContactProfileHoverCard({
                     {memberPreferences.slice(0, 3).map((pref, index) => (
                       <li key={index} className="text-xs text-foreground flex items-start gap-2">
                         <span className="text-primary mt-0.5">•</span>
-                        <span className="line-clamp-1">{pref}</span>
+                        <span className="line-clamp-2 leading-snug">{pref}</span>
                       </li>
                     ))}
                   </ul>
@@ -242,7 +242,7 @@ export function ContactProfileHoverCard({
                     {memberConcerns.slice(0, 2).map((concern, index) => (
                       <li key={index} className="text-xs text-amber-600 dark:text-amber-400 flex items-start gap-2">
                         <span className="mt-0.5">•</span>
-                        <span className="line-clamp-1">{concern}</span>
+                        <span className="line-clamp-2 leading-snug">{concern}</span>
                       </li>
                     ))}
                   </ul>
