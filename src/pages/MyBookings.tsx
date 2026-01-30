@@ -4,6 +4,8 @@ import { usePageTracking } from '@/hooks/usePageTracking';
 import { useAuth } from '@/contexts/AuthContext';
 import { useAgents } from '@/contexts/AgentsContext';
 import { BroadcastBanner } from '@/components/broadcast/BroadcastBanner';
+import { ContactProfileHoverCard } from '@/components/reports/ContactProfileHoverCard';
+import { shouldMaskContactInfo } from '@/utils/contactPrivacy';
 import { Button } from '@/components/ui/button';
 import { Search, PlusCircle, MoreHorizontal, Clock, CheckCircle, CalendarX, XCircle, Ban, ExternalLink, Phone, UserCircle, Headphones, FileText, Loader2, RotateCcw, History } from 'lucide-react';
 import { Input } from '@/components/ui/input';
@@ -385,15 +387,27 @@ export default function MyBookings() {
                       {format(new Date(booking.moveInDate), 'MMM d, yyyy')}
                     </td>
                     <td className="py-3 px-4">
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-medium text-foreground">{booking.memberName}</span>
-                        {booking.isRebooking && (
-                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs bg-primary/20 text-primary">
-                            <RotateCcw className="w-3 h-3" />
-                            Rebooking
+                      <ContactProfileHoverCard
+                        memberName={booking.memberName}
+                        callKeyPoints={booking.callKeyPoints}
+                        transcriptionStatus={booking.transcriptionStatus}
+                        contactEmail={booking.contactEmail || undefined}
+                        contactPhone={booking.contactPhone || undefined}
+                        bookingId={booking.id}
+                        shouldMaskContact={shouldMaskContactInfo(user?.role)}
+                      >
+                        <div className="flex items-center gap-2 cursor-default">
+                          <span className="text-sm font-medium text-foreground hover:text-primary transition-colors">
+                            {booking.memberName}
                           </span>
-                        )}
-                      </div>
+                          {booking.isRebooking && (
+                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs bg-primary/20 text-primary">
+                              <RotateCcw className="w-3 h-3" />
+                              Rebooking
+                            </span>
+                          )}
+                        </div>
+                      </ContactProfileHoverCard>
                     </td>
                     <td className="py-3 px-4 text-sm text-muted-foreground">
                       {booking.marketCity}{booking.marketCity && booking.marketState && ', '}{booking.marketState}
