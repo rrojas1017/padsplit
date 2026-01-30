@@ -1,47 +1,120 @@
 
 
-# Populate Customer Journey Data
+# Add Contact Profile Hover Card in Reports
 
-## Current Status
+## Overview
 
-The **CustomerJourneyPanel component exists** and is correctly placed at the bottom of the Booking Insights tab, but it's **not visible** because:
+Add a hover popup on the **Contact Name** column in the Reports table that displays AI-generated insights about each contact's preferences, concerns, and profile. This applies to **ALL record types** (bookings, non-bookings, and any future types) that have been processed through the transcription pipeline.
 
-1. All existing analyses have empty `customer_journeys: []` arrays
-2. The component only renders when there's data: `customer_journeys.length > 0`
-3. The edge function update was deployed but no new analysis has been triggered
+## Universal Support
 
-## Solution
+| Record Type | Hover Card Behavior |
+|-------------|---------------------|
+| Booking (with transcription) | Full insights from `call_key_points` |
+| Non-Booking (with transcription) | Full insights from `call_key_points` |
+| Manual entry (no call) | "No call insights available" |
+| Imported record (no transcription) | "No call insights available" |
+| Future record types | Automatic - uses same data structure |
 
-**Run a new analysis** to generate customer journey data:
-
-1. On the Communication Insights page (`/call-insights?tab=bookings`)
-2. Click the **"Generate New Insights"** button (or similar trigger)
-3. Wait for the analysis to complete
-4. The new analysis will include AI-generated customer journeys
-5. Scroll to the bottom of the page to see the **"Real-Life Customer Journeys"** panel
-
-## What You'll See After New Analysis
+## What Users Will See
 
 ```text
-                        ↓ Scroll down past Recommendations & Pain Points ↓
+Hover over any contact name in Reports:
 
-┌──────────────────────────────────────────────────────────────────────┐
-│ 🗺️ Real-Life Customer Journeys                                      │
-│    Based on patterns from 635 analyzed communications               │
-├──────────────────────────────────────────────────────────────────────┤
-│  THE URGENT RELOCATOR (28% of members)                              │
-│  📍 "I need to move by Friday"                                      │
-│  [Journey Timeline] → [Intervention Points] → [Member Quotes]       │
-├──────────────────────────────────────────────────────────────────────┤
-│  THE BUDGET CALCULATOR (22% of members)                             │
-│  📍 "How much is the first payment really?"                         │
-│  ...                                                                 │
-└──────────────────────────────────────────────────────────────────────┘
+┌────────────────────────────────────┐
+│ 👤 Jason Sorensen                  │
+│ ─────────────────────────────────  │
+│ 🎯 Move-In Ready: HIGH   😊 Positive│
+│ ─────────────────────────────────  │
+│ 💵 Budget: $149/week               │
+│ 👥 Household: 1 person             │
+│ 📅 Commitment: 6 months            │
+│ ─────────────────────────────────  │
+│ 📋 What They Want:                 │
+│ • Room without moving fee          │
+│ • Move in today                    │
+│ • Near public transit              │
+│ ─────────────────────────────────  │
+│ ⚠️ Concerns Raised:                │
+│ • Payment timing confusion         │
+│ • Worried about roommates          │
+│ ─────────────────────────────────  │
+│ 💡 Click name for full transcript  │
+└────────────────────────────────────┘
 ```
 
-## Technical Notes
+## Data Source
 
-- The edge function `analyze-member-insights` has been updated to generate 3-6 customer persona journeys
-- Data is stored in the `customer_journeys` JSONB column
-- No code changes needed - just trigger a new analysis run
+All data comes from the existing `call_key_points` field (already fetched in Reports):
+
+| Display Section | Source Field |
+|-----------------|--------------|
+| Readiness badge | `callKeyPoints.moveInReadiness` |
+| Sentiment icon | `callKeyPoints.callSentiment` |
+| Budget | `callKeyPoints.memberDetails.weeklyBudget` |
+| Household size | `callKeyPoints.memberDetails.householdSize` |
+| Commitment | `callKeyPoints.memberDetails.commitmentWeeks` |
+| Preferences | `callKeyPoints.memberPreferences[]` |
+| Concerns | `callKeyPoints.memberConcerns[]` |
+| Objections | `callKeyPoints.objections[]` |
+
+## Files to Create/Modify
+
+| File | Changes |
+|------|---------|
+| **New:** `src/components/reports/ContactProfileHoverCard.tsx` | Hover card component with profile sections |
+| `src/pages/Reports.tsx` | Wrap contact name in HoverCard trigger |
+
+## Component Structure
+
+### ContactProfileHoverCard Props
+
+```typescript
+interface ContactProfileHoverCardProps {
+  memberName: string;
+  callKeyPoints?: CallKeyPoints;
+  transcriptionStatus?: 'pending' | 'processing' | 'completed' | 'failed' | 'unavailable';
+  children: React.ReactNode; // The trigger element (contact name)
+}
+```
+
+### Visual Indicators
+
+| Indicator | Values | Colors |
+|-----------|--------|--------|
+| Move-In Readiness | High / Medium / Low | Green / Yellow / Red |
+| Sentiment | Positive / Neutral / Negative | Green / Gray / Red |
+| Transcription Status | Completed / Processing / None | Show / Loading / "No insights" |
+
+### Empty States
+
+```text
+No transcription:           Processing:
+┌──────────────────────┐   ┌──────────────────────┐
+│ 👤 John Smith        │   │ 👤 Jane Doe          │
+│ ────────────────────│   │ ────────────────────│
+│ 📭 No call insights  │   │ ⏳ Insights being    │
+│    available         │   │    generated...      │
+│                      │   │                      │
+│ Manual entry or      │   │ Check back shortly   │
+│ import without call  │   │                      │
+└──────────────────────┘   └──────────────────────┘
+```
+
+## Technical Details
+
+- Uses existing `@radix-ui/react-hover-card` (already installed)
+- No additional database queries - data already in Reports response
+- Works with existing `Booking` type and `CallKeyPoints` interface
+- Reuses badge/icon patterns from existing components
+- HoverCard with 200ms open delay to prevent accidental triggers
+- Max width: 320px for comfortable reading
+
+## Future-Proofing
+
+The implementation automatically supports future record types because:
+1. All records use the same `bookings` table
+2. All records that go through transcription get `call_key_points`
+3. The hover card checks for data presence, not record type
+4. Empty state handles any record without transcription data
 
