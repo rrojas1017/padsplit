@@ -20,6 +20,7 @@ interface BookingWithTranscription {
   member_name: string;
   market_city: string;
   market_state: string;
+  call_duration_seconds: number | null;
   booking_transcriptions: Array<{
     call_key_points: CallKeyPoints;
   }>;
@@ -96,6 +97,7 @@ async function processAnalysis(
         member_name, 
         market_city, 
         market_state,
+        call_duration_seconds,
         booking_transcriptions (
           call_key_points
         )
@@ -140,6 +142,8 @@ async function processAnalysis(
     const sentimentCounts = { positive: 0, neutral: 0, negative: 0 };
     const readinessCounts = { high: 0, medium: 0, low: 0 };
     const marketData: Record<string, { concerns: string[], objections: string[], preferences: string[], count: number }> = {};
+    let totalDuration = 0;
+    let durationCount = 0;
     const memberCallCounts: Record<string, number> = {};
 
     for (const booking of bookings) {
@@ -161,6 +165,12 @@ async function processAnalysis(
         readinessCounts[keyPoints.moveInReadiness]++;
       }
 
+      // Track call duration for average calculation
+      if (booking.call_duration_seconds && booking.call_duration_seconds > 0) {
+        totalDuration += booking.call_duration_seconds;
+        durationCount++;
+      }
+
       const marketKey = `${booking.market_city || 'Unknown'}, ${booking.market_state || 'Unknown'}`;
       if (!marketData[marketKey]) {
         marketData[marketKey] = { concerns: [], objections: [], preferences: [], count: 0 };
@@ -175,6 +185,9 @@ async function processAnalysis(
         memberCallCounts[memberName] = (memberCallCounts[memberName] || 0) + 1;
       }
     }
+
+    // Calculate average call duration
+    const avgCallDurationSeconds = durationCount > 0 ? totalDuration / durationCount : 0;
 
     const totalCalls = bookings.length;
     const sentimentDistribution = {
@@ -363,6 +376,7 @@ IMPORTANT:
         ai_recommendations: parsedAnalysis.ai_recommendations || [],
         member_journey_insights: parsedAnalysis.member_journey_insights || [],
         raw_analysis: analysisText,
+        avg_call_duration_seconds: avgCallDurationSeconds,
         status: 'completed'
       })
       .eq('id', insightId);

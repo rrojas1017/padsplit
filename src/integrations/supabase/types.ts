@@ -1120,6 +1120,7 @@ export type Database = {
         Row: {
           ai_recommendations: Json | null
           analysis_period: string
+          avg_call_duration_seconds: number | null
           created_at: string
           created_by: string | null
           date_range_end: string
@@ -1143,6 +1144,7 @@ export type Database = {
         Insert: {
           ai_recommendations?: Json | null
           analysis_period: string
+          avg_call_duration_seconds?: number | null
           created_at?: string
           created_by?: string | null
           date_range_end: string
@@ -1166,6 +1168,7 @@ export type Database = {
         Update: {
           ai_recommendations?: Json | null
           analysis_period?: string
+          avg_call_duration_seconds?: number | null
           created_at?: string
           created_by?: string | null
           date_range_end?: string

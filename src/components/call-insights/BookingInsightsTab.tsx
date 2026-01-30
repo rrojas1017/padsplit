@@ -36,6 +36,7 @@ interface MemberInsight {
   sentiment_distribution: { positive: number; neutral: number; negative: number };
   ai_recommendations: any[];
   member_journey_insights: any[];
+  avg_call_duration_seconds?: number;
   created_at: string;
   status?: 'processing' | 'completed' | 'failed';
 }

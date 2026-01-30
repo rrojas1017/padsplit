@@ -1,5 +1,5 @@
 import { Card, CardContent } from '@/components/ui/card';
-import { Phone, TrendingUp, TrendingDown, AlertTriangle, Smile } from 'lucide-react';
+import { Phone, TrendingDown, AlertTriangle, Smile, Clock } from 'lucide-react';
 import { format } from 'date-fns';
 
 interface InsightsSummaryCardsProps {
@@ -10,8 +10,16 @@ interface InsightsSummaryCardsProps {
     pain_points: any[];
     sentiment_distribution: { positive: number; neutral: number; negative: number };
     objection_patterns: any[];
+    avg_call_duration_seconds?: number;
   };
 }
+
+const formatDuration = (seconds: number): string => {
+  if (!seconds || seconds <= 0) return '0:00';
+  const mins = Math.floor(seconds / 60);
+  const secs = Math.floor(seconds % 60);
+  return `${mins}:${secs.toString().padStart(2, '0')}`;
+};
 
 const InsightsSummaryCards = ({ insight }: InsightsSummaryCardsProps) => {
   const topPainPoint = insight.pain_points?.[0];
@@ -20,9 +28,10 @@ const InsightsSummaryCards = ({ insight }: InsightsSummaryCardsProps) => {
     .sort(([, a], [, b]) => b - a)[0];
 
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
       {/* Total Calls */}
-      <Card>
+      <Card className="relative overflow-hidden">
+        <div className="absolute bottom-0 left-0 right-0 h-1 bg-gradient-to-r from-primary/60 to-primary" />
         <CardContent className="pt-6">
           <div className="flex items-center justify-between">
             <div>
@@ -40,7 +49,8 @@ const InsightsSummaryCards = ({ insight }: InsightsSummaryCardsProps) => {
       </Card>
 
       {/* Top Pain Point */}
-      <Card>
+      <Card className="relative overflow-hidden">
+        <div className="absolute bottom-0 left-0 right-0 h-1 bg-gradient-to-r from-destructive/60 to-destructive" />
         <CardContent className="pt-6">
           <div className="flex items-center justify-between">
             <div className="min-w-0 flex-1">
@@ -62,7 +72,11 @@ const InsightsSummaryCards = ({ insight }: InsightsSummaryCardsProps) => {
       </Card>
 
       {/* Dominant Sentiment */}
-      <Card>
+      <Card className="relative overflow-hidden">
+        <div className={`absolute bottom-0 left-0 right-0 h-1 bg-gradient-to-r ${
+          dominantSentiment?.[0] === 'positive' ? 'from-green-500/60 to-green-500' :
+          dominantSentiment?.[0] === 'negative' ? 'from-destructive/60 to-destructive' : 'from-amber-500/60 to-amber-500'
+        }`} />
         <CardContent className="pt-6">
           <div className="flex items-center justify-between">
             <div>
@@ -86,7 +100,8 @@ const InsightsSummaryCards = ({ insight }: InsightsSummaryCardsProps) => {
       </Card>
 
       {/* Top Objection */}
-      <Card>
+      <Card className="relative overflow-hidden">
+        <div className="absolute bottom-0 left-0 right-0 h-1 bg-gradient-to-r from-amber-500/60 to-amber-500" />
         <CardContent className="pt-6">
           <div className="flex items-center justify-between">
             <div className="min-w-0 flex-1">
@@ -102,6 +117,23 @@ const InsightsSummaryCards = ({ insight }: InsightsSummaryCardsProps) => {
             </div>
             <div className="p-3 rounded-full bg-amber-500/10 flex-shrink-0">
               <TrendingDown className="h-6 w-6 text-amber-500" />
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Avg Duration */}
+      <Card className="relative overflow-hidden">
+        <div className="absolute bottom-0 left-0 right-0 h-1 bg-gradient-to-r from-primary/60 to-primary" />
+        <CardContent className="pt-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm text-muted-foreground">Avg Duration</p>
+              <p className="text-3xl font-bold">{formatDuration(insight.avg_call_duration_seconds || 0)}</p>
+              <p className="text-xs text-muted-foreground mt-1">minutes per call</p>
+            </div>
+            <div className="p-3 rounded-full bg-primary/10">
+              <Clock className="h-6 w-6 text-primary" />
             </div>
           </div>
         </CardContent>
