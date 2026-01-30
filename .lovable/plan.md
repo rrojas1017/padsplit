@@ -1,80 +1,158 @@
 
-# Fix "Sentiment Trends Over Time" Chart Issues
 
-## Problems Identified
+# Add Customer Journey Suggestions Section
 
-1. **Missing Data in List Query**: The chart receives an array of insights, but the list query only fetches `id, analysis_period, date_range_start, date_range_end, total_calls_analyzed, created_at, status` - it does NOT fetch `sentiment_distribution`. The code then defaults all sentiment values to zeros.
+## Overview
 
-2. **Duplicate Dates on X-Axis**: Multiple analyses on the same day (e.g., 5 analyses on Jan 30) all show as "Jan 30" making the X-axis confusing and repetitive.
+Add a new section at the bottom of the Booking Insights tab that synthesizes all analyzed variables (pain points, objections, sentiment, market data, barriers) into **real-life customer journey scenarios** with actionable intervention points.
 
-3. **Misleading Flat Lines**: Users see flat lines at 0% for most data points, creating a false impression that sentiment was neutral/zero historically.
-
-## Solution
-
-### Change 1: Include sentiment_distribution in the list query
-
-Update `BookingInsightsTab.tsx` to fetch `sentiment_distribution` in the initial list query:
-
-| File | Change |
-|------|--------|
-| `src/components/call-insights/BookingInsightsTab.tsx` | Add `sentiment_distribution` to the SELECT clause (line 93) |
-
-```typescript
-// Before
-.select('id, analysis_period, date_range_start, date_range_end, total_calls_analyzed, created_at, status')
-
-// After  
-.select('id, analysis_period, date_range_start, date_range_end, total_calls_analyzed, created_at, status, sentiment_distribution')
-```
-
-Then update the mapping (line 106) to use actual data:
-
-```typescript
-sentiment_distribution: d.sentiment_distribution || { positive: 0, neutral: 0, negative: 0 },
-```
-
-### Change 2: Improve X-axis date formatting
-
-Update `TrendChart.tsx` to show time when there are multiple analyses on the same day:
-
-| File | Change |
-|------|--------|
-| `src/components/member-insights/TrendChart.tsx` | Use unique date/time labels to prevent duplicates |
-
-Strategy: Check for duplicate dates and append time if needed:
-- If only one analysis on a day: "Jan 30"
-- If multiple analyses on same day: "Jan 30 4pm", "Jan 30 5pm"
-
-### Change 3: Add analysis period context to tooltip
-
-Enhance the tooltip to show what date range each analysis covered, not just when it was run:
+## What It Will Look Like
 
 ```text
-Current: "Jan 30, 2026"
-Enhanced: "Jan 30, 2026 • Analyzed: Last 30 Days (Dec 31 - Jan 30)"
+┌──────────────────────────────────────────────────────────────────────┐
+│ 🗺️ Real-Life Customer Journeys                                      │
+│    Based on patterns from 635 analyzed communications               │
+├──────────────────────────────────────────────────────────────────────┤
+│                                                                      │
+│  THE URGENT RELOCATOR (28% of members)                              │
+│  ─────────────────────────────────────────                          │
+│  📍 "I need to move by Friday"                                      │
+│                                                                      │
+│  Journey:                                                            │
+│  ┌─────────┐    ┌─────────────┐    ┌────────────┐    ┌─────────┐   │
+│  │ Crisis  │ →  │ Quick Search│ →  │ Payment    │ →  │ Booking │   │
+│  │ Trigger │    │ (Same Day)  │    │ Confusion  │    │ or Drop │   │
+│  └─────────┘    └─────────────┘    └────────────┘    └─────────┘   │
+│                                                                      │
+│  🚩 Intervention Points:                                             │
+│  • Show "Move-in ASAP" filter prominently                           │
+│  • Display total cost upfront on listing cards                      │
+│  • Enable same-day host approval for verified hosts                 │
+│                                                                      │
+│  💬 Actual member quote: "I'm getting evicted and need somewhere    │
+│     by end of week"                                                  │
+│                                                                      │
+├──────────────────────────────────────────────────────────────────────┤
+│                                                                      │
+│  THE SKEPTICAL COMPARER (22% of members)                            │
+│  ─────────────────────────────────────────                          │
+│  📍 "How is this different from Craigslist?"                        │
+│                                                                      │
+│  Journey:                                                            │
+│  ┌─────────┐    ┌─────────────┐    ┌────────────┐    ┌─────────┐   │
+│  │ Multiple│ →  │ Trust       │ →  │ Sight      │ →  │ Agent   │   │
+│  │ Options │    │ Questions   │    │ Unseen Fear│    │ Reassure│   │
+│  └─────────┘    └─────────────┘    └────────────┘    └─────────┘   │
+│                                                                      │
+│  🚩 Intervention Points:                                             │
+│  • Add video tours and verified photos                              │
+│  • Show "What makes PadSplit different" comparison                  │
+│  • Offer virtual walkthroughs with hosts                            │
+│                                                                      │
+└──────────────────────────────────────────────────────────────────────┘
 ```
 
-## Files to Modify
+## Data Sources for Journey Generation
+
+The AI will synthesize journeys from:
+
+| Data Source | Usage |
+|-------------|-------|
+| `pain_points` | Primary friction moments in journey |
+| `objection_patterns` | Trust/fear barriers at decision points |
+| `move_in_barriers` | What blocks final conversion |
+| `member_journey_insights` | Repeat caller patterns, timing |
+| `sentiment_distribution` | Emotional state indicators |
+| `market_breakdown` | Regional variations |
+| `payment_insights` | Financial friction points |
+| `transportation_insights` | Practical logistics concerns |
+
+## Implementation Approach
+
+### Option A: Pre-Generated Journeys (Recommended)
+
+Add journey generation to the existing AI analysis in `analyze-member-insights`. The AI already has all context - we add one more output section:
+
+```json
+"customer_journeys": [
+  {
+    "persona_name": "The Urgent Relocator",
+    "frequency_percent": 28,
+    "trigger_quote": "I need to move by Friday",
+    "journey_stages": [
+      { "stage": "Crisis Trigger", "emotion": "stressed", "action": "emergency search" },
+      { "stage": "Quick Search", "emotion": "anxious", "friction": "too many options" },
+      { "stage": "Payment Confusion", "emotion": "frustrated", "friction": "unclear fees" },
+      { "stage": "Decision Point", "emotion": "hesitant", "outcome": "booking or drop" }
+    ],
+    "intervention_points": [
+      "Show 'Move-in ASAP' filter prominently",
+      "Display total cost upfront on listing cards"
+    ],
+    "example_quotes": ["I'm getting evicted...", "My landlord gave me 5 days..."],
+    "related_pain_points": ["Payment & Fee Confusion", "Booking Process"],
+    "market_concentration": { "Atlanta": 35, "Dallas": 25 }
+  }
+]
+```
+
+### Database Change
+
+Add new column to `member_insights` table:
+
+```sql
+ALTER TABLE member_insights ADD COLUMN customer_journeys JSONB DEFAULT '[]';
+```
+
+### Files to Modify
 
 | File | Changes |
 |------|---------|
-| `src/components/call-insights/BookingInsightsTab.tsx` | Add `sentiment_distribution` to SELECT query and remove default zeros override |
-| `src/components/member-insights/TrendChart.tsx` | Add time suffix for duplicate dates, improve tooltip with date range context |
+| Database Migration | Add `customer_journeys` column |
+| `supabase/functions/analyze-member-insights/index.ts` | Add journey generation to AI prompt, store in new column |
+| New: `src/components/member-insights/CustomerJourneyPanel.tsx` | Visual journey component with stages, quotes, interventions |
+| `src/components/call-insights/BookingInsightsTab.tsx` | Import and render CustomerJourneyPanel at bottom |
 
-## Visual Result After Fix
+## UI Component Design
 
-```text
-Before:
-- X-axis: Dec 30, Jan 12, Jan 28, Jan 28, Jan 28, Jan 29, Jan 30, Jan 30, Jan 30, Jan 30
-- Lines: Flat at 0% until final spike
+### CustomerJourneyPanel Features
 
-After:
-- X-axis: Dec 16, Dec 22, Dec 31, Jan 12, Jan 28, Jan 29, Jan 30 (deduplicated or time-stamped)
-- Lines: Consistent ~83-87% positive, ~9-17% neutral, ~0-3% negative across all points
-```
+1. **Persona Cards**: Each journey as an expandable card with:
+   - Persona name and icon (e.g., clock for urgent, magnifier for skeptical)
+   - Frequency badge (e.g., "28% of members")
+   - Trigger quote in italics
+
+2. **Journey Timeline**: Horizontal flow showing:
+   - Stage name
+   - Emotional state indicator (color-coded)
+   - Friction point (if any)
+
+3. **Intervention Suggestions**: Actionable bullets with:
+   - Clear owner (Marketing, Product, Training)
+   - Priority indicator
+
+4. **Evidence Section**: Collapsible with:
+   - Related pain points (linked to PainPointsPanel)
+   - Actual member quotes
+   - Market distribution
+
+## Suggested Persona Types (AI Will Generate)
+
+Based on the existing data patterns:
+
+| Persona | Trigger | Primary Friction | Key Intervention |
+|---------|---------|------------------|------------------|
+| The Urgent Relocator | Housing crisis | Speed of approval | Same-day booking options |
+| The Budget Calculator | Paycheck timing | Fee transparency | Total cost calculator |
+| The Denied & Trying Again | Previous rejection | Trust rebuild | Clear denial reasons |
+| The Skeptical First-Timer | New to shared living | Sight unseen fear | Video tours |
+| The Transit-Dependent | No car | Location to bus | Commute time filter |
+| The Comparison Shopper | Multiple listings | Decision paralysis | Side-by-side compare |
 
 ## Technical Notes
 
-- This is a data-fetching bug, not an analysis bug - the sentiment data exists correctly in the database
-- Adding one column to the SELECT has minimal performance impact
-- The trend chart will now accurately reflect the consistent sentiment patterns across all historical analyses
+- Journey generation uses the same AI call (Gemini 2.5 Pro) - just extending the prompt
+- No additional API costs beyond current analysis
+- Journeys will evolve as new data is analyzed
+- Each journey links back to source pain points for drill-down
+
