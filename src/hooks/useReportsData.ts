@@ -173,22 +173,24 @@ export function useReportsData(
           admin_profile_link,
           is_rebooking,
           original_booking_id,
-          call_transcription,
-          call_summary,
-          call_key_points,
           transcription_status,
           transcription_error_message,
           transcribed_at,
           call_duration_seconds,
-          agent_feedback,
-          coaching_audio_url,
-          coaching_audio_generated_at,
           call_type_id,
           import_batch_id,
           created_by,
           created_at,
           contact_email,
-          contact_phone
+          contact_phone,
+          booking_transcriptions (
+            call_transcription,
+            call_summary,
+            call_key_points,
+            agent_feedback,
+            coaching_audio_url,
+            coaching_audio_generated_at
+          )
         `, { count: 'exact' });
 
       // Apply record date range filter (only if dates are set)
@@ -274,41 +276,44 @@ export function useReportsData(
 
       if (queryError) throw queryError;
 
-      // Transform to Booking type
-      const transformedRecords: Booking[] = (data || []).map(row => ({
-        id: row.id,
-        bookingDate: new Date(row.booking_date),
-        moveInDate: new Date(row.move_in_date),
-        memberName: row.member_name,
-        agentId: row.agent_id,
-        agentName: agents.find(a => a.id === row.agent_id)?.name || 'Unknown',
-        bookingType: row.booking_type as 'Inbound' | 'Outbound' | 'Referral',
-        status: row.status as Booking['status'],
-        communicationMethod: row.communication_method as 'Phone' | 'SMS' | 'LC' | 'Email' | undefined,
-        marketCity: row.market_city || '',
-        marketState: row.market_state || '',
-        notes: row.notes || undefined,
-        hubspotLink: row.hubspot_link || undefined,
-        kixieLink: row.kixie_link || undefined,
-        adminProfileLink: row.admin_profile_link || undefined,
-        isRebooking: row.is_rebooking,
-        originalBookingId: row.original_booking_id || undefined,
-        callTranscription: row.call_transcription || undefined,
-        callSummary: row.call_summary || undefined,
-        callKeyPoints: row.call_key_points as unknown as CallKeyPoints | undefined,
-        transcriptionStatus: row.transcription_status as Booking['transcriptionStatus'],
-        transcriptionErrorMessage: row.transcription_error_message || undefined,
-        transcribedAt: row.transcribed_at ? new Date(row.transcribed_at) : undefined,
-        callDurationSeconds: row.call_duration_seconds || undefined,
-        agentFeedback: row.agent_feedback as unknown as AgentFeedback | undefined,
-        coachingAudioUrl: row.coaching_audio_url || undefined,
-        coachingAudioGeneratedAt: row.coaching_audio_generated_at ? new Date(row.coaching_audio_generated_at) : undefined,
-        callTypeId: row.call_type_id || undefined,
-        createdBy: row.created_by || undefined,
-        createdAt: row.created_at ? new Date(row.created_at) : undefined,
-        contactEmail: row.contact_email || undefined,
-        contactPhone: row.contact_phone || undefined,
-      }));
+      // Transform to Booking type - get transcription data from joined table
+      const transformedRecords: Booking[] = (data || []).map(row => {
+        const transcription = (row.booking_transcriptions as any)?.[0];
+        return {
+          id: row.id,
+          bookingDate: new Date(row.booking_date),
+          moveInDate: new Date(row.move_in_date),
+          memberName: row.member_name,
+          agentId: row.agent_id,
+          agentName: agents.find(a => a.id === row.agent_id)?.name || 'Unknown',
+          bookingType: row.booking_type as 'Inbound' | 'Outbound' | 'Referral',
+          status: row.status as Booking['status'],
+          communicationMethod: row.communication_method as 'Phone' | 'SMS' | 'LC' | 'Email' | undefined,
+          marketCity: row.market_city || '',
+          marketState: row.market_state || '',
+          notes: row.notes || undefined,
+          hubspotLink: row.hubspot_link || undefined,
+          kixieLink: row.kixie_link || undefined,
+          adminProfileLink: row.admin_profile_link || undefined,
+          isRebooking: row.is_rebooking,
+          originalBookingId: row.original_booking_id || undefined,
+          callTranscription: transcription?.call_transcription || undefined,
+          callSummary: transcription?.call_summary || undefined,
+          callKeyPoints: transcription?.call_key_points as unknown as CallKeyPoints | undefined,
+          transcriptionStatus: row.transcription_status as Booking['transcriptionStatus'],
+          transcriptionErrorMessage: row.transcription_error_message || undefined,
+          transcribedAt: row.transcribed_at ? new Date(row.transcribed_at) : undefined,
+          callDurationSeconds: row.call_duration_seconds || undefined,
+          agentFeedback: transcription?.agent_feedback as unknown as AgentFeedback | undefined,
+          coachingAudioUrl: transcription?.coaching_audio_url || undefined,
+          coachingAudioGeneratedAt: transcription?.coaching_audio_generated_at ? new Date(transcription.coaching_audio_generated_at) : undefined,
+          callTypeId: row.call_type_id || undefined,
+          createdBy: row.created_by || undefined,
+          createdAt: row.created_at ? new Date(row.created_at) : undefined,
+          contactEmail: row.contact_email || undefined,
+          contactPhone: row.contact_phone || undefined,
+        };
+      });
 
       setRecords(transformedRecords);
       setTotalCount(count || 0);
