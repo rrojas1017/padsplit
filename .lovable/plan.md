@@ -1,96 +1,170 @@
 
 
-# Implement Batched Phone Enrichment Updates
+# Hide Third-Party Service Provider Names from Non-Super Admins
 
 ## Overview
 
-Refactor the `executeEnrichment` function to use efficient batch updates instead of individual record updates, reducing API calls from ~4,700 to ~50-200.
+The platform currently displays technical service provider names (ElevenLabs, Lovable AI, Gemini, etc.) throughout the UI. These implementation details should only be visible to super_admin users. All other users will see generic, user-friendly labels instead.
 
-## Current Problem
+## Affected Areas
 
-The existing code updates records one at a time (lines 174-189):
+| Location | Current Display | New Display (Non-Super Admin) |
+|----------|-----------------|-------------------------------|
+| Transcription Modal Badge | "ElevenLabs" | "Voice AI" or hidden |
+| Billing - Cost Breakdown Charts | "ElevenLabs", "Lovable AI" | "Voice Services", "AI Services" |
+| Billing - Admin Notifications | "elevenlabs", "lovable_ai" | "Voice Services", "AI Services" |
+| Billing Calculations Labels | "ElevenLabs", "Lovable AI" | "Voice Services", "AI Services" |
+| QA Documentation PDF | Model names, API endpoints | Generic descriptions |
 
-```typescript
-for (const booking of batch) {
-  const { error: updateError } = await supabase
-    .from('bookings')
-    .update({ contact_phone: phone })
-    .eq('id', booking.id);  // One API call per record
-}
+## Implementation Approach
+
+### Strategy: Role-Based Label Mapping
+
+Create a utility that provides different labels based on user role:
+
+```text
+┌─────────────────────────────────────────────────────────┐
+│                   getProviderLabel()                     │
+├─────────────────────────────────────────────────────────┤
+│ Input: provider_key (e.g., "elevenlabs")                │
+│ Input: isSuperAdmin (boolean)                           │
+├─────────────────────────────────────────────────────────┤
+│ If super_admin:                                          │
+│   → Return "ElevenLabs", "Lovable AI (Gemini)", etc.    │
+│                                                          │
+│ If NOT super_admin:                                      │
+│   → Return "Voice Services", "AI Services", etc.        │
+└─────────────────────────────────────────────────────────┘
 ```
 
-This causes network timeouts and "Failed to fetch" errors.
+## Files to Modify
 
-## Solution
+### 1. Create New Utility
 
-Group records by phone number and update all matching IDs in a single API call using Supabase's `.in()` filter.
+**File**: `src/utils/providerLabels.ts` (NEW)
 
-## Changes to `src/components/import/PhoneEnrichmentTab.tsx`
+A centralized utility for provider label mapping based on user role:
 
-### Replace the enrichment loop (lines 164-199) with:
+- `getProviderLabel(provider: string, isSuperAdmin: boolean)` - returns appropriate display label
+- `getServiceTypeLabel(type: string, isSuperAdmin: boolean)` - returns appropriate service type label
+- Constants for super_admin vs generic labels
 
-**Step 1: Build phone-to-IDs mapping**
+### 2. Update Billing Components
+
+**File**: `src/components/billing/CostBreakdownCharts.tsx`
+
+- Import `useAuth` and new label utility
+- Replace hardcoded "ElevenLabs" / "Lovable AI" with role-based labels
+- Super admins see: "ElevenLabs", "Lovable AI"
+- Others see: "Voice Services", "AI Services"
+
+**File**: `src/components/billing/AdminNotifications.tsx`
+
+- Import `useAuth` and new label utility
+- Update `getServiceBadge()` to use role-based labels
+- Service badge text adapts to user role
+
+**File**: `src/utils/billingCalculations.ts`
+
+- Update `PROVIDER_LABELS` to be a function that accepts role context
+- Or: Keep internal names, update consuming components to apply labels
+
+### 3. Update Transcription Modal
+
+**File**: `src/components/booking/TranscriptionModal.tsx`
+
+- Import `useAuth`
+- Conditionally show "ElevenLabs" badge only for super_admin
+- For others, show "Voice AI" or hide the badge entirely
+
+### 4. Update QA Documentation Generator
+
+**File**: `src/utils/qaDocumentation.ts`
+
+- Add parameter for `isSuperAdmin` 
+- Replace specific model names ("google/gemini-2.5-flash", "Lovable AI Gateway") with generic terms for non-super_admins
+- Super admins: Full technical details
+- Others: "AI Processing System", "Cloud AI Services"
+
+---
+
+## Technical Details
+
+### New Provider Labels Utility
+
 ```typescript
-const phoneToIds = new Map<string, string[]>();
+// src/utils/providerLabels.ts
 
-for (const booking of bookings) {
-  if (!booking.contact_email) {
-    enrichResults.noMatch++;
-    continue;
-  }
+export const SUPER_ADMIN_LABELS: Record<string, string> = {
+  elevenlabs: 'ElevenLabs',
+  lovable_ai: 'Lovable AI (Gemini)',
+  google_tts: 'Google Cloud TTS',
+};
 
-  const email = booking.contact_email.toLowerCase().trim();
-  const phone = phoneLookup.get(email);
+export const GENERIC_LABELS: Record<string, string> = {
+  elevenlabs: 'Voice Services',
+  lovable_ai: 'AI Services',
+  google_tts: 'Voice Services',
+};
 
-  if (phone) {
-    const ids = phoneToIds.get(phone) || [];
-    ids.push(booking.id);
-    phoneToIds.set(phone, ids);
-  } else {
-    enrichResults.noMatch++;
-  }
+export function getProviderLabel(
+  provider: string, 
+  isSuperAdmin: boolean
+): string {
+  const labels = isSuperAdmin ? SUPER_ADMIN_LABELS : GENERIC_LABELS;
+  return labels[provider] || provider;
 }
+
+export const SUPER_ADMIN_SERVICE_LABELS: Record<string, string> = {
+  stt_transcription: 'Speech-to-Text (ElevenLabs)',
+  tts_coaching: 'Text-to-Speech (ElevenLabs)',
+  ai_analysis: 'AI Analysis (Gemini)',
+  // ...
+};
+
+export const GENERIC_SERVICE_LABELS: Record<string, string> = {
+  stt_transcription: 'Call Transcription',
+  tts_coaching: 'Coaching Audio',
+  ai_analysis: 'AI Analysis',
+  // ...
+};
 ```
 
-**Step 2: Batch update by phone number**
+### Component Updates Pattern
+
 ```typescript
-const phoneEntries = Array.from(phoneToIds.entries());
-let processedPhones = 0;
-const updateBatchSize = 100; // Max IDs per update call
+// Example: CostBreakdownCharts.tsx
+import { useAuth } from '@/contexts/AuthContext';
+import { getProviderLabel } from '@/utils/providerLabels';
 
-for (const [phone, ids] of phoneEntries) {
-  // Split into chunks if many IDs share the same phone
-  for (let i = 0; i < ids.length; i += updateBatchSize) {
-    const chunk = ids.slice(i, i + updateBatchSize);
-    
-    const { error: updateError } = await supabase
-      .from('bookings')
-      .update({ contact_phone: phone })
-      .in('id', chunk);
-
-    if (!updateError) {
-      enrichResults.updated += chunk.length;
-    }
-  }
-
-  processedPhones++;
-  setEnrichProgress(Math.round((processedPhones / phoneEntries.length) * 100));
-}
+const CostBreakdownCharts = ({ summary }) => {
+  const { hasRole } = useAuth();
+  const isSuperAdmin = hasRole(['super_admin']);
+  
+  const providerData = Object.entries(summary.byProvider).map(([provider, cost]) => ({
+    name: getProviderLabel(provider, isSuperAdmin),
+    value: cost,
+    // ...
+  }));
+  
+  // ...
+};
 ```
 
-## Expected Results
+### Billing Page Access Control
 
-| Metric | Before | After |
-|--------|--------|-------|
-| API Calls | ~4,700 | ~50-200 |
-| Processing Time | 5-10 minutes | 10-30 seconds |
-| Network Errors | Frequent | None |
-| Completion Rate | ~45% | 100% |
+The Billing page (`/billing`) is already restricted to super_admin only. However, some billing-related information might appear in other contexts (notifications, summaries). The changes ensure consistent labeling regardless of where the data appears.
 
-## After Implementation
+---
 
-1. Go to **Historical Import → Phone Enrichment**
-2. Re-upload your `Contact_Export.csv`
-3. Click **Start Enrichment**
-4. All ~2,686 remaining records will be updated in seconds
+## Summary of Changes
+
+| File | Action |
+|------|--------|
+| `src/utils/providerLabels.ts` | **CREATE** - New utility for role-based labels |
+| `src/components/billing/CostBreakdownCharts.tsx` | **MODIFY** - Use role-based labels |
+| `src/components/billing/AdminNotifications.tsx` | **MODIFY** - Use role-based labels in badges |
+| `src/utils/billingCalculations.ts` | **MODIFY** - Export both label sets |
+| `src/components/booking/TranscriptionModal.tsx` | **MODIFY** - Conditionally show/hide provider badge |
+| `src/utils/qaDocumentation.ts` | **MODIFY** - Accept role parameter, use generic terms |
 
