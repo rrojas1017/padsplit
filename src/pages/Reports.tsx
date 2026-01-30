@@ -16,6 +16,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { TranscriptionModal } from '@/components/booking/TranscriptionModal';
 import { Booking } from '@/types';
 import { getAgentName } from '@/utils/agentUtils';
+import { maskEmail, maskPhone, shouldMaskContactInfo } from '@/utils/contactPrivacy';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -252,12 +253,15 @@ export default function Reports() {
       'Admin Profile Link',
     ];
 
+    // Mask contact info for agents in CSV export
+    const shouldMask = shouldMaskContactInfo(user?.role);
+
     const rows = records.map(booking => [
       format(booking.bookingDate, 'yyyy-MM-dd'),
       booking.status === 'Non Booking' ? '' : format(booking.moveInDate, 'yyyy-MM-dd'),
       booking.memberName,
-      booking.contactEmail || '',
-      booking.contactPhone || '',
+      booking.contactEmail ? (shouldMask ? maskEmail(booking.contactEmail) : booking.contactEmail) : '',
+      booking.contactPhone ? (shouldMask ? maskPhone(booking.contactPhone) : booking.contactPhone) : '',
       getAgentName(agents, booking.agentId),
       booking.marketCity || '',
       booking.marketState || '',
@@ -725,6 +729,7 @@ export default function Reports() {
                         contactEmail={booking.contactEmail || undefined}
                         contactPhone={booking.contactPhone || undefined}
                         bookingId={booking.id}
+                        shouldMaskContact={shouldMaskContactInfo(user?.role)}
                       >
                         <div className="flex items-center gap-2 cursor-default">
                           <span className="hover:text-primary transition-colors">{booking.memberName}</span>
@@ -739,25 +744,37 @@ export default function Reports() {
                     </td>
                     <td className="py-3 px-4 text-sm">
                       {booking.contactEmail ? (
-                        <a 
-                          href={`mailto:${booking.contactEmail}`} 
-                          className="text-primary hover:underline truncate max-w-[180px] block"
-                          title={booking.contactEmail}
-                        >
-                          {booking.contactEmail}
-                        </a>
+                        shouldMaskContactInfo(user?.role) ? (
+                          <span className="text-muted-foreground truncate max-w-[180px] block">
+                            {maskEmail(booking.contactEmail)}
+                          </span>
+                        ) : (
+                          <a 
+                            href={`mailto:${booking.contactEmail}`} 
+                            className="text-primary hover:underline truncate max-w-[180px] block"
+                            title={booking.contactEmail}
+                          >
+                            {booking.contactEmail}
+                          </a>
+                        )
                       ) : (
                         <span className="text-muted-foreground">—</span>
                       )}
                     </td>
                     <td className="py-3 px-4 text-sm">
                       {booking.contactPhone ? (
-                        <a 
-                          href={`tel:${booking.contactPhone}`} 
-                          className="text-primary hover:underline whitespace-nowrap"
-                        >
-                          {formatPhone(booking.contactPhone)}
-                        </a>
+                        shouldMaskContactInfo(user?.role) ? (
+                          <span className="text-muted-foreground whitespace-nowrap">
+                            {maskPhone(booking.contactPhone)}
+                          </span>
+                        ) : (
+                          <a 
+                            href={`tel:${booking.contactPhone}`} 
+                            className="text-primary hover:underline whitespace-nowrap"
+                          >
+                            {formatPhone(booking.contactPhone)}
+                          </a>
+                        )
                       ) : (
                         <span className="text-muted-foreground">—</span>
                       )}
