@@ -164,47 +164,51 @@ export function PhoneEnrichmentTab() {
         return;
       }
 
-      const bookings = allBookings;
+      // Step 1: Build phone-to-IDs mapping for batch updates
+      const phoneToIds = new Map<string, string[]>();
 
-      const total = bookings.length;
-      const batchSize = 50;
+      for (const booking of allBookings) {
+        if (!booking.contact_email) {
+          enrichResults.noMatch++;
+          continue;
+        }
 
-      for (let i = 0; i < bookings.length; i += batchSize) {
-        const batch = bookings.slice(i, i + batchSize);
-        
-        for (const booking of batch) {
-          if (!booking.contact_email) {
-            enrichResults.noMatch++;
-            continue;
-          }
+        const email = booking.contact_email.toLowerCase().trim();
+        const phone = phoneLookup.get(email);
 
-          const email = booking.contact_email.toLowerCase().trim();
-          const phone = phoneLookup.get(email);
+        if (phone) {
+          const ids = phoneToIds.get(phone) || [];
+          ids.push(booking.id);
+          phoneToIds.set(phone, ids);
+        } else {
+          enrichResults.noMatch++;
+        }
+      }
 
-          if (phone) {
-            const { error: updateError } = await supabase
-              .from('bookings')
-              .update({ contact_phone: phone })
-              .eq('id', booking.id);
+      // Step 2: Batch update by phone number using .in() filter
+      const phoneEntries = Array.from(phoneToIds.entries());
+      let processedPhones = 0;
+      const updateBatchSize = 100; // Max IDs per update call
 
-            if (updateError) {
-              console.error('Update error:', updateError);
-            } else {
-              enrichResults.updated++;
-            }
+      for (const [phone, ids] of phoneEntries) {
+        // Split into chunks if many IDs share the same phone
+        for (let i = 0; i < ids.length; i += updateBatchSize) {
+          const chunk = ids.slice(i, i + updateBatchSize);
+          
+          const { error: updateError } = await supabase
+            .from('bookings')
+            .update({ contact_phone: phone })
+            .in('id', chunk);
+
+          if (updateError) {
+            console.error('Batch update error:', updateError);
           } else {
-            enrichResults.noMatch++;
+            enrichResults.updated += chunk.length;
           }
         }
 
-        // Update progress
-        const progress = Math.round(((i + batch.length) / total) * 100);
-        setEnrichProgress(progress);
-
-        // Small delay between batches
-        if (i + batchSize < bookings.length) {
-          await new Promise(resolve => setTimeout(resolve, 50));
-        }
+        processedPhones++;
+        setEnrichProgress(Math.round((processedPhones / phoneEntries.length) * 100));
       }
 
       setResults(enrichResults);
