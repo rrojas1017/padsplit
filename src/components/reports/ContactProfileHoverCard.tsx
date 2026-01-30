@@ -24,6 +24,7 @@ import {
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { useContactCommunications } from '@/hooks/useContactCommunications';
+import { maskEmail, maskPhone } from '@/utils/contactPrivacy';
 
 interface ContactProfileHoverCardProps {
   memberName: string;
@@ -33,6 +34,7 @@ interface ContactProfileHoverCardProps {
   contactEmail?: string;
   contactPhone?: string;
   bookingId?: string;
+  shouldMaskContact?: boolean;
   children: React.ReactNode;
 }
 
@@ -66,6 +68,7 @@ export function ContactProfileHoverCard({
   contactEmail,
   contactPhone,
   bookingId,
+  shouldMaskContact = false,
   children,
 }: ContactProfileHoverCardProps) {
   const hasInsights = callKeyPoints && transcriptionStatus === 'completed';
@@ -259,14 +262,14 @@ export function ContactProfileHoverCard({
                 {contactEmail && (
                   <span className="flex items-center gap-1 truncate max-w-[140px]">
                     <Mail className="h-3 w-3" />
-                    {contactEmail}
+                    {shouldMaskContact ? maskEmail(contactEmail) : contactEmail}
                   </span>
                 )}
                 {contactEmail && contactPhone && <span>·</span>}
                 {contactPhone && (
                   <span className="flex items-center gap-1">
                     <Phone className="h-3 w-3" />
-                    {contactPhone}
+                    {shouldMaskContact ? maskPhone(contactPhone) : contactPhone}
                   </span>
                 )}
               </div>
