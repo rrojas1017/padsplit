@@ -1,120 +1,98 @@
 
+# Fix Contact Profile Hover Card - Data Fetching
 
-# Add Contact Profile Hover Card in Reports
+## The Issue
 
-## Overview
+The **Contact Profile Hover Card** appears empty because the `call_key_points` data is stored in a separate table (`booking_transcriptions`) rather than directly in the `bookings` table. The Reports page query only reads from `bookings`, so the data is always `undefined`.
 
-Add a hover popup on the **Contact Name** column in the Reports table that displays AI-generated insights about each contact's preferences, concerns, and profile. This applies to **ALL record types** (bookings, non-bookings, and any future types) that have been processed through the transcription pipeline.
-
-## Universal Support
-
-| Record Type | Hover Card Behavior |
-|-------------|---------------------|
-| Booking (with transcription) | Full insights from `call_key_points` |
-| Non-Booking (with transcription) | Full insights from `call_key_points` |
-| Manual entry (no call) | "No call insights available" |
-| Imported record (no transcription) | "No call insights available" |
-| Future record types | Automatic - uses same data structure |
-
-## What Users Will See
+## Data Architecture
 
 ```text
-Hover over any contact name in Reports:
-
-┌────────────────────────────────────┐
-│ 👤 Jason Sorensen                  │
-│ ─────────────────────────────────  │
-│ 🎯 Move-In Ready: HIGH   😊 Positive│
-│ ─────────────────────────────────  │
-│ 💵 Budget: $149/week               │
-│ 👥 Household: 1 person             │
-│ 📅 Commitment: 6 months            │
-│ ─────────────────────────────────  │
-│ 📋 What They Want:                 │
-│ • Room without moving fee          │
-│ • Move in today                    │
-│ • Near public transit              │
-│ ─────────────────────────────────  │
-│ ⚠️ Concerns Raised:                │
-│ • Payment timing confusion         │
-│ • Worried about roommates          │
-│ ─────────────────────────────────  │
-│ 💡 Click name for full transcript  │
-└────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────┐
+│ Current Flow (BROKEN)                                               │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                     │
+│   useReportsData                                                    │
+│        │                                                            │
+│        ▼                                                            │
+│   SELECT call_key_points FROM bookings   →   NULL (always)         │
+│        │                                                            │
+│        ▼                                                            │
+│   ContactProfileHoverCard receives undefined  →  Shows empty       │
+│                                                                     │
+├─────────────────────────────────────────────────────────────────────┤
+│ Actual Data Location                                                │
+│                                                                     │
+│   booking_transcriptions                                            │
+│   ├── booking_id (FK to bookings.id)                               │
+│   ├── call_key_points  ✅ (has the data!)                          │
+│   ├── call_summary                                                  │
+│   ├── call_transcription                                            │
+│   └── agent_feedback                                               │
+└─────────────────────────────────────────────────────────────────────┘
 ```
 
-## Data Source
+## Solution
 
-All data comes from the existing `call_key_points` field (already fetched in Reports):
+Update `useReportsData` to JOIN with `booking_transcriptions` table and retrieve the heavy call data from there. Supabase supports this via the embedded select syntax.
 
-| Display Section | Source Field |
-|-----------------|--------------|
-| Readiness badge | `callKeyPoints.moveInReadiness` |
-| Sentiment icon | `callKeyPoints.callSentiment` |
-| Budget | `callKeyPoints.memberDetails.weeklyBudget` |
-| Household size | `callKeyPoints.memberDetails.householdSize` |
-| Commitment | `callKeyPoints.memberDetails.commitmentWeeks` |
-| Preferences | `callKeyPoints.memberPreferences[]` |
-| Concerns | `callKeyPoints.memberConcerns[]` |
-| Objections | `callKeyPoints.objections[]` |
-
-## Files to Create/Modify
+## Files to Modify
 
 | File | Changes |
 |------|---------|
-| **New:** `src/components/reports/ContactProfileHoverCard.tsx` | Hover card component with profile sections |
-| `src/pages/Reports.tsx` | Wrap contact name in HoverCard trigger |
+| `src/hooks/useReportsData.ts` | Add LEFT JOIN to `booking_transcriptions` and map data correctly |
 
-## Component Structure
+## Technical Changes
 
-### ContactProfileHoverCard Props
+### useReportsData.ts
+
+**Change the query to include the related transcription data:**
 
 ```typescript
-interface ContactProfileHoverCardProps {
-  memberName: string;
-  callKeyPoints?: CallKeyPoints;
-  transcriptionStatus?: 'pending' | 'processing' | 'completed' | 'failed' | 'unavailable';
-  children: React.ReactNode; // The trigger element (contact name)
-}
+// Current (broken)
+.select(`
+  id,
+  call_key_points,  // Always NULL in bookings table
+  ...
+`)
+
+// Fixed
+.select(`
+  id,
+  ...,
+  booking_transcriptions (
+    call_transcription,
+    call_summary,
+    call_key_points,
+    agent_feedback
+  )
+`)
 ```
 
-### Visual Indicators
+**Update the transformation to use joined data:**
 
-| Indicator | Values | Colors |
-|-----------|--------|--------|
-| Move-In Readiness | High / Medium / Low | Green / Yellow / Red |
-| Sentiment | Positive / Neutral / Negative | Green / Gray / Red |
-| Transcription Status | Completed / Processing / None | Show / Loading / "No insights" |
-
-### Empty States
-
-```text
-No transcription:           Processing:
-┌──────────────────────┐   ┌──────────────────────┐
-│ 👤 John Smith        │   │ 👤 Jane Doe          │
-│ ────────────────────│   │ ────────────────────│
-│ 📭 No call insights  │   │ ⏳ Insights being    │
-│    available         │   │    generated...      │
-│                      │   │                      │
-│ Manual entry or      │   │ Check back shortly   │
-│ import without call  │   │                      │
-└──────────────────────┘   └──────────────────────┘
+```typescript
+// Map the joined data correctly
+const transcription = row.booking_transcriptions?.[0];
+return {
+  ...
+  callKeyPoints: transcription?.call_key_points || undefined,
+  callSummary: transcription?.call_summary || undefined,
+  callTranscription: transcription?.call_transcription || undefined,
+  agentFeedback: transcription?.agent_feedback || undefined,
+};
 ```
 
-## Technical Details
+## Expected Result
 
-- Uses existing `@radix-ui/react-hover-card` (already installed)
-- No additional database queries - data already in Reports response
-- Works with existing `Booking` type and `CallKeyPoints` interface
-- Reuses badge/icon patterns from existing components
-- HoverCard with 200ms open delay to prevent accidental triggers
-- Max width: 320px for comfortable reading
+After this fix:
+1. Hover over any contact with a completed transcription
+2. The hover card will display rich insights (preferences, concerns, readiness, sentiment)
+3. Records without transcriptions will show the "No call insights available" empty state
 
-## Future-Proofing
+## Why This Approach?
 
-The implementation automatically supports future record types because:
-1. All records use the same `bookings` table
-2. All records that go through transcription get `call_key_points`
-3. The hover card checks for data presence, not record type
-4. Empty state handles any record without transcription data
-
+- Uses Supabase's built-in foreign key relationships (no extra queries)
+- Single efficient query with LEFT JOIN
+- Maintains backward compatibility
+- No database schema changes needed
