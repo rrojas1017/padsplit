@@ -22,7 +22,8 @@ import {
   Headphones,
   ClipboardList,
   Calculator,
-  Tag
+  Tag,
+  Megaphone
 } from 'lucide-react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
@@ -205,6 +206,13 @@ const menuItems: MenuItem[] = [
     label: 'Promo Codes',
     path: '/settings/promo-codes',
     roles: ['super_admin', 'admin'],
+    group: 'admin'
+  },
+  {
+    icon: Megaphone,
+    label: 'Broadcasts',
+    path: '/broadcasts',
+    roles: ['super_admin', 'admin', 'supervisor'],
     group: 'admin'
   },
 ];

@@ -5,6 +5,7 @@ import { useAgents } from '@/contexts/AgentsContext';
 import { useQAData, calculateQAStats } from '@/hooks/useQAData';
 import { useQACoachingData } from '@/hooks/useQACoachingData';
 import { QACoachingAudioPlayer } from '@/components/qa/QACoachingAudioPlayer';
+import { BroadcastBanner } from '@/components/broadcast/BroadcastBanner';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { DateRangeFilter, DateFilterValue, CustomDateRange } from '@/components/dashboard/DateRangeFilter';
@@ -218,6 +219,7 @@ export default function MyQA() {
       title="My QA Scores" 
       subtitle="Quality assurance scores for your calls"
     >
+      <BroadcastBanner />
       <div className="space-y-6">
         {/* Controls */}
         <div className="flex flex-wrap justify-between items-center gap-4">
