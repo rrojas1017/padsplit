@@ -233,7 +233,7 @@ const App = () => (
               } />
 
               <Route path="/call-insights" element={
-                <ProtectedRoute allowedRoles={['super_admin', 'admin', 'supervisor']}>
+                <ProtectedRoute allowedRoles={['super_admin', 'admin']}>
                   <DataProviders>
                     <CallInsights />
                   </DataProviders>
