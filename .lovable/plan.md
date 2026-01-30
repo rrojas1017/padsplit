@@ -1,156 +1,105 @@
 
 
-# Hide Contact Info from Agents in Reports Section
+# Add Contact Email and Phone Fields to Booking Form
 
 ## Overview
 
-Add privacy protection for contact information (email and phone) by masking portions with asterisks for agent-role users, while keeping the Email/SMS action buttons fully functional.
+Add two mandatory fields to the Add Booking form for contact email and phone number. These fields already exist in the database and TypeScript types - they just need to be added to the form UI and validation logic.
 
-## What Changes
+## Changes Summary
 
-| Location | Current | For Agents |
-|----------|---------|------------|
-| Reports table - Email column | `jason@email.com` | `jas***@email.com` |
-| Reports table - Phone column | `678-463-1178` | `678-***-1178` |
-| Hover card - Contact display | Full email/phone shown | Masked display |
-| Hover card - Email/SMS buttons | Work with full data | **Still work** (masked display only) |
-| CSV Export | Full email/phone | Masked for agents |
-
-## Masking Rules
-
-| Data Type | Example | Masked Version |
-|-----------|---------|----------------|
-| Email | `jason.smith@gmail.com` | `jas***@gmail.com` |
-| Email (short) | `jo@x.com` | `j***@x.com` |
-| Phone | `678-463-1178` | `678-***-1178` |
-| Phone (10 digits) | `6784631178` | `678-***-1178` |
-
-## Who Sees What
-
-| Role | Full Contact Info | Masked Contact Info |
-|------|-------------------|---------------------|
-| super_admin | ✅ | - |
-| admin | ✅ | - |
-| supervisor | ✅ | - |
-| agent | - | ✅ |
+| Location | Change |
+|----------|--------|
+| Form state | Add `contactEmail` and `contactPhone` state variables |
+| Validation | Add mandatory validation for both fields + format validation |
+| Form UI | Add new "Contact Information" section with email and phone inputs |
+| Submit handler | Include `contactEmail` and `contactPhone` in the `addBooking` call |
+| BookingsContext | Update `addBooking` to save `contact_email` and `contact_phone` to database |
 
 ---
 
-## Technical Implementation
+## Implementation Details
 
-### 1. Create Masking Utility
+### 1. Add Form State Variables
 
-**New file:** `src/utils/contactPrivacy.ts`
+Add two new state variables after the existing member/booking states:
 
 ```typescript
-// Mask email: show first 3 chars + *** + @ + domain
-export function maskEmail(email: string): string {
-  const [local, domain] = email.split('@');
-  const visibleChars = Math.min(3, local.length - 1);
-  return `${local.slice(0, visibleChars)}***@${domain}`;
+const [contactEmail, setContactEmail] = useState('');
+const [contactPhone, setContactPhone] = useState('');
+```
+
+### 2. Add Validation in handleSubmit
+
+Add validation after the existing member name check:
+
+```typescript
+// Email validation
+const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+if (!contactEmail.trim() || !emailRegex.test(contactEmail.trim())) {
+  toast({ title: 'Error', description: 'Please enter a valid email address', variant: 'destructive' });
+  return;
 }
 
-// Mask phone: show first 3 digits + *** + last 4 digits
-export function maskPhone(phone: string): string {
-  const digits = phone.replace(/\D/g, '');
-  if (digits.length >= 10) {
-    return `${digits.slice(0, 3)}-***-${digits.slice(-4)}`;
-  }
-  return '***-***-****';
-}
-
-// Check if user should see masked contact info
-export function shouldMaskContactInfo(userRole: string): boolean {
-  return userRole === 'agent';
+// Phone validation (at least 10 digits)
+const phoneDigits = contactPhone.replace(/\D/g, '');
+if (phoneDigits.length < 10) {
+  toast({ title: 'Error', description: 'Please enter a valid phone number (at least 10 digits)', variant: 'destructive' });
+  return;
 }
 ```
 
-### 2. Update Reports.tsx
+### 3. Add Contact Information Section to Form UI
 
-**File:** `src/pages/Reports.tsx`
+Insert a new card section after the "Member Information" section:
 
-Import the utility and apply masking:
-
-```typescript
-import { maskEmail, maskPhone, shouldMaskContactInfo } from '@/utils/contactPrivacy';
-
-// In the component:
-const shouldMask = shouldMaskContactInfo(user?.role || 'agent');
-
-// In table cells (lines 740-764):
-// Email column - show masked version for agents
-{booking.contactEmail ? (
-  shouldMask ? (
-    <span className="text-muted-foreground truncate max-w-[180px] block">
-      {maskEmail(booking.contactEmail)}
-    </span>
-  ) : (
-    <a href={`mailto:${booking.contactEmail}`} ...>
-      {booking.contactEmail}
-    </a>
-  )
-) : ...}
-
-// Phone column - show masked version for agents
-{booking.contactPhone ? (
-  shouldMask ? (
-    <span className="text-muted-foreground whitespace-nowrap">
-      {maskPhone(booking.contactPhone)}
-    </span>
-  ) : (
-    <a href={`tel:${booking.contactPhone}`} ...>
-      {formatPhone(booking.contactPhone)}
-    </a>
-  )
-) : ...}
+```text
+┌─────────────────────────────────────────────────────────────┐
+│ 📞 Contact Information                                      │
+│ ─────────────────────────────────────────────────────────── │
+│                                                             │
+│ Email Address *              Phone Number *                 │
+│ ┌─────────────────────────┐  ┌─────────────────────────┐   │
+│ │ member@email.com        │  │ (678) 463-1178          │   │
+│ └─────────────────────────┘  └─────────────────────────┘   │
+│                                                             │
+└─────────────────────────────────────────────────────────────┘
 ```
 
-**CSV Export (lines 236-283):**
-Apply masking to exported data for agents.
+### 4. Update addBooking Call
 
-### 3. Update ContactProfileHoverCard.tsx
-
-**File:** `src/components/reports/ContactProfileHoverCard.tsx`
-
-Add masking to the displayed contact info while keeping action buttons functional:
+Add the contact fields to the addBooking call:
 
 ```typescript
-// Add new prop
-interface ContactProfileHoverCardProps {
-  // ... existing props
-  shouldMaskContact?: boolean; // New prop
+await addBooking({
+  // ... existing fields
+  contactEmail: contactEmail.trim(),
+  contactPhone: contactPhone.trim(),
+});
+```
+
+### 5. Update BookingsContext
+
+Update the `addBooking` function to include contact fields in the database insert:
+
+```typescript
+const { data, error } = await supabase.from('bookings').insert({
+  // ... existing fields
+  contact_email: booking.contactEmail || null,
+  contact_phone: booking.contactPhone || null,
+}).select('id').single();
+```
+
+### 6. Reset Fields on "Add Another"
+
+Clear the contact fields when using "Save & Add Another":
+
+```typescript
+if (addAnother) {
+  setContactEmail('');
+  setContactPhone('');
+  // ... existing resets
 }
-
-// In the contact display section (lines 258-272):
-{contactEmail && (
-  <span className="flex items-center gap-1 truncate max-w-[140px]">
-    <Mail className="h-3 w-3" />
-    {shouldMaskContact ? maskEmail(contactEmail) : contactEmail}
-  </span>
-)}
-{contactPhone && (
-  <span className="flex items-center gap-1">
-    <Phone className="h-3 w-3" />
-    {shouldMaskContact ? maskPhone(contactPhone) : contactPhone}
-  </span>
-)}
-
-// Action buttons remain unchanged - they use the real data internally
-// handleEmailClick and handleSmsClick still work with full contactEmail/contactPhone
-```
-
-### 4. Pass Masking Flag from Reports.tsx
-
-When rendering the hover card, pass the masking flag:
-
-```typescript
-<ContactProfileHoverCard
-  memberName={booking.memberName}
-  // ... other props
-  contactEmail={booking.contactEmail || undefined}
-  contactPhone={booking.contactPhone || undefined}
-  shouldMaskContact={shouldMask}
->
 ```
 
 ---
@@ -159,41 +108,31 @@ When rendering the hover card, pass the masking flag:
 
 | File | Changes |
 |------|---------|
-| `src/utils/contactPrivacy.ts` | **New file** - masking utilities |
-| `src/pages/Reports.tsx` | Apply masking to table columns and CSV export |
-| `src/components/reports/ContactProfileHoverCard.tsx` | Add `shouldMaskContact` prop and mask display |
+| `src/pages/AddBooking.tsx` | Add state, validation, UI section, and include in submit |
+| `src/contexts/BookingsContext.tsx` | Update `addBooking` to save `contact_email` and `contact_phone` |
 
 ---
 
-## User Experience
+## Form Layout After Change
 
-### Agent View (Masked)
+The form will have sections in this order:
 
-**Table columns:**
-| Email | Phone |
-|-------|-------|
-| `jas***@email.com` | `678-***-1178` |
-
-**Hover card:**
-- Shows: `📧 jas***@email.com · 📱 678-***-1178`
-- Email button: **Works** - opens `mailto:jason@email.com` (real email)
-- SMS button: **Works** - opens `sms:6784631178` (real phone)
-
-### Admin/Supervisor View (Full)
-
-**Table columns:**
-| Email | Phone |
-|-------|-------|
-| `jason@email.com` | `678-463-1178` |
-
-Both are clickable links as before.
+1. **Booking Information** (dates, type, status)
+2. **Member Information** (name, rebooking toggle)
+3. **Contact Information** (email, phone) - NEW
+4. **Agent & Location** (agent, city, state)
+5. **Communication** (method)
+6. **External Links** (optional links)
+7. **Notes & Follow-up** (notes, reach-out checkbox)
 
 ---
 
-## Security Notes
+## Validation Rules
 
-- Masking is **display-only** - the underlying data is still sent to the client
-- This is a privacy improvement, not a security boundary
-- For true data protection, server-side filtering would be needed (RLS policies)
-- Current approach balances privacy with agent workflow (buttons still work)
+| Field | Validation |
+|-------|------------|
+| Contact Email | Required, must match email format (`user@domain.com`) |
+| Contact Phone | Required, must have at least 10 digits |
+
+Both fields will show red error toasts if invalid, preventing form submission.
 
