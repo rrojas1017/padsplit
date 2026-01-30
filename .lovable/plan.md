@@ -1,97 +1,62 @@
 
-# Add Real-Time Validation Checkmarks for Email & Phone
+# Restrict Audit Log Access to Super Admins Only
 
-## Overview
+## Current State
 
-Add visual checkmark indicators next to the email and phone input fields that appear when the user enters valid data. This provides immediate feedback and improves the user experience.
+The Audit Log page is currently accessible by both `super_admin` and `admin` roles:
 
-## Visual Design
+| Location | Current Access |
+|----------|---------------|
+| Route protection (`App.tsx`) | `['super_admin', 'admin']` |
+| Sidebar navigation (`AppSidebar.tsx`) | `['super_admin', 'admin']` |
 
-The checkmarks will appear as green check icons inside the input field (right side) when validation passes:
+## Changes Required
 
-```text
-┌──────────────────────────────────────┐
-│ user@email.com                    ✓  │
-└──────────────────────────────────────┘
-```
+### 1. Update Route Protection
 
-## Validation Rules
+**File:** `src/App.tsx` (line 153)
 
-| Field | Valid When |
-|-------|------------|
-| Email | Matches standard email regex pattern |
-| Phone | Contains at least 10 digits |
-
-## Implementation Details
-
-### File: `src/pages/AddBooking.tsx`
-
-**1. Add validation helper functions:**
 ```typescript
-// Check if email is valid
-const isValidEmail = (email: string) => {
-  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  return email.trim() !== '' && emailRegex.test(email.trim());
-};
+// Before
+<ProtectedRoute allowedRoles={['super_admin', 'admin']}>
 
-// Check if phone is valid (at least 10 digits)
-const isValidPhone = (phone: string) => {
-  const phoneDigits = phone.replace(/\D/g, '');
-  return phoneDigits.length >= 10;
-};
+// After  
+<ProtectedRoute allowedRoles={['super_admin']}>
 ```
 
-**2. Update Email Input with checkmark:**
-```tsx
-<div className="relative">
-  <Input
-    id="contactEmail"
-    type="email"
-    value={contactEmail}
-    onChange={(e) => setContactEmail(e.target.value)}
-    placeholder="member@email.com"
-    className={isValidEmail(contactEmail) ? 'pr-10' : ''}
-  />
-  {isValidEmail(contactEmail) && (
-    <Check className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-green-500" />
-  )}
-</div>
-```
+### 2. Update Sidebar Navigation
 
-**3. Update Phone Input with checkmark:**
-```tsx
-<div className="relative">
-  <Input
-    id="contactPhone"
-    type="tel"
-    value={contactPhone}
-    onChange={(e) => setContactPhone(e.target.value)}
-    placeholder="(000) 000-0000"
-    className={isValidPhone(contactPhone) ? 'pr-10' : ''}
-  />
-  {isValidPhone(contactPhone) && (
-    <Check className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-green-500" />
-  )}
-</div>
-```
+**File:** `src/components/layout/AppSidebar.tsx` (line 133)
 
-**4. Add import for Check icon:**
 ```typescript
-import { CalendarIcon, Save, PlusCircle, ArrowLeft, RotateCcw, Check } from 'lucide-react';
+// Before
+{ 
+  icon: Shield, 
+  label: 'Audit Log', 
+  path: '/audit-log',
+  roles: ['super_admin', 'admin'],
+  group: 'admin'
+}
+
+// After
+{ 
+  icon: Shield, 
+  label: 'Audit Log', 
+  path: '/audit-log',
+  roles: ['super_admin'],
+  group: 'admin'
+}
 ```
 
-## Changes Summary
+## Summary
 
-| File | Change |
-|------|--------|
-| `src/pages/AddBooking.tsx` | Add `Check` icon import |
-| `src/pages/AddBooking.tsx` | Add `isValidEmail` and `isValidPhone` helper functions |
-| `src/pages/AddBooking.tsx` | Wrap email input in relative div with checkmark |
-| `src/pages/AddBooking.tsx` | Wrap phone input in relative div with checkmark |
+| File | Line | Change |
+|------|------|--------|
+| `src/App.tsx` | 153 | Remove `'admin'` from `allowedRoles` array |
+| `src/components/layout/AppSidebar.tsx` | 133 | Remove `'admin'` from `roles` array |
 
-## User Experience
+## Result
 
-- Checkmark appears immediately as user types valid input
-- Green color provides positive visual feedback
-- Uses existing Lucide icon library (no new dependencies)
-- Consistent with modern form UX patterns
+- Admin users will no longer see the Audit Log in their sidebar
+- Admin users attempting to navigate directly to `/audit-log` will be redirected to the dashboard
+- Only super_admin users will have access to view all user activities and audit events
