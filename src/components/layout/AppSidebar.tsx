@@ -124,7 +124,7 @@ const menuItems: MenuItem[] = [
   },
   {
     icon: Lightbulb,
-    label: 'Call Insights',
+    label: 'Communication Insights',
     path: '/call-insights',
     roles: ['super_admin', 'admin'],
     group: 'admin'

@@ -57,8 +57,8 @@ export default function CallInsights() {
 
   return (
     <DashboardLayout 
-      title="Call Insights" 
-      subtitle="AI-powered analysis of call patterns and conversion trends"
+      title="Communication Insights" 
+      subtitle="AI-powered analysis of communication patterns and conversion trends"
     >
       <div className="space-y-6">
         {/* Header with Icon */}
@@ -68,10 +68,10 @@ export default function CallInsights() {
           </div>
           <div>
             <h1 className="text-2xl font-bold bg-gradient-to-r from-foreground to-foreground/70 bg-clip-text">
-              Call Insights
+              Communication Insights
             </h1>
             <p className="text-sm text-muted-foreground">
-              Analyze booking and non-booking call patterns to improve conversion
+              Analyze booking and non-booking communication patterns to improve conversion
             </p>
           </div>
         </div>
