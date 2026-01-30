@@ -466,10 +466,6 @@ export function TranscriptionModal({ booking, isOpen, onClose, onTranscriptionCo
                   <CheckCircle2 className="h-3 w-3 mr-1" />
                   Transcribed
                 </Badge>
-                <Badge variant="outline" className="bg-purple-500/10 text-purple-500 border-purple-500/30">
-                  <Radio className="h-3 w-3 mr-1" />
-                  ElevenLabs
-                </Badge>
                 {booking.callDurationSeconds && (
                   <Badge variant="outline" className="flex items-center gap-1">
                     <Clock className="h-3 w-3" />
