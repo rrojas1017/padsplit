@@ -193,6 +193,8 @@ export function BookingsProvider({ children }: { children: ReactNode }) {
       created_by: userData.user?.id || null,
       is_rebooking: booking.isRebooking || false,
       original_booking_id: booking.originalBookingId || null,
+      contact_email: booking.contactEmail || null,
+      contact_phone: booking.contactPhone || null,
     }).select('id').single();
 
     if (error) {

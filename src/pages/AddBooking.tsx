@@ -53,6 +53,8 @@ export default function AddBooking() {
   const [moveInDayReachOut, setMoveInDayReachOut] = useState(false);
   const [isRebooking, setIsRebooking] = useState(false);
   const [originalBookingId, setOriginalBookingId] = useState<string | undefined>();
+  const [contactEmail, setContactEmail] = useState('');
+  const [contactPhone, setContactPhone] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Get list of past bookings for rebooking dropdown
@@ -101,6 +103,20 @@ export default function AddBooking() {
       return;
     }
 
+    // Email validation
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!contactEmail.trim() || !emailRegex.test(contactEmail.trim())) {
+      toast({ title: 'Error', description: 'Please enter a valid email address', variant: 'destructive' });
+      return;
+    }
+
+    // Phone validation (at least 10 digits)
+    const phoneDigits = contactPhone.replace(/\D/g, '');
+    if (phoneDigits.length < 10) {
+      toast({ title: 'Error', description: 'Please enter a valid phone number (at least 10 digits)', variant: 'destructive' });
+      return;
+    }
+
     const selectedAgent = agents.find(a => a.id === agentId);
     if (!selectedAgent) return;
 
@@ -144,6 +160,8 @@ export default function AddBooking() {
         moveInDayReachOut,
         isRebooking,
         originalBookingId: isRebooking ? originalBookingId : undefined,
+        contactEmail: contactEmail.trim(),
+        contactPhone: contactPhone.trim(),
       });
 
       toast({
@@ -159,7 +177,8 @@ export default function AddBooking() {
         setMoveInDayReachOut(false);
         setIsRebooking(false);
         setOriginalBookingId(undefined);
-        setMoveInDayReachOut(false);
+        setContactEmail('');
+        setContactPhone('');
       } else {
         navigate('/reports');
       }
@@ -323,6 +342,33 @@ export default function AddBooking() {
                     </p>
                   </div>
                 )}
+              </div>
+            </div>
+          </div>
+
+          {/* Contact Information Section */}
+          <div className="bg-card rounded-xl border border-border p-6 shadow-card">
+            <h3 className="text-lg font-semibold text-foreground mb-4">Contact Information</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="contactEmail">Email Address *</Label>
+                <Input
+                  id="contactEmail"
+                  type="email"
+                  value={contactEmail}
+                  onChange={(e) => setContactEmail(e.target.value)}
+                  placeholder="member@email.com"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="contactPhone">Phone Number *</Label>
+                <Input
+                  id="contactPhone"
+                  type="tel"
+                  value={contactPhone}
+                  onChange={(e) => setContactPhone(e.target.value)}
+                  placeholder="(678) 463-1178"
+                />
               </div>
             </div>
           </div>
