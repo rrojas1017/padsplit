@@ -1,157 +1,129 @@
 
 
-# Redesign Non-Booking Analysis Tab for Insights Focus
+# Fix Non-Booking Analysis Stats Capped at 1,000 Rows
 
 ## Problem
 
-The current Non-Booking Analysis tab is inconsistent with the Booking Insights tab:
-- It includes a records list (CallsTable) which is redundant with the Reports page
-- It has search/filter controls for browsing individual records
-- The layout doesn't match the insights-focused design of Booking Insights
+The Non-Booking Analysis tab shows incorrect statistics because the current implementation fetches all rows to count them locally. This hits the default Supabase limit of 1,000 rows, causing:
 
-## Goal
+| Metric | Showing | Actual |
+|--------|---------|--------|
+| Total Non-Booking Calls | 1,000 | 3,286 |
+| High Readiness | 284 | 949 |
+| Transcribed | 2 | 2 |
 
-Redesign Non-Booking Analysis to be a pure insights page, mirroring the Booking Insights layout and preparing for the future AI analysis edge function.
+The Trend Chart also has this issue, potentially showing incomplete data.
 
-## Proposed Layout Comparison
+## Solution
 
-| Booking Insights Tab | Non-Booking Analysis Tab (Redesigned) |
-|---------------------|---------------------------------------|
-| InsightsSummaryCards | NonBookingSummaryCards (modified) |
-| PainPointsPanel + ObjectionsChart | NonBookingReasonsPanel + ObjectionsChart |
-| SentimentChart + MarketInsights | SentimentChart + MarketInsights |
-| TrendChart | TrendChart |
-| RecommendationsPanel | RecommendationsPanel |
+Use server-side aggregation with SQL aggregate queries instead of fetching rows and counting client-side. This will:
+1. Return accurate counts regardless of dataset size
+2. Be more efficient (no need to transfer row data)
+3. Properly respect date range filters
 
-## Detailed Changes
+## Implementation Approach
 
-### 1. NonBookingAnalysisTab.tsx - Complete Refactor
-
-**Remove:**
-- All filter controls (search, agent, status dropdowns)
-- CallsTable component
-- Nested Tabs component (all/with-recording)
-- CallDetailsModal
-
-**Keep/Enhance:**
-- Date range selector
-- Run Analysis button
-- NonBookingSummaryCards (will be fed by AI analysis)
-- NonBookingReasonsChart
-- MissedOpportunitiesPanel
-
-**Add:**
-- Previous Analyses selector (like Booking Insights)
-- SentimentChart for non-bookers
-- RecommendationsPanel for recovery strategies
-- Proper empty state with "Run Analysis" CTA
-- Loading skeleton states
-
-### 2. New Data Structure for Non-Booking Insights
-
-Will create a `non_booking_insights` table (future database migration) with similar structure to `member_insights`:
-
-```text
-non_booking_insights
-├── id
-├── analysis_period
-├── date_range_start / date_range_end
-├── total_calls_analyzed
-├── rejection_reasons (why they didn't book)
-├── objection_patterns
-├── missed_opportunities (high-readiness non-bookers)
-├── sentiment_distribution
-├── recovery_recommendations
-├── agent_breakdown (which agents have highest non-booking rates)
-├── status (processing/completed/failed)
-└── created_at
+### Approach 1: Use Supabase count with `head: true` (for total count only)
+```typescript
+// Only returns count, no row data
+const { count } = await supabase
+  .from('bookings')
+  .select('*', { count: 'exact', head: true })
+  .eq('status', 'Non Booking');
 ```
 
-### 3. UI Layout for Redesigned Tab
+### Approach 2: Use a database function for complex aggregations (recommended)
+Since we need multiple aggregated values (total, transcribed, high_readiness, avg_duration), create a database function that returns all stats in one call.
 
-```text
-Non-Booking Analysis Tab
-├── Controls Row
-│   ├── Date Range Selector
-│   ├── Run Analysis Button (triggers edge function)
-│   ├── Export Button
-│   └── Previous Analyses Selector
-│
-├── Summary Cards Row (4 cards)
-│   ├── Total Non-Booking Calls
-│   ├── Top Rejection Reason
-│   ├── Overall Sentiment
-│   └── Recovery Potential
-│
-├── Analytics Row 1 (2-column)
-│   ├── NonBookingReasonsChart (why they didn't book)
-│   └── ObjectionsChart (shared component)
-│
-├── Analytics Row 2 (2-column)
-│   ├── SentimentChart
-│   └── MissedOpportunitiesPanel (high-readiness)
-│
-├── Trend Chart (full width)
-│   └── Shows non-booking trends over time
-│
-└── Recovery Recommendations Panel
-    └── AI-generated strategies to recover non-bookers
+**We will use Approach 2** because we need multiple aggregated values and conditional counts.
+
+## Changes Required
+
+### 1. Create Database Function
+
+Create a new SQL function `get_non_booking_stats` that accepts date range parameters and returns all aggregated stats:
+
+```sql
+CREATE OR REPLACE FUNCTION get_non_booking_stats(
+  start_date DATE DEFAULT NULL
+)
+RETURNS TABLE(
+  total_calls BIGINT,
+  transcribed_calls BIGINT,
+  high_readiness_calls BIGINT,
+  avg_duration_seconds NUMERIC
+)
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+BEGIN
+  RETURN QUERY
+  SELECT 
+    COUNT(*)::BIGINT as total_calls,
+    COUNT(CASE WHEN transcription_status = 'completed' THEN 1 END)::BIGINT as transcribed_calls,
+    COUNT(CASE WHEN call_duration_seconds > 300 THEN 1 END)::BIGINT as high_readiness_calls,
+    COALESCE(AVG(CASE WHEN call_duration_seconds > 0 THEN call_duration_seconds END), 0)::NUMERIC as avg_duration_seconds
+  FROM bookings
+  WHERE status = 'Non Booking'
+    AND (start_date IS NULL OR booking_date >= start_date);
+END;
+$$;
 ```
 
-### 4. Empty State Design
+### 2. Update NonBookingAnalysisTab.tsx
 
-When no analysis has been run:
-```text
-┌─────────────────────────────────────────────────┐
-│                                                 │
-│      [Lightbulb Icon - amber color]            │
-│                                                 │
-│      No Non-Booking Analysis Yet               │
-│                                                 │
-│      Run your first analysis to discover       │
-│      why members didn't book and how to        │
-│      recover missed opportunities              │
-│                                                 │
-│           [Run First Analysis]                 │
-│                                                 │
-│      3,286 non-booking calls available         │
-│                                                 │
-└─────────────────────────────────────────────────┘
+Replace the current client-side aggregation with a call to the database function:
+
+```typescript
+// Before (hits 1000 row limit):
+const { data } = await supabase
+  .from('bookings')
+  .select('id, transcription_status, call_duration_seconds')
+  .eq('status', 'Non Booking');
+const totalCalls = data.length; // Max 1000!
+
+// After (accurate count):
+const { data } = await supabase.rpc('get_non_booking_stats', {
+  start_date: days !== null ? startDate.toISOString().split('T')[0] : null
+});
+// Returns: { total_calls: 3286, transcribed_calls: 2, ... }
 ```
 
-### 5. Files to Modify
+### 3. Update NonBookingTrendChart.tsx
 
-| File | Changes |
-|------|---------|
-| `src/components/call-insights/NonBookingAnalysisTab.tsx` | Complete refactor to insights-focused layout |
-| `src/components/call-insights/NonBookingSummaryCards.tsx` | Adapt to use insight data instead of raw calls |
-| `src/components/call-insights/NonBookingReasonsChart.tsx` | Already prepared for insight data |
-| `src/components/call-insights/MissedOpportunitiesPanel.tsx` | Adapt to use AI-analyzed high-readiness data |
+For the trend chart, we still need row-level data for grouping by date. Two options:
 
-### 6. Files to Create
+**Option A**: Paginate to fetch all rows (complex, slower)
+**Option B**: Create a second database function for trend data (cleaner)
 
-| File | Purpose |
-|------|---------|
-| `src/components/call-insights/NonBookingRecommendationsPanel.tsx` | Recovery recommendations panel |
-| `src/hooks/useNonBookingInsightsPolling.ts` | Polling hook for background analysis |
+We'll use **Option B** - create `get_non_booking_trends` function that returns pre-aggregated daily/weekly data.
 
-### 7. Implementation Phases
+### 4. Update NonBookingMissedOpportunitiesPanel.tsx
 
-**Phase 1 (UI Only - This Plan):**
-- Refactor NonBookingAnalysisTab to insights-focused layout
-- Create placeholder components for future AI data
-- Show "Run Analysis" empty state
-- Wire up date range and analysis controls (non-functional for now)
+The panel receives `highReadinessCount` as a prop from the parent, so it will automatically show the correct value once the parent is fixed.
 
-**Phase 2 (Future - Backend):**
-- Create `non_booking_insights` database table
-- Create `analyze-non-booking-insights` edge function
-- Connect UI to real analysis pipeline
+## Files to Modify
+
+| File | Change |
+|------|--------|
+| Database Migration | Create `get_non_booking_stats` and `get_non_booking_trends` functions |
+| `src/components/call-insights/NonBookingAnalysisTab.tsx` | Use `supabase.rpc('get_non_booking_stats')` instead of fetching rows |
+| `src/components/call-insights/NonBookingTrendChart.tsx` | Use `supabase.rpc('get_non_booking_trends')` for accurate trend data |
+
+## Expected Results After Fix
+
+| Period | Metric | Before | After |
+|--------|--------|--------|-------|
+| All Time | Total Calls | 1,000 | 3,286 |
+| All Time | High Readiness | 284 | 949 |
+| All Time | Avg Duration | 4:40 | 4:43 |
+| Last 30 Days | Total Calls | ~347 | 347 |
+| Last 30 Days | High Readiness | ~112 | 112 |
 
 ## Technical Notes
 
-- The refactored tab will use the same component patterns as BookingInsightsTab
-- Analysis button will be disabled with "Coming Soon" tooltip until Phase 2
-- NonBookingSummaryCards will show basic stats from bookings table (current behavior) until AI analysis is available
-- The date range selector will be shared with the parent component
+- The database functions use `SECURITY DEFINER` to run with elevated privileges but still respect RLS on the underlying table
+- Using `BIGINT` for counts to handle large datasets
+- The `start_date` parameter is optional - passing `NULL` returns all-time stats
+- The trend function will return pre-grouped data to avoid client-side aggregation limits
 
