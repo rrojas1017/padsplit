@@ -22,8 +22,7 @@ import {
   Headphones,
   ClipboardList,
   Calculator,
-  Tag,
-  Phone
+  Tag
 } from 'lucide-react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
@@ -123,10 +122,10 @@ const menuItems: MenuItem[] = [
     roles: ['super_admin', 'admin', 'supervisor'],
     group: 'core'
   },
-    {
-      icon: Phone,
-      label: 'Non Booking Insights',
-      path: '/call-insights',
+  {
+    icon: Lightbulb,
+    label: 'Call Insights',
+    path: '/call-insights',
     roles: ['super_admin', 'admin', 'supervisor'],
     group: 'core'
   },
@@ -157,13 +156,6 @@ const menuItems: MenuItem[] = [
     label: 'Agent Status',
     path: '/agent-status',
     roles: ['super_admin', 'admin', 'supervisor'],
-    group: 'admin'
-  },
-  {
-    icon: Lightbulb,
-    label: 'Member Insights',
-    path: '/member-insights',
-    roles: ['super_admin', 'admin'],
     group: 'admin'
   },
   {

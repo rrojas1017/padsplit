@@ -2,7 +2,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { ThemeProvider } from "@/contexts/ThemeContext";
 import { SidebarProvider } from "@/contexts/SidebarContext";
@@ -30,7 +30,7 @@ import Settings from "./pages/Settings";
 import ImportBookings from "./pages/ImportBookings";
 import CoachingHub from "./pages/CoachingHub";
 import AgentStatus from "./pages/AgentStatus";
-import MemberInsights from "./pages/MemberInsights";
+
 import MyQA from "./pages/MyQA";
 import QADashboard from "./pages/QADashboard";
 import AgentGoals from "./pages/AgentGoals";
@@ -189,13 +189,8 @@ const App = () => (
                 </ProtectedRoute>
               } />
 
-              <Route path="/member-insights" element={
-                <ProtectedRoute allowedRoles={['super_admin', 'admin']}>
-                  <DataProviders>
-                    <MemberInsights />
-                  </DataProviders>
-                </ProtectedRoute>
-              } />
+              {/* Redirect old member-insights route to unified call-insights */}
+              <Route path="/member-insights" element={<Navigate to="/call-insights?tab=bookings" replace />} />
 
               <Route path="/my-qa" element={
                 <ProtectedRoute allowedRoles={['agent']}>
