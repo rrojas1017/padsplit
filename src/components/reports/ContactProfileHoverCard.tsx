@@ -11,15 +11,16 @@ import { cn } from '@/lib/utils';
 import {
   User,
   Target,
-  Smile,
-  Meh,
-  Frown,
   Mail,
   MessageSquare,
   Loader2,
   FileX,
   Phone,
   Clock,
+  DollarSign,
+  Home,
+  Sparkles,
+  AlertTriangle,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { useContactCommunications } from '@/hooks/useContactCommunications';
@@ -27,7 +28,7 @@ import { useContactCommunications } from '@/hooks/useContactCommunications';
 interface ContactProfileHoverCardProps {
   memberName: string;
   callKeyPoints?: CallKeyPoints;
-  callSummary?: string;
+  callSummary?: string; // Kept for backward compatibility
   transcriptionStatus?: 'pending' | 'processing' | 'completed' | 'failed' | 'unavailable';
   contactEmail?: string;
   contactPhone?: string;
@@ -49,58 +50,18 @@ const ReadinessBadge = ({ readiness }: { readiness: 'high' | 'medium' | 'low' })
   );
 };
 
-const SentimentIcon = ({ sentiment }: { sentiment: 'positive' | 'neutral' | 'negative' }) => {
-  const config = {
-    positive: { Icon: Smile, className: 'text-success' },
-    neutral: { Icon: Meh, className: 'text-muted-foreground' },
-    negative: { Icon: Frown, className: 'text-destructive' },
-  };
-  
-  const { Icon, className } = config[sentiment];
-  return <Icon className={cn('h-4 w-4', className)} />;
-};
-
-// Generate key follow-up points from call data
-function getFollowUpPoints(callKeyPoints: CallKeyPoints): string[] {
-  const points: string[] = [];
-  
-  // Budget info
-  if (callKeyPoints.memberDetails?.weeklyBudget) {
-    const fee = callKeyPoints.memberPreferences?.some(p => 
-      p.toLowerCase().includes('no moving fee') || p.toLowerCase().includes('waive')
-    ) ? ', no moving fee' : '';
-    points.push(`$${callKeyPoints.memberDetails.weeklyBudget}/week${fee}`);
+// Format commitment weeks into readable duration
+function formatCommitment(weeks: number): string {
+  if (weeks >= 4) {
+    const months = Math.round(weeks / 4);
+    return `${months} month${months !== 1 ? 's' : ''}`;
   }
-  
-  // Move-in date
-  if (callKeyPoints.memberDetails?.moveInDate) {
-    points.push(`Move-in: ${callKeyPoints.memberDetails.moveInDate}`);
-  }
-  
-  // Commitment
-  if (callKeyPoints.memberDetails?.commitmentWeeks) {
-    const weeks = callKeyPoints.memberDetails.commitmentWeeks;
-    const duration = weeks >= 4 ? `${Math.round(weeks / 4)} month${Math.round(weeks / 4) !== 1 ? 's' : ''}` : `${weeks} weeks`;
-    points.push(`${duration} commitment`);
-  }
-  
-  // Top preference
-  if (callKeyPoints.memberPreferences?.[0] && points.length < 3) {
-    points.push(callKeyPoints.memberPreferences[0]);
-  }
-  
-  // Top concern if still room
-  if (callKeyPoints.memberConcerns?.[0] && points.length < 3) {
-    points.push(`Concern: ${callKeyPoints.memberConcerns[0]}`);
-  }
-  
-  return points.slice(0, 3);
+  return `${weeks} week${weeks !== 1 ? 's' : ''}`;
 }
 
 export function ContactProfileHoverCard({
   memberName,
   callKeyPoints,
-  callSummary,
   transcriptionStatus,
   contactEmail,
   contactPhone,
@@ -114,9 +75,7 @@ export function ContactProfileHoverCard({
 
   const handleEmailClick = () => {
     if (contactEmail && bookingId) {
-      // Open mailto link
       window.location.href = `mailto:${contactEmail}`;
-      // Log the communication
       logCommunication({
         bookingId,
         communicationType: 'email',
@@ -127,10 +86,8 @@ export function ContactProfileHoverCard({
 
   const handleSmsClick = () => {
     if (contactPhone && bookingId) {
-      // Open SMS link (mobile) or tel link (desktop fallback)
       const cleanPhone = contactPhone.replace(/\D/g, '');
       window.location.href = `sms:${cleanPhone}`;
-      // Log the communication
       logCommunication({
         bookingId,
         communicationType: 'sms',
@@ -139,9 +96,15 @@ export function ContactProfileHoverCard({
     }
   };
 
-  // Use callSummary prop or fall back to callKeyPoints.summary
-  const summaryText = callSummary || callKeyPoints?.summary;
-  const followUpPoints = hasInsights ? getFollowUpPoints(callKeyPoints) : [];
+  const memberDetails = hasInsights ? callKeyPoints.memberDetails : null;
+  const memberPreferences = hasInsights ? callKeyPoints.memberPreferences : null;
+  const memberConcerns = hasInsights ? callKeyPoints.memberConcerns : null;
+
+  // Check if we have any budget/timeline data
+  const hasBudgetTimeline = memberDetails?.weeklyBudget || memberDetails?.moveInDate || memberDetails?.commitmentWeeks;
+  
+  // Check if we have household data
+  const hasHousehold = memberDetails?.householdSize || memberDetails?.preferredPaymentMethod;
 
   return (
     <HoverCard openDelay={200} closeDelay={100}>
@@ -161,17 +124,14 @@ export function ContactProfileHoverCard({
               <div className="h-8 w-8 rounded-full bg-primary/20 flex items-center justify-center">
                 <User className="h-4 w-4 text-primary" />
               </div>
-              <span className="font-semibold text-foreground text-sm truncate max-w-[120px]">
+              <span className="font-semibold text-foreground text-sm truncate max-w-[140px]">
                 {memberName}
               </span>
             </div>
             {hasInsights && (
-              <div className="flex items-center gap-2">
-                <SentimentIcon sentiment={callKeyPoints.callSentiment} />
-                <div className="flex items-center gap-1">
-                  <Target className="h-3.5 w-3.5 text-muted-foreground" />
-                  <ReadinessBadge readiness={callKeyPoints.moveInReadiness} />
-                </div>
+              <div className="flex items-center gap-1">
+                <Target className="h-3.5 w-3.5 text-muted-foreground" />
+                <ReadinessBadge readiness={callKeyPoints.moveInReadiness} />
               </div>
             )}
           </div>
@@ -188,36 +148,101 @@ export function ContactProfileHoverCard({
           ) : !hasInsights ? (
             <div className="flex flex-col items-center justify-center py-4 text-center">
               <FileX className="h-6 w-6 text-muted-foreground mb-2" />
-              <p className="text-sm font-medium text-muted-foreground">No call insights</p>
+              <p className="text-sm font-medium text-muted-foreground">No contact insights</p>
               <p className="text-xs text-muted-foreground mt-1">
-                Manual entry or import
+                {contactEmail || contactPhone ? 'Add call insights for richer context' : 'Manual entry or import'}
               </p>
             </div>
           ) : (
             <div className="space-y-3">
-              {/* Quick Summary */}
-              {summaryText && (
+              {/* Budget & Timeline */}
+              {hasBudgetTimeline && (
                 <div>
-                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5">
-                    📝 Quick Summary
-                  </p>
-                  <p className="text-xs text-foreground leading-relaxed line-clamp-3 italic">
-                    "{summaryText}"
-                  </p>
+                  <div className="flex items-center gap-1.5 mb-1.5">
+                    <DollarSign className="h-3.5 w-3.5 text-primary" />
+                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                      Budget & Timeline
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-foreground">
+                    {memberDetails?.weeklyBudget && (
+                      <span className="font-medium">${memberDetails.weeklyBudget}/wk</span>
+                    )}
+                    {memberDetails?.weeklyBudget && (memberDetails?.moveInDate || memberDetails?.commitmentWeeks) && (
+                      <span className="text-muted-foreground">·</span>
+                    )}
+                    {memberDetails?.moveInDate && (
+                      <span>Move: {memberDetails.moveInDate}</span>
+                    )}
+                    {memberDetails?.moveInDate && memberDetails?.commitmentWeeks && (
+                      <span className="text-muted-foreground">·</span>
+                    )}
+                    {memberDetails?.commitmentWeeks && (
+                      <span>{formatCommitment(memberDetails.commitmentWeeks)}</span>
+                    )}
+                  </div>
                 </div>
               )}
 
-              {/* Key Follow-up Points */}
-              {followUpPoints.length > 0 && (
+              {/* Household */}
+              {hasHousehold && (
                 <div>
-                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5">
-                    💬 Key Follow-up
-                  </p>
+                  <div className="flex items-center gap-1.5 mb-1.5">
+                    <Home className="h-3.5 w-3.5 text-primary" />
+                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                      Household
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-foreground">
+                    {memberDetails?.householdSize && (
+                      <span>
+                        {memberDetails.householdSize} {memberDetails.householdSize === 1 ? 'person' : 'people'}
+                      </span>
+                    )}
+                    {memberDetails?.householdSize && memberDetails?.preferredPaymentMethod && (
+                      <span className="text-muted-foreground">·</span>
+                    )}
+                    {memberDetails?.preferredPaymentMethod && (
+                      <span>{memberDetails.preferredPaymentMethod} preferred</span>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Looking For (Preferences) */}
+              {memberPreferences && memberPreferences.length > 0 && (
+                <div>
+                  <div className="flex items-center gap-1.5 mb-1.5">
+                    <Sparkles className="h-3.5 w-3.5 text-primary" />
+                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                      Looking For
+                    </p>
+                  </div>
                   <ul className="space-y-1">
-                    {followUpPoints.map((point, index) => (
+                    {memberPreferences.slice(0, 3).map((pref, index) => (
                       <li key={index} className="text-xs text-foreground flex items-start gap-2">
                         <span className="text-primary mt-0.5">•</span>
-                        <span className="line-clamp-1">{point}</span>
+                        <span className="line-clamp-1">{pref}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {/* Concerns */}
+              {memberConcerns && memberConcerns.length > 0 && (
+                <div>
+                  <div className="flex items-center gap-1.5 mb-1.5">
+                    <AlertTriangle className="h-3.5 w-3.5 text-amber-500" />
+                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                      Concerns
+                    </p>
+                  </div>
+                  <ul className="space-y-1">
+                    {memberConcerns.slice(0, 2).map((concern, index) => (
+                      <li key={index} className="text-xs text-amber-600 dark:text-amber-400 flex items-start gap-2">
+                        <span className="mt-0.5">•</span>
+                        <span className="line-clamp-1">{concern}</span>
                       </li>
                     ))}
                   </ul>
