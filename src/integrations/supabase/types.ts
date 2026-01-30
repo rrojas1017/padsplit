@@ -1609,6 +1609,24 @@ export type Database = {
       }
       get_my_role: { Args: never; Returns: string }
       get_my_site_id: { Args: never; Returns: string }
+      get_non_booking_stats: {
+        Args: { start_date?: string }
+        Returns: {
+          avg_duration_seconds: number
+          high_readiness_calls: number
+          total_calls: number
+          transcribed_calls: number
+        }[]
+      }
+      get_non_booking_trends: {
+        Args: { group_by_week?: boolean; start_date: string }
+        Returns: {
+          high_readiness: number
+          non_bookings: number
+          period_date: string
+          transcribed: number
+        }[]
+      }
       get_user_role: {
         Args: { _user_id: string }
         Returns: Database["public"]["Enums"]["app_role"]

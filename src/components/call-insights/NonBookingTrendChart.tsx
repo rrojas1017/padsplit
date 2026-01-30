@@ -22,19 +22,27 @@ export function NonBookingTrendChart({ dateRange }: NonBookingTrendChartProps) {
                    dateRange === 'last3months' ? 90 : 180;
       
       const startDate = startOfDay(subDays(new Date(), days));
+      const useWeekly = days > 30;
       
-      const { data, error } = await supabase
-        .from('bookings')
-        .select('booking_date, call_duration_seconds, transcription_status')
-        .eq('status', 'Non Booking')
-        .gte('booking_date', startDate.toISOString().split('T')[0])
-        .order('booking_date', { ascending: true });
+      // Use server-side aggregation to avoid 1000 row limit
+      const { data, error } = await supabase.rpc('get_non_booking_trends', {
+        start_date: startDate.toISOString().split('T')[0],
+        group_by_week: useWeekly
+      });
 
       if (error) throw error;
 
-      // Group by day or week based on range
-      const useWeekly = days > 30;
-      const bookings = data || [];
+      // Fill in missing dates/weeks with zeros for complete chart
+      const trendMap = new Map<string, { nonBookings: number; transcribed: number; highReadiness: number }>();
+      
+      (data || []).forEach((row: { period_date: string; non_bookings: number; transcribed: number; high_readiness: number }) => {
+        const key = row.period_date;
+        trendMap.set(key, {
+          nonBookings: Number(row.non_bookings) || 0,
+          transcribed: Number(row.transcribed) || 0,
+          highReadiness: Number(row.high_readiness) || 0,
+        });
+      });
 
       if (useWeekly) {
         const weeks = eachWeekOfInterval(
@@ -43,33 +51,26 @@ export function NonBookingTrendChart({ dateRange }: NonBookingTrendChartProps) {
         );
 
         return weeks.map(weekStart => {
-          const weekEnd = new Date(weekStart);
-          weekEnd.setDate(weekEnd.getDate() + 6);
-          
-          const weekBookings = bookings.filter(b => {
-            const date = new Date(b.booking_date);
-            return date >= weekStart && date <= weekEnd;
-          });
-
+          const key = format(weekStart, 'yyyy-MM-dd');
+          const existing = trendMap.get(key);
           return {
             date: format(weekStart, 'MMM d'),
-            nonBookings: weekBookings.length,
-            transcribed: weekBookings.filter(b => b.transcription_status === 'completed').length,
-            highReadiness: weekBookings.filter(b => b.call_duration_seconds && b.call_duration_seconds > 300).length,
+            nonBookings: existing?.nonBookings || 0,
+            transcribed: existing?.transcribed || 0,
+            highReadiness: existing?.highReadiness || 0,
           };
         });
       } else {
         const allDays = eachDayOfInterval({ start: startDate, end: new Date() });
 
         return allDays.map(day => {
-          const dayStr = format(day, 'yyyy-MM-dd');
-          const dayBookings = bookings.filter(b => b.booking_date === dayStr);
-
+          const key = format(day, 'yyyy-MM-dd');
+          const existing = trendMap.get(key);
           return {
             date: format(day, 'MMM d'),
-            nonBookings: dayBookings.length,
-            transcribed: dayBookings.filter(b => b.transcription_status === 'completed').length,
-            highReadiness: dayBookings.filter(b => b.call_duration_seconds && b.call_duration_seconds > 300).length,
+            nonBookings: existing?.nonBookings || 0,
+            transcribed: existing?.transcribed || 0,
+            highReadiness: existing?.highReadiness || 0,
           };
         });
       }

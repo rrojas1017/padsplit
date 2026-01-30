@@ -43,41 +43,29 @@ export function NonBookingAnalysisTab({ dateRange, onDateRangeChange }: NonBooki
     }
   };
 
-  // Fetch basic stats from bookings table
+  // Fetch stats using server-side aggregation (no 1000 row limit)
   const { data: stats, isLoading } = useQuery({
     queryKey: ['non-booking-stats', dateRange],
     queryFn: async (): Promise<NonBookingStats> => {
       const days = getDateRangeDays(dateRange);
+      const startDate = days !== null 
+        ? startOfDay(subDays(new Date(), days)).toISOString().split('T')[0]
+        : null;
       
-      let query = supabase
-        .from('bookings')
-        .select('id, transcription_status, call_duration_seconds')
-        .eq('status', 'Non Booking');
+      const { data, error } = await supabase.rpc('get_non_booking_stats', {
+        start_date: startDate
+      });
 
-      if (days !== null) {
-        const startDate = startOfDay(subDays(new Date(), days));
-        query = query.gte('booking_date', startDate.toISOString().split('T')[0]);
-      }
-
-      const { data, error } = await query;
       if (error) throw error;
 
-      const bookings = data || [];
-      const totalCalls = bookings.length;
-      const transcribedCalls = bookings.filter(b => b.transcription_status === 'completed').length;
-      const callsWithDuration = bookings.filter(b => b.call_duration_seconds && b.call_duration_seconds > 0);
-      const avgDurationSeconds = callsWithDuration.length > 0
-        ? callsWithDuration.reduce((sum, b) => sum + (b.call_duration_seconds || 0), 0) / callsWithDuration.length
-        : 0;
-      const highReadinessCalls = bookings.filter(b => 
-        b.call_duration_seconds && b.call_duration_seconds > 300
-      ).length;
+      // RPC returns an array with one row
+      const result = data?.[0] || { total_calls: 0, transcribed_calls: 0, high_readiness_calls: 0, avg_duration_seconds: 0 };
 
       return {
-        totalCalls,
-        transcribedCalls,
-        avgDurationSeconds,
-        highReadinessCalls,
+        totalCalls: Number(result.total_calls) || 0,
+        transcribedCalls: Number(result.transcribed_calls) || 0,
+        avgDurationSeconds: Number(result.avg_duration_seconds) || 0,
+        highReadinessCalls: Number(result.high_readiness_calls) || 0,
       };
     },
   });
