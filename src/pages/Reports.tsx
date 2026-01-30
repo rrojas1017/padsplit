@@ -91,10 +91,10 @@ export default function Reports() {
   // Sites from Supabase
   const [sites, setSites] = useState<Site[]>([]);
 
-  // Filter states - date ranges (default to "All Time" - undefined)
+  // Filter states - date ranges (default to Today)
   const [recordDateRange, setRecordDateRange] = useState<DateRange>({
-    from: undefined,
-    to: undefined,
+    from: startOfDay(new Date()),
+    to: endOfDay(new Date()),
   });
   const [moveInDateRange, setMoveInDateRange] = useState<DateRange>({
     from: undefined,
