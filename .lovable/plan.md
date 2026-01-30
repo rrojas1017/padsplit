@@ -1,81 +1,47 @@
 
 
-# Database-Level Contact Validation for Manual Bookings
+# Default Reports Date Filter to Today
 
 ## Overview
-Add a database trigger that enforces `contact_email` and `contact_phone` are required for all manually-created bookings, preventing agents from bypassing frontend validation through cached browsers or other means.
+Update the Reports page to default the "Record Date" filter to Today instead of "All Time" when the page loads, aligning it with the project's standardized UX pattern for date filtering.
 
-## What This Solves
-- Agents like Anel can currently save bookings without contact info even though the frontend shows validation
-- This happens when users have cached/old frontend code or if validation is somehow bypassed
-- Database-level enforcement is the definitive solution - no way to bypass it
+## What's Changing
+
+| Current Behavior | New Behavior |
+|-----------------|--------------|
+| Record Date defaults to "All" (shows all records) | Record Date defaults to "Today" |
+| Users must manually select "Today" to see today's records | Users see today's records immediately |
 
 ## Implementation
 
-### Step 1: Create Database Trigger
-Add a validation trigger on the `bookings` table that runs BEFORE INSERT and BEFORE UPDATE:
+**File:** `src/pages/Reports.tsx`
 
-```text
-┌─────────────────────────────────────────────────────────────┐
-│                    Trigger Logic                            │
-├─────────────────────────────────────────────────────────────┤
-│ IF import_batch_id IS NULL (manual entry)                   │
-│   AND (contact_email IS NULL OR contact_email = '')         │
-│   OR (contact_phone IS NULL OR contact_phone = '')          │
-│ THEN                                                        │
-│   RAISE EXCEPTION 'Contact email and phone required'        │
-│ END IF                                                      │
-└─────────────────────────────────────────────────────────────┘
+Update the initial state for `recordDateRange` to use today's date:
+
+```typescript
+// Before:
+const [recordDateRange, setRecordDateRange] = useState<DateRange>({
+  from: undefined,
+  to: undefined,
+});
+
+// After:
+const [recordDateRange, setRecordDateRange] = useState<DateRange>({
+  from: startOfDay(new Date()),
+  to: endOfDay(new Date()),
+});
 ```
 
-**Why a trigger instead of CHECK constraint?**
-- Triggers allow conditional logic (only enforce for manual entries)
-- CHECK constraints would affect imported records too, which may not always have contact info
-- Triggers provide clearer error messages
+The `startOfDay` and `endOfDay` functions are already imported from `date-fns` on line 11.
 
-### Step 2: Update Frontend Error Handling
-Ensure the booking form properly catches and displays the database error if someone somehow bypasses client validation:
-- Catch the specific error message from the trigger
-- Display a user-friendly toast message
-
-## Files Changed
-
-| File | Change |
-|------|--------|
-| Database Migration | New trigger `validate_manual_booking_contacts` |
-| `src/pages/AddBooking.tsx` | Minor update to error handling (optional) |
-
-## Technical Details
-
-The trigger will be created with this SQL:
-```sql
-CREATE OR REPLACE FUNCTION validate_manual_booking_contacts()
-RETURNS TRIGGER AS $$
-BEGIN
-  -- Only validate manual entries (no import batch)
-  IF NEW.import_batch_id IS NULL THEN
-    IF NEW.contact_email IS NULL OR TRIM(NEW.contact_email) = '' THEN
-      RAISE EXCEPTION 'Contact email is required for manual bookings';
-    END IF;
-    
-    IF NEW.contact_phone IS NULL OR TRIM(NEW.contact_phone) = '' THEN
-      RAISE EXCEPTION 'Contact phone is required for manual bookings';
-    END IF;
-  END IF;
-  
-  RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
-
-CREATE TRIGGER enforce_manual_booking_contacts
-  BEFORE INSERT OR UPDATE ON bookings
-  FOR EACH ROW
-  EXECUTE FUNCTION validate_manual_booking_contacts();
-```
+## Why This Matters
+- Aligns with the project's standardized UX: all date-filtered pages default to "Today"
+- Shows agents their most relevant, current-day records first
+- Consistent with Dashboard, Leaderboard, MyPerformance, and other pages
 
 ## Testing
-After implementation:
-1. Test creating a booking without email/phone - should fail with clear error
-2. Test that imported records (with batch ID) still work without contact info
-3. Verify existing manual bookings can still be updated (only new inserts affected, or updates that try to clear the fields)
+1. Navigate to Reports page
+2. Verify the Record Date filter shows "Today" (e.g., "Jan 30, 2026") instead of "All"
+3. Verify records displayed are from today only
+4. Confirm users can still change to other date ranges including "All Time"
 
