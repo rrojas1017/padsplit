@@ -1,79 +1,89 @@
 
-
-# Add Contact Profile Hover Card to My Bookings Page
+# Fix Status Change Dropdown for Supervisors on Reports Page
 
 ## Problem
-The Contact Profile Hover Card currently only appears on the **Reports** page, which agents cannot access. Agents use the **My Bookings** page to view their bookings, but this page doesn't have the hover card feature, so they can't see contact insights.
+Supervisors cannot see the 3-dot dropdown menu to change record status (Pending Move-In → Moved In, etc.) on the Reports page. The dropdown is hidden because of a **race condition** in the permission check.
+
+## Root Cause
+
+The `canEditBooking` function checks if a supervisor can edit a booking:
+
+```typescript
+if (user.role === 'supervisor') {
+  const agent = agents.find(a => a.id === bookingAgentId);
+  return agent?.siteId === user.siteId;
+}
+```
+
+**Problem:** If the `agents` array is empty (still loading), `agents.find()` returns `undefined`, causing `undefined === user.siteId` to return `false`. This hides the dropdown entirely.
 
 ## Solution
-Add the `ContactProfileHoverCard` component to the **My Bookings** page (`src/pages/MyBookings.tsx`). Agents will be able to hover over the member name to see:
-- Budget & timeline information
-- Household details  
-- Member preferences
-- Member concerns
-- Contact details (masked for agents)
-- Action buttons (Email, SMS, Voice) - disabled unless the agent has `can_send_communications` permission enabled
+
+Update the Reports page to:
+1. Get the `isLoading` state from `useAgents()`
+2. Modify `canEditBooking` to show the dropdown when agents are still loading (optimistic approach - backend RLS validates actual permissions)
 
 ## What Changes
 
 | Current Behavior | New Behavior |
 |-----------------|--------------|
-| Member name is plain text on My Bookings | Member name shows hover card with contact profile |
-| Agents have no access to contact insights | Agents can see all extracted insights from calls |
-| Action buttons only on Reports page | Action buttons on My Bookings (permission-gated) |
+| Dropdown hidden if agents haven't loaded | Dropdown shown while agents load |
+| Supervisor sees nothing on page load | Supervisor sees 3-dot menu immediately |
+| Race condition causes permanent hiding | Graceful loading state handling |
 
-## Implementation
+## Technical Implementation
 
-**File: `src/pages/MyBookings.tsx`**
+**File:** `src/pages/Reports.tsx`
 
-1. Import the `ContactProfileHoverCard` component
-2. Import the contact privacy utility functions (`shouldMaskContactInfo`)
-3. Wrap the member name cell content with `ContactProfileHoverCard`
-4. Pass all required props: `memberName`, `callKeyPoints`, `transcriptionStatus`, `contactEmail`, `contactPhone`, `bookingId`, and `shouldMaskContact`
+### Change 1: Get isLoading from useAgents (line 84)
+```typescript
+// Before:
+const { agents } = useAgents();
 
-**Code snippet for the member name cell (around line 387):**
-```tsx
-<td className="py-3 px-4">
-  <ContactProfileHoverCard
-    memberName={booking.memberName}
-    callKeyPoints={booking.callKeyPoints}
-    transcriptionStatus={booking.transcriptionStatus}
-    contactEmail={booking.contactEmail || undefined}
-    contactPhone={booking.contactPhone || undefined}
-    bookingId={booking.id}
-    shouldMaskContact={shouldMaskContactInfo(user?.role)}
-  >
-    <div className="flex items-center gap-2 cursor-default">
-      <span className="text-sm font-medium text-foreground hover:text-primary transition-colors">
-        {booking.memberName}
-      </span>
-      {booking.isRebooking && (
-        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs bg-primary/20 text-primary">
-          <RotateCcw className="w-3 h-3" />
-          Rebooking
-        </span>
-      )}
-    </div>
-  </ContactProfileHoverCard>
-</td>
+// After:
+const { agents, isLoading: agentsLoading } = useAgents();
 ```
 
-## Permission Behavior
-- **Contact masking**: Contact email and phone will be masked (showing `jas***@gmail.com` and `678-***-1178`) for agents as per existing privacy rules
-- **Action buttons**: The Email, SMS, and Voice buttons will be **disabled** for agents who don't have `can_send_communications` permission enabled. A subtle message will appear: "Contact admin for communication access"
-- **Insights visibility**: All extracted call insights (budget, timeline, preferences, concerns) will be visible to agents
+### Change 2: Update canEditBooking function (lines 206-218)
+```typescript
+const canEditBooking = (bookingAgentId: string) => {
+  if (!user) return false;
+  
+  // Admin/super_admin always have access
+  if (user.role === 'super_admin' || user.role === 'admin') return true;
+  
+  // Supervisor check - if agents still loading, allow action optimistically
+  // (backend RLS will validate actual permission on save)
+  if (user.role === 'supervisor') {
+    if (agentsLoading || agents.length === 0) return true;
+    const agent = agents.find(a => a.id === bookingAgentId);
+    return agent?.siteId === user.siteId;
+  }
+  
+  // Agent check
+  if (user.role === 'agent') {
+    if (agentsLoading || agents.length === 0) return true;
+    const agent = agents.find(a => a.id === bookingAgentId);
+    return agent?.userId === user.id;
+  }
+  
+  return false;
+};
+```
+
+## Why This Works
+- **Optimistic UI**: The dropdown appears immediately while data loads
+- **Backend Validation**: Even if the frontend shows the dropdown, the actual `updateBooking()` call goes through Supabase RLS policies which enforce proper permissions
+- **Security Maintained**: No security risk since backend validates all updates
 
 ## Files Changed
-
 | File | Change |
 |------|--------|
-| `src/pages/MyBookings.tsx` | Add ContactProfileHoverCard wrapper + imports |
+| `src/pages/Reports.tsx` | Add `isLoading` from useAgents, update `canEditBooking` logic |
 
 ## Testing
-1. Log in as an agent
-2. Navigate to My Bookings
-3. Hover over a member name - verify the hover card appears
-4. Verify contact details are masked (asterisks)
-5. Verify action buttons show as disabled (unless agent has permission)
-6. Verify call insights (budget, preferences, concerns) are visible when transcription is completed
-
+1. Log in as a supervisor
+2. Navigate to Reports page
+3. Verify the 3-dot dropdown appears on each row
+4. Click a status change option (e.g., "Mark as Moved In")
+5. Verify the status updates successfully with a toast notification
