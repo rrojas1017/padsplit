@@ -199,6 +199,11 @@ export function BookingsProvider({ children }: { children: ReactNode }) {
 
     if (error) {
       console.error('Error adding booking:', error);
+      // Check for database trigger validation error
+      if (error.message?.includes('Contact email is required') || 
+          error.message?.includes('Contact phone is required')) {
+        throw new Error('Contact email and phone number are required for manual bookings. Please fill in both fields.');
+      }
       throw error;
     }
 
