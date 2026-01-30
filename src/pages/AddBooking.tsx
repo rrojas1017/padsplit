@@ -367,7 +367,7 @@ export default function AddBooking() {
                   type="tel"
                   value={contactPhone}
                   onChange={(e) => setContactPhone(e.target.value)}
-                  placeholder="(678) 463-1178"
+                  placeholder="(000) 000-0000"
                 />
               </div>
             </div>
