@@ -1125,6 +1125,7 @@ export type Database = {
           created_by: string | null
           date_range_end: string
           date_range_start: string
+          emerging_issues: Json | null
           error_message: string | null
           id: string
           market_breakdown: Json | null
@@ -1133,13 +1134,16 @@ export type Database = {
           objection_patterns: Json | null
           pain_points: Json | null
           payment_insights: Json | null
+          previous_insight_id: string | null
           price_sensitivity: Json | null
           property_preferences: Json | null
           raw_analysis: string | null
           sentiment_distribution: Json | null
+          source_booking_ids: Json | null
           status: string | null
           total_calls_analyzed: number
           transportation_insights: Json | null
+          trend_comparison: Json | null
         }
         Insert: {
           ai_recommendations?: Json | null
@@ -1149,6 +1153,7 @@ export type Database = {
           created_by?: string | null
           date_range_end: string
           date_range_start: string
+          emerging_issues?: Json | null
           error_message?: string | null
           id?: string
           market_breakdown?: Json | null
@@ -1157,13 +1162,16 @@ export type Database = {
           objection_patterns?: Json | null
           pain_points?: Json | null
           payment_insights?: Json | null
+          previous_insight_id?: string | null
           price_sensitivity?: Json | null
           property_preferences?: Json | null
           raw_analysis?: string | null
           sentiment_distribution?: Json | null
+          source_booking_ids?: Json | null
           status?: string | null
           total_calls_analyzed?: number
           transportation_insights?: Json | null
+          trend_comparison?: Json | null
         }
         Update: {
           ai_recommendations?: Json | null
@@ -1173,6 +1181,7 @@ export type Database = {
           created_by?: string | null
           date_range_end?: string
           date_range_start?: string
+          emerging_issues?: Json | null
           error_message?: string | null
           id?: string
           market_breakdown?: Json | null
@@ -1181,15 +1190,26 @@ export type Database = {
           objection_patterns?: Json | null
           pain_points?: Json | null
           payment_insights?: Json | null
+          previous_insight_id?: string | null
           price_sensitivity?: Json | null
           property_preferences?: Json | null
           raw_analysis?: string | null
           sentiment_distribution?: Json | null
+          source_booking_ids?: Json | null
           status?: string | null
           total_calls_analyzed?: number
           transportation_insights?: Json | null
+          trend_comparison?: Json | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "member_insights_previous_insight_id_fkey"
+            columns: ["previous_insight_id"]
+            isOneToOne: false
+            referencedRelation: "member_insights"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       profiles: {
         Row: {

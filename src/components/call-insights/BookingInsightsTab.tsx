@@ -39,6 +39,15 @@ interface MemberInsight {
   avg_call_duration_seconds?: number;
   created_at: string;
   status?: 'processing' | 'completed' | 'failed';
+  // New fields for trends
+  trend_comparison?: {
+    previous_insight_id?: string;
+    previous_date_range?: string;
+    previous_total_calls?: number;
+    current_total_calls?: number;
+  } | null;
+  emerging_issues?: string[];
+  source_booking_ids?: Record<string, string[]>;
 }
 
 type DateRangeOption = 'last7days' | 'last30days' | 'thisMonth' | 'last3months' | 'allTime';

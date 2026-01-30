@@ -2,25 +2,33 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
-import { AlertTriangle, CreditCard, Car, Clock, Home } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
+import { AlertTriangle, CreditCard, Car, Clock, Home, TrendingUp, TrendingDown, Sparkles, Quote, ChevronDown, ExternalLink } from 'lucide-react';
+import { useState } from 'react';
 
 interface PainPoint {
   category: string;
   description: string;
   frequency: number;
   examples?: string[];
+  trend_delta?: number;
+  is_emerging?: boolean;
+  market_breakdown?: Record<string, number>;
 }
 
 interface PaymentInsight {
   insight: string;
   frequency: number;
   impact: string;
+  examples?: string[];
 }
 
 interface TransportationInsight {
   insight: string;
   frequency: number;
   markets_affected?: string[];
+  examples?: string[];
 }
 
 interface MoveInBarrier {
@@ -28,6 +36,7 @@ interface MoveInBarrier {
   frequency: number;
   impact_score: number;
   resolution?: string;
+  examples?: string[];
 }
 
 interface PainPointsPanelProps {
@@ -35,6 +44,7 @@ interface PainPointsPanelProps {
   paymentInsights: PaymentInsight[];
   transportationInsights: TransportationInsight[];
   moveInBarriers: MoveInBarrier[];
+  onViewCalls?: (category: string) => void;
 }
 
 const getCategoryIcon = (category: string) => {
@@ -60,7 +70,94 @@ const getFrequencyColor = (frequency: number) => {
   return 'text-muted-foreground';
 };
 
-const PainPointsPanel = ({ painPoints, paymentInsights, transportationInsights, moveInBarriers }: PainPointsPanelProps) => {
+const TrendBadge = ({ delta, isEmerging }: { delta?: number; isEmerging?: boolean }) => {
+  if (isEmerging) {
+    return (
+      <Badge variant="outline" className="bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400 border-purple-300 dark:border-purple-700">
+        <Sparkles className="h-3 w-3 mr-1" />
+        NEW
+      </Badge>
+    );
+  }
+  
+  if (delta === undefined || delta === 0) return null;
+  
+  const isUp = delta > 0;
+  return (
+    <Badge 
+      variant="outline" 
+      className={isUp 
+        ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400 border-red-300 dark:border-red-700' 
+        : 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 border-green-300 dark:border-green-700'
+      }
+    >
+      {isUp ? <TrendingUp className="h-3 w-3 mr-1" /> : <TrendingDown className="h-3 w-3 mr-1" />}
+      {isUp ? '+' : ''}{delta.toFixed(1)}%
+    </Badge>
+  );
+};
+
+const QuotesSection = ({ examples }: { examples?: string[] }) => {
+  const [isOpen, setIsOpen] = useState(false);
+  
+  if (!examples || examples.length === 0) return null;
+  
+  return (
+    <Collapsible open={isOpen} onOpenChange={setIsOpen}>
+      <CollapsibleTrigger asChild>
+        <Button variant="ghost" size="sm" className="w-full justify-start text-xs text-muted-foreground hover:text-foreground mt-2 p-1 h-auto">
+          <Quote className="h-3 w-3 mr-1" />
+          {isOpen ? 'Hide' : 'Show'} {examples.length} quote{examples.length > 1 ? 's' : ''}
+          <ChevronDown className={`h-3 w-3 ml-1 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+        </Button>
+      </CollapsibleTrigger>
+      <CollapsibleContent className="mt-2 space-y-2">
+        {examples.slice(0, 5).map((quote, idx) => (
+          <div key={idx} className="text-xs text-muted-foreground italic pl-3 border-l-2 border-muted py-1">
+            "{quote}"
+          </div>
+        ))}
+        {examples.length > 5 && (
+          <p className="text-xs text-muted-foreground pl-3">
+            +{examples.length - 5} more quotes
+          </p>
+        )}
+      </CollapsibleContent>
+    </Collapsible>
+  );
+};
+
+const MarketBreakdownSection = ({ breakdown }: { breakdown?: Record<string, number> }) => {
+  const [isOpen, setIsOpen] = useState(false);
+  
+  if (!breakdown || Object.keys(breakdown).length === 0) return null;
+  
+  const sortedMarkets = Object.entries(breakdown).sort(([, a], [, b]) => b - a);
+  
+  return (
+    <Collapsible open={isOpen} onOpenChange={setIsOpen}>
+      <CollapsibleTrigger asChild>
+        <Button variant="ghost" size="sm" className="w-full justify-start text-xs text-muted-foreground hover:text-foreground mt-1 p-1 h-auto">
+          <ExternalLink className="h-3 w-3 mr-1" />
+          {isOpen ? 'Hide' : 'View'} market breakdown
+          <ChevronDown className={`h-3 w-3 ml-1 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+        </Button>
+      </CollapsibleTrigger>
+      <CollapsibleContent className="mt-2">
+        <div className="grid grid-cols-2 gap-1">
+          {sortedMarkets.slice(0, 6).map(([market, freq]) => (
+            <div key={market} className="flex items-center justify-between text-xs bg-muted/50 rounded px-2 py-1">
+              <span className="truncate">{market.split(',')[0]}</span>
+              <span className="font-medium ml-2">{freq}%</span>
+            </div>
+          ))}
+        </div>
+      </CollapsibleContent>
+    </Collapsible>
+  );
+};
+
+const PainPointsPanel = ({ painPoints, paymentInsights, transportationInsights, moveInBarriers, onViewCalls }: PainPointsPanelProps) => {
   return (
     <Card className="h-full">
       <CardHeader>
@@ -82,13 +179,14 @@ const PainPointsPanel = ({ painPoints, paymentInsights, transportationInsights, 
                 </div>
               </AccordionTrigger>
               <AccordionContent>
-                <div className="space-y-3 pt-2">
+                <div className="space-y-4 pt-2">
                   {painPoints.map((point, idx) => (
-                    <div key={idx} className="space-y-2">
-                      <div className="flex items-center justify-between">
+                    <div key={idx} className="space-y-2 pb-3 border-b last:border-b-0 last:pb-0">
+                      <div className="flex items-center justify-between flex-wrap gap-2">
                         <div className="flex items-center gap-2">
                           {getCategoryIcon(point.category)}
                           <span className="font-medium">{point.category}</span>
+                          <TrendBadge delta={point.trend_delta} isEmerging={point.is_emerging} />
                         </div>
                         <span className={`text-sm font-semibold ${getFrequencyColor(point.frequency)}`}>
                           {point.frequency}%
@@ -96,11 +194,9 @@ const PainPointsPanel = ({ painPoints, paymentInsights, transportationInsights, 
                       </div>
                       <Progress value={point.frequency} className="h-2" />
                       <p className="text-sm text-muted-foreground">{point.description}</p>
-                      {point.examples && point.examples.length > 0 && (
-                        <div className="text-xs text-muted-foreground italic pl-4 border-l-2">
-                          "{point.examples[0]}"
-                        </div>
-                      )}
+                      
+                      <QuotesSection examples={point.examples} />
+                      <MarketBreakdownSection breakdown={point.market_breakdown} />
                     </div>
                   ))}
                 </div>
@@ -121,7 +217,7 @@ const PainPointsPanel = ({ painPoints, paymentInsights, transportationInsights, 
               <AccordionContent>
                 <div className="space-y-3 pt-2">
                   {paymentInsights.map((insight, idx) => (
-                    <div key={idx} className="flex items-start gap-3 p-2 rounded-lg bg-muted/50">
+                    <div key={idx} className="p-2 rounded-lg bg-muted/50">
                       <div className="flex-1">
                         <p className="text-sm">{insight.insight}</p>
                         <div className="flex items-center gap-2 mt-1">
@@ -130,6 +226,7 @@ const PainPointsPanel = ({ painPoints, paymentInsights, transportationInsights, 
                           </Badge>
                           <span className="text-xs text-muted-foreground">{insight.frequency}% of calls</span>
                         </div>
+                        <QuotesSection examples={insight.examples} />
                       </div>
                     </div>
                   ))}
@@ -159,6 +256,7 @@ const PainPointsPanel = ({ painPoints, paymentInsights, transportationInsights, 
                           <Badge key={mIdx} variant="outline" className="text-xs">{market}</Badge>
                         ))}
                       </div>
+                      <QuotesSection examples={insight.examples} />
                     </div>
                   ))}
                 </div>
@@ -192,6 +290,7 @@ const PainPointsPanel = ({ painPoints, paymentInsights, transportationInsights, 
                           <span className="font-medium">Resolution:</span> {barrier.resolution}
                         </p>
                       )}
+                      <QuotesSection examples={barrier.examples} />
                     </div>
                   ))}
                 </div>
