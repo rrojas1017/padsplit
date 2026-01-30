@@ -172,13 +172,13 @@ export const generateQADocumentationPDF = () => {
 
   addTitle('3. AI Scoring Process', 16);
   addSpace(5);
-  addText('The system uses Google\'s Gemini 2.5 Flash model via Lovable AI gateway to analyze call transcriptions and generate scores.');
+  addText('The system uses advanced AI models to analyze call transcriptions and generate scores.');
   addSpace(10);
 
   addSubtitle('Model Configuration');
-  addBullet('Model: google/gemini-2.5-flash');
-  addBullet('API Endpoint: Lovable AI Gateway (ai.gateway.lovable.dev)');
-  addBullet('Processing: Asynchronous via Supabase Edge Functions');
+  addBullet('Model: Advanced Language Model');
+  addBullet('API Endpoint: Cloud AI Gateway');
+  addBullet('Processing: Asynchronous via Backend Functions');
   addSpace(10);
 
   addSubtitle('System Prompt');
@@ -354,17 +354,16 @@ export const generateQADocumentationPDF = () => {
   addSpace(8);
 
   addSubtitle('Logged Metrics');
-  addBullet('service_provider: "lovable_ai"');
-  addBullet('service_type: "text_generation"');
-  addBullet('edge_function: "generate-qa-scores"');
+  addBullet('service_provider: AI service identifier');
+  addBullet('service_type: Processing type (e.g., text generation)');
+  addBullet('edge_function: Backend function name');
   addBullet('input_tokens: Number of tokens in prompt');
   addBullet('output_tokens: Number of tokens in AI response');
   addBullet('estimated_cost_usd: Calculated based on token usage');
   addSpace(8);
 
   addSubtitle('Pricing Model');
-  addBullet('Input tokens: ~$0.0001 per 1,000 tokens');
-  addBullet('Output tokens: ~$0.0003 per 1,000 tokens');
+  addText('Token-based pricing applies to AI processing calls.');
   addSpace(8);
 
   addText('Cost logs are associated with the booking_id, agent_id, and site_id for detailed cost attribution and billing reports.');

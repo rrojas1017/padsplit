@@ -2,7 +2,9 @@ import React from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { PieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip, BarChart, Bar, XAxis, YAxis } from 'recharts';
 import { CostSummary } from '@/hooks/useBillingData';
-import { formatCurrency, SERVICE_TYPE_LABELS } from '@/utils/billingCalculations';
+import { formatCurrency } from '@/utils/billingCalculations';
+import { useAuth } from '@/contexts/AuthContext';
+import { getProviderLabel, getServiceTypeLabel } from '@/utils/providerLabels';
 
 interface CostBreakdownChartsProps {
   summary: CostSummary;
@@ -23,9 +25,12 @@ const SERVICE_COLORS = [
 ];
 
 const CostBreakdownCharts = ({ summary }: CostBreakdownChartsProps) => {
+  const { hasRole } = useAuth();
+  const isSuperAdmin = hasRole(['super_admin']);
+  
   // Provider pie chart data
   const providerData = Object.entries(summary.byProvider).map(([provider, cost]) => ({
-    name: provider === 'elevenlabs' ? 'ElevenLabs' : 'Lovable AI',
+    name: getProviderLabel(provider, isSuperAdmin),
     value: cost,
     color: PROVIDER_COLORS[provider as keyof typeof PROVIDER_COLORS] || 'hsl(var(--muted))',
   }));
@@ -33,7 +38,7 @@ const CostBreakdownCharts = ({ summary }: CostBreakdownChartsProps) => {
   // Service type bar chart data
   const serviceData = Object.entries(summary.byServiceType)
     .map(([type, cost]) => ({
-      name: SERVICE_TYPE_LABELS[type] || type,
+      name: getServiceTypeLabel(type, isSuperAdmin),
       shortName: type.replace('ai_', '').replace('tts_', '').replace('stt_', ''),
       cost,
     }))
