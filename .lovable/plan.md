@@ -1,169 +1,141 @@
 
 
-# Contact Profile Hover Card - Focus on Contact's Perspective
+# Fix Contact Profile Hover Card - Improve Readability
 
-## Overview
+## Problem
 
-Redesign the hover card to prioritize **contact-centric information** that helps with follow-up communication. Remove the call summary (which describes how the conversation went) and instead show what matters from the contact's perspective.
+The bullet points in the hover card are truncated and unreadable because:
 
-## Current vs. Proposed Layout
+| Issue | Example |
+|-------|---------|
+| **Verbose prefixes** | "Initial location interest: A property in 'Toronto'..." |
+| **Single-line truncation** | Only shows "Initial location interest: A proper..." before cutting off |
+| **Lost context** | The actual useful information (the preference/concern) is hidden |
 
-| Current (Call-Focused) | Proposed (Contact-Focused) |
-|------------------------|---------------------------|
-| Call Summary (how the call went) | Contact's Needs & Preferences |
-| Key Follow-up Points (3 items) | Budget & Timeline (structured) |
-| Sentiment & Readiness | Concerns to Address |
-| Contact Info + Buttons | Household Details |
-|  | Contact Info + Buttons |
+Screenshot shows text like:
+- "Initial location interest: A property in 'Toronto'..."
+- "Final location choice: A property "close to..."
+- "Asked about the required commitment length..."
 
-## New Card Structure
+## Solution
+
+Two-part fix to make the content scannable and useful:
+
+### 1. Frontend: Improve Text Display
+
+**Remove `line-clamp-1`** - Allow text to wrap to 2 lines for better readability:
+
+```text
+BEFORE: line-clamp-1 (cuts after ~30 chars)
+• Initial location interest: A proper...
+
+AFTER: line-clamp-2 (allows 2 lines, ~80 chars visible)
+• Initial location interest: A property
+  in 'Toronto' near downtown
+```
+
+**Also improve the layout:**
+- Use `line-clamp-2` for preferences (more context)
+- Use `line-clamp-2` for concerns (these are critical to address)
+- Reduce items shown from 3/2 to 2/2 to save space while showing more per item
+
+### 2. Backend: Cleaner AI Extraction (Optional Future Improvement)
+
+Update the AI prompt to generate concise bullet points without verbose prefixes:
+
+```text
+BEFORE (AI generates):
+"Initial location interest: A property in 'Toronto' near downtown"
+
+AFTER (AI should generate):
+"Property near downtown Toronto"
+```
+
+This is a future enhancement - the frontend fix will provide immediate improvement.
+
+---
+
+## File Changes
+
+| File | Change |
+|------|--------|
+| `src/components/reports/ContactProfileHoverCard.tsx` | Replace `line-clamp-1` with `line-clamp-2`, adjust item counts |
+
+---
+
+## Implementation Details
+
+### ContactProfileHoverCard.tsx Changes
+
+**Looking For section (lines 221-229):**
+- Change `line-clamp-1` to `line-clamp-2`
+- Keep showing 3 items (but each can now wrap to 2 lines)
+
+**Concerns section (lines 241-249):**
+- Change `line-clamp-1` to `line-clamp-2`
+- Keep showing 2 items (each can wrap to 2 lines)
+
+### Code Changes
+
+```typescript
+// Line 225: Preferences
+// FROM:
+<span className="line-clamp-1">{pref}</span>
+
+// TO:
+<span className="line-clamp-2 leading-snug">{pref}</span>
+
+
+// Line 245: Concerns
+// FROM:
+<span className="line-clamp-1">{concern}</span>
+
+// TO:
+<span className="line-clamp-2 leading-snug">{concern}</span>
+```
+
+---
+
+## Visual Result
 
 ```text
 ┌─────────────────────────────────────────────────────────────┐
-│ 👤 Jason Sorensen                              🎯 HIGH       │
+│ 👤 Khafre Budram                               🎯 HIGH       │
 │ ────────────────────────────────────────────────────────────│
 │                                                             │
 │ 💰 BUDGET & TIMELINE                                        │
-│ $149/week  ·  Move: Thu, Feb 6  ·  3 months                │
-│                                                             │
-│ 🏠 HOUSEHOLD                                                │
-│ 2 people  ·  Cash payment preferred                        │
+│ $620/wk  ·  Move: February 2nd  ·  3 months                │
 │                                                             │
 │ ✨ LOOKING FOR                                              │
-│ • Private room, ground floor access                        │
-│ • No moving fee                                             │
+│ • Initial location interest: A property in                 │
+│   'Toronto' near downtown                                   │
+│ • Final location choice: A property "close to              │
+│   public transit" with parking                             │
+│ • Room preference: Chose the "yellow room"                 │
+│   for natural light                                        │
 │                                                             │
 │ ⚠️ CONCERNS                                                 │
-│ • Background check process                                  │
-│ • Security deposit amount                                   │
-│                                                             │
-│ ────────────────────────────────────────────────────────────│
-│ 📧 jason@email.com  ·  📱 678-463-1178                      │
-│                                                             │
-│ ┌──────────────┐   ┌──────────────┐                        │
-│ │  📧 Email    │   │  📱 SMS      │                        │
-│ └──────────────┘   └──────────────┘                        │
-│                                                             │
-│ 📬 Last Contacted: Jan 28 via SMS                          │
+│ • Asked about the required commitment length               │
+│   and early termination options                            │
+│ • Questioned the timing of a potential payment             │
+│   schedule change                                          │
 └─────────────────────────────────────────────────────────────┘
 ```
 
-## Key Changes
+---
 
-| Section | What Changes |
-|---------|--------------|
-| **Header** | Keep name + readiness badge. Remove sentiment icon (call-focused) |
-| **Remove** | "Quick Summary" section entirely |
-| **Add** | "Budget & Timeline" - structured row with budget, move-in date, commitment |
-| **Add** | "Household" - household size, payment method preference |
-| **Rename** | "Key Follow-up" → "Looking For" - show member preferences |
-| **Add** | "Concerns" section - show member concerns to address |
-| **Keep** | Contact info section with Email/SMS buttons |
-| **Keep** | Last Contacted timestamp |
+## Why This Works
 
-## File to Modify
-
-| File | Changes |
-|------|---------|
-| `src/components/reports/ContactProfileHoverCard.tsx` | Restructure content sections |
+| Approach | Benefit |
+|----------|---------|
+| `line-clamp-2` | Shows ~2x more text per item |
+| `leading-snug` | Tighter line height for compact display |
+| Keep item counts | Balance between info density and space |
+| Hover card remains usable | Not too tall, still quick to scan |
 
 ---
 
-## Technical Details
+## Summary
 
-### Remove Call Summary Section
-
-Delete lines 198-207 that show the "Quick Summary" paragraph describing how the call went.
-
-### Replace with Contact-Centric Sections
-
-**1. Budget & Timeline Row**
-```typescript
-// Display budget, move-in date, commitment in a single row
-const memberDetails = callKeyPoints.memberDetails;
-<div className="flex flex-wrap gap-2 text-xs">
-  {memberDetails?.weeklyBudget && (
-    <span className="font-medium">${memberDetails.weeklyBudget}/wk</span>
-  )}
-  {memberDetails?.moveInDate && (
-    <span>Move: {memberDetails.moveInDate}</span>
-  )}
-  {memberDetails?.commitmentWeeks && (
-    <span>{formatCommitment(memberDetails.commitmentWeeks)}</span>
-  )}
-</div>
-```
-
-**2. Household Details**
-```typescript
-// Household size and payment preference
-<div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
-  {memberDetails?.householdSize && (
-    <span>{memberDetails.householdSize} {memberDetails.householdSize === 1 ? 'person' : 'people'}</span>
-  )}
-  {memberDetails?.preferredPaymentMethod && (
-    <span>{memberDetails.preferredPaymentMethod} preferred</span>
-  )}
-</div>
-```
-
-**3. Looking For (Preferences)**
-```typescript
-// Show top 2-3 preferences
-{callKeyPoints.memberPreferences?.slice(0, 3).map((pref, i) => (
-  <li key={i} className="text-xs flex items-start gap-2">
-    <span className="text-primary">•</span>
-    <span className="line-clamp-1">{pref}</span>
-  </li>
-))}
-```
-
-**4. Concerns Section**
-```typescript
-// Show top 2 concerns
-{callKeyPoints.memberConcerns?.slice(0, 2).map((concern, i) => (
-  <li key={i} className="text-xs text-amber-600 dark:text-amber-400 flex items-start gap-2">
-    <span>•</span>
-    <span className="line-clamp-1">{concern}</span>
-  </li>
-))}
-```
-
-### Simplify Header
-
-Remove the `SentimentIcon` component from the header (it's call-focused). Keep only the readiness badge which indicates how ready the contact is to move forward.
-
-### Remove Unused Props
-
-The `callSummary` prop will no longer be used in the display, but keep it in the interface for backward compatibility.
-
----
-
-## Data Mapping
-
-All data comes from `callKeyPoints`:
-
-| UI Section | Data Source |
-|------------|-------------|
-| Budget | `callKeyPoints.memberDetails.weeklyBudget` |
-| Move-in | `callKeyPoints.memberDetails.moveInDate` |
-| Commitment | `callKeyPoints.memberDetails.commitmentWeeks` |
-| Household | `callKeyPoints.memberDetails.householdSize` |
-| Payment | `callKeyPoints.memberDetails.preferredPaymentMethod` |
-| Looking For | `callKeyPoints.memberPreferences[]` |
-| Concerns | `callKeyPoints.memberConcerns[]` |
-| Readiness | `callKeyPoints.moveInReadiness` |
-
----
-
-## Empty State Handling
-
-If no insights exist but contact info is available, show:
-- Contact email/phone
-- Email/SMS buttons
-- Message: "Add call insights for richer context"
-
-If insights exist but sections are empty:
-- Hide empty sections (e.g., if no concerns, don't show "Concerns" header)
-- Always show what's available
+This is a focused UI fix that doubles the visible text per bullet point. The hover card will now display enough context to understand each preference and concern without needing to click through to full insights.
 
