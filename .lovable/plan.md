@@ -1,62 +1,60 @@
 
-# Restrict Audit Log Access to Super Admins Only
+# Remove Hardcoded Brand Badge from Call Insights
 
-## Current State
+## Issue
 
-The Audit Log page is currently accessible by both `super_admin` and `admin` roles:
+The "ElevenLabs" brand name is visible to all users in the Call Insights modal, violating the provider anonymization policy. This badge is hardcoded and always displayed regardless of user role.
 
-| Location | Current Access |
-|----------|---------------|
-| Route protection (`App.tsx`) | `['super_admin', 'admin']` |
-| Sidebar navigation (`AppSidebar.tsx`) | `['super_admin', 'admin']` |
+## Root Cause
 
-## Changes Required
+In `TranscriptionModal.tsx`, there are two badges related to the transcription provider:
 
-### 1. Update Route Protection
+1. **Lines 448-451**: A role-restricted STT provider badge (correctly only visible to super_admin)
+2. **Lines 469-472**: A hardcoded "ElevenLabs" badge that's **always visible** to everyone
 
-**File:** `src/App.tsx` (line 153)
+The second badge is the problem - it's redundant and exposes the brand name to non-admin users.
 
-```typescript
-// Before
-<ProtectedRoute allowedRoles={['super_admin', 'admin']}>
+---
 
-// After  
-<ProtectedRoute allowedRoles={['super_admin']}>
+## Solution
+
+Remove the hardcoded "ElevenLabs" badge entirely since:
+- Super admins already see the provider via the role-restricted badge above
+- Non-super_admin users should not see any brand names per the anonymization policy
+- The "Transcribed" badge already indicates the call has been transcribed
+
+---
+
+## Change Details
+
+### File: `src/components/booking/TranscriptionModal.tsx`
+
+**Remove lines 469-472:**
+
+```tsx
+// DELETE THIS ENTIRE BLOCK (lines 469-472)
+<Badge variant="outline" className="bg-purple-500/10 text-purple-500 border-purple-500/30">
+  <Radio className="h-3 w-3 mr-1" />
+  ElevenLabs
+</Badge>
 ```
 
-### 2. Update Sidebar Navigation
+---
 
-**File:** `src/components/layout/AppSidebar.tsx` (line 133)
+## Before/After
 
-```typescript
-// Before
-{ 
-  icon: Shield, 
-  label: 'Audit Log', 
-  path: '/audit-log',
-  roles: ['super_admin', 'admin'],
-  group: 'admin'
-}
+| User Role | Before | After |
+|-----------|--------|-------|
+| Agent | Sees "Transcribed" + "ElevenLabs" badges | Sees only "Transcribed" badge |
+| Supervisor | Sees "Transcribed" + "ElevenLabs" badges | Sees only "Transcribed" badge |
+| Admin | Sees "Transcribed" + "ElevenLabs" badges | Sees only "Transcribed" badge |
+| Super Admin | Sees "Transcribed" + "ElevenLabs" + STT Provider badges | Sees "Transcribed" + STT Provider badges |
 
-// After
-{ 
-  icon: Shield, 
-  label: 'Audit Log', 
-  path: '/audit-log',
-  roles: ['super_admin'],
-  group: 'admin'
-}
-```
+---
 
-## Summary
+## Impact
 
-| File | Line | Change |
-|------|------|--------|
-| `src/App.tsx` | 153 | Remove `'admin'` from `allowedRoles` array |
-| `src/components/layout/AppSidebar.tsx` | 133 | Remove `'admin'` from `roles` array |
-
-## Result
-
-- Admin users will no longer see the Audit Log in their sidebar
-- Admin users attempting to navigate directly to `/audit-log` will be redirected to the dashboard
-- Only super_admin users will have access to view all user activities and audit events
+- Agents and other non-super_admin users will no longer see any brand names
+- Super admins retain visibility into which provider was used (via the existing role-restricted badge)
+- Aligns with the established provider anonymization policy
+- No functional changes - only visual/informational
