@@ -1015,6 +1015,63 @@ export type Database = {
         }
         Relationships: []
       }
+      contact_communications: {
+        Row: {
+          booking_id: string
+          communication_type: string
+          created_at: string
+          id: string
+          message_preview: string | null
+          recipient_email: string | null
+          recipient_phone: string | null
+          sent_at: string
+          status: string
+          user_id: string
+          user_name: string
+        }
+        Insert: {
+          booking_id: string
+          communication_type: string
+          created_at?: string
+          id?: string
+          message_preview?: string | null
+          recipient_email?: string | null
+          recipient_phone?: string | null
+          sent_at?: string
+          status?: string
+          user_id: string
+          user_name: string
+        }
+        Update: {
+          booking_id?: string
+          communication_type?: string
+          created_at?: string
+          id?: string
+          message_preview?: string | null
+          recipient_email?: string | null
+          recipient_phone?: string | null
+          sent_at?: string
+          status?: string
+          user_id?: string
+          user_name?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "contact_communications_booking_id_fkey"
+            columns: ["booking_id"]
+            isOneToOne: false
+            referencedRelation: "bookings"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contact_communications_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       display_token_views: {
         Row: {
           browser: string | null
@@ -1217,6 +1274,7 @@ export type Database = {
       profiles: {
         Row: {
           avatar_url: string | null
+          can_send_communications: boolean
           created_at: string
           email: string | null
           id: string
@@ -1227,6 +1285,7 @@ export type Database = {
         }
         Insert: {
           avatar_url?: string | null
+          can_send_communications?: boolean
           created_at?: string
           email?: string | null
           id: string
@@ -1237,6 +1296,7 @@ export type Database = {
         }
         Update: {
           avatar_url?: string | null
+          can_send_communications?: boolean
           created_at?: string
           email?: string | null
           id?: string

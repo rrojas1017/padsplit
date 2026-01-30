@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { usePageTracking } from '@/hooks/usePageTracking';
 import { Button } from '@/components/ui/button';
-import { Plus, MoreVertical, Shield, ShieldCheck, User, Crown, Loader2, Link, Pencil, Trash2 } from 'lucide-react';
+import { Plus, MoreVertical, Shield, ShieldCheck, User, Crown, Loader2, Link, Pencil, Trash2, MessageSquare } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
@@ -43,6 +43,7 @@ interface UserWithRole {
   site_id: string | null;
   role: string;
   site_name?: string;
+  can_send_communications?: boolean;
 }
 
 interface Site {
@@ -206,7 +207,7 @@ export default function UserManagement() {
     try {
       const { data: profiles, error: profilesError } = await supabase
         .from('profiles')
-        .select('id, name, email, status, site_id');
+        .select('id, name, email, status, site_id, can_send_communications');
 
       if (profilesError) throw profilesError;
 
@@ -229,6 +230,7 @@ export default function UserManagement() {
           ...profile,
           role: userRole?.role || 'agent',
           site_name: site?.name,
+          can_send_communications: profile.can_send_communications ?? false,
         };
       });
 
@@ -496,6 +498,44 @@ export default function UserManagement() {
     }
   };
 
+  // Handle toggling communication permission
+  const handleToggleCommunicationPermission = async (userId: string, userName: string, currentValue: boolean) => {
+    try {
+      const newValue = !currentValue;
+      
+      // Update profile
+      const { error } = await supabase
+        .from('profiles')
+        .update({ can_send_communications: newValue })
+        .eq('id', userId);
+
+      if (error) throw error;
+
+      // Log the action
+      await supabase.from('access_logs').insert({
+        user_id: currentUser?.id,
+        user_name: currentUser?.name,
+        action: newValue ? 'communication_permission_grant' : 'communication_permission_revoke',
+        resource: `user:${userId} (${userName})`,
+      });
+
+      toast({
+        title: 'Permission Updated',
+        description: `Communication permission ${newValue ? 'granted to' : 'revoked from'} ${userName}`,
+      });
+
+      // Refresh users list
+      fetchUsers();
+    } catch (error) {
+      console.error('Error toggling communication permission:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to update communication permission',
+        variant: 'destructive',
+      });
+    }
+  };
+
   const getRoleIcon = (role: string) => {
     switch (role) {
       case 'super_admin': return <Crown className="w-4 h-4" />;
@@ -567,20 +607,23 @@ export default function UserManagement() {
                     <th className="text-left py-3 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Role</th>
                     <th className="text-left py-3 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Site</th>
                     <th className="text-left py-3 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Status</th>
+                    {(isSuperAdmin || isAdmin) && (
+                      <th className="text-left py-3 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Communications</th>
+                    )}
                     <th className="text-right py-3 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border">
                   {loading ? (
                     <tr>
-                      <td colSpan={6} className="py-8 text-center text-muted-foreground">
+                      <td colSpan={(isSuperAdmin || isAdmin) ? 7 : 6} className="py-8 text-center text-muted-foreground">
                         <Loader2 className="w-6 h-6 animate-spin mx-auto mb-2" />
                         Loading users...
                       </td>
                     </tr>
                   ) : nonAgentUsers.length === 0 ? (
                     <tr>
-                      <td colSpan={6} className="py-8 text-center text-muted-foreground">
+                      <td colSpan={(isSuperAdmin || isAdmin) ? 7 : 6} className="py-8 text-center text-muted-foreground">
                         No administrators or supervisors found
                       </td>
                     </tr>
@@ -625,6 +668,22 @@ export default function UserManagement() {
                             {user.status}
                           </span>
                         </td>
+                        {(isSuperAdmin || isAdmin) && (
+                          <td className="py-4 px-4">
+                            <div className="flex items-center gap-2">
+                              <Switch
+                                checked={user.can_send_communications ?? false}
+                                onCheckedChange={() => handleToggleCommunicationPermission(user.id, user.name, user.can_send_communications ?? false)}
+                              />
+                              <span className={cn(
+                                "text-xs font-medium",
+                                user.can_send_communications ? "text-success" : "text-muted-foreground"
+                              )}>
+                                {user.can_send_communications ? 'Enabled' : 'Disabled'}
+                              </span>
+                            </div>
+                          </td>
+                        )}
                         <td className="py-4 px-4 text-right">
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>
@@ -710,20 +769,23 @@ export default function UserManagement() {
                           <th className="text-left py-3 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Email</th>
                           <th className="text-left py-3 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Site</th>
                           <th className="text-left py-3 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Status</th>
+                          {(isSuperAdmin || isAdmin) && (
+                            <th className="text-left py-3 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Communications</th>
+                          )}
                           <th className="text-right py-3 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Actions</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-border">
                         {loading ? (
                           <tr>
-                            <td colSpan={5} className="py-8 text-center text-muted-foreground">
+                            <td colSpan={(isSuperAdmin || isAdmin) ? 6 : 5} className="py-8 text-center text-muted-foreground">
                               <Loader2 className="w-6 h-6 animate-spin mx-auto mb-2" />
                               Loading agents...
                             </td>
                           </tr>
                         ) : agentUsers.length === 0 ? (
                           <tr>
-                            <td colSpan={5} className="py-8 text-center text-muted-foreground">
+                            <td colSpan={(isSuperAdmin || isAdmin) ? 6 : 5} className="py-8 text-center text-muted-foreground">
                               No agents found
                             </td>
                           </tr>
@@ -773,6 +835,22 @@ export default function UserManagement() {
                                     </span>
                                   )}
                                 </td>
+                                {(isSuperAdmin || isAdmin) && (
+                                  <td className="py-4 px-4">
+                                    <div className="flex items-center gap-2">
+                                      <Switch
+                                        checked={user.can_send_communications ?? false}
+                                        onCheckedChange={() => handleToggleCommunicationPermission(user.id, user.name, user.can_send_communications ?? false)}
+                                      />
+                                      <span className={cn(
+                                        "text-xs font-medium",
+                                        user.can_send_communications ? "text-success" : "text-muted-foreground"
+                                      )}>
+                                        {user.can_send_communications ? 'Enabled' : 'Disabled'}
+                                      </span>
+                                    </div>
+                                  </td>
+                                )}
                                 <td className="py-4 px-4 text-right">
                                   <DropdownMenu>
                                     <DropdownMenuTrigger asChild>
