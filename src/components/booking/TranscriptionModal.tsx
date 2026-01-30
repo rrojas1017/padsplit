@@ -444,6 +444,12 @@ export function TranscriptionModal({ booking, isOpen, onClose, onTranscriptionCo
             <div className="space-y-6">
               {/* Status Badges */}
               <div className="flex flex-wrap gap-2">
+                {/* STT Provider badge - only visible to super_admin */}
+                {loadedDetails?.sttProvider && user?.role === 'super_admin' && (
+                  <Badge variant="outline" className="bg-purple-500/10 text-purple-600 border-purple-500/20">
+                    {loadedDetails.sttProvider === 'elevenlabs' ? 'ElevenLabs' : loadedDetails.sttProvider}
+                  </Badge>
+                )}
                 {keyPoints?.moveInReadiness && (
                   <Badge variant="outline" className={getReadinessColor(keyPoints.moveInReadiness)}>
                     <Target className="h-3 w-3 mr-1" />

@@ -7,6 +7,8 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/component
 import { useAdminNotifications, AdminNotification } from '@/hooks/useAdminNotifications';
 import { NotificationBanner } from './NotificationBanner';
 import { formatDistanceToNow } from 'date-fns';
+import { useAuth } from '@/contexts/AuthContext';
+import { getProviderLabel, getProviderBadgeColor } from '@/utils/providerLabels';
 
 function getSeverityIcon(severity: string) {
   switch (severity) {
@@ -30,14 +32,10 @@ function getSeverityBadge(severity: string) {
   }
 }
 
-function getServiceBadge(service: string) {
-  const colors: Record<string, string> = {
-    elevenlabs: 'bg-purple-500/10 text-purple-600 border-purple-500/20',
-    lovable_ai: 'bg-blue-500/10 text-blue-600 border-blue-500/20',
-  };
+function getServiceBadge(service: string, isSuperAdmin: boolean) {
   return (
-    <Badge className={colors[service] || 'bg-muted text-muted-foreground'}>
-      {service.replace('_', ' ')}
+    <Badge className={getProviderBadgeColor(service)}>
+      {getProviderLabel(service, isSuperAdmin)}
     </Badge>
   );
 }
@@ -47,9 +45,10 @@ interface NotificationCardProps {
   onMarkRead: (id: string) => void;
   onMarkResolved: (id: string) => void;
   onDelete?: (id: string) => void;
+  isSuperAdmin: boolean;
 }
 
-function NotificationCard({ notification, onMarkRead, onMarkResolved, onDelete }: NotificationCardProps) {
+function NotificationCard({ notification, onMarkRead, onMarkResolved, onDelete, isSuperAdmin }: NotificationCardProps) {
   const [expanded, setExpanded] = useState(false);
   const hasMetadata = notification.metadata && Object.keys(notification.metadata).length > 0;
 
@@ -69,7 +68,7 @@ function NotificationCard({ notification, onMarkRead, onMarkResolved, onDelete }
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex flex-wrap items-center gap-2 mb-1">
-            {getServiceBadge(notification.service)}
+            {getServiceBadge(notification.service, isSuperAdmin)}
             {getSeverityBadge(notification.severity)}
             {!notification.is_read && !notification.is_resolved && (
               <Badge variant="outline" className="text-xs">New</Badge>
@@ -85,7 +84,7 @@ function NotificationCard({ notification, onMarkRead, onMarkResolved, onDelete }
           </h4>
           <p className="text-sm text-muted-foreground mt-1">{notification.message}</p>
           
-          {hasMetadata && (
+          {hasMetadata && isSuperAdmin && (
             <Collapsible open={expanded} onOpenChange={setExpanded}>
               <CollapsibleTrigger asChild>
                 <Button variant="ghost" size="sm" className="h-7 px-2 mt-2 text-xs gap-1">
@@ -156,6 +155,9 @@ function NotificationCard({ notification, onMarkRead, onMarkResolved, onDelete }
 }
 
 export function AdminNotifications() {
+  const { hasRole } = useAuth();
+  const isSuperAdmin = hasRole(['super_admin']);
+  
   const {
     unresolvedNotifications,
     resolvedNotifications,
@@ -245,6 +247,7 @@ export function AdminNotifications() {
                   notification={notification}
                   onMarkRead={markAsRead}
                   onMarkResolved={markAsResolved}
+                  isSuperAdmin={isSuperAdmin}
                 />
               ))
           )}
@@ -260,6 +263,7 @@ export function AdminNotifications() {
                   onMarkRead={markAsRead}
                   onMarkResolved={markAsResolved}
                   onDelete={deleteNotification}
+                  isSuperAdmin={isSuperAdmin}
                 />
               ))}
             </div>
