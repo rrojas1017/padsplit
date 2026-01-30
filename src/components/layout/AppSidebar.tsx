@@ -183,7 +183,7 @@ const menuItems: MenuItem[] = [
     icon: Shield, 
     label: 'Audit Log', 
     path: '/audit-log',
-    roles: ['super_admin', 'admin'],
+    roles: ['super_admin'],
     group: 'admin'
   },
   { 
