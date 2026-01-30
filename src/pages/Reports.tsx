@@ -81,7 +81,7 @@ export default function Reports() {
   usePageTracking('view_reports');
   const { updateBooking } = useBookings();
   const { user } = useAuth();
-  const { agents } = useAgents();
+  const { agents, isLoading: agentsLoading } = useAgents();
   const navigate = useNavigate();
 
   // Transcription modal state
@@ -205,15 +205,25 @@ export default function Reports() {
   // Check if user can edit a specific booking
   const canEditBooking = (bookingAgentId: string) => {
     if (!user) return false;
+    
+    // Admin/super_admin always have access
     if (user.role === 'super_admin' || user.role === 'admin') return true;
+    
+    // Supervisor check - if agents still loading, allow action optimistically
+    // (backend RLS will validate actual permission on save)
     if (user.role === 'supervisor') {
+      if (agentsLoading || agents.length === 0) return true;
       const agent = agents.find(a => a.id === bookingAgentId);
       return agent?.siteId === user.siteId;
     }
+    
+    // Agent check
     if (user.role === 'agent') {
+      if (agentsLoading || agents.length === 0) return true;
       const agent = agents.find(a => a.id === bookingAgentId);
       return agent?.userId === user.id;
     }
+    
     return false;
   };
 
