@@ -7,7 +7,7 @@ interface ContactCommunication {
   bookingId: string;
   userId: string;
   userName: string;
-  communicationType: 'sms' | 'email';
+  communicationType: 'sms' | 'email' | 'voice_note';
   recipientEmail: string | null;
   recipientPhone: string | null;
   messagePreview: string | null;
@@ -22,7 +22,7 @@ interface UseContactCommunicationsReturn {
   canSendCommunications: boolean;
   logCommunication: (data: {
     bookingId: string;
-    communicationType: 'sms' | 'email';
+    communicationType: 'sms' | 'email' | 'voice_note';
     recipientEmail?: string;
     recipientPhone?: string;
     messagePreview?: string;
@@ -80,7 +80,7 @@ export function useContactCommunications(bookingId?: string): UseContactCommunic
           bookingId: row.booking_id,
           userId: row.user_id,
           userName: row.user_name,
-          communicationType: row.communication_type as 'sms' | 'email',
+          communicationType: row.communication_type as 'sms' | 'email' | 'voice_note',
           recipientEmail: row.recipient_email,
           recipientPhone: row.recipient_phone,
           messagePreview: row.message_preview,
@@ -101,7 +101,7 @@ export function useContactCommunications(bookingId?: string): UseContactCommunic
 
   const logCommunication = async (data: {
     bookingId: string;
-    communicationType: 'sms' | 'email';
+    communicationType: 'sms' | 'email' | 'voice_note';
     recipientEmail?: string;
     recipientPhone?: string;
     messagePreview?: string;
@@ -138,7 +138,7 @@ export function useContactCommunications(bookingId?: string): UseContactCommunic
             bookingId: row.booking_id,
             userId: row.user_id,
             userName: row.user_name,
-            communicationType: row.communication_type as 'sms' | 'email',
+            communicationType: row.communication_type as 'sms' | 'email' | 'voice_note',
             recipientEmail: row.recipient_email,
             recipientPhone: row.recipient_phone,
             messagePreview: row.message_preview,
