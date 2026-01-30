@@ -150,7 +150,7 @@ const App = () => (
               } />
               
               <Route path="/audit-log" element={
-                <ProtectedRoute allowedRoles={['super_admin', 'admin']}>
+                <ProtectedRoute allowedRoles={['super_admin']}>
                   <DataProviders>
                     <AuditLog />
                   </DataProviders>
