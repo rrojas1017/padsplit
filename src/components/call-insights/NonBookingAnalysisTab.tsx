@@ -1,21 +1,19 @@
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
-import { useAgents } from '@/contexts/AgentsContext';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
-import { CallDetailsModal } from '@/components/call-insights/CallDetailsModal';
-import { CallsTable } from '@/components/call-insights/CallsTable';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { NonBookingSummaryCards } from '@/components/call-insights/NonBookingSummaryCards';
 import { NonBookingReasonsChart } from '@/components/call-insights/NonBookingReasonsChart';
-import { MissedOpportunitiesPanel } from '@/components/call-insights/MissedOpportunitiesPanel';
-import { Search, RefreshCw, Phone, AlertCircle } from 'lucide-react';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { NonBookingMissedOpportunitiesPanel } from '@/components/call-insights/NonBookingMissedOpportunitiesPanel';
+import { NonBookingSentimentChart } from '@/components/call-insights/NonBookingSentimentChart';
+import { NonBookingRecommendationsPanel } from '@/components/call-insights/NonBookingRecommendationsPanel';
+import { NonBookingTrendChart } from '@/components/call-insights/NonBookingTrendChart';
+import { Lightbulb, RefreshCw, Download, Loader2, Phone } from 'lucide-react';
 import { subDays, startOfDay } from 'date-fns';
-import { Call } from '@/pages/CallInsights';
 
 type DateRangeOption = 'last7days' | 'last30days' | 'thisMonth' | 'last3months' | 'allTime';
 
@@ -24,12 +22,15 @@ interface NonBookingAnalysisTabProps {
   onDateRangeChange: (range: DateRangeOption) => void;
 }
 
+interface NonBookingStats {
+  totalCalls: number;
+  transcribedCalls: number;
+  avgDurationSeconds: number;
+  highReadinessCalls: number;
+}
+
 export function NonBookingAnalysisTab({ dateRange, onDateRangeChange }: NonBookingAnalysisTabProps) {
-  const { agents } = useAgents();
-  const [selectedCall, setSelectedCall] = useState<Call | null>(null);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [agentFilter, setAgentFilter] = useState<string>('all');
-  const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [isAnalyzing] = useState(false);
 
   const getDateRangeDays = (option: DateRangeOption): number | null => {
     switch (option) {
@@ -42,72 +43,69 @@ export function NonBookingAnalysisTab({ dateRange, onDateRangeChange }: NonBooki
     }
   };
 
-  const { data: calls, isLoading, refetch } = useQuery({
-    queryKey: ['non-booking-calls', agentFilter, statusFilter, dateRange],
-    queryFn: async () => {
+  // Fetch basic stats from bookings table
+  const { data: stats, isLoading } = useQuery({
+    queryKey: ['non-booking-stats', dateRange],
+    queryFn: async (): Promise<NonBookingStats> => {
       const days = getDateRangeDays(dateRange);
       
       let query = supabase
         .from('bookings')
-        .select('*')
-        .eq('status', 'Non Booking')
-        .order('booking_date', { ascending: false });
+        .select('id, transcription_status, call_duration_seconds')
+        .eq('status', 'Non Booking');
 
       if (days !== null) {
         const startDate = startOfDay(subDays(new Date(), days));
         query = query.gte('booking_date', startDate.toISOString().split('T')[0]);
       }
 
-      if (agentFilter !== 'all') {
-        query = query.eq('agent_id', agentFilter);
-      }
-      if (statusFilter !== 'all') {
-        query = query.eq('transcription_status', statusFilter);
-      }
-
       const { data, error } = await query;
       if (error) throw error;
-      
-      return (data || []).map((booking): Call => ({
-        id: booking.id,
-        kixie_call_id: null,
-        recording_url: booking.kixie_link,
-        call_type: booking.booking_type,
-        call_status: 'completed',
-        call_date: booking.booking_date,
-        duration_seconds: booking.call_duration_seconds,
-        from_number: null,
-        to_number: null,
-        kixie_agent_name: null,
-        agent_id: booking.agent_id,
-        contact_name: booking.member_name,
-        contact_phone: null,
-        disposition: booking.notes,
-        outcome_category: 'Non Booking',
-        booking_id: null,
-        transcription_status: booking.transcription_status,
-        source: 'historical_import',
-        created_at: booking.created_at,
-      }));
+
+      const bookings = data || [];
+      const totalCalls = bookings.length;
+      const transcribedCalls = bookings.filter(b => b.transcription_status === 'completed').length;
+      const callsWithDuration = bookings.filter(b => b.call_duration_seconds && b.call_duration_seconds > 0);
+      const avgDurationSeconds = callsWithDuration.length > 0
+        ? callsWithDuration.reduce((sum, b) => sum + (b.call_duration_seconds || 0), 0) / callsWithDuration.length
+        : 0;
+      const highReadinessCalls = bookings.filter(b => 
+        b.call_duration_seconds && b.call_duration_seconds > 300
+      ).length;
+
+      return {
+        totalCalls,
+        transcribedCalls,
+        avgDurationSeconds,
+        highReadinessCalls,
+      };
     },
   });
 
-  const filteredCalls = (calls || []).filter(call => {
-    if (!searchQuery) return true;
-    const search = searchQuery.toLowerCase();
-    return (
-      call.contact_name?.toLowerCase().includes(search) ||
-      call.contact_phone?.includes(search) ||
-      call.kixie_agent_name?.toLowerCase().includes(search) ||
-      call.disposition?.toLowerCase().includes(search)
-    );
-  });
-
-  const getAgentName = (agentId: string | null) => {
-    if (!agentId) return 'Unknown';
-    const agent = agents.find(a => a.id === agentId);
-    return agent?.name || 'Unknown';
+  const handleRunAnalysis = () => {
+    // Future: Will trigger edge function
+    // For now, show coming soon tooltip
   };
+
+  if (isLoading) {
+    return (
+      <div className="space-y-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          {[...Array(4)].map((_, i) => (
+            <Skeleton key={i} className="h-32" />
+          ))}
+        </div>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <Skeleton className="h-64" />
+          <Skeleton className="h-64" />
+        </div>
+      </div>
+    );
+  }
+
+  // Show empty state if no non-booking calls
+  const hasData = stats && stats.totalCalls > 0;
+  const hasInsights = false; // Will be true when AI analysis is implemented
 
   return (
     <div className="space-y-6">
@@ -127,121 +125,90 @@ export function NonBookingAnalysisTab({ dateRange, onDateRangeChange }: NonBooki
             </SelectContent>
           </Select>
 
-          <Button onClick={() => refetch()} variant="outline" size="sm">
-            <RefreshCw className="h-4 w-4 mr-2" />
-            Refresh
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span>
+                  <Button onClick={handleRunAnalysis} disabled>
+                    {isAnalyzing ? (
+                      <>
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        Analyzing...
+                      </>
+                    ) : (
+                      <>
+                        <RefreshCw className="h-4 w-4 mr-2" />
+                        Run Analysis
+                      </>
+                    )}
+                  </Button>
+                </span>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>Coming soon - AI analysis for non-booking calls</p>
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+
+          <Button variant="outline" disabled>
+            <Download className="h-4 w-4 mr-2" />
+            Export
           </Button>
         </div>
       </div>
 
-      {/* Summary Cards */}
-      <NonBookingSummaryCards calls={filteredCalls} />
+      {hasData ? (
+        <>
+          {/* Summary Cards */}
+          <NonBookingSummaryCards stats={stats} />
 
-      {/* Analytics Row */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <NonBookingReasonsChart />
-        <MissedOpportunitiesPanel 
-          calls={filteredCalls} 
-          onSelectCall={setSelectedCall}
-        />
-      </div>
-
-      {/* Filters */}
-      <Card>
-        <CardContent className="pt-6">
-          <div className="flex flex-col md:flex-row gap-4">
-            <div className="flex-1 relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder="Search by name, phone, or notes..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-10"
-              />
-            </div>
-            <Select value={agentFilter} onValueChange={setAgentFilter}>
-              <SelectTrigger className="w-[180px]">
-                <SelectValue placeholder="All Agents" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Agents</SelectItem>
-                {agents.map(agent => (
-                  <SelectItem key={agent.id} value={agent.id}>{agent.name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger className="w-[180px]">
-                <SelectValue placeholder="All Statuses" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Statuses</SelectItem>
-                <SelectItem value="completed">Transcribed</SelectItem>
-                <SelectItem value="pending">Pending</SelectItem>
-                <SelectItem value="failed">Failed</SelectItem>
-              </SelectContent>
-            </Select>
+          {/* Analytics Row 1 */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <NonBookingReasonsChart 
+              onRunAnalysis={handleRunAnalysis}
+              isAnalyzing={isAnalyzing}
+            />
+            <NonBookingMissedOpportunitiesPanel 
+              highReadinessCount={stats.highReadinessCalls}
+              dateRange={dateRange}
+            />
           </div>
-        </CardContent>
-      </Card>
 
-      {/* Calls Table */}
-      <Tabs defaultValue="all" className="space-y-4">
-        <TabsList>
-          <TabsTrigger value="all" className="gap-2">
-            <Phone className="h-4 w-4" />
-            All Non-Booking Calls ({filteredCalls.length.toLocaleString()})
-          </TabsTrigger>
-          <TabsTrigger value="with-recording" className="gap-2">
-            <AlertCircle className="h-4 w-4" />
-            With Recordings ({filteredCalls.filter(c => c.recording_url).length.toLocaleString()})
-          </TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="all">
-          {isLoading ? (
-            <Card>
-              <CardContent className="py-8 space-y-4">
-                {[...Array(5)].map((_, i) => (
-                  <Skeleton key={i} className="h-16 w-full" />
-                ))}
+          {/* Analytics Row 2 */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <NonBookingSentimentChart />
+            <Card className="h-full">
+              <CardContent className="pt-6 h-full flex flex-col items-center justify-center text-center min-h-[280px]">
+                <div className="p-4 rounded-full bg-primary/10 mb-4">
+                  <Phone className="h-8 w-8 text-primary" />
+                </div>
+                <h4 className="font-medium mb-2">Agent Breakdown</h4>
+                <p className="text-sm text-muted-foreground max-w-[280px]">
+                  Coming soon - See which agents have the highest non-booking rates
+                </p>
               </CardContent>
             </Card>
-          ) : (
-            <CallsTable 
-              calls={filteredCalls} 
-              agents={agents}
-              onSelectCall={setSelectedCall}
-            />
-          )}
-        </TabsContent>
+          </div>
 
-        <TabsContent value="with-recording">
-          {isLoading ? (
-            <Card>
-              <CardContent className="py-8 space-y-4">
-                {[...Array(5)].map((_, i) => (
-                  <Skeleton key={i} className="h-16 w-full" />
-                ))}
-              </CardContent>
-            </Card>
-          ) : (
-            <CallsTable 
-              calls={filteredCalls.filter(c => c.recording_url)} 
-              agents={agents}
-              onSelectCall={setSelectedCall}
-            />
-          )}
-        </TabsContent>
-      </Tabs>
+          {/* Trend Chart */}
+          <NonBookingTrendChart dateRange={dateRange} />
 
-      {/* Call Details Modal */}
-      {selectedCall && (
-        <CallDetailsModal
-          call={selectedCall}
-          agentName={getAgentName(selectedCall.agent_id)}
-          onClose={() => setSelectedCall(null)}
-        />
+          {/* Recommendations Panel */}
+          <NonBookingRecommendationsPanel />
+        </>
+      ) : (
+        <Card className="py-12">
+          <CardContent className="text-center">
+            <div className="p-4 rounded-full bg-amber-500/10 mx-auto w-fit mb-4">
+              <Lightbulb className="h-12 w-12 text-amber-500" />
+            </div>
+            <h3 className="text-lg font-semibold mb-2">No Non-Booking Calls Yet</h3>
+            <p className="text-muted-foreground mb-4 max-w-md mx-auto">
+              Non-booking calls from your team will appear here for analysis.
+              Import historical data or wait for new calls to be logged.
+            </p>
+          </CardContent>
+        </Card>
       )}
     </div>
   );
