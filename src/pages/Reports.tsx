@@ -720,7 +720,11 @@ export default function Reports() {
                       <ContactProfileHoverCard
                         memberName={booking.memberName}
                         callKeyPoints={booking.callKeyPoints}
+                        callSummary={booking.callSummary}
                         transcriptionStatus={booking.transcriptionStatus}
+                        contactEmail={booking.contactEmail || undefined}
+                        contactPhone={booking.contactPhone || undefined}
+                        bookingId={booking.id}
                       >
                         <div className="flex items-center gap-2 cursor-default">
                           <span className="hover:text-primary transition-colors">{booking.memberName}</span>

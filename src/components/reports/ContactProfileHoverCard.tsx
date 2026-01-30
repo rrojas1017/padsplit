@@ -5,6 +5,7 @@ import {
   HoverCardTrigger,
 } from '@/components/ui/hover-card';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { CallKeyPoints } from '@/types';
 import { cn } from '@/lib/utils';
 import {
@@ -13,20 +14,24 @@ import {
   Smile,
   Meh,
   Frown,
-  DollarSign,
-  Users,
-  Calendar,
-  ClipboardList,
-  AlertTriangle,
+  Mail,
   MessageSquare,
   Loader2,
   FileX,
+  Phone,
+  Clock,
 } from 'lucide-react';
+import { format } from 'date-fns';
+import { useContactCommunications } from '@/hooks/useContactCommunications';
 
 interface ContactProfileHoverCardProps {
   memberName: string;
   callKeyPoints?: CallKeyPoints;
+  callSummary?: string;
   transcriptionStatus?: 'pending' | 'processing' | 'completed' | 'failed' | 'unavailable';
+  contactEmail?: string;
+  contactPhone?: string;
+  bookingId?: string;
   children: React.ReactNode;
 }
 
@@ -38,7 +43,7 @@ const ReadinessBadge = ({ readiness }: { readiness: 'high' | 'medium' | 'low' })
   };
   
   return (
-    <Badge variant="outline" className={cn('text-xs font-semibold', config[readiness].className)}>
+    <Badge variant="outline" className={cn('text-[10px] font-semibold px-1.5 py-0', config[readiness].className)}>
       {config[readiness].label}
     </Badge>
   );
@@ -46,28 +51,97 @@ const ReadinessBadge = ({ readiness }: { readiness: 'high' | 'medium' | 'low' })
 
 const SentimentIcon = ({ sentiment }: { sentiment: 'positive' | 'neutral' | 'negative' }) => {
   const config = {
-    positive: { Icon: Smile, className: 'text-success', label: 'Positive' },
-    neutral: { Icon: Meh, className: 'text-muted-foreground', label: 'Neutral' },
-    negative: { Icon: Frown, className: 'text-destructive', label: 'Negative' },
+    positive: { Icon: Smile, className: 'text-success' },
+    neutral: { Icon: Meh, className: 'text-muted-foreground' },
+    negative: { Icon: Frown, className: 'text-destructive' },
   };
   
-  const { Icon, className, label } = config[sentiment];
-  return (
-    <div className="flex items-center gap-1.5">
-      <Icon className={cn('h-4 w-4', className)} />
-      <span className={cn('text-xs font-medium', className)}>{label}</span>
-    </div>
-  );
+  const { Icon, className } = config[sentiment];
+  return <Icon className={cn('h-4 w-4', className)} />;
 };
+
+// Generate key follow-up points from call data
+function getFollowUpPoints(callKeyPoints: CallKeyPoints): string[] {
+  const points: string[] = [];
+  
+  // Budget info
+  if (callKeyPoints.memberDetails?.weeklyBudget) {
+    const fee = callKeyPoints.memberPreferences?.some(p => 
+      p.toLowerCase().includes('no moving fee') || p.toLowerCase().includes('waive')
+    ) ? ', no moving fee' : '';
+    points.push(`$${callKeyPoints.memberDetails.weeklyBudget}/week${fee}`);
+  }
+  
+  // Move-in date
+  if (callKeyPoints.memberDetails?.moveInDate) {
+    points.push(`Move-in: ${callKeyPoints.memberDetails.moveInDate}`);
+  }
+  
+  // Commitment
+  if (callKeyPoints.memberDetails?.commitmentWeeks) {
+    const weeks = callKeyPoints.memberDetails.commitmentWeeks;
+    const duration = weeks >= 4 ? `${Math.round(weeks / 4)} month${Math.round(weeks / 4) !== 1 ? 's' : ''}` : `${weeks} weeks`;
+    points.push(`${duration} commitment`);
+  }
+  
+  // Top preference
+  if (callKeyPoints.memberPreferences?.[0] && points.length < 3) {
+    points.push(callKeyPoints.memberPreferences[0]);
+  }
+  
+  // Top concern if still room
+  if (callKeyPoints.memberConcerns?.[0] && points.length < 3) {
+    points.push(`Concern: ${callKeyPoints.memberConcerns[0]}`);
+  }
+  
+  return points.slice(0, 3);
+}
 
 export function ContactProfileHoverCard({
   memberName,
   callKeyPoints,
+  callSummary,
   transcriptionStatus,
+  contactEmail,
+  contactPhone,
+  bookingId,
   children,
 }: ContactProfileHoverCardProps) {
   const hasInsights = callKeyPoints && transcriptionStatus === 'completed';
   const isProcessing = transcriptionStatus === 'pending' || transcriptionStatus === 'processing';
+  
+  const { lastCommunication, canSendCommunications, logCommunication } = useContactCommunications(bookingId);
+
+  const handleEmailClick = () => {
+    if (contactEmail && bookingId) {
+      // Open mailto link
+      window.location.href = `mailto:${contactEmail}`;
+      // Log the communication
+      logCommunication({
+        bookingId,
+        communicationType: 'email',
+        recipientEmail: contactEmail,
+      });
+    }
+  };
+
+  const handleSmsClick = () => {
+    if (contactPhone && bookingId) {
+      // Open SMS link (mobile) or tel link (desktop fallback)
+      const cleanPhone = contactPhone.replace(/\D/g, '');
+      window.location.href = `sms:${cleanPhone}`;
+      // Log the communication
+      logCommunication({
+        bookingId,
+        communicationType: 'sms',
+        recipientPhone: contactPhone,
+      });
+    }
+  };
+
+  // Use callSummary prop or fall back to callKeyPoints.summary
+  const summaryText = callSummary || callKeyPoints?.summary;
+  const followUpPoints = hasInsights ? getFollowUpPoints(callKeyPoints) : [];
 
   return (
     <HoverCard openDelay={200} closeDelay={100}>
@@ -82,141 +156,68 @@ export function ContactProfileHoverCard({
       >
         {/* Header */}
         <div className="bg-gradient-to-r from-primary/10 to-primary/5 px-4 py-3 border-b border-border">
-          <div className="flex items-center gap-2">
-            <div className="h-8 w-8 rounded-full bg-primary/20 flex items-center justify-center">
-              <User className="h-4 w-4 text-primary" />
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <div className="h-8 w-8 rounded-full bg-primary/20 flex items-center justify-center">
+                <User className="h-4 w-4 text-primary" />
+              </div>
+              <span className="font-semibold text-foreground text-sm truncate max-w-[120px]">
+                {memberName}
+              </span>
             </div>
-            <div>
-              <p className="font-semibold text-foreground text-sm">{memberName}</p>
-              <p className="text-xs text-muted-foreground">Contact Profile</p>
-            </div>
+            {hasInsights && (
+              <div className="flex items-center gap-2">
+                <SentimentIcon sentiment={callKeyPoints.callSentiment} />
+                <div className="flex items-center gap-1">
+                  <Target className="h-3.5 w-3.5 text-muted-foreground" />
+                  <ReadinessBadge readiness={callKeyPoints.moveInReadiness} />
+                </div>
+              </div>
+            )}
           </div>
         </div>
 
         {/* Content */}
         <div className="p-4">
           {isProcessing ? (
-            <div className="flex flex-col items-center justify-center py-6 text-center">
-              <Loader2 className="h-8 w-8 text-primary animate-spin mb-3" />
-              <p className="text-sm font-medium text-foreground">Insights being generated...</p>
+            <div className="flex flex-col items-center justify-center py-4 text-center">
+              <Loader2 className="h-6 w-6 text-primary animate-spin mb-2" />
+              <p className="text-sm font-medium text-foreground">Generating insights...</p>
               <p className="text-xs text-muted-foreground mt-1">Check back shortly</p>
             </div>
           ) : !hasInsights ? (
-            <div className="flex flex-col items-center justify-center py-6 text-center">
-              <FileX className="h-8 w-8 text-muted-foreground mb-3" />
-              <p className="text-sm font-medium text-muted-foreground">No call insights available</p>
+            <div className="flex flex-col items-center justify-center py-4 text-center">
+              <FileX className="h-6 w-6 text-muted-foreground mb-2" />
+              <p className="text-sm font-medium text-muted-foreground">No call insights</p>
               <p className="text-xs text-muted-foreground mt-1">
-                Manual entry or import without call
+                Manual entry or import
               </p>
             </div>
           ) : (
-            <div className="space-y-4">
-              {/* Quick Stats Row */}
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Target className="h-4 w-4 text-muted-foreground" />
-                  <span className="text-xs text-muted-foreground">Move-In Ready:</span>
-                  <ReadinessBadge readiness={callKeyPoints.moveInReadiness} />
-                </div>
-                <SentimentIcon sentiment={callKeyPoints.callSentiment} />
-              </div>
-
-              {/* Member Details Grid */}
-              {callKeyPoints.memberDetails && (
-                <div className="grid grid-cols-2 gap-2 p-3 bg-muted/30 rounded-lg">
-                  {callKeyPoints.memberDetails.weeklyBudget && (
-                    <div className="flex items-center gap-2">
-                      <DollarSign className="h-3.5 w-3.5 text-success" />
-                      <span className="text-xs">
-                        <span className="text-muted-foreground">Budget:</span>{' '}
-                        <span className="font-medium text-foreground">${callKeyPoints.memberDetails.weeklyBudget}/wk</span>
-                      </span>
-                    </div>
-                  )}
-                  {callKeyPoints.memberDetails.householdSize && (
-                    <div className="flex items-center gap-2">
-                      <Users className="h-3.5 w-3.5 text-primary" />
-                      <span className="text-xs">
-                        <span className="text-muted-foreground">Household:</span>{' '}
-                        <span className="font-medium text-foreground">{callKeyPoints.memberDetails.householdSize}</span>
-                      </span>
-                    </div>
-                  )}
-                  {callKeyPoints.memberDetails.commitmentWeeks && (
-                    <div className="flex items-center gap-2 col-span-2">
-                      <Calendar className="h-3.5 w-3.5 text-warning" />
-                      <span className="text-xs">
-                        <span className="text-muted-foreground">Commitment:</span>{' '}
-                        <span className="font-medium text-foreground">
-                          {callKeyPoints.memberDetails.commitmentWeeks >= 4 
-                            ? `${Math.round(callKeyPoints.memberDetails.commitmentWeeks / 4)} months`
-                            : `${callKeyPoints.memberDetails.commitmentWeeks} weeks`
-                          }
-                        </span>
-                      </span>
-                    </div>
-                  )}
+            <div className="space-y-3">
+              {/* Quick Summary */}
+              {summaryText && (
+                <div>
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5">
+                    📝 Quick Summary
+                  </p>
+                  <p className="text-xs text-foreground leading-relaxed line-clamp-3 italic">
+                    "{summaryText}"
+                  </p>
                 </div>
               )}
 
-              {/* Preferences */}
-              {callKeyPoints.memberPreferences && callKeyPoints.memberPreferences.length > 0 && (
+              {/* Key Follow-up Points */}
+              {followUpPoints.length > 0 && (
                 <div>
-                  <div className="flex items-center gap-1.5 mb-2">
-                    <ClipboardList className="h-3.5 w-3.5 text-primary" />
-                    <span className="text-xs font-semibold text-foreground uppercase tracking-wide">What They Want</span>
-                  </div>
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5">
+                    💬 Key Follow-up
+                  </p>
                   <ul className="space-y-1">
-                    {callKeyPoints.memberPreferences.slice(0, 3).map((pref, index) => (
-                      <li key={index} className="text-xs text-muted-foreground flex items-start gap-2">
+                    {followUpPoints.map((point, index) => (
+                      <li key={index} className="text-xs text-foreground flex items-start gap-2">
                         <span className="text-primary mt-0.5">•</span>
-                        <span className="line-clamp-1">{pref}</span>
-                      </li>
-                    ))}
-                    {callKeyPoints.memberPreferences.length > 3 && (
-                      <li className="text-xs text-muted-foreground italic">
-                        +{callKeyPoints.memberPreferences.length - 3} more...
-                      </li>
-                    )}
-                  </ul>
-                </div>
-              )}
-
-              {/* Concerns */}
-              {callKeyPoints.memberConcerns && callKeyPoints.memberConcerns.length > 0 && (
-                <div>
-                  <div className="flex items-center gap-1.5 mb-2">
-                    <AlertTriangle className="h-3.5 w-3.5 text-warning" />
-                    <span className="text-xs font-semibold text-foreground uppercase tracking-wide">Concerns Raised</span>
-                  </div>
-                  <ul className="space-y-1">
-                    {callKeyPoints.memberConcerns.slice(0, 3).map((concern, index) => (
-                      <li key={index} className="text-xs text-muted-foreground flex items-start gap-2">
-                        <span className="text-warning mt-0.5">•</span>
-                        <span className="line-clamp-1">{concern}</span>
-                      </li>
-                    ))}
-                    {callKeyPoints.memberConcerns.length > 3 && (
-                      <li className="text-xs text-muted-foreground italic">
-                        +{callKeyPoints.memberConcerns.length - 3} more...
-                      </li>
-                    )}
-                  </ul>
-                </div>
-              )}
-
-              {/* Objections */}
-              {callKeyPoints.objections && callKeyPoints.objections.length > 0 && (
-                <div>
-                  <div className="flex items-center gap-1.5 mb-2">
-                    <MessageSquare className="h-3.5 w-3.5 text-destructive" />
-                    <span className="text-xs font-semibold text-foreground uppercase tracking-wide">Objections</span>
-                  </div>
-                  <ul className="space-y-1">
-                    {callKeyPoints.objections.slice(0, 2).map((objection, index) => (
-                      <li key={index} className="text-xs text-muted-foreground flex items-start gap-2">
-                        <span className="text-destructive mt-0.5">•</span>
-                        <span className="line-clamp-1">{objection}</span>
+                        <span className="line-clamp-1">{point}</span>
                       </li>
                     ))}
                   </ul>
@@ -224,13 +225,78 @@ export function ContactProfileHoverCard({
               )}
             </div>
           )}
+
+          {/* Contact Info & Actions - Always show if we have contact info */}
+          {(contactEmail || contactPhone) && (
+            <div className="mt-3 pt-3 border-t border-border">
+              {/* Contact Details */}
+              <div className="flex items-center gap-2 text-xs text-muted-foreground mb-3 flex-wrap">
+                {contactEmail && (
+                  <span className="flex items-center gap-1 truncate max-w-[140px]">
+                    <Mail className="h-3 w-3" />
+                    {contactEmail}
+                  </span>
+                )}
+                {contactEmail && contactPhone && <span>·</span>}
+                {contactPhone && (
+                  <span className="flex items-center gap-1">
+                    <Phone className="h-3 w-3" />
+                    {contactPhone}
+                  </span>
+                )}
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="flex-1 h-8 text-xs"
+                  onClick={handleEmailClick}
+                  disabled={!contactEmail || !canSendCommunications}
+                  title={!canSendCommunications ? 'Communication permission required' : 'Send Email'}
+                >
+                  <Mail className="h-3.5 w-3.5 mr-1.5" />
+                  Email
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="flex-1 h-8 text-xs"
+                  onClick={handleSmsClick}
+                  disabled={!contactPhone || !canSendCommunications}
+                  title={!canSendCommunications ? 'Communication permission required' : 'Send SMS'}
+                >
+                  <MessageSquare className="h-3.5 w-3.5 mr-1.5" />
+                  SMS
+                </Button>
+              </div>
+
+              {/* Last Contacted */}
+              {lastCommunication && (
+                <div className="mt-2 flex items-center gap-1.5 text-xs text-muted-foreground">
+                  <Clock className="h-3 w-3" />
+                  <span>
+                    Last contacted: {format(lastCommunication.sentAt, 'MMM d')} via {lastCommunication.communicationType.toUpperCase()}
+                  </span>
+                </div>
+              )}
+
+              {/* Permission notice */}
+              {!canSendCommunications && (
+                <p className="mt-2 text-[10px] text-muted-foreground italic">
+                  Contact admin for communication access
+                </p>
+              )}
+            </div>
+          )}
         </div>
 
-        {/* Footer */}
+        {/* Footer - Full insights hint */}
         {hasInsights && (
           <div className="px-4 py-2 bg-muted/30 border-t border-border">
-            <p className="text-xs text-muted-foreground text-center">
-              💡 Click the <span className="text-purple-500">transcript icon</span> for full insights
+            <p className="text-[10px] text-muted-foreground text-center">
+              💡 Click <span className="text-purple-500 font-medium">transcript icon</span> for full insights
             </p>
           </div>
         )}
