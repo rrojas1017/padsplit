@@ -1564,6 +1564,7 @@ export type Database = {
         Row: {
           api_config: Json | null
           created_at: string | null
+          enable_ai_polish: boolean | null
           id: string
           is_active: boolean | null
           provider_name: string
@@ -1573,6 +1574,7 @@ export type Database = {
         Insert: {
           api_config?: Json | null
           created_at?: string | null
+          enable_ai_polish?: boolean | null
           id?: string
           is_active?: boolean | null
           provider_name: string
@@ -1582,6 +1584,7 @@ export type Database = {
         Update: {
           api_config?: Json | null
           created_at?: string | null
+          enable_ai_polish?: boolean | null
           id?: string
           is_active?: boolean | null
           provider_name?: string

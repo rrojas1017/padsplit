@@ -180,6 +180,94 @@ async function transcribeWithElevenLabs(
   };
 }
 
+// Polish Deepgram transcript with AI for better formatting
+async function polishTranscript(
+  rawTranscript: string,
+  lovableApiKey: string
+): Promise<{ polished: string; inputTokens: number; outputTokens: number }> {
+  const prompt = `Polish this call transcript for readability. DO NOT change any words or meaning.
+
+ONLY fix:
+1. Capitalization (proper nouns, sentence starts, titles like Mr./Mrs.)
+2. Punctuation (commas, periods, question marks)
+3. Number formatting ($330 not "3.30", 10% not "10 percent")
+4. Common transcription errors ("gonna" is OK, but "mister" → "Mr.")
+
+KEEP:
+- All speaker labels (Speaker 0:, Speaker 1:) exactly as-is
+- All words and their order
+- Natural speech patterns and contractions
+
+RAW TRANSCRIPT:
+${rawTranscript}
+
+Return ONLY the polished transcript, no explanation.`;
+
+  try {
+    const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${lovableApiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'google/gemini-2.5-flash-lite', // Fast and cheap
+        messages: [{ role: 'user', content: prompt }],
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('[Polish] AI polishing failed:', errorText);
+      // Return original on failure
+      return { 
+        polished: rawTranscript, 
+        inputTokens: Math.ceil(prompt.length / 4), 
+        outputTokens: 0 
+      };
+    }
+
+    const result = await response.json();
+    const polished = result.choices?.[0]?.message?.content?.trim() || rawTranscript;
+    
+    const inputTokens = Math.ceil(prompt.length / 4);
+    const outputTokens = Math.ceil(polished.length / 4);
+    
+    console.log(`[Polish] Transcript polished: ${rawTranscript.length} chars → ${polished.length} chars`);
+    
+    return { polished, inputTokens, outputTokens };
+  } catch (error) {
+    console.error('[Polish] Error polishing transcript:', error);
+    return { 
+      polished: rawTranscript, 
+      inputTokens: Math.ceil(prompt.length / 4), 
+      outputTokens: 0 
+    };
+  }
+}
+
+// Check if AI polishing is enabled in settings
+async function isAIPolishEnabled(supabase: any): Promise<boolean> {
+  try {
+    const { data: settings, error } = await supabase
+      .from('stt_provider_settings')
+      .select('enable_ai_polish')
+      .eq('provider_name', 'deepgram')
+      .eq('is_active', true)
+      .maybeSingle();
+
+    if (error || !settings) {
+      // Default to enabled if no settings found
+      return true;
+    }
+
+    return settings.enable_ai_polish !== false;
+  } catch (error) {
+    console.error('[Polish] Error checking AI polish setting:', error);
+    return true; // Default to enabled
+  }
+}
+
 // Transcribe with Deepgram Nova-3
 async function transcribeWithDeepgram(
   audioBlob: Blob,
@@ -907,6 +995,41 @@ async function processTranscription(bookingId: string, kixieUrl: string) {
       confidence: sttConfidenceScore
     });
 
+    // Apply AI polishing for Deepgram transcripts (improves formatting quality)
+    let polishApplied = false;
+    if (selectedProvider === 'deepgram') {
+      const polishEnabled = await isAIPolishEnabled(supabase);
+      if (polishEnabled && transcription.length > 0) {
+        console.log('[Background] Polishing Deepgram transcript with AI...');
+        const polishResult = await polishTranscript(transcription, lovableApiKey!);
+        
+        if (polishResult.polished !== transcription) {
+          transcription = polishResult.polished;
+          polishApplied = true;
+          
+          // Log the polishing cost
+          logApiCost(supabase, {
+            service_provider: 'lovable_ai',
+            service_type: 'transcript_polishing',
+            edge_function: 'transcribe-call',
+            booking_id: bookingId,
+            agent_id: agentId || undefined,
+            site_id: siteId || undefined,
+            input_tokens: polishResult.inputTokens,
+            output_tokens: polishResult.outputTokens,
+            metadata: { 
+              model: 'google/gemini-2.5-flash-lite',
+              original_length: transcription.length,
+              polished_length: polishResult.polished.length
+            }
+          });
+          
+          console.log(`[Background] Transcript polished successfully`);
+        }
+      } else {
+        console.log('[Background] AI polishing disabled or empty transcript, skipping');
+      }
+    }
     // Apply speaker identification using AI if we have words
     if (sttResult.words && sttResult.words.length > 0) {
       const mins = Math.floor(callDurationSeconds / 60);
