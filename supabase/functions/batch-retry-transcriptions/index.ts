@@ -42,6 +42,7 @@ serve(async (req) => {
     let dateFrom: string | null = null;
     let dateTo: string | null = null;
     let limit = 50;
+    let specificBookingIds: string[] | null = null;
 
     try {
       const body = await req.json();
@@ -49,9 +50,131 @@ serve(async (req) => {
       dateFrom = body.dateFrom || null;
       dateTo = body.dateTo || null;
       limit = body.limit || 50;
-      console.log(`[BATCH-RETRY] Options: dryRun=${dryRun}, dateFrom=${dateFrom}, dateTo=${dateTo}, limit=${limit}`);
+      specificBookingIds = body.bookingIds || null;
+      console.log(`[BATCH-RETRY] Options: dryRun=${dryRun}, dateFrom=${dateFrom}, dateTo=${dateTo}, limit=${limit}, specificIds=${specificBookingIds?.length || 0}`);
     } catch {
       // No body or invalid JSON
+    }
+
+    // If specific booking IDs provided, process those directly (for re-transcription of existing transcripts)
+    if (specificBookingIds && specificBookingIds.length > 0) {
+      console.log(`[BATCH-RETRY] Processing ${specificBookingIds.length} specific booking IDs`);
+      
+      // Fetch the bookings
+      const { data: targetBookings, error: fetchError } = await supabase
+        .from('bookings')
+        .select('id, kixie_link, member_name, booking_date')
+        .in('id', specificBookingIds)
+        .not('kixie_link', 'is', null);
+
+      if (fetchError) {
+        throw new Error(`Failed to fetch bookings: ${fetchError.message}`);
+      }
+
+      if (!targetBookings || targetBookings.length === 0) {
+        return new Response(
+          JSON.stringify({ success: false, message: 'No valid bookings found with kixie_link' }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      console.log(`[BATCH-RETRY] Found ${targetBookings.length} bookings to re-transcribe`);
+
+      if (dryRun) {
+        return new Response(
+          JSON.stringify({
+            success: true,
+            dryRun: true,
+            found: targetBookings.length,
+            bookings: targetBookings.map(b => ({
+              id: b.id,
+              member_name: b.member_name,
+              booking_date: b.booking_date
+            }))
+          }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      // Process in background
+      const processSpecificBookings = async () => {
+        let successCount = 0;
+        let failCount = 0;
+
+        for (let i = 0; i < targetBookings.length; i++) {
+          const booking = targetBookings[i];
+          console.log(`[BATCH-RETRY] Processing ${i + 1}/${targetBookings.length}: ${booking.id} (${booking.member_name})`);
+
+          try {
+            // Delete existing transcription record to allow fresh re-transcription
+            await supabase
+              .from('booking_transcriptions')
+              .delete()
+              .eq('booking_id', booking.id);
+
+            // Reset status to pending
+            await supabase
+              .from('bookings')
+              .update({ 
+                transcription_status: 'pending',
+                transcription_error_message: null 
+              })
+              .eq('id', booking.id);
+
+            // Trigger transcription
+            const response = await fetch(`${SUPABASE_URL}/functions/v1/transcribe-call`, {
+              method: 'POST',
+              headers: {
+                'Authorization': `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({ 
+                bookingId: booking.id, 
+                kixieUrl: booking.kixie_link 
+              }),
+            });
+
+            if (!response.ok) {
+              const errorText = await response.text();
+              console.error(`[BATCH-RETRY] FAILED transcribe-call for ${booking.id}: ${errorText}`);
+              failCount++;
+            } else {
+              console.log(`[BATCH-RETRY] ✓ Transcription triggered for ${booking.id}`);
+              successCount++;
+            }
+
+          } catch (error) {
+            console.error(`[BATCH-RETRY] ERROR processing ${booking.id}:`, error);
+            failCount++;
+          }
+
+          // Pace requests: 30 seconds between to avoid rate limiting
+          if (i < targetBookings.length - 1) {
+            console.log('[BATCH-RETRY] Waiting 30 seconds before next booking...');
+            await new Promise(resolve => setTimeout(resolve, 30000));
+          }
+        }
+
+        console.log(`[BATCH-RETRY] ===== COMPLETE =====`);
+        console.log(`[BATCH-RETRY] Triggered: ${successCount}, Failed to trigger: ${failCount}`);
+      };
+
+      // Start processing in background
+      EdgeRuntime.waitUntil(processSpecificBookings());
+
+      return new Response(
+        JSON.stringify({
+          success: true,
+          queued: targetBookings.length,
+          bookings: targetBookings.map(b => ({
+            id: b.id,
+            member_name: b.member_name,
+            booking_date: b.booking_date
+          })),
+          message: `Started re-transcription for ${targetBookings.length} bookings. Processing in background with 30-second pacing. ETA: ~${Math.ceil(targetBookings.length * 0.5)} minutes.`
+        }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
     }
 
     // Find bookings that:
