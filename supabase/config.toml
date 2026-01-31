@@ -74,3 +74,6 @@ verify_jwt = false
 
 [functions.batch-enrich-contacts]
 verify_jwt = false
+
+[functions.compare-stt-providers]
+verify_jwt = true
