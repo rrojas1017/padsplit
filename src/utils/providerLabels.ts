@@ -3,12 +3,14 @@
 
 export const SUPER_ADMIN_PROVIDER_LABELS: Record<string, string> = {
   elevenlabs: 'ElevenLabs',
+  deepgram: 'Deepgram',
   lovable_ai: 'Lovable AI (Gemini)',
   google_tts: 'Google Cloud TTS',
 };
 
 export const GENERIC_PROVIDER_LABELS: Record<string, string> = {
   elevenlabs: 'Voice Services',
+  deepgram: 'Voice Services',
   lovable_ai: 'AI Services',
   google_tts: 'Voice Services',
 };
@@ -48,6 +50,7 @@ export function getServiceTypeLabel(serviceType: string, isSuperAdmin: boolean):
 // Provider color classes for badges (role-agnostic)
 export const PROVIDER_BADGE_COLORS: Record<string, string> = {
   elevenlabs: 'bg-purple-500/10 text-purple-600 border-purple-500/20',
+  deepgram: 'bg-green-500/10 text-green-600 border-green-500/20',
   lovable_ai: 'bg-blue-500/10 text-blue-600 border-blue-500/20',
   voice_services: 'bg-purple-500/10 text-purple-600 border-purple-500/20',
   ai_services: 'bg-blue-500/10 text-blue-600 border-blue-500/20',

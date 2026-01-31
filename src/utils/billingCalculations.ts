@@ -9,6 +9,11 @@ export const PRICING = {
     // STT: ~$0.034 per minute (Pro Plan) - was $0.10 pay-as-you-go
     stt_per_minute: 0.034,
   },
+  deepgram: {
+    // Deepgram Nova-3 pricing
+    // Pay-as-you-go: $0.0043 per minute
+    stt_per_minute: 0.0043,
+  },
   lovable_ai: {
     // Lovable AI (Gemini Flash): approximate pricing
     input_per_1k_tokens: 0.0001,
@@ -23,6 +28,17 @@ export function calculateElevenLabsTTSCost(characterCount: number): number {
 export function calculateElevenLabsSTTCost(audioDurationSeconds: number): number {
   const minutes = audioDurationSeconds / 60;
   return minutes * PRICING.elevenlabs.stt_per_minute;
+}
+
+export function calculateDeepgramSTTCost(audioDurationSeconds: number): number {
+  const minutes = audioDurationSeconds / 60;
+  return minutes * PRICING.deepgram.stt_per_minute;
+}
+
+export function calculateSTTCost(audioDurationSeconds: number, provider: 'elevenlabs' | 'deepgram'): number {
+  const minutes = audioDurationSeconds / 60;
+  const rate = provider === 'deepgram' ? PRICING.deepgram.stt_per_minute : PRICING.elevenlabs.stt_per_minute;
+  return minutes * rate;
 }
 
 
@@ -71,6 +87,7 @@ export const SERVICE_TYPE_LABELS: Record<string, string> = {
 
 export const PROVIDER_LABELS: Record<string, string> = {
   elevenlabs: 'ElevenLabs',
+  deepgram: 'Deepgram',
   lovable_ai: 'Lovable AI',
 };
 

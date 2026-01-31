@@ -12,9 +12,27 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+// STT Provider types
+type STTProviderName = 'elevenlabs' | 'deepgram';
+
+interface STTResult {
+  transcription: string;
+  words: Array<{ text: string; start: number; end: number; speaker_id?: string }>;
+  durationSeconds: number;
+  confidence?: number;
+  latencyMs: number;
+  wordCount: number;
+}
+
+// Provider pricing constants (per minute)
+const STT_PRICING: Record<STTProviderName, number> = {
+  elevenlabs: 0.034,  // ElevenLabs Pro Plan
+  deepgram: 0.0043,   // Deepgram Nova-3
+};
+
 // Cost logging helper function
 async function logApiCost(supabase: any, params: {
-  service_provider: 'elevenlabs' | 'lovable_ai';
+  service_provider: 'elevenlabs' | 'deepgram' | 'lovable_ai';
   service_type: string;
   edge_function: string;
   booking_id?: string;
@@ -33,11 +51,16 @@ async function logApiCost(supabase: any, params: {
       // Pro Plan rates (credits-based, ~$99/mo for 500k credits)
       // STT: ~$0.034 per minute (Pro Plan)
       if (params.audio_duration_seconds) {
-        cost = (params.audio_duration_seconds / 60) * 0.034;
+        cost = (params.audio_duration_seconds / 60) * STT_PRICING.elevenlabs;
       }
       // TTS: ~$0.15 per 1000 characters (Pro Plan)
       if (params.character_count) {
         cost = params.character_count * 0.00015;
+      }
+    } else if (params.service_provider === 'deepgram') {
+      // Deepgram Nova-3: ~$0.0043 per minute
+      if (params.audio_duration_seconds) {
+        cost = (params.audio_duration_seconds / 60) * STT_PRICING.deepgram;
       }
     } else if (params.service_provider === 'lovable_ai') {
       // Model-aware pricing for Lovable AI
@@ -76,6 +99,142 @@ async function logApiCost(supabase: any, params: {
     // Don't fail the main operation if cost logging fails
     console.error('[Cost] Failed to log API cost:', error);
   }
+}
+
+// Select STT provider based on A/B weights
+async function selectSTTProvider(supabase: any): Promise<STTProviderName> {
+  try {
+    const { data: settings, error } = await supabase
+      .from('stt_provider_settings')
+      .select('provider_name, weight')
+      .eq('is_active', true);
+
+    if (error || !settings || settings.length === 0) {
+      console.log('[STT A/B] No active provider settings, defaulting to elevenlabs');
+      return 'elevenlabs';
+    }
+
+    const totalWeight = settings.reduce((sum: number, s: any) => sum + (s.weight || 0), 0);
+    if (totalWeight === 0) {
+      console.log('[STT A/B] Total weight is 0, defaulting to elevenlabs');
+      return 'elevenlabs';
+    }
+
+    const random = Math.random() * totalWeight;
+    let cumulative = 0;
+
+    for (const setting of settings) {
+      cumulative += setting.weight || 0;
+      if (random <= cumulative) {
+        console.log(`[STT A/B] Selected provider: ${setting.provider_name} (weight: ${setting.weight}/${totalWeight})`);
+        return setting.provider_name as STTProviderName;
+      }
+    }
+
+    return 'elevenlabs';
+  } catch (error) {
+    console.error('[STT A/B] Error selecting provider:', error);
+    return 'elevenlabs';
+  }
+}
+
+// Transcribe with ElevenLabs Scribe v1
+async function transcribeWithElevenLabs(
+  audioBlob: Blob,
+  apiKey: string
+): Promise<STTResult> {
+  const startTime = Date.now();
+  
+  const formData = new FormData();
+  formData.append('file', audioBlob, 'recording.wav');
+  formData.append('model_id', 'scribe_v1');
+  formData.append('diarize', 'true');
+  formData.append('language_code', 'eng');
+  formData.append('tag_audio_events', 'true');
+
+  const response = await fetch('https://api.elevenlabs.io/v1/speech-to-text', {
+    method: 'POST',
+    headers: { 'xi-api-key': apiKey },
+    body: formData,
+  });
+
+  const latencyMs = Date.now() - startTime;
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`ElevenLabs API error: ${response.status} - ${errorText}`);
+  }
+
+  const result = await response.json();
+  const words = result.words || [];
+  const lastWord = words[words.length - 1];
+  const durationSeconds = lastWord?.end ? Math.ceil(lastWord.end) : 0;
+
+  return {
+    transcription: result.text || '',
+    words,
+    durationSeconds,
+    confidence: undefined, // ElevenLabs doesn't provide overall confidence
+    latencyMs,
+    wordCount: words.length,
+  };
+}
+
+// Transcribe with Deepgram Nova-3
+async function transcribeWithDeepgram(
+  audioBlob: Blob,
+  apiKey: string
+): Promise<STTResult> {
+  const startTime = Date.now();
+
+  // Deepgram accepts direct audio upload
+  const response = await fetch(
+    'https://api.deepgram.com/v1/listen?model=nova-2&smart_format=true&diarize=true&language=en-US&punctuate=true',
+    {
+      method: 'POST',
+      headers: {
+        'Authorization': `Token ${apiKey}`,
+        'Content-Type': 'audio/wav',
+      },
+      body: audioBlob,
+    }
+  );
+
+  const latencyMs = Date.now() - startTime;
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Deepgram API error: ${response.status} - ${errorText}`);
+  }
+
+  const result = await response.json();
+  const channel = result.results?.channels?.[0];
+  const alternative = channel?.alternatives?.[0];
+
+  if (!alternative) {
+    throw new Error('Deepgram returned no transcription results');
+  }
+
+  // Map Deepgram words format to our standard format
+  const words = (alternative.words || []).map((w: any) => ({
+    text: w.word || w.punctuated_word || '',
+    start: w.start,
+    end: w.end,
+    speaker_id: w.speaker !== undefined ? `speaker_${w.speaker}` : undefined,
+  }));
+
+  const durationSeconds = result.metadata?.duration 
+    ? Math.ceil(result.metadata.duration)
+    : (words.length > 0 ? Math.ceil(words[words.length - 1].end) : 0);
+
+  return {
+    transcription: alternative.transcript || '',
+    words,
+    durationSeconds,
+    confidence: alternative.confidence,
+    latencyMs,
+    wordCount: words.length,
+  };
 }
 
 // Types for call type configuration
@@ -557,6 +716,7 @@ async function processTranscription(bookingId: string, kixieUrl: string) {
   console.log(`[Background] Starting transcription for booking ${bookingId}`);
   
   const elevenLabsApiKey = Deno.env.get('ELEVENLABS_API_KEY');
+  const deepgramApiKey = Deno.env.get('DEEPGRAM_API_KEY');
   const lovableApiKey = Deno.env.get('LOVABLE_API_KEY');
   const supabaseUrl = Deno.env.get('SUPABASE_URL');
   const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
@@ -680,44 +840,34 @@ async function processTranscription(bookingId: string, kixieUrl: string) {
       return;
     }
 
-    // Step 2: Transcribe with ElevenLabs
+    // Step 2: Select STT provider and transcribe using A/B testing
+    const selectedProvider = await selectSTTProvider(supabase);
+    console.log(`[Background] Using STT provider: ${selectedProvider}`);
+    
+    let sttResult: STTResult;
     let transcription = '';
     let callDurationSeconds: number | null = null;
-    
-    console.log('[Background] Sending to ElevenLabs Speech-to-Text...');
-    const formData = new FormData();
-    formData.append('file', audioBlob, 'recording.wav');
-    formData.append('model_id', 'scribe_v1');
-    formData.append('diarize', 'true');
-    formData.append('language_code', 'eng');
-    formData.append('tag_audio_events', 'true');
 
-    const elevenLabsResponse = await fetch('https://api.elevenlabs.io/v1/speech-to-text', {
-      method: 'POST',
-      headers: {
-        'xi-api-key': elevenLabsApiKey!,
-      },
-      body: formData,
-    });
-
-if (!elevenLabsResponse.ok) {
-      const errorText = await elevenLabsResponse.text();
-      console.error('[Background] ElevenLabs API error:', errorText);
+    try {
+      if (selectedProvider === 'deepgram' && deepgramApiKey) {
+        console.log('[Background] Sending to Deepgram Nova-2...');
+        sttResult = await transcribeWithDeepgram(audioBlob, deepgramApiKey);
+      } else {
+        // Default to ElevenLabs
+        console.log('[Background] Sending to ElevenLabs Speech-to-Text...');
+        sttResult = await transcribeWithElevenLabs(audioBlob, elevenLabsApiKey!);
+      }
+    } catch (sttError) {
+      const errorMessage = sttError instanceof Error ? sttError.message : 'STT transcription failed';
+      console.error(`[Background] ${selectedProvider} STT error:`, errorMessage);
       
-      // Parse error for specific handling
-      let errorDetails: any = {};
-      try {
-        errorDetails = JSON.parse(errorText);
-      } catch { /* ignore parse errors */ }
-      
-      const status = errorDetails?.detail?.status;
-      const message = errorDetails?.detail?.message || errorText;
-      
-      // Detect billing/payment issues
-      if (status === 'payment_issue' || elevenLabsResponse.status === 402) {
-        console.error('[BILLING ALERT] ElevenLabs payment issue detected:', message);
-        
-        // Create admin notification (avoid duplicates)
+      // Check for billing/quota issues with ElevenLabs
+      if (selectedProvider === 'elevenlabs' && (
+        errorMessage.includes('payment') || 
+        errorMessage.includes('402') ||
+        errorMessage.includes('quota')
+      )) {
+        // Create admin notification for billing issues
         const { data: existing } = await supabase
           .from('admin_notifications')
           .select('id')
@@ -725,72 +875,46 @@ if (!elevenLabsResponse.ok) {
           .eq('service', 'elevenlabs')
           .eq('is_resolved', false)
           .limit(1);
-          
+
         if (!existing || existing.length === 0) {
           await supabase.from('admin_notifications').insert({
             notification_type: 'billing_alert',
             service: 'elevenlabs',
-            title: 'ElevenLabs Payment Issue',
-            message: `Transcriptions are failing due to a billing problem: ${message}`,
+            title: 'ElevenLabs API Issue',
+            message: `Transcription failed: ${errorMessage}`,
             severity: 'critical',
-            metadata: { status, booking_id: bookingId, raw_error: errorText.substring(0, 500) }
+            metadata: { booking_id: bookingId, error: errorMessage.substring(0, 500) }
           });
-          console.log('[Billing Alert] Created critical notification for ElevenLabs payment issue');
         }
-        
-        await updateBookingError(supabase, bookingId, `ElevenLabs billing issue: ${message}. Please check your ElevenLabs subscription.`);
-        return;
       }
       
-      // Detect quota exceeded
-      if (status === 'quota_exceeded' || message.toLowerCase().includes('quota')) {
-        console.error('[QUOTA ALERT] ElevenLabs usage limit reached:', message);
-        
-        const { data: existing } = await supabase
-          .from('admin_notifications')
-          .select('id')
-          .eq('notification_type', 'billing_alert')
-          .eq('service', 'elevenlabs')
-          .eq('title', 'ElevenLabs Quota Exceeded')
-          .eq('is_resolved', false)
-          .limit(1);
-          
-        if (!existing || existing.length === 0) {
-          await supabase.from('admin_notifications').insert({
-            notification_type: 'billing_alert',
-            service: 'elevenlabs',
-            title: 'ElevenLabs Quota Exceeded',
-            message: `Character/usage quota has been exceeded: ${message}`,
-            severity: 'warning',
-            metadata: { status, booking_id: bookingId }
-          });
-          console.log('[Billing Alert] Created warning notification for ElevenLabs quota exceeded');
-        }
-        
-        await updateBookingError(supabase, bookingId, `ElevenLabs quota exceeded: ${message}`);
-        return;
-      }
-      
-      throw new Error(`ElevenLabs API error: ${elevenLabsResponse.status} - ${message}`);
+      clearTimeout(timeoutId);
+      await updateBookingError(supabase, bookingId, `${selectedProvider} transcription failed: ${errorMessage}`);
+      return;
     }
 
-    const elevenLabsResult = await elevenLabsResponse.json();
-    console.log('[Background] ElevenLabs response received');
+    transcription = sttResult.transcription;
+    callDurationSeconds = sttResult.durationSeconds;
+    const sttLatencyMs = sttResult.latencyMs;
+    const sttWordCount = sttResult.wordCount;
+    const sttConfidenceScore = sttResult.confidence;
 
-    // Format transcription with AI-based speaker identification
-    transcription = elevenLabsResult.text || '';
-    
-    if (elevenLabsResult.words && elevenLabsResult.words.length > 0) {
-      const lastWord = elevenLabsResult.words[elevenLabsResult.words.length - 1];
-      if (lastWord.end) {
-        callDurationSeconds = Math.ceil(lastWord.end);
-        const mins = Math.floor(callDurationSeconds / 60);
-        const secs = callDurationSeconds % 60;
-        console.log(`[Background] Call duration: ${callDurationSeconds} seconds (${mins}:${secs.toString().padStart(2, '0')})`);
-      }
+    console.log(`[Background] ${selectedProvider} transcription complete:`, {
+      length: transcription.length,
+      duration: callDurationSeconds,
+      latency: sttLatencyMs,
+      wordCount: sttWordCount,
+      confidence: sttConfidenceScore
+    });
+
+    // Apply speaker identification using AI if we have words
+    if (sttResult.words && sttResult.words.length > 0) {
+      const mins = Math.floor(callDurationSeconds / 60);
+      const secs = callDurationSeconds % 60;
+      console.log(`[Background] Call duration: ${callDurationSeconds} seconds (${mins}:${secs.toString().padStart(2, '0')})`);
 
       // Phase 1: Format raw transcript with generic speaker labels
-      const rawTranscript = formatRawTranscript(elevenLabsResult.words);
+      const rawTranscript = formatRawTranscript(sttResult.words);
       
       // Phase 2: Use AI to identify which speaker is Agent vs Member
       const speakerMapping = await identifySpeakers(rawTranscript, lovableApiKey!);
@@ -816,26 +940,32 @@ if (!elevenLabsResponse.ok) {
       });
       
       // Phase 3: Apply correct labels based on AI identification
-      transcription = applyCorrectLabels(elevenLabsResult.words, speakerMapping);
+      transcription = applyCorrectLabels(sttResult.words, speakerMapping);
       
       if (speakerMapping.confidence === 'fallback') {
         console.log('[Background] Warning: Speaker identification failed, using fallback assumption');
       }
     }
     
-    console.log('[Background] ElevenLabs transcription complete, length:', transcription.length);
+    console.log(`[Background] ${selectedProvider} transcription formatted, length:`, transcription.length);
 
-    // Log ElevenLabs STT cost
+    // Log STT cost for the selected provider
     if (callDurationSeconds) {
       logApiCost(supabase, {
-        service_provider: 'elevenlabs',
+        service_provider: selectedProvider,
         service_type: 'stt_transcription',
         edge_function: 'transcribe-call',
         booking_id: bookingId,
         agent_id: agentId || undefined,
         site_id: siteId || undefined,
         audio_duration_seconds: callDurationSeconds,
-        metadata: { model: 'scribe_v1', file_size_mb: fileSizeMB }
+        metadata: { 
+          model: selectedProvider === 'deepgram' ? 'nova-2' : 'scribe_v1', 
+          file_size_mb: fileSizeMB,
+          latency_ms: sttLatencyMs,
+          word_count: sttWordCount,
+          confidence: sttConfidenceScore
+        }
       });
     }
     // Step 3: Generate summary, key points, and agent feedback with dynamic prompt
@@ -946,7 +1076,7 @@ if (!elevenLabsResponse.ok) {
       throw new Error(`Failed to update booking: ${bookingUpdateError.message}`);
     }
 
-    // Then upsert the heavy data to booking_transcriptions table
+    // Then upsert the heavy data to booking_transcriptions table with A/B testing metrics
     const { error: transcriptionError } = await supabase
       .from('booking_transcriptions')
       .upsert({
@@ -955,7 +1085,10 @@ if (!elevenLabsResponse.ok) {
         call_summary: summary,
         call_key_points: keyPoints,
         agent_feedback: agentFeedback,
-        stt_provider: 'elevenlabs',
+        stt_provider: selectedProvider,
+        stt_latency_ms: sttLatencyMs,
+        stt_word_count: sttWordCount,
+        stt_confidence_score: sttConfidenceScore,
         updated_at: new Date().toISOString(),
       }, {
         onConflict: 'booking_id'
@@ -1057,10 +1190,12 @@ serve(async (req) => {
 
     // Validate required env vars before starting
     const elevenLabsApiKey = Deno.env.get('ELEVENLABS_API_KEY');
+    const deepgramApiKey = Deno.env.get('DEEPGRAM_API_KEY');
     const lovableApiKey = Deno.env.get('LOVABLE_API_KEY');
     
-    if (!elevenLabsApiKey) {
-      throw new Error('ELEVENLABS_API_KEY not configured');
+    // At least one STT provider must be configured
+    if (!elevenLabsApiKey && !deepgramApiKey) {
+      throw new Error('No STT provider configured. Set ELEVENLABS_API_KEY or DEEPGRAM_API_KEY');
     }
     if (!lovableApiKey) {
       throw new Error('LOVABLE_API_KEY not configured');
