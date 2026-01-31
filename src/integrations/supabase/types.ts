@@ -429,7 +429,10 @@ export type Database = {
           qa_coaching_audio_url: string | null
           qa_coaching_quiz_passed_at: string | null
           qa_scores: Json | null
+          stt_confidence_score: number | null
+          stt_latency_ms: number | null
           stt_provider: string | null
+          stt_word_count: number | null
           updated_at: string | null
         }
         Insert: {
@@ -450,7 +453,10 @@ export type Database = {
           qa_coaching_audio_url?: string | null
           qa_coaching_quiz_passed_at?: string | null
           qa_scores?: Json | null
+          stt_confidence_score?: number | null
+          stt_latency_ms?: number | null
           stt_provider?: string | null
+          stt_word_count?: number | null
           updated_at?: string | null
         }
         Update: {
@@ -471,7 +477,10 @@ export type Database = {
           qa_coaching_audio_url?: string | null
           qa_coaching_quiz_passed_at?: string | null
           qa_scores?: Json | null
+          stt_confidence_score?: number | null
+          stt_latency_ms?: number | null
           stt_provider?: string | null
+          stt_word_count?: number | null
           updated_at?: string | null
         }
         Relationships: [
@@ -1548,6 +1557,36 @@ export type Database = {
           id?: string
           name?: string
           type?: string
+        }
+        Relationships: []
+      }
+      stt_provider_settings: {
+        Row: {
+          api_config: Json | null
+          created_at: string | null
+          id: string
+          is_active: boolean | null
+          provider_name: string
+          updated_at: string | null
+          weight: number | null
+        }
+        Insert: {
+          api_config?: Json | null
+          created_at?: string | null
+          id?: string
+          is_active?: boolean | null
+          provider_name: string
+          updated_at?: string | null
+          weight?: number | null
+        }
+        Update: {
+          api_config?: Json | null
+          created_at?: string | null
+          id?: string
+          is_active?: boolean | null
+          provider_name?: string
+          updated_at?: string | null
+          weight?: number | null
         }
         Relationships: []
       }
