@@ -185,18 +185,23 @@ async function polishTranscript(
   rawTranscript: string,
   lovableApiKey: string
 ): Promise<{ polished: string; inputTokens: number; outputTokens: number }> {
-  const prompt = `Polish this call transcript for readability. DO NOT change any words or meaning.
+  const prompt = `Polish this call transcript for readability. DO NOT change any words or meaning except for the specific corrections below.
 
-ONLY fix:
+CRITICAL BRAND/COMPANY NAME FIXES (always apply these):
+- "Plates", "plates", "pads", "Pads", "pads split", "pads lit", "pad slit", "pad split" → "PadSplit"
+- "Kix", "kicks", "kicky", "kix e", "kix ee" → "Kixie"
+- "hub spot", "Hub Spot" → "HubSpot"
+
+FORMATTING FIXES:
 1. Capitalization (proper nouns, sentence starts, titles like Mr./Mrs.)
 2. Punctuation (commas, periods, question marks)
-3. Number formatting ($330 not "3.30", 10% not "10 percent")
-4. Common transcription errors ("gonna" is OK, but "mister" → "Mr.")
+3. Number formatting ($330 not "three thirty", 10% not "ten percent")
+4. Title corrections ("mister" → "Mr.", "missus" → "Mrs.")
 
-KEEP:
-- All speaker labels (Speaker 0:, Speaker 1:) exactly as-is
-- All words and their order
-- Natural speech patterns and contractions
+KEEP AS-IS:
+- All speaker labels (Speaker 0:, Speaker 1:, Agent:, Member:) exactly as-is
+- Natural contractions like "gonna", "wanna", "gotta"
+- All words not listed in corrections above
 
 RAW TRANSCRIPT:
 ${rawTranscript}
