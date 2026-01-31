@@ -1055,42 +1055,8 @@ async function processTranscription(bookingId: string, kixieUrl: string) {
       confidence: sttConfidenceScore
     });
 
-    // Apply AI polishing for Deepgram transcripts (improves formatting quality)
-    let polishApplied = false;
-    if (selectedProvider === 'deepgram') {
-      const polishEnabled = await isAIPolishEnabled(supabase);
-      if (polishEnabled && transcription.length > 0) {
-        console.log('[Background] Polishing Deepgram transcript with AI...');
-        const polishResult = await polishTranscript(transcription, lovableApiKey!);
-        
-        if (polishResult.polished !== transcription) {
-          transcription = polishResult.polished;
-          polishApplied = true;
-          
-          // Log the polishing cost
-          logApiCost(supabase, {
-            service_provider: 'lovable_ai',
-            service_type: 'transcript_polishing',
-            edge_function: 'transcribe-call',
-            booking_id: bookingId,
-            agent_id: agentId || undefined,
-            site_id: siteId || undefined,
-            input_tokens: polishResult.inputTokens,
-            output_tokens: polishResult.outputTokens,
-            metadata: { 
-              model: 'google/gemini-2.5-flash-lite',
-              original_length: transcription.length,
-              polished_length: polishResult.polished.length
-            }
-          });
-          
-          console.log(`[Background] Transcript polished successfully`);
-        }
-      } else {
-        console.log('[Background] AI polishing disabled or empty transcript, skipping');
-      }
-    }
-    // Apply speaker identification using AI if we have words
+    // Step 1: Apply speaker identification FIRST (for all providers)
+    // This must happen before polishing since applyCorrectLabels rebuilds from raw words
     if (sttResult.words && sttResult.words.length > 0) {
       const mins = Math.floor(callDurationSeconds / 60);
       const secs = callDurationSeconds % 60;
@@ -1127,6 +1093,44 @@ async function processTranscription(bookingId: string, kixieUrl: string) {
       
       if (speakerMapping.confidence === 'fallback') {
         console.log('[Background] Warning: Speaker identification failed, using fallback assumption');
+      }
+    }
+
+    // Step 2: Apply AI polishing AFTER speaker identification (for Deepgram only)
+    // This ensures brand corrections are applied to the FINAL transcript
+    let polishApplied = false;
+    if (selectedProvider === 'deepgram') {
+      const polishEnabled = await isAIPolishEnabled(supabase);
+      if (polishEnabled && transcription.length > 0) {
+        console.log('[Background] Polishing Deepgram transcript with AI...');
+        const originalLength = transcription.length;
+        const polishResult = await polishTranscript(transcription, lovableApiKey!);
+        
+        if (polishResult.polished !== transcription) {
+          transcription = polishResult.polished;
+          polishApplied = true;
+          
+          // Log the polishing cost
+          logApiCost(supabase, {
+            service_provider: 'lovable_ai',
+            service_type: 'transcript_polishing',
+            edge_function: 'transcribe-call',
+            booking_id: bookingId,
+            agent_id: agentId || undefined,
+            site_id: siteId || undefined,
+            input_tokens: polishResult.inputTokens,
+            output_tokens: polishResult.outputTokens,
+            metadata: { 
+              model: 'google/gemini-2.5-flash-lite',
+              original_length: originalLength,
+              polished_length: polishResult.polished.length
+            }
+          });
+          
+          console.log(`[Background] Transcript polished successfully`);
+        }
+      } else {
+        console.log('[Background] AI polishing disabled or empty transcript, skipping');
       }
     }
     
