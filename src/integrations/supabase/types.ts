@@ -1590,6 +1590,74 @@ export type Database = {
         }
         Relationships: []
       }
+      stt_quality_comparisons: {
+        Row: {
+          audio_file_size_mb: number | null
+          booking_id: string | null
+          call_duration_seconds: number | null
+          comparison_notes: string | null
+          created_at: string | null
+          deepgram_char_count: number | null
+          deepgram_confidence: number | null
+          deepgram_latency_ms: number | null
+          deepgram_transcription: string | null
+          deepgram_word_count: number | null
+          elevenlabs_char_count: number | null
+          elevenlabs_confidence: number | null
+          elevenlabs_latency_ms: number | null
+          elevenlabs_transcription: string | null
+          elevenlabs_word_count: number | null
+          id: string
+          kixie_link: string
+        }
+        Insert: {
+          audio_file_size_mb?: number | null
+          booking_id?: string | null
+          call_duration_seconds?: number | null
+          comparison_notes?: string | null
+          created_at?: string | null
+          deepgram_char_count?: number | null
+          deepgram_confidence?: number | null
+          deepgram_latency_ms?: number | null
+          deepgram_transcription?: string | null
+          deepgram_word_count?: number | null
+          elevenlabs_char_count?: number | null
+          elevenlabs_confidence?: number | null
+          elevenlabs_latency_ms?: number | null
+          elevenlabs_transcription?: string | null
+          elevenlabs_word_count?: number | null
+          id?: string
+          kixie_link: string
+        }
+        Update: {
+          audio_file_size_mb?: number | null
+          booking_id?: string | null
+          call_duration_seconds?: number | null
+          comparison_notes?: string | null
+          created_at?: string | null
+          deepgram_char_count?: number | null
+          deepgram_confidence?: number | null
+          deepgram_latency_ms?: number | null
+          deepgram_transcription?: string | null
+          deepgram_word_count?: number | null
+          elevenlabs_char_count?: number | null
+          elevenlabs_confidence?: number | null
+          elevenlabs_latency_ms?: number | null
+          elevenlabs_transcription?: string | null
+          elevenlabs_word_count?: number | null
+          id?: string
+          kixie_link?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "stt_quality_comparisons_booking_id_fkey"
+            columns: ["booking_id"]
+            isOneToOne: false
+            referencedRelation: "bookings"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       transcription_auto_rules: {
         Row: {
           agent_id: string | null

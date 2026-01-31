@@ -7,7 +7,7 @@ import { Switch } from '@/components/ui/switch';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useAuth } from '@/contexts/AuthContext';
-import { Database, Bell, Moon, Sun, Upload, Key, FileText, Download, Brain, Phone, BookOpen, Shield, ScrollText, Zap, Volume2, Loader2, ClipboardCheck, RefreshCw, AlertTriangle } from 'lucide-react';
+import { Database, Bell, Moon, Sun, Upload, Key, FileText, Download, Brain, Phone, BookOpen, Shield, ScrollText, Zap, Volume2, Loader2, ClipboardCheck, RefreshCw, AlertTriangle, FlaskConical } from 'lucide-react';
 import { generateRoleDocumentationPDF } from '@/utils/roleDocumentation';
 import { generateQADocumentationPDF } from '@/utils/qaDocumentation';
 import { CallTypeList } from '@/components/ai-management/CallTypeList';
@@ -16,6 +16,7 @@ import { CallRulesList } from '@/components/ai-management/CallRulesList';
 import { ScriptList } from '@/components/ai-management/ScriptList';
 import { AutoTranscriptionSettings } from '@/components/ai-management/AutoTranscriptionSettings';
 import { QARubricSettings } from '@/components/ai-management/QARubricSettings';
+import { STTComparisonPanel } from '@/components/ai-management/STTComparisonPanel';
 import { KattyQASettings } from '@/components/ai-management/KattyQASettings';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
@@ -418,6 +419,11 @@ export default function Settings() {
 
               {/* Katty QA Voice Settings */}
               <KattyQASettings />
+
+              {/* STT Quality Comparison */}
+              <div className="bg-card rounded-xl border border-border p-6 shadow-card">
+                <STTComparisonPanel />
+              </div>
 
               {/* Info Box */}
               <div className="bg-primary/5 border border-primary/20 rounded-xl p-4">
