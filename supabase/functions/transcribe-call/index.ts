@@ -188,9 +188,64 @@ async function polishTranscript(
   const prompt = `Polish this call transcript for readability. DO NOT change any words or meaning except for the specific corrections below.
 
 CRITICAL BRAND/COMPANY NAME FIXES (always apply these):
-- "Plates", "plates", "pads", "Pads", "pads split", "pads lit", "pad slit", "pad split" → "PadSplit"
+
+=== PadSplit & Internal Tools ===
+- "Plates", "plates", "pads", "Pads", "pads split", "pads lit", "pad slit", "pad split", "pad slip", "padspit", "pad's split" → "PadSplit"
 - "Kix", "kicks", "kicky", "kix e", "kix ee" → "Kixie"
 - "hub spot", "Hub Spot" → "HubSpot"
+
+=== Competitor Platforms (Housing/Rentals) ===
+- "air bnb", "airbee and bee", "air be an be" → "Airbnb"
+- "verbo", "ver bo" → "Vrbo"
+- "booking dot com", "bookin'", "bookie dot com" → "Booking.com"
+- "zillo", "zeal oh" → "Zillow"
+- "truly a", "trulee-uh" → "Trulia"
+- "realtor dot com", "realter dot com", "real tour" → "Realtor.com"
+- "apartments dot com", "apartment dot com" → "Apartments.com"
+- "zoomer", "zumperr", "zumba" → "Zumper"
+- "hot pads", "hot paths" → "HotPads"
+- "rent dot com", "rent calm" → "Rent.com"
+- "rent café", "rent-caffee" → "RentCafe"
+- "rooster", "room stir" → "Roomster"
+- "spare room", "spare-room", "spare rum" → "SpareRoom"
+- "roomy", "rumi" → "Roomi"
+- "bung a low", "bung below" → "Bungalow"
+- "commune", "calm in" → "Common"
+- "sawn-der", "sondar" → "Sonder"
+- "blue ground", "blue grounds", "blue grown" → "Blueground"
+
+=== Payment Partners ===
+- "strip", "strype", "stripey" → "Stripe"
+- "pay pal", "papal" → "PayPal"
+- "adian", "add yen", "a-d-n" → "Adyen"
+- "brain tree", "braintray" → "Braintree"
+- "world pay", "word pay" → "Worldpay"
+- "check out dot com", "check out calm" → "Checkout.com"
+- "played", "plate" → "Plaid"
+- "dollar", "dweller", "dwallah" → "Dwolla"
+
+=== Verification Partners (IDV/KYC) ===
+- "on fido", "onfiddle", "on-fee-doh" → "Onfido"
+- "person uh", "personal" → "Persona"
+- "so cure", "soccer", "so-cher" → "Socure"
+- "shift" → "Sift"
+- "sardines", "sar dean" → "Sardine"
+- "truly-o", "trulio", "truly you" → "Trulioo"
+- "a loy", "all-oy" → "Alloy"
+- "lexus nexus", "lexis", "nexus" → "LexisNexis"
+- "joo-me-oh", "junio", "jumeo" → "Jumio"
+
+=== Property/Screening Partners ===
+- "yardy", "yar dee" → "Yardi"
+- "real page", "rail page" → "RealPage"
+- "app folio", "ap polio", "app holy-oh" → "AppFolio"
+- "build 'em", "bilidium" → "Buildium"
+- "intra-da", "en-trah-ta", "enter ata" → "Entrata"
+- "rent ready", "rent reddy" → "RentRedi"
+- "rent spree", "rent spray" → "RentSpree"
+- "trans union" → "TransUnion"
+- "experience", "experion" → "Experian"
+- "equi facts", "equal facts" → "Equifax"
 
 FORMATTING FIXES:
 1. Capitalization (proper nouns, sentence starts, titles like Mr./Mrs.)
