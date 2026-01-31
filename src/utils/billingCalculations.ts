@@ -19,6 +19,11 @@ export const PRICING = {
     input_per_1k_tokens: 0.0001,
     output_per_1k_tokens: 0.0003,
   },
+  // Flash-lite pricing for transcript polishing
+  ai_polish: {
+    input_per_1k_tokens: 0.00005,
+    output_per_1k_tokens: 0.00015,
+  },
 };
 
 export function calculateElevenLabsTTSCost(characterCount: number): number {
@@ -76,6 +81,7 @@ export function formatCurrencyCompact(amount: number): string {
 
 export const SERVICE_TYPE_LABELS: Record<string, string> = {
   stt_transcription: 'Speech-to-Text (Transcription)',
+  transcript_polishing: 'AI Transcript Polishing',
   tts_coaching: 'Text-to-Speech (Jeff Coaching)',
   tts_qa_coaching: 'Text-to-Speech (Katty QA)',
   ai_analysis: 'AI Analysis (Call Processing)',
@@ -83,6 +89,7 @@ export const SERVICE_TYPE_LABELS: Record<string, string> = {
   ai_qa_scoring: 'AI QA Scoring',
   ai_member_insights: 'AI Member Insights',
   ai_reanalysis: 'AI Re-Analysis',
+  speaker_identification: 'AI Speaker Identification',
 };
 
 export const PROVIDER_LABELS: Record<string, string> = {
