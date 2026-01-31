@@ -1,152 +1,221 @@
 
 
-# Quality Comparison: Deepgram vs ElevenLabs STT
+# Hybrid STT Pipeline: Deepgram + AI Polishing
 
-## Current Findings
+## The Idea
 
-### Data Summary
-Based on analysis of recent transcriptions:
+Instead of choosing between:
+- **ElevenLabs**: High quality (~$0.034/min) but expensive
+- **Deepgram**: Cheap (~$0.0043/min) but lower formatting quality
 
-| Provider | Avg Chars/Min | Confidence | Latency | Cost/Min |
-|----------|---------------|------------|---------|----------|
-| ElevenLabs | ~1,100 | 99.8% | 4.6s | $0.034 |
-| Deepgram Nova-2 | ~600 | 99.7% | 11.8s | $0.0043 |
+You can have **both** by using a hybrid approach:
+1. **Deepgram** for the actual speech recognition (87% cheaper)
+2. **Gemini Flash** to polish the raw transcript (add punctuation, proper casing, format numbers)
 
-### Quality Differences
+### Cost Comparison (18.8 min David Keeling call)
 
-**ElevenLabs Strengths:**
-- Proper capitalization and punctuation
-- Audio event tagging (phone sounds, laughter, music)
-- Better formatted transcripts for human reading
-- More content captured per minute of audio
+| Approach | Cost | Quality |
+|----------|------|---------|
+| ElevenLabs Only | ~$0.64 | High (proper casing, punctuation, audio events) |
+| Deepgram Only | ~$0.08 | Lower (literal text, no casing) |
+| **Deepgram + AI Polish** | ~$0.12 | High (AI fixes formatting) |
 
-**Deepgram Strengths:**
-- 87% lower cost
-- Higher word count (but different counting method)
-- Good diarization (speaker identification)
-- Direct API upload (simpler integration)
+**Result: ~81% cheaper than ElevenLabs with comparable quality!**
 
-### The "More Words" Mystery Explained
-Deepgram's higher word count is misleading - it doesn't add punctuation, so "Hello, how are you?" becomes four separate words vs three. When measuring by characters per minute, ElevenLabs actually captures significantly more content.
+### How AI Polishing Works
+
+Deepgram output:
+```
+mister David Kelly? Yes. How you doing? I'm doing great sir how are you doing? I'm doing good.
+```
+
+After AI polish:
+```
+Mr. David Kelly? Yes. How you doing? I'm doing great, sir. How are you doing? I'm doing good.
+```
+
+The AI would:
+- Fix capitalization (mister → Mr., sir → sir with comma before)
+- Add proper punctuation (commas, periods, question marks)
+- Format numbers ($330 instead of "3.30 a week")
+- Preserve speaker labels (Agent/Member)
+- Keep the text meaning identical (no paraphrasing)
 
 ---
 
-## Implementation Plan: Side-by-Side Quality Comparison
+## Implementation Plan
 
-### Step 1: Add Force Provider Override
+### Step 1: Create AI Polishing Function
 
-Modify the transcribe-call function to accept an optional `forceProvider` parameter, allowing you to re-process any call with a specific provider.
+Add a new function to polish Deepgram transcripts before they're stored:
 
 ```typescript
-// In the request handler
-const { bookingId, kixieUrl, forceProvider } = await req.json();
+async function polishTranscript(
+  rawTranscript: string,
+  lovableApiKey: string
+): Promise<{ polished: string; inputTokens: number; outputTokens: number }> {
+  const prompt = `Polish this call transcript for readability. DO NOT change any words or meaning.
 
-// In processTranscription
-const selectedProvider = forceProvider || await selectSTTProvider(supabase);
+ONLY fix:
+1. Capitalization (proper nouns, sentence starts, titles like Mr./Mrs.)
+2. Punctuation (commas, periods, question marks)
+3. Number formatting ($330 not "3.30", 10% not "10 percent")
+4. Common transcription errors ("gonna" is OK, but "mister" → "Mr.")
+
+KEEP:
+- All speaker labels (Agent:, Member:) exactly as-is
+- All words and their order
+- Natural speech patterns and contractions
+
+RAW TRANSCRIPT:
+${rawTranscript}
+
+Return ONLY the polished transcript, no explanation.`;
+
+  const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${lovableApiKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: 'google/gemini-2.5-flash-lite', // Fast and cheap
+      messages: [{ role: 'user', content: prompt }],
+    }),
+  });
+
+  // Extract and return polished text
+}
 ```
 
-### Step 2: Create Comparison Table
+### Step 2: Modify Transcription Pipeline
 
-Add a new database table to store side-by-side results:
+Update `transcribe-call/index.ts` to add polishing when using Deepgram:
+
+```typescript
+// After Deepgram transcription, before speaker identification
+if (selectedProvider === 'deepgram') {
+  console.log('[Background] Polishing Deepgram transcript with AI...');
+  const polishResult = await polishTranscript(sttResult.transcription, lovableApiKey);
+  sttResult.transcription = polishResult.polished;
+  
+  // Log the polishing cost
+  logApiCost(supabase, {
+    service_provider: 'lovable_ai',
+    service_type: 'transcript_polishing',
+    edge_function: 'transcribe-call',
+    booking_id: bookingId,
+    input_tokens: polishResult.inputTokens,
+    output_tokens: polishResult.outputTokens,
+    metadata: { model: 'google/gemini-2.5-flash-lite' }
+  });
+}
+```
+
+### Step 3: Add Toggle in Settings
+
+Add an option in AI Management to enable/disable polishing:
 
 ```sql
-CREATE TABLE stt_quality_comparisons (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  booking_id UUID REFERENCES bookings(id),
-  kixie_link TEXT NOT NULL,
-  elevenlabs_transcription TEXT,
-  elevenlabs_word_count INTEGER,
-  elevenlabs_char_count INTEGER,
-  elevenlabs_latency_ms INTEGER,
-  elevenlabs_confidence NUMERIC(4,3),
-  deepgram_transcription TEXT,
-  deepgram_word_count INTEGER,
-  deepgram_char_count INTEGER,
-  deepgram_latency_ms INTEGER,
-  deepgram_confidence NUMERIC(4,3),
-  call_duration_seconds INTEGER,
-  created_at TIMESTAMPTZ DEFAULT now()
-);
+ALTER TABLE stt_provider_settings 
+ADD COLUMN enable_ai_polish BOOLEAN DEFAULT true;
 ```
 
-### Step 3: Create Comparison Edge Function
+### Step 4: Update Billing Calculations
 
-Build a dedicated function that transcribes the same audio with both providers simultaneously and stores results for comparison.
+Add the polishing cost estimate to track savings:
 
 ```typescript
-// supabase/functions/compare-stt-providers/index.ts
-serve(async (req) => {
-  const { bookingId, kixieUrl } = await req.json();
-  
-  // Download audio once
-  const audioBlob = await downloadAudio(kixieUrl);
-  
-  // Run both providers in parallel
-  const [elevenlabsResult, deepgramResult] = await Promise.all([
-    transcribeWithElevenLabs(audioBlob, elevenLabsApiKey),
-    transcribeWithDeepgram(audioBlob, deepgramApiKey),
-  ]);
-  
-  // Store comparison
-  await supabase.from('stt_quality_comparisons').insert({
-    booking_id: bookingId,
-    kixie_link: kixieUrl,
-    elevenlabs_transcription: elevenlabsResult.transcription,
-    elevenlabs_word_count: elevenlabsResult.wordCount,
-    elevenlabs_char_count: elevenlabsResult.transcription.length,
-    elevenlabs_latency_ms: elevenlabsResult.latencyMs,
-    deepgram_transcription: deepgramResult.transcription,
-    deepgram_word_count: deepgramResult.wordCount,
-    deepgram_char_count: deepgramResult.transcription.length,
-    deepgram_latency_ms: deepgramResult.latencyMs,
-    call_duration_seconds: Math.max(elevenlabsResult.durationSeconds, deepgramResult.durationSeconds),
-  });
-  
-  return new Response(JSON.stringify({ success: true, comparison: {...} }));
-});
+export const PRICING = {
+  // ... existing
+  ai_polish_per_1k_tokens: 0.00005, // Flash-lite is very cheap
+};
 ```
 
-### Step 4: Build Comparison UI
+---
 
-Add a comparison view in the AI Management or Settings page showing:
-- Side-by-side transcription text
-- Character/word count differences
-- Latency comparison
-- Cost savings calculation
+## Cost Analysis
+
+For a typical 18.8 min call with ~15,000 characters:
+
+| Component | ElevenLabs | Deepgram + Polish |
+|-----------|------------|-------------------|
+| STT | $0.64 | $0.08 |
+| AI Polish | $0.00 | ~$0.04* |
+| **Total** | **$0.64** | **~$0.12** |
+| **Savings** | - | **81%** |
+
+*Polish cost estimated at ~15K input + 15K output tokens using Flash-lite ($0.00005/1K)
+
+### At Scale (5,000 calls/month)
+
+| Approach | Monthly Cost |
+|----------|--------------|
+| ElevenLabs Only | ~$3,200 |
+| Deepgram + Polish | ~$600 |
+| **Annual Savings** | **~$31,200** |
 
 ---
 
-## Files to Create/Modify
+## Technical Details
 
-| File | Action | Description |
-|------|--------|-------------|
-| Database migration | CREATE | Add `stt_quality_comparisons` table |
-| `supabase/functions/compare-stt-providers/index.ts` | CREATE | New edge function for parallel comparison |
-| `supabase/functions/transcribe-call/index.ts` | MODIFY | Add `forceProvider` parameter |
-| `src/pages/Settings.tsx` or new page | MODIFY | Add comparison UI |
+### Files to Modify
+
+| File | Changes |
+|------|---------|
+| `supabase/functions/transcribe-call/index.ts` | Add `polishTranscript()` function and integrate into Deepgram flow |
+| `src/utils/billingCalculations.ts` | Add polish pricing constant |
+| Database migration | Add `enable_ai_polish` column to settings |
+
+### Processing Flow (Updated)
+
+```
+Audio File
+    ↓
+[Deepgram STT] → Raw transcript (cheap, fast)
+    ↓
+[AI Polish] → Clean transcript (proper formatting)
+    ↓
+[Speaker ID] → Agent/Member labels
+    ↓
+[AI Analysis] → Summary, feedback, scores
+    ↓
+[Coaching Audio] → TTS with polished script
+```
+
+### Edge Cases
+
+1. **Very long calls (30+ min)**: Split transcript into chunks for polishing to avoid token limits
+2. **Non-English content**: Skip polishing if language detection shows non-English
+3. **Already clean text**: If confidence is high and text looks formatted, skip polishing
 
 ---
 
-## Testing Approach
+## Quality Validation
 
-1. Select 5-10 calls of varying lengths (30s, 1min, 5min, 10min)
-2. Run the comparison function on each
-3. Review results in comparison table
-4. Human evaluate transcript quality for:
-   - Word accuracy (are names correct?)
-   - Speaker identification accuracy
-   - Content completeness
-   - Readability
+Before full rollout, I recommend:
+
+1. **Run 5-10 side-by-side comparisons** showing:
+   - ElevenLabs original
+   - Deepgram raw
+   - Deepgram + AI polished
+
+2. **Compare coaching quality** by generating coaching audio from both approaches and evaluating if the feedback is equally specific/useful
+
+3. **Monitor for issues** like:
+   - AI changing word meaning
+   - Lost speaker attributions
+   - Formatting inconsistencies
 
 ---
 
-## Recommendation
+## Summary
 
-Based on current data, **ElevenLabs provides higher quality transcripts** but at 8x the cost. Before switching fully to Deepgram:
+This hybrid approach gives you:
+- **81% cost reduction** vs ElevenLabs
+- **Higher quality** than Deepgram alone
+- **Same downstream analysis quality** (AI gets clean input)
+- **Optional toggle** to disable if issues arise
 
-1. Run 10 side-by-side comparisons
-2. Have team members rate transcript quality
-3. Determine if the quality difference impacts downstream AI analysis
-
-If Deepgram quality is "good enough" for your coaching/feedback use case, the 87% cost savings is significant (~$1,485 saved per 5,000 calls).
+The key insight: AI is very good at fixing formatting/punctuation (cheap task) but STT is expensive. By separating these concerns, you get the best of both worlds.
 
