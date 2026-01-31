@@ -190,7 +190,7 @@ async function polishTranscript(
 CRITICAL BRAND/COMPANY NAME FIXES (always apply these):
 
 === PadSplit & Internal Tools ===
-- "Plates", "plates", "pads", "Pads", "pads split", "pads lit", "pad slit", "pad split", "pad slip", "padspit", "pad's split", "Pet Sitter", "Petsitter", "pet sitter" → "PadSplit"
+- "Plates", "plates", "pads", "Pads", "pads split", "pads lit", "pad slit", "pad split", "pad slip", "padspit", "pad's split", "Pet Sitter", "Petsitter", "pet sitter", "past plate", "path to place", "bath split", "bad supplies", "pathway", "pagespeed", "path split", "Radcliffe" → "PadSplit"
 - "Kix", "kicks", "kicky", "kix e", "kix ee" → "Kixie"
 - "hub spot", "Hub Spot" → "HubSpot"
 
