@@ -1,221 +1,130 @@
 
 
-# Hybrid STT Pipeline: Deepgram + AI Polishing
+# Update AI Polishing Prompt for Brand & Transcription Fixes
 
-## The Idea
+## Overview
 
-Instead of choosing between:
-- **ElevenLabs**: High quality (~$0.034/min) but expensive
-- **Deepgram**: Cheap (~$0.0043/min) but lower formatting quality
+Enhance the transcript polishing prompt to fix common Deepgram transcription errors, specifically:
+- **Brand names**: "Plates", "Pads", "pads split" → "PadSplit"
+- **Industry terms**: "pads lit", "pad slit" → "PadSplit"
+- **Common mishears**: "gonna" is OK, but "mister" → "Mr."
 
-You can have **both** by using a hybrid approach:
-1. **Deepgram** for the actual speech recognition (87% cheaper)
-2. **Gemini Flash** to polish the raw transcript (add punctuation, proper casing, format numbers)
+## Current Issue
 
-### Cost Comparison (18.8 min David Keeling call)
+From the side-by-side comparisons, Deepgram frequently mishears "PadSplit" as:
+- "Plates" (most common)
+- "pads split"
+- "Pads"
+- "pads lit"
 
-| Approach | Cost | Quality |
-|----------|------|---------|
-| ElevenLabs Only | ~$0.64 | High (proper casing, punctuation, audio events) |
-| Deepgram Only | ~$0.08 | Lower (literal text, no casing) |
-| **Deepgram + AI Polish** | ~$0.12 | High (AI fixes formatting) |
-
-**Result: ~81% cheaper than ElevenLabs with comparable quality!**
-
-### How AI Polishing Works
-
-Deepgram output:
-```
-mister David Kelly? Yes. How you doing? I'm doing great sir how are you doing? I'm doing good.
-```
-
-After AI polish:
-```
-Mr. David Kelly? Yes. How you doing? I'm doing great, sir. How are you doing? I'm doing good.
-```
-
-The AI would:
-- Fix capitalization (mister → Mr., sir → sir with comma before)
-- Add proper punctuation (commas, periods, question marks)
-- Format numbers ($330 instead of "3.30 a week")
-- Preserve speaker labels (Agent/Member)
-- Keep the text meaning identical (no paraphrasing)
+This causes downstream issues in coaching and analysis.
 
 ---
 
-## Implementation Plan
+## Implementation
 
-### Step 1: Create AI Polishing Function
+### Step 1: Update the Polishing Prompt
 
-Add a new function to polish Deepgram transcripts before they're stored:
+Modify lines 188-204 in `supabase/functions/transcribe-call/index.ts`:
+
+**Current prompt:**
+```
+ONLY fix:
+1. Capitalization (proper nouns, sentence starts, titles like Mr./Mrs.)
+2. Punctuation (commas, periods, question marks)
+3. Number formatting ($330 not "3.30", 10% not "10 percent")
+4. Common transcription errors ("gonna" is OK, but "mister" → "Mr.")
+```
+
+**New prompt:**
+```
+ONLY fix:
+1. Brand names (CRITICAL - these are commonly misheard):
+   - "Plates", "plates", "pads", "Pads", "pads split", "pads lit", "pad slit" → "PadSplit"
+   - "Kix", "kicks", "kicky" → "Kixie" (phone system)
+   - "hub spot" → "HubSpot"
+   
+2. Capitalization (proper nouns, sentence starts, titles like Mr./Mrs.)
+
+3. Punctuation (commas, periods, question marks)
+
+4. Number formatting ($330 not "3.30", 10% not "10 percent")
+
+5. Common transcription errors:
+   - "mister" → "Mr."
+   - "missus" → "Mrs."
+   - "gonna" and "wanna" are OK to keep
+```
+
+---
+
+## Technical Details
+
+### File to Modify
+
+| File | Changes |
+|------|---------|
+| `supabase/functions/transcribe-call/index.ts` | Update `polishTranscript()` prompt (lines 188-204) |
+
+### Updated Function (lines 184-247)
 
 ```typescript
 async function polishTranscript(
   rawTranscript: string,
   lovableApiKey: string
 ): Promise<{ polished: string; inputTokens: number; outputTokens: number }> {
-  const prompt = `Polish this call transcript for readability. DO NOT change any words or meaning.
+  const prompt = `Polish this call transcript for readability. DO NOT change any words or meaning except for the specific corrections below.
 
-ONLY fix:
+CRITICAL BRAND/COMPANY NAME FIXES (always apply these):
+- "Plates", "plates", "pads", "Pads", "pads split", "pads lit", "pad slit", "pad split" → "PadSplit"
+- "Kix", "kicks", "kicky", "kix e", "kix ee" → "Kixie"
+- "hub spot", "Hub Spot" → "HubSpot"
+
+FORMATTING FIXES:
 1. Capitalization (proper nouns, sentence starts, titles like Mr./Mrs.)
 2. Punctuation (commas, periods, question marks)
-3. Number formatting ($330 not "3.30", 10% not "10 percent")
-4. Common transcription errors ("gonna" is OK, but "mister" → "Mr.")
+3. Number formatting ($330 not "three thirty", 10% not "ten percent")
+4. Title corrections ("mister" → "Mr.", "missus" → "Mrs.")
 
-KEEP:
-- All speaker labels (Agent:, Member:) exactly as-is
-- All words and their order
-- Natural speech patterns and contractions
+KEEP AS-IS:
+- All speaker labels (Speaker 0:, Speaker 1:) exactly as-is
+- Natural contractions like "gonna", "wanna", "gotta"
+- All words not listed in corrections above
 
 RAW TRANSCRIPT:
 ${rawTranscript}
 
 Return ONLY the polished transcript, no explanation.`;
-
-  const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${lovableApiKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      model: 'google/gemini-2.5-flash-lite', // Fast and cheap
-      messages: [{ role: 'user', content: prompt }],
-    }),
-  });
-
-  // Extract and return polished text
+  // ... rest of function unchanged
 }
 ```
 
-### Step 2: Modify Transcription Pipeline
+---
 
-Update `transcribe-call/index.ts` to add polishing when using Deepgram:
+## Why This Works
 
-```typescript
-// After Deepgram transcription, before speaker identification
-if (selectedProvider === 'deepgram') {
-  console.log('[Background] Polishing Deepgram transcript with AI...');
-  const polishResult = await polishTranscript(sttResult.transcription, lovableApiKey);
-  sttResult.transcription = polishResult.polished;
-  
-  // Log the polishing cost
-  logApiCost(supabase, {
-    service_provider: 'lovable_ai',
-    service_type: 'transcript_polishing',
-    edge_function: 'transcribe-call',
-    booking_id: bookingId,
-    input_tokens: polishResult.inputTokens,
-    output_tokens: polishResult.outputTokens,
-    metadata: { model: 'google/gemini-2.5-flash-lite' }
-  });
-}
-```
-
-### Step 3: Add Toggle in Settings
-
-Add an option in AI Management to enable/disable polishing:
-
-```sql
-ALTER TABLE stt_provider_settings 
-ADD COLUMN enable_ai_polish BOOLEAN DEFAULT true;
-```
-
-### Step 4: Update Billing Calculations
-
-Add the polishing cost estimate to track savings:
-
-```typescript
-export const PRICING = {
-  // ... existing
-  ai_polish_per_1k_tokens: 0.00005, // Flash-lite is very cheap
-};
-```
+1. **Priority ordering**: Brand fixes are listed first as "CRITICAL" so the AI prioritizes them
+2. **Multiple variants**: Lists all known mishearings of each brand name
+3. **Explicit keep list**: Prevents AI from "fixing" natural speech patterns
+4. **No semantic changes**: Only formatting and known brand corrections
 
 ---
 
-## Cost Analysis
+## Expected Results
 
-For a typical 18.8 min call with ~15,000 characters:
-
-| Component | ElevenLabs | Deepgram + Polish |
-|-----------|------------|-------------------|
-| STT | $0.64 | $0.08 |
-| AI Polish | $0.00 | ~$0.04* |
-| **Total** | **$0.64** | **~$0.12** |
-| **Savings** | - | **81%** |
-
-*Polish cost estimated at ~15K input + 15K output tokens using Flash-lite ($0.00005/1K)
-
-### At Scale (5,000 calls/month)
-
-| Approach | Monthly Cost |
-|----------|--------------|
-| ElevenLabs Only | ~$3,200 |
-| Deepgram + Polish | ~$600 |
-| **Annual Savings** | **~$31,200** |
+| Before (Deepgram raw) | After (AI polished) |
+|----------------------|---------------------|
+| "Thank you for calling plates." | "Thank you for calling PadSplit." |
+| "I'm looking at the pads split website." | "I'm looking at the PadSplit website." |
+| "Let me check that in hub spot." | "Let me check that in HubSpot." |
+| "mister David Kelly" | "Mr. David Kelly" |
 
 ---
 
-## Technical Details
+## Testing
 
-### Files to Modify
-
-| File | Changes |
-|------|---------|
-| `supabase/functions/transcribe-call/index.ts` | Add `polishTranscript()` function and integrate into Deepgram flow |
-| `src/utils/billingCalculations.ts` | Add polish pricing constant |
-| Database migration | Add `enable_ai_polish` column to settings |
-
-### Processing Flow (Updated)
-
-```
-Audio File
-    ↓
-[Deepgram STT] → Raw transcript (cheap, fast)
-    ↓
-[AI Polish] → Clean transcript (proper formatting)
-    ↓
-[Speaker ID] → Agent/Member labels
-    ↓
-[AI Analysis] → Summary, feedback, scores
-    ↓
-[Coaching Audio] → TTS with polished script
-```
-
-### Edge Cases
-
-1. **Very long calls (30+ min)**: Split transcript into chunks for polishing to avoid token limits
-2. **Non-English content**: Skip polishing if language detection shows non-English
-3. **Already clean text**: If confidence is high and text looks formatted, skip polishing
-
----
-
-## Quality Validation
-
-Before full rollout, I recommend:
-
-1. **Run 5-10 side-by-side comparisons** showing:
-   - ElevenLabs original
-   - Deepgram raw
-   - Deepgram + AI polished
-
-2. **Compare coaching quality** by generating coaching audio from both approaches and evaluating if the feedback is equally specific/useful
-
-3. **Monitor for issues** like:
-   - AI changing word meaning
-   - Lost speaker attributions
-   - Formatting inconsistencies
-
----
-
-## Summary
-
-This hybrid approach gives you:
-- **81% cost reduction** vs ElevenLabs
-- **Higher quality** than Deepgram alone
-- **Same downstream analysis quality** (AI gets clean input)
-- **Optional toggle** to disable if issues arise
-
-The key insight: AI is very good at fixing formatting/punctuation (cheap task) but STT is expensive. By separating these concerns, you get the best of both worlds.
+After deployment:
+1. Re-run a comparison on a Deepgram-transcribed call
+2. Verify "PadSplit" appears correctly in the polished output
+3. Check that other words weren't incorrectly changed
 
