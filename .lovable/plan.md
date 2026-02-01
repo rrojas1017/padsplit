@@ -1,145 +1,132 @@
 
-# Date Range Filtering for Non-Booking Analysis Results
 
-## Current Behavior
+# Fix Agent Breakdown in Non-Booking Analysis
 
-The Non-Booking Analysis tab has these components that need to respect the date filter:
+## Problem Identified
 
-| Component | Current Behavior | Expected Behavior |
-|-----------|-----------------|-------------------|
-| Summary Cards (stats) | Respects date filter via `get_non_booking_stats` RPC | Correct |
-| Run Analysis button | Passes date range to edge function | Correct |
-| Previous analyses dropdown | Shows ALL analyses regardless of date | Filter by matching date range |
-| Auto-select insight | Selects most recent overall | Select most recent matching date range |
-| Insight data display | Shows selected insight data | Show matching insight OR prompt to run |
+The current implementation correctly collects agent data from the database (all 7 agents), but the AI model is only returning a subset (1 agent: Abdul) in its `agent_breakdown` response.
+
+**Expected vs Actual:**
+
+| Agent | Actual Records | AI Returned |
+|-------|---------------|-------------|
+| Megane | 27 | Missing |
+| Abdullah | 15 | 15 (as "Abdul") |
+| Anel | 11 | Missing |
+| Win | 8 | Missing |
+| Paul E. | 5 | Missing |
+| Christine Joy Serra | 2 | Missing |
+| John Mosquera | 2 | Missing |
+
+## Root Cause
+
+The AI prompt in `analyze-non-booking-insights/index.ts` does not enforce that **all agents** must be included in the response. The AI is interpreting this as optional summarization.
+
+## Solution
+
+Update the edge function to:
+
+1. **Pre-compute the agent breakdown** server-side instead of relying on AI to preserve this data
+2. **Only ask AI for analytical insights** (improvement areas, top objections interpretation)
+3. **Merge server-computed counts with AI-generated insights**
+
+This ensures:
+- Agent counts are always accurate (computed from source data)
+- AI still provides qualitative analysis per agent
+- No data loss from AI summarization
 
 ---
 
 ## Implementation
 
-### Frontend Changes
+### File: `supabase/functions/analyze-non-booking-insights/index.ts`
 
-**File: `src/components/call-insights/NonBookingAnalysisTab.tsx`**
+**Changes:**
 
-1. **Filter previous insights by date range**
-   - Modify the query for `previousInsights` to filter by `analysis_period` matching the current `dateRange`
-   - This ensures users only see analyses relevant to their selected time period
-
-2. **Update auto-select logic**
-   - When date range changes, find a matching insight for that period
-   - If no matching insight exists, clear selection and prompt user to run analysis
-
-3. **Add date range info to dropdown**
-   - Show both timestamp AND the date range period in the dropdown items
-   - Format: "Last 30 Days - Feb 1, 2026 2:30 PM"
-
-4. **Clear insight when date range changes to unmatched period**
-   - Reset `selectedInsightId` when switching to a date range with no existing analysis
-   - Show "No analysis for this period" message in charts
-
-5. **Show date range badge on analysis results**
-   - Display a badge showing which period the current results are for
-   - Help users understand if they're viewing stale data vs current filter
-
----
-
-## Code Changes
-
-### Query Filter Update
+1. **Store computed agent data directly** instead of relying on AI to return it:
 
 ```typescript
-// Fetch previous insights - FILTER BY DATE RANGE
-const { data: previousInsights, refetch: refetchInsights } = useQuery({
-  queryKey: ['non-booking-insights-list', dateRange], // Add dateRange to key
-  queryFn: async (): Promise<NonBookingInsight[]> => {
-    const { data, error } = await supabase
-      .from('non_booking_insights')
-      .select('*')
-      .eq('status', 'completed')
-      .eq('analysis_period', dateRange) // Filter by matching period
-      .order('created_at', { ascending: false })
-      .limit(10);
+// Current: AI returns agent_breakdown
+// New: Compute agent_breakdown directly from agentData
 
-    if (error) throw error;
-    return (data || []) as NonBookingInsight[];
-  },
-});
+const computedAgentBreakdown: Record<string, any> = {};
+for (const [agentName, data] of Object.entries(agentData)) {
+  computedAgentBreakdown[agentName] = {
+    non_booking_count: data.nonBookingCount,
+    top_objection: data.objections[0] || 'none',
+    top_concern: data.concerns[0] || 'none'
+  };
+}
 ```
 
-### Auto-select Reset on Date Range Change
+2. **Update AI prompt** to only ask for analytical insights per agent (not counts):
 
 ```typescript
-// Reset selection when date range changes and no matching insight exists
-useEffect(() => {
-  if (previousInsights) {
-    if (previousInsights.length > 0) {
-      // Auto-select most recent insight for this period
-      setSelectedInsightId(previousInsights[0].id);
-    } else {
-      // No insights for this period - clear selection
-      setSelectedInsightId(null);
-    }
+// In AI prompt, change agent_breakdown section:
+"agent_insights": {
+  "AgentName": {
+    "improvement_area": "Specific coaching recommendation",
+    "pattern_observation": "Qualitative insight about this agent's calls"
   }
-}, [previousInsights, dateRange]);
+}
 ```
 
-### Dropdown with Period Info
+3. **Merge computed data with AI insights** before saving:
 
 ```typescript
-<SelectItem key={insight.id} value={insight.id}>
-  <span className="flex items-center gap-2">
-    <span>{getPeriodLabel(insight.analysis_period)}</span>
-    <span className="text-muted-foreground text-xs">
-      {format(new Date(insight.created_at), 'MMM d, h:mm a')}
-    </span>
-  </span>
-</SelectItem>
+// Merge computed counts with AI insights
+const finalAgentBreakdown: Record<string, any> = {};
+for (const [agentName, data] of Object.entries(computedAgentBreakdown)) {
+  const aiInsight = parsedAnalysis.agent_insights?.[agentName] || {};
+  finalAgentBreakdown[agentName] = {
+    ...data,
+    improvement_area: aiInsight.improvement_area || 'Review call recordings for coaching opportunities',
+    pattern_observation: aiInsight.pattern_observation || null
+  };
+}
 ```
 
-### No Data State for Unanalyzed Period
-
-When `selectedInsightId` is null but data exists for the period:
+4. **Save merged data** to the database:
 
 ```typescript
-{!selectedInsight && hasTranscribed && (
-  <Card className="border-amber-500/50 bg-amber-500/5">
-    <CardContent className="py-4">
-      <div className="flex items-center gap-3">
-        <Sparkles className="h-5 w-5 text-amber-500" />
-        <div>
-          <p className="font-medium">No analysis for this time period</p>
-          <p className="text-sm text-muted-foreground">
-            Click "Run Analysis" to generate insights for {getPeriodLabel(dateRange)}
-          </p>
-        </div>
-      </div>
-    </CardContent>
-  </Card>
-)}
+agent_breakdown: finalAgentBreakdown, // Use merged data, not AI-only
 ```
 
 ---
 
-## User Experience Flow
+## Updated Agent Breakdown Structure
 
-```text
-User selects "Last 7 Days"
-        |
-        v
-  Query filters to insights with analysis_period = "last7days"
-        |
-        v
-  [Found matching insight?]
-        |
-    Yes |         No
-        v          v
-  Auto-select    Clear selection
-  most recent    Show "No analysis" banner
-        |          |
-        v          v
-  Display        Prompt to run
-  charts         analysis
+After the fix, `agent_breakdown` will contain:
+
+```json
+{
+  "Megane": {
+    "non_booking_count": 27,
+    "top_objection": "Voicemail - member didn't answer",
+    "top_concern": "Pricing concerns",
+    "improvement_area": "AI-generated coaching tip",
+    "pattern_observation": "AI-generated pattern"
+  },
+  "Abdullah": {
+    "non_booking_count": 15,
+    "top_objection": "timing issues",
+    "top_concern": "busy at time of call",
+    "improvement_area": "Proactive callback scheduling",
+    "pattern_observation": "..."
+  },
+  // ... all 7 agents
+}
 ```
+
+---
+
+## Frontend Enhancement (Optional)
+
+Update the Agent Breakdown card in `NonBookingAnalysisTab.tsx` to show more details:
+
+- Show all agents (currently limited to 4 with `.slice(0, 4)`)
+- Add improvement areas from AI analysis
+- Sort by non_booking_count descending
 
 ---
 
@@ -147,13 +134,15 @@ User selects "Last 7 Days"
 
 | File | Changes |
 |------|---------|
-| `src/components/call-insights/NonBookingAnalysisTab.tsx` | Filter insights query by dateRange, update auto-select logic, add period badge |
+| `supabase/functions/analyze-non-booking-insights/index.ts` | Compute agent data server-side, merge with AI insights |
+| `src/components/call-insights/NonBookingAnalysisTab.tsx` | Improve agent breakdown display (show all agents, add scrolling) |
 
 ---
 
 ## Technical Notes
 
-- The edge function already stores `analysis_period` with each insight
-- Existing insight has `analysis_period: 'allTime'` so it will only show when "All Time" is selected
-- Running analysis for "Last 30 Days" will create a new insight with `analysis_period: 'last30days'`
-- Users can run multiple analyses for the same period (shows history)
+- This pattern separates **factual data** (counts from database) from **analytical insights** (AI interpretation)
+- Prevents AI from dropping or misinterpreting numerical data
+- Same approach should be applied to `market_breakdown` for consistency
+- No database migration needed - uses existing `agent_breakdown` JSONB column
+
