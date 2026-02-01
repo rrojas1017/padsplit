@@ -1331,6 +1331,72 @@ export type Database = {
           },
         ]
       }
+      non_booking_insights: {
+        Row: {
+          agent_breakdown: Json | null
+          analysis_period: string
+          avg_call_duration_seconds: number | null
+          created_at: string
+          created_by: string | null
+          date_range_end: string
+          date_range_start: string
+          error_message: string | null
+          id: string
+          market_breakdown: Json | null
+          missed_opportunities: Json | null
+          objection_patterns: Json | null
+          raw_analysis: string | null
+          recovery_recommendations: Json | null
+          rejection_reasons: Json | null
+          sentiment_distribution: Json | null
+          status: string | null
+          total_calls_analyzed: number
+          trend_comparison: Json | null
+        }
+        Insert: {
+          agent_breakdown?: Json | null
+          analysis_period: string
+          avg_call_duration_seconds?: number | null
+          created_at?: string
+          created_by?: string | null
+          date_range_end: string
+          date_range_start: string
+          error_message?: string | null
+          id?: string
+          market_breakdown?: Json | null
+          missed_opportunities?: Json | null
+          objection_patterns?: Json | null
+          raw_analysis?: string | null
+          recovery_recommendations?: Json | null
+          rejection_reasons?: Json | null
+          sentiment_distribution?: Json | null
+          status?: string | null
+          total_calls_analyzed?: number
+          trend_comparison?: Json | null
+        }
+        Update: {
+          agent_breakdown?: Json | null
+          analysis_period?: string
+          avg_call_duration_seconds?: number | null
+          created_at?: string
+          created_by?: string | null
+          date_range_end?: string
+          date_range_start?: string
+          error_message?: string | null
+          id?: string
+          market_breakdown?: Json | null
+          missed_opportunities?: Json | null
+          objection_patterns?: Json | null
+          raw_analysis?: string | null
+          recovery_recommendations?: Json | null
+          rejection_reasons?: Json | null
+          sentiment_distribution?: Json | null
+          status?: string | null
+          total_calls_analyzed?: number
+          trend_comparison?: Json | null
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
           avatar_url: string | null
