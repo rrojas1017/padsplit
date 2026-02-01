@@ -393,26 +393,46 @@ export function NonBookingAnalysisTab({ dateRange, onDateRangeChange }: NonBooki
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <NonBookingSentimentChart sentiment={formattedSentiment} />
             <Card className="h-full">
-              <CardContent className="pt-6 h-full flex flex-col items-center justify-center text-center min-h-[280px]">
-                <div className="p-4 rounded-full bg-primary/10 mb-4">
-                  <Phone className="h-8 w-8 text-primary" />
+              <CardContent className="pt-6 h-full flex flex-col min-h-[280px]">
+                <div className="flex items-center gap-2 mb-4">
+                  <div className="p-2 rounded-full bg-primary/10">
+                    <Phone className="h-5 w-5 text-primary" />
+                  </div>
+                  <h4 className="font-medium">Agent Breakdown</h4>
                 </div>
-                <h4 className="font-medium mb-2">Agent Breakdown</h4>
                 {selectedInsight?.agent_breakdown && Object.keys(selectedInsight.agent_breakdown).length > 0 ? (
-                  <div className="w-full space-y-2">
-                    {Object.entries(selectedInsight.agent_breakdown).slice(0, 4).map(([agent, data]: [string, any]) => (
-                      <div key={agent} className="flex items-center justify-between p-2 bg-muted rounded-lg">
-                        <span className="text-sm font-medium">{agent}</span>
-                        <span className="text-sm text-muted-foreground">
-                          {data.non_booking_count || 0} non-bookings
-                        </span>
+                  <div className="flex-1 overflow-y-auto space-y-2 max-h-[320px]">
+                    {Object.entries(selectedInsight.agent_breakdown)
+                      .sort((a: [string, any], b: [string, any]) => 
+                        (b[1].non_booking_count || 0) - (a[1].non_booking_count || 0)
+                      )
+                      .map(([agent, data]: [string, any]) => (
+                      <div key={agent} className="p-3 bg-muted rounded-lg space-y-1">
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm font-medium">{agent}</span>
+                          <Badge variant="secondary" className="text-xs">
+                            {data.non_booking_count || 0} non-bookings
+                          </Badge>
+                        </div>
+                        {data.top_objection && data.top_objection !== 'none' && (
+                          <p className="text-xs text-muted-foreground">
+                            Top objection: {data.top_objection}
+                          </p>
+                        )}
+                        {data.improvement_area && data.improvement_area !== 'Review call recordings for coaching opportunities' && (
+                          <p className="text-xs text-primary/80 mt-1">
+                            💡 {data.improvement_area}
+                          </p>
+                        )}
                       </div>
                     ))}
                   </div>
                 ) : (
-                  <p className="text-sm text-muted-foreground max-w-[280px]">
-                    Run analysis to see which agents have the highest non-booking rates
-                  </p>
+                  <div className="flex-1 flex items-center justify-center">
+                    <p className="text-sm text-muted-foreground text-center max-w-[280px]">
+                      Run analysis to see which agents have the highest non-booking rates
+                    </p>
+                  </div>
                 )}
               </CardContent>
             </Card>
