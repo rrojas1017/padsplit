@@ -1,198 +1,159 @@
 
+# Date Range Filtering for Non-Booking Analysis Results
 
-# Enable Non-Booking Analysis for 70 Transcribed Records
+## Current Behavior
 
-## Overview
+The Non-Booking Analysis tab has these components that need to respect the date filter:
 
-Create a Non-Booking specific analysis pipeline that mirrors the existing Booking Insights pattern but focuses on understanding why members didn't convert. This will analyze the 70 currently transcribed Non-Booking records.
-
----
-
-## Current State
-
-| Metric | Value |
-|--------|-------|
-| Total Non-Booking Records | 3,286 |
-| Transcribed with call_key_points | 70 |
-| Available data per record | concerns, objections, sentiment, readiness, summary |
-
-Sample data shows rich insights including:
-- Reasons for not booking ("shared living model doesn't meet needs", "found an apartment")
-- Sentiment breakdown (positive/neutral/negative)
-- Move-in readiness levels (high/medium/low)
-- Recommended follow-up actions
+| Component | Current Behavior | Expected Behavior |
+|-----------|-----------------|-------------------|
+| Summary Cards (stats) | Respects date filter via `get_non_booking_stats` RPC | Correct |
+| Run Analysis button | Passes date range to edge function | Correct |
+| Previous analyses dropdown | Shows ALL analyses regardless of date | Filter by matching date range |
+| Auto-select insight | Selects most recent overall | Select most recent matching date range |
+| Insight data display | Shows selected insight data | Show matching insight OR prompt to run |
 
 ---
 
 ## Implementation
 
-### Phase 1: Database Schema
+### Frontend Changes
 
-Create a `non_booking_insights` table to store aggregated analysis results:
+**File: `src/components/call-insights/NonBookingAnalysisTab.tsx`**
 
-```text
-non_booking_insights
-+-- id (uuid, primary key)
-+-- analysis_period (text)
-+-- date_range_start (date)
-+-- date_range_end (date)
-+-- total_calls_analyzed (integer)
-+-- rejection_reasons (jsonb)         -- categorized reasons they didn't book
-+-- missed_opportunities (jsonb)      -- high-readiness non-bookers
-+-- sentiment_distribution (jsonb)    -- positive/neutral/negative breakdown
-+-- objection_patterns (jsonb)        -- common hesitations with responses
-+-- recovery_recommendations (jsonb)  -- AI-generated strategies
-+-- agent_breakdown (jsonb)           -- per-agent non-booking stats
-+-- market_breakdown (jsonb)          -- geographic patterns
-+-- trend_comparison (jsonb)          -- vs previous period
-+-- avg_call_duration_seconds (numeric)
-+-- raw_analysis (text)
-+-- status (text)                     -- processing/completed/failed
-+-- error_message (text)
-+-- created_at (timestamptz)
-+-- created_by (uuid)
-```
+1. **Filter previous insights by date range**
+   - Modify the query for `previousInsights` to filter by `analysis_period` matching the current `dateRange`
+   - This ensures users only see analyses relevant to their selected time period
 
-### Phase 2: Edge Function
+2. **Update auto-select logic**
+   - When date range changes, find a matching insight for that period
+   - If no matching insight exists, clear selection and prompt user to run analysis
 
-Create `analyze-non-booking-insights` edge function following the existing background processing pattern:
+3. **Add date range info to dropdown**
+   - Show both timestamp AND the date range period in the dropdown items
+   - Format: "Last 30 Days - Feb 1, 2026 2:30 PM"
 
-**Data Collection:**
-1. Query `bookings` where `status = 'Non Booking'` and `transcription_status = 'completed'`
-2. Join with `booking_transcriptions` to get `call_key_points`
-3. Aggregate concerns, objections, sentiment, readiness scores
+4. **Clear insight when date range changes to unmatched period**
+   - Reset `selectedInsightId` when switching to a date range with no existing analysis
+   - Show "No analysis for this period" message in charts
 
-**AI Analysis Focus (Non-Booking Specific Prompt):**
-- Why didn't they book? (categorize rejection reasons)
-- What objections came up? (with suggested responses)
-- Which were missed opportunities? (high readiness but didn't convert)
-- Recovery recommendations by pattern
-- Agent performance breakdown
-
-**Processing Pattern:**
-- Use `EdgeRuntime.waitUntil()` for background processing
-- Return immediate "processing" response with insight ID
-- Update status to "completed" when done
-
-### Phase 3: Frontend Integration
-
-**File: NonBookingAnalysisTab.tsx**
-1. Enable "Run Analysis" button (remove disabled state and tooltip)
-2. Add state management for `isAnalyzing` and `selectedInsight`
-3. Create `useNonBookingInsightsPolling` hook (similar to member insights)
-4. Wire up edge function invocation
-5. Add previous analyses selector dropdown
-6. Pass real data to child components
-
-**File: NonBookingReasonsChart.tsx**
-- Accept `reasons` prop from parent
-- Display real rejection reasons with percentages
-- Remove placeholder state when data exists
-
-**File: NonBookingSentimentChart.tsx**
-- Accept `sentiment` prop from parent
-- Show actual positive/neutral/negative distribution
-
-**File: NonBookingMissedOpportunitiesPanel.tsx**
-- Accept `missedOpportunities` prop with details
-- Show recoverable opportunities with suggestions
-
-**File: NonBookingRecommendationsPanel.tsx**
-- Accept AI-generated recovery strategies
-- Display actionable items with priority badges
+5. **Show date range badge on analysis results**
+   - Display a badge showing which period the current results are for
+   - Help users understand if they're viewing stale data vs current filter
 
 ---
 
-## AI Prompt Design
+## Code Changes
 
-The edge function will use a specialized prompt for Non-Booking analysis:
+### Query Filter Update
 
-```text
-You are analyzing PadSplit calls that DID NOT result in a booking.
-Your goal is to understand why members didn't convert and identify recovery opportunities.
+```typescript
+// Fetch previous insights - FILTER BY DATE RANGE
+const { data: previousInsights, refetch: refetchInsights } = useQuery({
+  queryKey: ['non-booking-insights-list', dateRange], // Add dateRange to key
+  queryFn: async (): Promise<NonBookingInsight[]> => {
+    const { data, error } = await supabase
+      .from('non_booking_insights')
+      .select('*')
+      .eq('status', 'completed')
+      .eq('analysis_period', dateRange) // Filter by matching period
+      .order('created_at', { ascending: false })
+      .limit(10);
 
-CONTEXT: PadSplit offers affordable room rentals with shared living.
-These are calls where the member did NOT book a room.
+    if (error) throw error;
+    return (data || []) as NonBookingInsight[];
+  },
+});
+```
 
-DATA FROM [X] NON-BOOKING CALLS:
-- Concerns: [aggregated from call_key_points.memberConcerns]
-- Objections: [aggregated from call_key_points.objections]
-- Sentiment breakdown: [counts]
-- Readiness breakdown: [counts]
+### Auto-select Reset on Date Range Change
 
-ANALYZE AND RETURN:
-{
-  "rejection_reasons": [
-    {"reason": "Product-Market Mismatch", "percentage": 35, 
-     "examples": ["Looking for whole apartment", "Don't want roommates"]}
-  ],
-  "missed_opportunities": [
-    {"pattern": "High readiness but no availability", 
-     "count": 12, "recovery_suggestion": "Follow up when units open"}
-  ],
-  "objection_patterns": [
-    {"objection": "Pricing concerns", "frequency": 15,
-     "suggested_response": "Emphasize weekly payment flexibility"}
-  ],
-  "recovery_recommendations": [
-    {"recommendation": "24-hour follow-up for voicemails",
-     "priority": "high", "category": "Process", 
-     "expected_impact": "Could recover 15% of non-bookers"}
-  ],
-  "agent_breakdown": {
-    "Abdul": {"non_booking_rate": 12, "common_objection": "timing"}
+```typescript
+// Reset selection when date range changes and no matching insight exists
+useEffect(() => {
+  if (previousInsights) {
+    if (previousInsights.length > 0) {
+      // Auto-select most recent insight for this period
+      setSelectedInsightId(previousInsights[0].id);
+    } else {
+      // No insights for this period - clear selection
+      setSelectedInsightId(null);
+    }
   }
-}
+}, [previousInsights, dateRange]);
+```
+
+### Dropdown with Period Info
+
+```typescript
+<SelectItem key={insight.id} value={insight.id}>
+  <span className="flex items-center gap-2">
+    <span>{getPeriodLabel(insight.analysis_period)}</span>
+    <span className="text-muted-foreground text-xs">
+      {format(new Date(insight.created_at), 'MMM d, h:mm a')}
+    </span>
+  </span>
+</SelectItem>
+```
+
+### No Data State for Unanalyzed Period
+
+When `selectedInsightId` is null but data exists for the period:
+
+```typescript
+{!selectedInsight && hasTranscribed && (
+  <Card className="border-amber-500/50 bg-amber-500/5">
+    <CardContent className="py-4">
+      <div className="flex items-center gap-3">
+        <Sparkles className="h-5 w-5 text-amber-500" />
+        <div>
+          <p className="font-medium">No analysis for this time period</p>
+          <p className="text-sm text-muted-foreground">
+            Click "Run Analysis" to generate insights for {getPeriodLabel(dateRange)}
+          </p>
+        </div>
+      </div>
+    </CardContent>
+  </Card>
+)}
 ```
 
 ---
 
-## File Changes Summary
+## User Experience Flow
 
-| File | Action |
-|------|--------|
-| `supabase/migrations/xxx_create_non_booking_insights.sql` | Create table + RLS |
-| `supabase/functions/analyze-non-booking-insights/index.ts` | New edge function |
-| `supabase/config.toml` | Add function config |
-| `src/hooks/useNonBookingInsightsPolling.ts` | New polling hook |
-| `src/components/call-insights/NonBookingAnalysisTab.tsx` | Enable analysis, wire data |
-| `src/components/call-insights/NonBookingReasonsChart.tsx` | Accept real data |
-| `src/components/call-insights/NonBookingSentimentChart.tsx` | Accept real data |
-| `src/components/call-insights/NonBookingMissedOpportunitiesPanel.tsx` | Accept detailed data |
-| `src/components/call-insights/NonBookingRecommendationsPanel.tsx` | Accept recommendations |
-
----
-
-## Expected Output
-
-After running analysis on the 70 transcribed Non-Booking calls:
-
-**Rejection Reasons Chart:**
-- Product-Market Mismatch (e.g., "wanted whole apartment")
-- Timing Issues (e.g., "busy, call back later")
-- Already Found Housing
-- Pricing Concerns
-- Availability Issues
-
-**Missed Opportunities Panel:**
-- High-readiness non-bookers with recovery suggestions
-- Voicemail patterns with follow-up recommendations
-
-**Recommendations Panel:**
-- AI-generated recovery strategies
-- Priority-ranked action items
-- Expected impact estimates
+```text
+User selects "Last 7 Days"
+        |
+        v
+  Query filters to insights with analysis_period = "last7days"
+        |
+        v
+  [Found matching insight?]
+        |
+    Yes |         No
+        v          v
+  Auto-select    Clear selection
+  most recent    Show "No analysis" banner
+        |          |
+        v          v
+  Display        Prompt to run
+  charts         analysis
+```
 
 ---
 
-## Processing Estimate
+## Files to Modify
 
-| Step | Time |
-|------|------|
-| Data aggregation (70 records) | ~1 second |
-| AI analysis (Gemini 2.5 Pro) | ~15-30 seconds |
-| Database update | ~1 second |
-| **Total** | ~30 seconds |
+| File | Changes |
+|------|---------|
+| `src/components/call-insights/NonBookingAnalysisTab.tsx` | Filter insights query by dateRange, update auto-select logic, add period badge |
 
-**Cost:** ~$0.02 per analysis run
+---
 
+## Technical Notes
+
+- The edge function already stores `analysis_period` with each insight
+- Existing insight has `analysis_period: 'allTime'` so it will only show when "All Time" is selected
+- Running analysis for "Last 30 Days" will create a new insight with `analysis_period: 'last30days'`
+- Users can run multiple analyses for the same period (shows history)
