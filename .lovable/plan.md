@@ -1,125 +1,210 @@
 
-# Fix: Priority Badges Showing All Records as Urgent
+# Secure SendGrid Email Integration for Follow-Up Emails
 
-## Problem Analysis
+## Overview
 
-All records are showing as **URGENT** because of the "unresolved objections" rule in the priority logic. The issue has two parts:
-
-### Root Cause #1: Objections Are Rarely "Unresolved"
-The transcription AI extracts **all objections mentioned** during a call, not just unresolved ones. Looking at the data:
-- "No objections were raised; the member was fully prepared" → Still stored as an objection entry
-- "The member did not raise any direct objections, but did question..." → Stored as objection
-
-The current logic treats ANY entry in the `objections` array as an urgent follow-up signal, which is incorrect.
-
-### Root Cause #2: Low Threshold (2 days)
-The rule `hasObjections && daysSinceContact >= 2` is too aggressive:
-- A booking from 2 days ago with ANY objection mentioned = URGENT
-- Combined with the fact that most calls have objections noted = Everything is urgent
+Implement a secure email sending system using SendGrid that allows users to send follow-up emails to contacts directly from the Reports page and Contact Profile Hover Card. Emails will be sent via a backend Edge Function using your rotated SendGrid API key stored securely as a secret.
 
 ---
 
-## Solution
+## Architecture
 
-### 1. Remove or Demote the "Objections" Rule
-
-The `objections` field captures conversation context, not follow-up signals. The AI's extraction includes resolved objections, clarification questions, and even "no objections raised" notes.
-
-**Change**: Remove objections from URGENT triggers. Move to HIGH priority only when combined with other signals (medium readiness).
-
-### 2. Increase Time Thresholds
-
-Current thresholds are too short for a booking workflow:
-| Rule | Current | Proposed |
-|------|---------|----------|
-| High readiness, no contact | 3+ days | 5+ days |
-| Objections trigger | 2+ days | Remove from urgent |
-| Move-in approaching | 3 days | 3 days (keep) |
-
-### 3. Add "Resolution Indicator" Check
-
-Only flag objections as requiring follow-up if the transcription explicitly indicates they weren't resolved. This requires checking if the call ended positively (booking completed = objections were addressed).
+```text
+┌─────────────────────┐     ┌─────────────────────┐     ┌─────────────────┐
+│   Reports Page /    │────▶│   Edge Function     │────▶│   SendGrid API  │
+│   Hover Card        │     │   send-follow-up-   │     │   (SMTP/API)    │
+│                     │     │   email             │     │                 │
+└─────────────────────┘     └─────────────────────┘     └─────────────────┘
+         │                           │
+         │                           ▼
+         │                  ┌─────────────────────┐
+         │                  │  contact_           │
+         └─────────────────▶│  communications     │
+                            │  (audit log)        │
+                            └─────────────────────┘
+```
 
 ---
 
-## Implementation
+## Implementation Steps
 
-### File: `src/utils/followUpPriority.ts`
+### Step 1: Add SendGrid API Key as Secret
+
+Securely store the SendGrid API key as a secret in your backend:
+
+| Secret Name | Value | Purpose |
+|-------------|-------|---------|
+| `SENDGRID_API_KEY` | Your rotated key | Authenticate with SendGrid API |
+
+---
+
+### Step 2: Create Edge Function `send-follow-up-email`
+
+New file: `supabase/functions/send-follow-up-email/index.ts`
+
+**Features:**
+- Accepts booking ID, recipient email, subject, and message body
+- Uses SendGrid Web API (not SMTP) for better reliability
+- Validates user has `can_send_communications` permission
+- Logs communication to `contact_communications` table
+- Sends from `noreply@padsplit.tools` with "PadSplit" sender name
+
+**Email Template Options:**
+1. **Quick Follow-Up** - Short personalized check-in
+2. **Move-In Reminder** - Confirmation with key dates
+3. **Re-Engagement** - For postponed/non-booking recovery
+
+---
+
+### Step 3: Create Email Compose Dialog Component
+
+New file: `src/components/reports/SendEmailDialog.tsx`
+
+**Features:**
+- Modal dialog triggered from Reports page or Hover Card
+- Template selector (Quick Follow-Up, Move-In Reminder, Re-Engagement)
+- Auto-populated fields from booking data:
+  - Member name
+  - Move-in date (if applicable)
+  - Market location
+- Custom subject line and message body editing
+- Preview before sending
+- Loading state and success/error feedback
+
+---
+
+### Step 4: Update Contact Profile Hover Card
+
+Modify: `src/components/reports/ContactProfileHoverCard.tsx`
 
 **Changes:**
+- Replace current `mailto:` link with dialog trigger
+- Open SendEmailDialog with booking context pre-filled
+- Keep fallback to `mailto:` if user doesn't have permission
 
-1. **Update URGENT triggers** (remove objections rule from urgent, adjust thresholds):
+---
 
-```typescript
-// 🔴 URGENT Priority Logic
-// 1. High readiness + no contact in 5+ days (increased from 3)
-if (readiness === 'high' && daysSinceContact >= 5) {
-  return { 
-    level: 'urgent', 
-    reason: `High readiness, no contact in ${daysSinceContact} days` 
-  };
-}
+### Step 5: Add Email Action to Reports Table
 
-// 2. Pending Move-In with move-in within 3 days and no recent contact (keep as-is)
-// ...
+Modify: `src/pages/Reports.tsx`
 
-// REMOVED: Objections rule from urgent - objections in transcripts are typically addressed
+**Changes:**
+- Add email icon button in actions column (or dropdown menu)
+- Opens SendEmailDialog for the selected record
+- Disabled for records without email or without permission
+
+---
+
+## Database Considerations
+
+The existing `contact_communications` table already tracks communications:
+
+| Column | Type | Purpose |
+|--------|------|---------|
+| `communication_type` | text | Already supports 'email' |
+| `recipient_email` | text | Already available |
+| `message_preview` | text | Can store email subject |
+| `status` | text | 'sent', 'failed', 'delivered' |
+
+**Enhancement (optional):**
+Add a `subject` column to store email subjects separately from preview, or use existing `message_preview` for subject line.
+
+---
+
+## Security Considerations
+
+| Concern | Solution |
+|---------|----------|
+| API Key Exposure | Stored as Supabase secret, only accessible in Edge Function |
+| Unauthorized Sending | Check `can_send_communications` permission before sending |
+| Audit Trail | All emails logged to `contact_communications` table |
+| Rate Limiting | SendGrid has built-in rate limits; consider UI debounce |
+| Email Validation | Validate recipient email format before sending |
+
+---
+
+## Email Templates
+
+### Template 1: Quick Follow-Up
+```text
+Subject: Following up on your PadSplit interest, {memberName}
+
+Hi {memberName},
+
+I wanted to check in following our recent conversation about PadSplit housing in {marketCity}. 
+
+Do you have any questions I can help answer?
+
+Best regards,
+{agentName}
+PadSplit Team
 ```
 
-2. **Move objections to HIGH priority with stricter conditions**:
+### Template 2: Move-In Reminder
+```text
+Subject: Your upcoming move-in on {moveInDate}
 
-```typescript
-// 🟠 HIGH Priority Logic
-// Only flag objections for Non-Booking status (where they likely weren't resolved)
-if (booking.status === 'Non Booking' && hasObjections && daysSinceContact >= 3) {
-  return { 
-    level: 'high', 
-    reason: 'Non-booking with objections to address' 
-  };
-}
+Hi {memberName},
+
+Just a friendly reminder about your scheduled move-in on {moveInDate} in {marketCity}, {marketState}.
+
+Please let us know if anything has changed or if you need any assistance preparing for your move.
+
+Best regards,
+{agentName}
+PadSplit Team
 ```
 
-3. **Add status-aware logic** - For "Pending Move-In" status, the member booked successfully, so objections were resolved:
+### Template 3: Re-Engagement
+```text
+Subject: Still looking for housing, {memberName}?
 
-```typescript
-// For Pending Move-In, objections were resolved (they booked!) - don't use as priority signal
-const effectiveHasUnresolvedObjections = booking.status === 'Non Booking' && hasObjections;
+Hi {memberName},
+
+I noticed your search for housing in {marketCity} hasn't moved forward yet. 
+
+I'd love to help you find the right fit. Would you like to schedule a quick call to discuss your options?
+
+Best regards,
+{agentName}
+PadSplit Team
 ```
 
 ---
 
-## Updated Priority Logic Table
+## Files to Create
 
-| Trigger | Level | Condition | Rationale |
-|---------|-------|-----------|-----------|
-| High readiness + stale | URGENT | `readiness=high` + 5+ days no contact | Hot lead going cold |
-| Move-in imminent | URGENT | Pending + ≤3 days to move-in + 1+ day no contact | Confirmation needed |
-| High readiness + recent | HIGH | `readiness=high` + 1-4 days no contact | Maintain momentum |
-| Non-booking + objections | HIGH | Non-booking status + has objections + 3+ days | Recovery opportunity |
-| Non-booking + high readiness | HIGH | Non-booking + `readiness=high` | Recovery opportunity |
-| Move-in approaching | HIGH | Pending + 4-7 days to move-in + 2+ days no contact | Planning ahead |
-| Medium readiness + concerns | HIGH | `readiness=medium` + has concerns | Nurture lead |
-| Medium readiness + stale | MEDIUM | `readiness=medium` + 5+ days no contact | Re-engage |
-| Postponed + stale | MEDIUM | Postponed status + 5+ days no contact | Check-in time |
-
----
+| File | Purpose |
+|------|---------|
+| `supabase/functions/send-follow-up-email/index.ts` | Edge function for sending emails via SendGrid |
+| `src/components/reports/SendEmailDialog.tsx` | Email compose dialog component |
 
 ## Files to Modify
 
 | File | Changes |
 |------|---------|
-| `src/utils/followUpPriority.ts` | Update priority rules, remove objections from urgent, add status-aware logic |
+| `supabase/config.toml` | Add function config for `send-follow-up-email` |
+| `src/components/reports/ContactProfileHoverCard.tsx` | Replace mailto with dialog trigger |
+| `src/pages/Reports.tsx` | Add email action button |
+| `src/hooks/useContactCommunications.ts` | Add `sendEmail` function that calls edge function |
 
 ---
 
-## Expected Result After Fix
+## User Flow
 
-For today's records (Jan 30-31 bookings viewed on Feb 1):
+1. User clicks **Email** button on Reports row or Hover Card
+2. **SendEmailDialog** opens with member info pre-filled
+3. User selects template or writes custom message
+4. User clicks **Send**
+5. Edge function validates permission, sends via SendGrid
+6. Communication logged to `contact_communications`
+7. User sees success toast and dialog closes
 
-| Record | Status | Readiness | Days Since | Expected Priority |
-|--------|--------|-----------|------------|-------------------|
-| Rashan Baham | Pending Move-In | high | 2 | HIGH (maintain momentum) |
-| uvaldo lopez | Pending Move-In | high | 2 | HIGH (maintain momentum) |
-| Travis Smalls | Pending Move-In | medium | 2 | LOW (recently contacted) |
+---
 
-Records with "Moved In" / "Cancelled" / "No Show" / "Member Rejected" status will continue to show no badge.
+## Technical Notes
+
+- Uses SendGrid Web API v3 (`@sendgrid/mail` npm equivalent via fetch)
+- Edge function validates JWT and checks user permission
+- Sender configured as `noreply@padsplit.tools` (your verified domain)
+- Template variables replaced server-side for consistency
