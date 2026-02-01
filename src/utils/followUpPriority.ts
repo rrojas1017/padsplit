@@ -61,8 +61,8 @@ export function calculateFollowUpPriority(
   }
 
   // 🔴 URGENT Priority Logic
-  // 1. High readiness + no contact in 3+ days
-  if (readiness === 'high' && daysSinceContact >= 3) {
+  // 1. High readiness + no contact in 5+ days (hot lead going cold)
+  if (readiness === 'high' && daysSinceContact >= 5) {
     return { 
       level: 'urgent', 
       reason: `High readiness, no contact in ${daysSinceContact} days` 
@@ -77,28 +77,23 @@ export function calculateFollowUpPriority(
     };
   }
 
-  // 3. Has unresolved objections needing attention (from transcription)
-  if (hasObjections && daysSinceContact >= 2) {
-    return { 
-      level: 'urgent', 
-      reason: 'Unresolved objections need addressing' 
-    };
-  }
+  // NOTE: Objections removed from URGENT - transcription AI captures all mentioned objections,
+  // including resolved ones. For Pending Move-In, member booked = objections were addressed.
 
   // 🟠 HIGH Priority Logic
-  // 1. High readiness with recent contact (1-2 days) - maintain momentum
-  if (readiness === 'high' && daysSinceContact >= 1 && daysSinceContact < 3) {
+  // 1. High readiness with recent contact (1-4 days) - maintain momentum
+  if (readiness === 'high' && daysSinceContact >= 1 && daysSinceContact < 5) {
     return { 
       level: 'high', 
       reason: 'High readiness, maintain engagement' 
     };
   }
 
-  // 2. Medium readiness with unresolved concerns
-  if (readiness === 'medium' && hasConcerns) {
+  // 2. Non-Booking with objections - recovery opportunity (objections likely unresolved)
+  if (booking.status === 'Non Booking' && hasObjections && daysSinceContact >= 3) {
     return { 
       level: 'high', 
-      reason: 'Medium readiness with concerns to address' 
+      reason: 'Non-booking with objections to address' 
     };
   }
 
@@ -110,7 +105,15 @@ export function calculateFollowUpPriority(
     };
   }
 
-  // 4. Pending Move-In approaching (4-7 days out) without recent contact
+  // 4. Medium readiness with unresolved concerns
+  if (readiness === 'medium' && hasConcerns) {
+    return { 
+      level: 'high', 
+      reason: 'Medium readiness with concerns to address' 
+    };
+  }
+
+  // 5. Pending Move-In approaching (4-7 days out) without recent contact
   if (booking.status === 'Pending Move-In' && daysUntilMoveIn !== null && daysUntilMoveIn > 3 && daysUntilMoveIn <= 7 && daysSinceContact >= 2) {
     return { 
       level: 'high', 
@@ -119,8 +122,8 @@ export function calculateFollowUpPriority(
   }
 
   // 🟡 MEDIUM Priority Logic
-  // 1. Medium readiness without recent follow-up
-  if (readiness === 'medium' && daysSinceContact >= 3) {
+  // 1. Medium readiness without recent follow-up (5+ days)
+  if (readiness === 'medium' && daysSinceContact >= 5) {
     return { 
       level: 'medium', 
       reason: 'Medium readiness, re-engage this week' 
