@@ -137,7 +137,7 @@ async function processNonBookingAnalysis(
     const sentimentCounts = { positive: 0, neutral: 0, negative: 0 };
     const readinessCounts = { high: 0, medium: 0, low: 0 };
     const marketData: Record<string, { concerns: string[], objections: string[], count: number }> = {};
-    const agentData: Record<string, { nonBookingCount: number, objections: string[], concerns: string[] }> = {};
+    const agentData: Record<string, { nonBookingCount: number, objections: string[], concerns: string[], sentiments: string[] }> = {};
     let totalDuration = 0;
     let durationCount = 0;
 
@@ -208,11 +208,12 @@ async function processNonBookingAnalysis(
 
       // Track by agent
       if (!agentData[agentName]) {
-        agentData[agentName] = { nonBookingCount: 0, objections: [], concerns: [] };
+        agentData[agentName] = { nonBookingCount: 0, objections: [], concerns: [], sentiments: [] };
       }
       agentData[agentName].nonBookingCount++;
       if (keyPoints.objections) agentData[agentName].objections.push(...keyPoints.objections);
       if (keyPoints.memberConcerns) agentData[agentName].concerns.push(...keyPoints.memberConcerns);
+      if (keyPoints.callSentiment) agentData[agentName].sentiments.push(keyPoints.callSentiment);
     }
 
     // Calculate average call duration
@@ -224,6 +225,61 @@ async function processNonBookingAnalysis(
       neutral: { count: sentimentCounts.neutral, percentage: Math.round((sentimentCounts.neutral / totalCalls) * 100) },
       negative: { count: sentimentCounts.negative, percentage: Math.round((sentimentCounts.negative / totalCalls) * 100) }
     };
+
+    // Pre-compute agent breakdown server-side (factual data)
+    const computedAgentBreakdown: Record<string, any> = {};
+    for (const [agentName, data] of Object.entries(agentData)) {
+      // Find most common objection
+      const objectionCounts: Record<string, number> = {};
+      data.objections.forEach(obj => {
+        objectionCounts[obj] = (objectionCounts[obj] || 0) + 1;
+      });
+      const topObjection = Object.entries(objectionCounts)
+        .sort((a, b) => b[1] - a[1])[0]?.[0] || 'none';
+      
+      // Find most common concern
+      const concernCounts: Record<string, number> = {};
+      data.concerns.forEach(c => {
+        concernCounts[c] = (concernCounts[c] || 0) + 1;
+      });
+      const topConcern = Object.entries(concernCounts)
+        .sort((a, b) => b[1] - a[1])[0]?.[0] || 'none';
+
+      computedAgentBreakdown[agentName] = {
+        non_booking_count: data.nonBookingCount,
+        top_objection: topObjection,
+        top_concern: topConcern,
+        total_objections: data.objections.length,
+        total_concerns: data.concerns.length
+      };
+    }
+    
+    // Pre-compute market breakdown server-side (factual data)
+    const computedMarketBreakdown: Record<string, any> = {};
+    for (const [market, data] of Object.entries(marketData)) {
+      const objectionCounts: Record<string, number> = {};
+      data.objections.forEach(obj => {
+        objectionCounts[obj] = (objectionCounts[obj] || 0) + 1;
+      });
+      const topObjection = Object.entries(objectionCounts)
+        .sort((a, b) => b[1] - a[1])[0]?.[0] || 'none';
+      
+      const concernCounts: Record<string, number> = {};
+      data.concerns.forEach(c => {
+        concernCounts[c] = (concernCounts[c] || 0) + 1;
+      });
+      const topConcern = Object.entries(concernCounts)
+        .sort((a, b) => b[1] - a[1])[0]?.[0] || 'none';
+
+      computedMarketBreakdown[market] = {
+        non_booking_count: data.count,
+        top_objection: topObjection,
+        top_concern: topConcern
+      };
+    }
+
+    console.log(`[Background] Pre-computed agent breakdown for ${Object.keys(computedAgentBreakdown).length} agents`);
+    console.log(`[Background] Pre-computed market breakdown for ${Object.keys(computedMarketBreakdown).length} markets`);
 
     // Build AI prompt for Non-Booking specific analysis
     const aiPrompt = `You are analyzing PadSplit calls that DID NOT result in a booking.
@@ -317,22 +373,21 @@ Analyze this NON-BOOKING data and return a JSON object with EXACTLY this structu
       "expected_impact": "Address top rejection reason more effectively"
     }
   ],
-  "agent_breakdown": {
-    "Abdul": {
-      "non_booking_count": 15,
-      "non_booking_rate_estimate": 12,
-      "top_objection": "timing issues",
-      "improvement_area": "Follow-up timing"
-    }
+  "agent_insights": {
+${Object.keys(agentData).map(name => `    "${name}": {
+      "improvement_area": "Specific coaching recommendation for this agent based on their patterns",
+      "pattern_observation": "Qualitative insight about this agent's non-booking calls"
+    }`).join(',\n')}
   },
-  "market_breakdown": {
-    "Atlanta, GA": {
-      "non_booking_count": 25,
-      "top_reason": "pricing",
-      "unique_pattern": "Higher price sensitivity than other markets"
-    }
+  "market_insights": {
+${Object.keys(marketData).map(market => `    "${market}": {
+      "unique_pattern": "What makes this market different",
+      "suggested_focus": "Specific recommendation for this market"
+    }`).join(',\n')}
   }
 }
+
+IMPORTANT: You MUST provide insights for EVERY agent and market listed above.
 
 REQUIREMENTS:
 - Focus on WHY they didn't book and HOW to recover them
@@ -340,7 +395,9 @@ REQUIREMENTS:
 - Percentages should be of total non-booking calls analyzed
 - Include at least 4-6 rejection reasons if data supports it
 - Provide actionable recovery recommendations
-- Include actual verbatim quotes in examples`;
+- Include actual verbatim quotes in examples
+- Provide agent_insights for ALL ${Object.keys(agentData).length} agents listed
+- Provide market_insights for ALL ${Object.keys(marketData).length} markets listed`;
 
     console.log('[Background] Sending data to AI for Non-Booking analysis...');
 
@@ -407,6 +464,31 @@ REQUIREMENTS:
       throw new Error('Failed to parse AI analysis response');
     }
 
+    // Merge computed agent data with AI insights
+    const finalAgentBreakdown: Record<string, any> = {};
+    for (const [agentName, data] of Object.entries(computedAgentBreakdown)) {
+      const aiInsight = parsedAnalysis.agent_insights?.[agentName] || {};
+      finalAgentBreakdown[agentName] = {
+        ...data,
+        improvement_area: aiInsight.improvement_area || 'Review call recordings for coaching opportunities',
+        pattern_observation: aiInsight.pattern_observation || null
+      };
+    }
+
+    // Merge computed market data with AI insights
+    const finalMarketBreakdown: Record<string, any> = {};
+    for (const [market, data] of Object.entries(computedMarketBreakdown)) {
+      const aiInsight = parsedAnalysis.market_insights?.[market] || {};
+      finalMarketBreakdown[market] = {
+        ...data,
+        unique_pattern: aiInsight.unique_pattern || null,
+        suggested_focus: aiInsight.suggested_focus || null
+      };
+    }
+
+    console.log(`[Background] Final agent breakdown: ${Object.keys(finalAgentBreakdown).length} agents`);
+    console.log(`[Background] Final market breakdown: ${Object.keys(finalMarketBreakdown).length} markets`);
+
     // Update insight record with results
     const updateResult = await supabase
       .from('non_booking_insights')
@@ -417,8 +499,8 @@ REQUIREMENTS:
         sentiment_distribution: sentimentDistribution,
         objection_patterns: parsedAnalysis.objection_patterns || [],
         recovery_recommendations: parsedAnalysis.recovery_recommendations || [],
-        agent_breakdown: parsedAnalysis.agent_breakdown || {},
-        market_breakdown: parsedAnalysis.market_breakdown || {},
+        agent_breakdown: finalAgentBreakdown,
+        market_breakdown: finalMarketBreakdown,
         avg_call_duration_seconds: avgCallDurationSeconds,
         raw_analysis: analysisText,
         status: 'completed'
