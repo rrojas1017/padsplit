@@ -77,3 +77,6 @@ verify_jwt = false
 
 [functions.compare-stt-providers]
 verify_jwt = true
+
+[functions.analyze-non-booking-insights]
+verify_jwt = true

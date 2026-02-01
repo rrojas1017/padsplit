@@ -1,19 +1,20 @@
 import { useState, useEffect, useCallback } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { NonBookingSummaryCards } from '@/components/call-insights/NonBookingSummaryCards';
 import { NonBookingReasonsChart } from '@/components/call-insights/NonBookingReasonsChart';
 import { NonBookingMissedOpportunitiesPanel } from '@/components/call-insights/NonBookingMissedOpportunitiesPanel';
 import { NonBookingSentimentChart } from '@/components/call-insights/NonBookingSentimentChart';
 import { NonBookingRecommendationsPanel } from '@/components/call-insights/NonBookingRecommendationsPanel';
 import { NonBookingTrendChart } from '@/components/call-insights/NonBookingTrendChart';
-import { Lightbulb, RefreshCw, Download, Loader2, Phone } from 'lucide-react';
-import { subDays, startOfDay } from 'date-fns';
+import { useNonBookingInsightsPolling } from '@/hooks/useNonBookingInsightsPolling';
+import { Lightbulb, RefreshCw, Download, Loader2, Phone, Clock } from 'lucide-react';
+import { subDays, startOfDay, format } from 'date-fns';
+import { toast } from 'sonner';
 
 type DateRangeOption = 'last7days' | 'last30days' | 'thisMonth' | 'last3months' | 'allTime';
 
@@ -29,8 +30,27 @@ interface NonBookingStats {
   highReadinessCalls: number;
 }
 
+interface NonBookingInsight {
+  id: string;
+  analysis_period: string;
+  date_range_start: string;
+  date_range_end: string;
+  total_calls_analyzed: number;
+  rejection_reasons: any[];
+  missed_opportunities: any[];
+  sentiment_distribution: any;
+  objection_patterns: any[];
+  recovery_recommendations: any[];
+  agent_breakdown: any;
+  market_breakdown: any;
+  status: string;
+  created_at: string;
+}
+
 export function NonBookingAnalysisTab({ dateRange, onDateRangeChange }: NonBookingAnalysisTabProps) {
-  const [isAnalyzing] = useState(false);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [selectedInsightId, setSelectedInsightId] = useState<string | null>(null);
+  const queryClient = useQueryClient();
 
   const getDateRangeDays = (option: DateRangeOption): number | null => {
     switch (option) {
@@ -43,8 +63,21 @@ export function NonBookingAnalysisTab({ dateRange, onDateRangeChange }: NonBooki
     }
   };
 
-  // Fetch stats using server-side aggregation (no 1000 row limit)
-  const { data: stats, isLoading } = useQuery({
+  const getDateRangeParams = (option: DateRangeOption) => {
+    const days = getDateRangeDays(option);
+    const endDate = new Date();
+    const startDate = days !== null 
+      ? startOfDay(subDays(new Date(), days))
+      : new Date('2020-01-01');
+    return {
+      start: format(startDate, 'yyyy-MM-dd'),
+      end: format(endDate, 'yyyy-MM-dd'),
+      period: option
+    };
+  };
+
+  // Fetch stats using server-side aggregation
+  const { data: stats, isLoading: statsLoading } = useQuery({
     queryKey: ['non-booking-stats', dateRange],
     queryFn: async (): Promise<NonBookingStats> => {
       const days = getDateRangeDays(dateRange);
@@ -58,7 +91,6 @@ export function NonBookingAnalysisTab({ dateRange, onDateRangeChange }: NonBooki
 
       if (error) throw error;
 
-      // RPC returns an array with one row
       const result = data?.[0] || { total_calls: 0, transcribed_calls: 0, high_readiness_calls: 0, avg_duration_seconds: 0 };
 
       return {
@@ -70,12 +102,104 @@ export function NonBookingAnalysisTab({ dateRange, onDateRangeChange }: NonBooki
     },
   });
 
-  const handleRunAnalysis = () => {
-    // Future: Will trigger edge function
-    // For now, show coming soon tooltip
+  // Fetch previous insights
+  const { data: previousInsights, refetch: refetchInsights } = useQuery({
+    queryKey: ['non-booking-insights-list'],
+    queryFn: async (): Promise<NonBookingInsight[]> => {
+      const { data, error } = await supabase
+        .from('non_booking_insights')
+        .select('*')
+        .eq('status', 'completed')
+        .order('created_at', { ascending: false })
+        .limit(10);
+
+      if (error) throw error;
+      return (data || []) as NonBookingInsight[];
+    },
+  });
+
+  // Fetch selected insight details
+  const { data: selectedInsight, isLoading: insightLoading } = useQuery({
+    queryKey: ['non-booking-insight', selectedInsightId],
+    queryFn: async (): Promise<NonBookingInsight | null> => {
+      if (!selectedInsightId) return null;
+      
+      const { data, error } = await supabase
+        .from('non_booking_insights')
+        .select('*')
+        .eq('id', selectedInsightId)
+        .single();
+
+      if (error) throw error;
+      return data as NonBookingInsight;
+    },
+    enabled: !!selectedInsightId,
+  });
+
+  // Polling hook
+  const { startPolling, checkExistingAnalysis } = useNonBookingInsightsPolling({
+    onComplete: () => {
+      setIsAnalyzing(false);
+      refetchInsights();
+      queryClient.invalidateQueries({ queryKey: ['non-booking-insight'] });
+    }
+  });
+
+  // Check for existing processing analysis on mount
+  useEffect(() => {
+    const checkProcessing = async () => {
+      const processingId = await checkExistingAnalysis();
+      if (processingId) {
+        setIsAnalyzing(true);
+      }
+    };
+    checkProcessing();
+  }, [checkExistingAnalysis]);
+
+  // Auto-select latest insight
+  useEffect(() => {
+    if (previousInsights && previousInsights.length > 0 && !selectedInsightId) {
+      setSelectedInsightId(previousInsights[0].id);
+    }
+  }, [previousInsights, selectedInsightId]);
+
+  const handleRunAnalysis = async () => {
+    if (isAnalyzing) return;
+    
+    if (!stats || stats.transcribedCalls === 0) {
+      toast.error('No transcribed Non-Booking calls available for analysis');
+      return;
+    }
+
+    setIsAnalyzing(true);
+    const params = getDateRangeParams(dateRange);
+
+    try {
+      const { data, error } = await supabase.functions.invoke('analyze-non-booking-insights', {
+        body: {
+          analysis_period: params.period,
+          date_range_start: params.start,
+          date_range_end: params.end
+        }
+      });
+
+      if (error) throw error;
+
+      if (data?.insight_id) {
+        toast.info('Non-Booking analysis started. This may take 30-60 seconds...');
+        startPolling(data.insight_id);
+        setSelectedInsightId(data.insight_id);
+      } else {
+        throw new Error('No insight ID returned');
+      }
+    } catch (error) {
+      console.error('Error starting analysis:', error);
+      toast.error('Failed to start Non-Booking analysis');
+      setIsAnalyzing(false);
+    }
   };
 
-  if (isLoading) {
+  if (statsLoading) {
     return (
       <div className="space-y-6">
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -91,15 +215,35 @@ export function NonBookingAnalysisTab({ dateRange, onDateRangeChange }: NonBooki
     );
   }
 
-  // Show empty state if no non-booking calls
   const hasData = stats && stats.totalCalls > 0;
-  const hasInsights = false; // Will be true when AI analysis is implemented
+  const hasTranscribed = stats && stats.transcribedCalls > 0;
+
+  // Format reasons for chart
+  const formattedReasons = selectedInsight?.rejection_reasons?.map((r: any) => ({
+    reason: r.reason,
+    count: r.count || 0,
+    percentage: r.percentage || 0
+  })) || [];
+
+  // Format sentiment for chart
+  const formattedSentiment = selectedInsight?.sentiment_distribution || null;
+
+  // Format missed opportunities
+  const formattedMissedOpportunities = selectedInsight?.missed_opportunities || [];
+
+  // Format recommendations
+  const formattedRecommendations = selectedInsight?.recovery_recommendations || [];
+  const formattedObjections = selectedInsight?.objection_patterns?.map((o: any) => ({
+    pattern: o.objection,
+    frequency: o.percentage || o.frequency || 0,
+    suggestion: o.suggested_response
+  })) || [];
 
   return (
     <div className="space-y-6">
       {/* Controls Row */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 flex-wrap">
           <Select value={dateRange} onValueChange={(v) => onDateRangeChange(v as DateRangeOption)}>
             <SelectTrigger className="w-[160px]">
               <SelectValue />
@@ -113,30 +257,41 @@ export function NonBookingAnalysisTab({ dateRange, onDateRangeChange }: NonBooki
             </SelectContent>
           </Select>
 
-          <TooltipProvider>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <span>
-                  <Button onClick={handleRunAnalysis} disabled>
-                    {isAnalyzing ? (
-                      <>
-                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                        Analyzing...
-                      </>
-                    ) : (
-                      <>
-                        <RefreshCw className="h-4 w-4 mr-2" />
-                        Run Analysis
-                      </>
-                    )}
-                  </Button>
-                </span>
-              </TooltipTrigger>
-              <TooltipContent>
-                <p>Coming soon - AI analysis for non-booking calls</p>
-              </TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
+          <Button 
+            onClick={handleRunAnalysis} 
+            disabled={isAnalyzing || !hasTranscribed}
+          >
+            {isAnalyzing ? (
+              <>
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                Analyzing...
+              </>
+            ) : (
+              <>
+                <RefreshCw className="h-4 w-4 mr-2" />
+                Run Analysis
+              </>
+            )}
+          </Button>
+
+          {previousInsights && previousInsights.length > 0 && (
+            <Select 
+              value={selectedInsightId || ''} 
+              onValueChange={setSelectedInsightId}
+            >
+              <SelectTrigger className="w-[200px]">
+                <Clock className="h-4 w-4 mr-2" />
+                <SelectValue placeholder="Previous analyses" />
+              </SelectTrigger>
+              <SelectContent>
+                {previousInsights.map((insight) => (
+                  <SelectItem key={insight.id} value={insight.id}>
+                    {format(new Date(insight.created_at), 'MMM d, yyyy h:mm a')}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
 
           <Button variant="outline" disabled>
             <Download className="h-4 w-4 mr-2" />
@@ -144,6 +299,23 @@ export function NonBookingAnalysisTab({ dateRange, onDateRangeChange }: NonBooki
           </Button>
         </div>
       </div>
+
+      {/* Analysis Status Banner */}
+      {isAnalyzing && (
+        <Card className="border-primary/50 bg-primary/5">
+          <CardContent className="py-4">
+            <div className="flex items-center gap-3">
+              <Loader2 className="h-5 w-5 animate-spin text-primary" />
+              <div>
+                <p className="font-medium">Analyzing Non-Booking calls...</p>
+                <p className="text-sm text-muted-foreground">
+                  This usually takes 30-60 seconds. You can navigate away and come back.
+                </p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {hasData ? (
         <>
@@ -153,27 +325,42 @@ export function NonBookingAnalysisTab({ dateRange, onDateRangeChange }: NonBooki
           {/* Analytics Row 1 */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <NonBookingReasonsChart 
+              reasons={formattedReasons}
               onRunAnalysis={handleRunAnalysis}
               isAnalyzing={isAnalyzing}
             />
             <NonBookingMissedOpportunitiesPanel 
               highReadinessCount={stats.highReadinessCalls}
               dateRange={dateRange}
+              missedOpportunities={formattedMissedOpportunities}
             />
           </div>
 
           {/* Analytics Row 2 */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <NonBookingSentimentChart />
+            <NonBookingSentimentChart sentiment={formattedSentiment} />
             <Card className="h-full">
               <CardContent className="pt-6 h-full flex flex-col items-center justify-center text-center min-h-[280px]">
                 <div className="p-4 rounded-full bg-primary/10 mb-4">
                   <Phone className="h-8 w-8 text-primary" />
                 </div>
                 <h4 className="font-medium mb-2">Agent Breakdown</h4>
-                <p className="text-sm text-muted-foreground max-w-[280px]">
-                  Coming soon - See which agents have the highest non-booking rates
-                </p>
+                {selectedInsight?.agent_breakdown && Object.keys(selectedInsight.agent_breakdown).length > 0 ? (
+                  <div className="w-full space-y-2">
+                    {Object.entries(selectedInsight.agent_breakdown).slice(0, 4).map(([agent, data]: [string, any]) => (
+                      <div key={agent} className="flex items-center justify-between p-2 bg-muted rounded-lg">
+                        <span className="text-sm font-medium">{agent}</span>
+                        <span className="text-sm text-muted-foreground">
+                          {data.non_booking_count || 0} non-bookings
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-sm text-muted-foreground max-w-[280px]">
+                    Run analysis to see which agents have the highest non-booking rates
+                  </p>
+                )}
               </CardContent>
             </Card>
           </div>
@@ -182,7 +369,10 @@ export function NonBookingAnalysisTab({ dateRange, onDateRangeChange }: NonBooki
           <NonBookingTrendChart dateRange={dateRange} />
 
           {/* Recommendations Panel */}
-          <NonBookingRecommendationsPanel />
+          <NonBookingRecommendationsPanel 
+            recommendations={formattedRecommendations}
+            recoveryPatterns={formattedObjections}
+          />
         </>
       ) : (
         <Card className="py-12">
