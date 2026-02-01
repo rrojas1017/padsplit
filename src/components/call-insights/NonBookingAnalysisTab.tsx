@@ -12,7 +12,8 @@ import { NonBookingSentimentChart } from '@/components/call-insights/NonBookingS
 import { NonBookingRecommendationsPanel } from '@/components/call-insights/NonBookingRecommendationsPanel';
 import { NonBookingTrendChart } from '@/components/call-insights/NonBookingTrendChart';
 import { useNonBookingInsightsPolling } from '@/hooks/useNonBookingInsightsPolling';
-import { Lightbulb, RefreshCw, Download, Loader2, Phone, Clock } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
+import { Lightbulb, RefreshCw, Download, Loader2, Phone, Clock, Sparkles } from 'lucide-react';
 import { subDays, startOfDay, format } from 'date-fns';
 import { toast } from 'sonner';
 
@@ -63,6 +64,17 @@ export function NonBookingAnalysisTab({ dateRange, onDateRangeChange }: NonBooki
     }
   };
 
+  const getPeriodLabel = (period: string): string => {
+    switch (period) {
+      case 'last7days': return 'Last 7 Days';
+      case 'last30days': return 'Last 30 Days';
+      case 'thisMonth': return 'This Month';
+      case 'last3months': return 'Last 3 Months';
+      case 'allTime': return 'All Time';
+      default: return period;
+    }
+  };
+
   const getDateRangeParams = (option: DateRangeOption) => {
     const days = getDateRangeDays(option);
     const endDate = new Date();
@@ -102,14 +114,15 @@ export function NonBookingAnalysisTab({ dateRange, onDateRangeChange }: NonBooki
     },
   });
 
-  // Fetch previous insights
+  // Fetch previous insights - FILTER BY DATE RANGE
   const { data: previousInsights, refetch: refetchInsights } = useQuery({
-    queryKey: ['non-booking-insights-list'],
+    queryKey: ['non-booking-insights-list', dateRange],
     queryFn: async (): Promise<NonBookingInsight[]> => {
       const { data, error } = await supabase
         .from('non_booking_insights')
         .select('*')
         .eq('status', 'completed')
+        .eq('analysis_period', dateRange)
         .order('created_at', { ascending: false })
         .limit(10);
 
@@ -156,12 +169,18 @@ export function NonBookingAnalysisTab({ dateRange, onDateRangeChange }: NonBooki
     checkProcessing();
   }, [checkExistingAnalysis]);
 
-  // Auto-select latest insight
+  // Auto-select latest insight for current date range (reset when date range changes)
   useEffect(() => {
-    if (previousInsights && previousInsights.length > 0 && !selectedInsightId) {
-      setSelectedInsightId(previousInsights[0].id);
+    if (previousInsights) {
+      if (previousInsights.length > 0) {
+        // Auto-select most recent insight for this period
+        setSelectedInsightId(previousInsights[0].id);
+      } else {
+        // No insights for this period - clear selection
+        setSelectedInsightId(null);
+      }
     }
-  }, [previousInsights, selectedInsightId]);
+  }, [previousInsights, dateRange]);
 
   const handleRunAnalysis = async () => {
     if (isAnalyzing) return;
@@ -286,7 +305,12 @@ export function NonBookingAnalysisTab({ dateRange, onDateRangeChange }: NonBooki
               <SelectContent>
                 {previousInsights.map((insight) => (
                   <SelectItem key={insight.id} value={insight.id}>
-                    {format(new Date(insight.created_at), 'MMM d, yyyy h:mm a')}
+                    <span className="flex items-center gap-2">
+                      <span>{getPeriodLabel(insight.analysis_period)}</span>
+                      <span className="text-muted-foreground text-xs">
+                        {format(new Date(insight.created_at), 'MMM d, h:mm a')}
+                      </span>
+                    </span>
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -317,8 +341,37 @@ export function NonBookingAnalysisTab({ dateRange, onDateRangeChange }: NonBooki
         </Card>
       )}
 
+      {/* No Analysis for Period Banner */}
+      {!selectedInsight && hasTranscribed && !isAnalyzing && (
+        <Card className="border-amber-500/50 bg-amber-500/5">
+          <CardContent className="py-4">
+            <div className="flex items-center gap-3">
+              <Sparkles className="h-5 w-5 text-amber-500" />
+              <div>
+                <p className="font-medium">No analysis for this time period</p>
+                <p className="text-sm text-muted-foreground">
+                  Click "Run Analysis" to generate insights for {getPeriodLabel(dateRange)}
+                </p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {hasData ? (
         <>
+          {/* Period Badge */}
+          {selectedInsight && (
+            <div className="flex items-center gap-2">
+              <Badge variant="outline" className="text-xs">
+                Showing results for: {getPeriodLabel(selectedInsight.analysis_period)}
+              </Badge>
+              <span className="text-xs text-muted-foreground">
+                Analyzed {format(new Date(selectedInsight.created_at), 'MMM d, yyyy h:mm a')}
+              </span>
+            </div>
+          )}
+
           {/* Summary Cards */}
           <NonBookingSummaryCards stats={stats} />
 
