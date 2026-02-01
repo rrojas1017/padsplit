@@ -1,148 +1,174 @@
 
+# Follow-Up Priority Badges Implementation
 
-# Fix Agent Breakdown in Non-Booking Analysis
+## Overview
 
-## Problem Identified
-
-The current implementation correctly collects agent data from the database (all 7 agents), but the AI model is only returning a subset (1 agent: Abdul) in its `agent_breakdown` response.
-
-**Expected vs Actual:**
-
-| Agent | Actual Records | AI Returned |
-|-------|---------------|-------------|
-| Megane | 27 | Missing |
-| Abdullah | 15 | 15 (as "Abdul") |
-| Anel | 11 | Missing |
-| Win | 8 | Missing |
-| Paul E. | 5 | Missing |
-| Christine Joy Serra | 2 | Missing |
-| John Mosquera | 2 | Missing |
-
-## Root Cause
-
-The AI prompt in `analyze-non-booking-insights/index.ts` does not enforce that **all agents** must be included in the response. The AI is interpreting this as optional summarization.
-
-## Solution
-
-Update the edge function to:
-
-1. **Pre-compute the agent breakdown** server-side instead of relying on AI to preserve this data
-2. **Only ask AI for analytical insights** (improvement areas, top objections interpretation)
-3. **Merge server-computed counts with AI-generated insights**
-
-This ensures:
-- Agent counts are always accurate (computed from source data)
-- AI still provides qualitative analysis per agent
-- No data loss from AI summarization
+Add intelligent follow-up priority badges to records in the Reports page and Contact Profile Hover Card. These badges will identify which contacts need immediate attention based on conversation insights, status, and recency of contact.
 
 ---
 
-## Implementation
+## Priority Logic
 
-### File: `supabase/functions/analyze-non-booking-insights/index.ts`
+### Statuses That Need Follow-Up
 
-**Changes:**
+| Status | Follow-Up Needed? | Notes |
+|--------|------------------|-------|
+| Pending Move-In | Yes | Active lead, may need confirmation |
+| Postponed | Yes | Re-engage when ready |
+| Non Booking | Yes | Recovery opportunity |
+| Moved In | No | Completed journey |
+| Member Rejected | No | Closed out |
+| No Show | No | Closed out |
+| Cancelled | No | Closed out |
 
-1. **Store computed agent data directly** instead of relying on AI to return it:
+### Priority Levels
 
-```typescript
-// Current: AI returns agent_breakdown
-// New: Compute agent_breakdown directly from agentData
+**🔴 URGENT** - Highest priority, needs immediate attention
+- High move-in readiness + no recent contact (3+ days)
+- Pending Move-In with move-in date within 3 days and no recent contact
+- Has unresolved objections that need addressing
 
-const computedAgentBreakdown: Record<string, any> = {};
-for (const [agentName, data] of Object.entries(agentData)) {
-  computedAgentBreakdown[agentName] = {
-    non_booking_count: data.nonBookingCount,
-    top_objection: data.objections[0] || 'none',
-    top_concern: data.concerns[0] || 'none'
-  };
-}
-```
+**🟠 HIGH** - Should follow up today
+- High move-in readiness with recent contact
+- Medium readiness + unresolved concerns
+- Non-Booking with high readiness (recovery opportunity)
 
-2. **Update AI prompt** to only ask for analytical insights per agent (not counts):
+**🟡 MEDIUM** - Follow up this week
+- Medium move-in readiness
+- Has preferences captured but no recent follow-up
 
-```typescript
-// In AI prompt, change agent_breakdown section:
-"agent_insights": {
-  "AgentName": {
-    "improvement_area": "Specific coaching recommendation",
-    "pattern_observation": "Qualitative insight about this agent's calls"
-  }
-}
-```
-
-3. **Merge computed data with AI insights** before saving:
-
-```typescript
-// Merge computed counts with AI insights
-const finalAgentBreakdown: Record<string, any> = {};
-for (const [agentName, data] of Object.entries(computedAgentBreakdown)) {
-  const aiInsight = parsedAnalysis.agent_insights?.[agentName] || {};
-  finalAgentBreakdown[agentName] = {
-    ...data,
-    improvement_area: aiInsight.improvement_area || 'Review call recordings for coaching opportunities',
-    pattern_observation: aiInsight.pattern_observation || null
-  };
-}
-```
-
-4. **Save merged data** to the database:
-
-```typescript
-agent_breakdown: finalAgentBreakdown, // Use merged data, not AI-only
-```
+**⚪ LOW / No Badge** - No immediate action needed
+- Low readiness, just exploring
+- Recently contacted (within 24 hours)
+- No call insights available
 
 ---
 
-## Updated Agent Breakdown Structure
+## Implementation Details
 
-After the fix, `agent_breakdown` will contain:
+### New Utility: `calculateFollowUpPriority`
 
-```json
-{
-  "Megane": {
-    "non_booking_count": 27,
-    "top_objection": "Voicemail - member didn't answer",
-    "top_concern": "Pricing concerns",
-    "improvement_area": "AI-generated coaching tip",
-    "pattern_observation": "AI-generated pattern"
-  },
-  "Abdullah": {
-    "non_booking_count": 15,
-    "top_objection": "timing issues",
-    "top_concern": "busy at time of call",
-    "improvement_area": "Proactive callback scheduling",
-    "pattern_observation": "..."
-  },
-  // ... all 7 agents
-}
+Create `src/utils/followUpPriority.ts`:
+
+```text
+Function: calculateFollowUpPriority(booking, lastContactDate?)
+
+Inputs:
+- booking.status
+- booking.callKeyPoints?.moveInReadiness
+- booking.callKeyPoints?.objections
+- booking.callKeyPoints?.memberConcerns
+- booking.moveInDate
+- lastContactDate (from contact_communications)
+
+Returns:
+- { level: 'urgent' | 'high' | 'medium' | 'low' | null, reason: string }
+
+Logic:
+1. If status is Moved In / Cancelled / No Show / Member Rejected → null (no badge)
+2. If status is Pending Move-In / Postponed / Non Booking:
+   - Check move-in date proximity (for Pending)
+   - Check readiness level
+   - Check objections/concerns count
+   - Check last contact date
+   - Return appropriate level with reason
+```
+
+### Changes to Reports Page Table
+
+Add a "Priority" column after the Status column:
+
+```text
+| Record Date | Move-In | Contact | ... | Status | Priority | Method | ... |
+```
+
+The Priority cell shows:
+- A colored badge (Urgent/High/Medium)
+- Tooltip with the reason
+- Only for actionable statuses
+
+### Changes to Contact Profile Hover Card
+
+In the header section (next to the Readiness badge), show:
+- Follow-up priority badge if applicable
+- Reason for priority on hover
+
+---
+
+## Visual Design
+
+### Priority Badges
+
+| Level | Badge Style | Icon |
+|-------|-------------|------|
+| Urgent | `bg-destructive/20 text-destructive` | AlertTriangle |
+| High | `bg-orange-500/20 text-orange-600` | ArrowUp |
+| Medium | `bg-amber-500/20 text-amber-600` | Clock |
+| Low/None | No badge shown | — |
+
+### Example Badge
+
+```text
+<Badge className="bg-destructive/20 text-destructive text-xs">
+  <AlertTriangle className="h-3 w-3 mr-1" />
+  URGENT
+</Badge>
 ```
 
 ---
 
-## Frontend Enhancement (Optional)
-
-Update the Agent Breakdown card in `NonBookingAnalysisTab.tsx` to show more details:
-
-- Show all agents (currently limited to 4 with `.slice(0, 4)`)
-- Add improvement areas from AI analysis
-- Sort by non_booking_count descending
-
----
-
-## Files to Modify
+## Files to Create/Modify
 
 | File | Changes |
 |------|---------|
-| `supabase/functions/analyze-non-booking-insights/index.ts` | Compute agent data server-side, merge with AI insights |
-| `src/components/call-insights/NonBookingAnalysisTab.tsx` | Improve agent breakdown display (show all agents, add scrolling) |
+| `src/utils/followUpPriority.ts` | NEW - Priority calculation logic |
+| `src/pages/Reports.tsx` | Add Priority column to table |
+| `src/components/reports/ContactProfileHoverCard.tsx` | Add priority badge in header |
+| `src/components/reports/FollowUpPriorityBadge.tsx` | NEW - Reusable badge component |
 
 ---
 
-## Technical Notes
+## Technical Considerations
 
-- This pattern separates **factual data** (counts from database) from **analytical insights** (AI interpretation)
-- Prevents AI from dropping or misinterpreting numerical data
-- Same approach should be applied to `market_breakdown` for consistency
-- No database migration needed - uses existing `agent_breakdown` JSONB column
+### Data Requirements
 
+The priority calculation needs:
+1. **Booking data** - already available in Reports records
+2. **Last contact date** - need to fetch from `contact_communications` table
+
+For efficiency, batch-fetch last contact dates for visible records rather than individual queries per row.
+
+### Performance
+
+- Calculate priority client-side from available data
+- Optional: Add server-side precomputation for sorted/filtered views
+- Cache last contact dates per booking ID
+
+---
+
+## User Experience
+
+### Reports Page
+
+1. New "Priority" column appears between Status and Method
+2. Badges only show for actionable statuses
+3. Clicking/hovering shows reason (e.g., "High readiness, no contact in 5 days")
+4. Can filter by priority level (future enhancement)
+
+### Hover Card
+
+1. Priority badge appears in header next to readiness
+2. Shows at-a-glance which contacts need attention
+3. Consistent with table view
+
+---
+
+## Edge Cases
+
+| Scenario | Behavior |
+|----------|----------|
+| No transcription data | Show "No Insights" - no priority calculated |
+| Record just created today | Lower priority (just spoke to them) |
+| Moved In status | No priority badge ever |
+| Non Booking with low readiness | Low priority or no badge |
+| Pending Move-In, move-in tomorrow, no contact | URGENT |
