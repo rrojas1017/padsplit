@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 
@@ -15,6 +15,15 @@ interface ContactCommunication {
   status: 'sent' | 'failed' | 'delivered';
 }
 
+interface SendEmailParams {
+  bookingId: string;
+  recipientEmail: string;
+  recipientName: string;
+  subject: string;
+  htmlBody: string;
+  textBody?: string;
+}
+
 interface UseContactCommunicationsReturn {
   communications: ContactCommunication[];
   lastCommunication: ContactCommunication | null;
@@ -27,6 +36,8 @@ interface UseContactCommunicationsReturn {
     recipientPhone?: string;
     messagePreview?: string;
   }) => Promise<boolean>;
+  sendEmail: (params: SendEmailParams) => Promise<{ success: boolean; error?: string }>;
+  refreshCommunications: () => Promise<void>;
 }
 
 export function useContactCommunications(bookingId?: string): UseContactCommunicationsReturn {
@@ -99,6 +110,31 @@ export function useContactCommunications(bookingId?: string): UseContactCommunic
     fetchCommunications();
   }, [bookingId]);
 
+  const refreshCommunications = useCallback(async () => {
+    if (!bookingId) return;
+    
+    const { data } = await supabase
+      .from('contact_communications')
+      .select('*')
+      .eq('booking_id', bookingId)
+      .order('sent_at', { ascending: false });
+
+    if (data) {
+      setCommunications(data.map(row => ({
+        id: row.id,
+        bookingId: row.booking_id,
+        userId: row.user_id,
+        userName: row.user_name,
+        communicationType: row.communication_type as 'sms' | 'email' | 'voice_note',
+        recipientEmail: row.recipient_email,
+        recipientPhone: row.recipient_phone,
+        messagePreview: row.message_preview,
+        sentAt: new Date(row.sent_at),
+        status: row.status as 'sent' | 'failed' | 'delivered',
+      })));
+    }
+  }, [bookingId]);
+
   const logCommunication = async (data: {
     bookingId: string;
     communicationType: 'sms' | 'email' | 'voice_note';
@@ -124,34 +160,41 @@ export function useContactCommunications(bookingId?: string): UseContactCommunic
 
       if (error) throw error;
 
-      // Refresh the list
+      // Refresh the list if this is the same booking
       if (data.bookingId === bookingId) {
-        const { data: newData } = await supabase
-          .from('contact_communications')
-          .select('*')
-          .eq('booking_id', bookingId)
-          .order('sent_at', { ascending: false });
-
-        if (newData) {
-          setCommunications(newData.map(row => ({
-            id: row.id,
-            bookingId: row.booking_id,
-            userId: row.user_id,
-            userName: row.user_name,
-            communicationType: row.communication_type as 'sms' | 'email' | 'voice_note',
-            recipientEmail: row.recipient_email,
-            recipientPhone: row.recipient_phone,
-            messagePreview: row.message_preview,
-            sentAt: new Date(row.sent_at),
-            status: row.status as 'sent' | 'failed' | 'delivered',
-          })));
-        }
+        await refreshCommunications();
       }
 
       return true;
     } catch (error) {
       console.error('Error logging communication:', error);
       return false;
+    }
+  };
+
+  const sendEmail = async (params: SendEmailParams): Promise<{ success: boolean; error?: string }> => {
+    try {
+      const { data, error } = await supabase.functions.invoke('send-follow-up-email', {
+        body: params,
+      });
+
+      if (error) {
+        return { success: false, error: error.message || 'Failed to send email' };
+      }
+
+      if (data?.error) {
+        return { success: false, error: data.error };
+      }
+
+      // Refresh communications list if this is the same booking
+      if (params.bookingId === bookingId) {
+        await refreshCommunications();
+      }
+
+      return { success: true };
+    } catch (error: any) {
+      console.error('Error sending email:', error);
+      return { success: false, error: error.message || 'An unexpected error occurred' };
     }
   };
 
@@ -163,5 +206,7 @@ export function useContactCommunications(bookingId?: string): UseContactCommunic
     isLoading,
     canSendCommunications,
     logCommunication,
+    sendEmail,
+    refreshCommunications,
   };
 }

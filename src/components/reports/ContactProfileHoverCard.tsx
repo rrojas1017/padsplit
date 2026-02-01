@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   HoverCard,
   HoverCardContent,
@@ -28,6 +28,7 @@ import { useContactCommunications } from '@/hooks/useContactCommunications';
 import { maskEmail, maskPhone } from '@/utils/contactPrivacy';
 import { calculateFollowUpPriority, BookingForPriority } from '@/utils/followUpPriority';
 import { FollowUpPriorityBadge } from './FollowUpPriorityBadge';
+import { SendEmailDialog } from './SendEmailDialog';
 
 interface ContactProfileHoverCardProps {
   memberName: string;
@@ -43,6 +44,8 @@ interface ContactProfileHoverCardProps {
   moveInDate?: Date;
   bookingDate?: Date;
   lastContactDate?: Date | null;
+  marketCity?: string;
+  marketState?: string;
   children: React.ReactNode;
 }
 
@@ -81,12 +84,17 @@ export function ContactProfileHoverCard({
   moveInDate,
   bookingDate,
   lastContactDate,
+  marketCity,
+  marketState,
   children,
 }: ContactProfileHoverCardProps) {
   const hasInsights = callKeyPoints && transcriptionStatus === 'completed';
   const isProcessing = transcriptionStatus === 'pending' || transcriptionStatus === 'processing';
   
-  const { lastCommunication, canSendCommunications, logCommunication } = useContactCommunications(bookingId);
+  const { lastCommunication, canSendCommunications, logCommunication, refreshCommunications } = useContactCommunications(bookingId);
+  
+  // State for email dialog
+  const [showEmailDialog, setShowEmailDialog] = useState(false);
 
   // Calculate follow-up priority if we have status info
   const priority = React.useMemo(() => {
@@ -108,13 +116,9 @@ export function ContactProfileHoverCard({
   }, [bookingStatus, moveInDate, bookingDate, callKeyPoints, transcriptionStatus, lastCommunication, lastContactDate]);
 
   const handleEmailClick = () => {
-    if (contactEmail && bookingId) {
-      window.location.href = `mailto:${contactEmail}`;
-      logCommunication({
-        bookingId,
-        communicationType: 'email',
-        recipientEmail: contactEmail,
-      });
+    if (contactEmail && bookingId && canSendCommunications) {
+      // Open the email dialog instead of mailto
+      setShowEmailDialog(true);
     }
   };
 
@@ -388,6 +392,22 @@ export function ContactProfileHoverCard({
           </div>
         )}
       </HoverCardContent>
+
+      {/* Email Dialog */}
+      {contactEmail && bookingId && (
+        <SendEmailDialog
+          isOpen={showEmailDialog}
+          onClose={() => setShowEmailDialog(false)}
+          bookingId={bookingId}
+          recipientEmail={contactEmail}
+          memberName={memberName}
+          marketCity={marketCity}
+          marketState={marketState}
+          moveInDate={moveInDate}
+          status={bookingStatus}
+          onEmailSent={refreshCommunications}
+        />
+      )}
     </HoverCard>
   );
 }
