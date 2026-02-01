@@ -747,6 +747,8 @@ export default function Reports() {
                         bookingStatus={booking.status}
                         moveInDate={booking.moveInDate}
                         bookingDate={booking.bookingDate}
+                        marketCity={booking.marketCity || undefined}
+                        marketState={booking.marketState || undefined}
                       >
                         <div className="flex items-center gap-2 cursor-default">
                           <span className="hover:text-primary transition-colors">{booking.memberName}</span>
