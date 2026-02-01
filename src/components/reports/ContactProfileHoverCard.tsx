@@ -26,6 +26,8 @@ import {
 import { format } from 'date-fns';
 import { useContactCommunications } from '@/hooks/useContactCommunications';
 import { maskEmail, maskPhone } from '@/utils/contactPrivacy';
+import { calculateFollowUpPriority, BookingForPriority } from '@/utils/followUpPriority';
+import { FollowUpPriorityBadge } from './FollowUpPriorityBadge';
 
 interface ContactProfileHoverCardProps {
   memberName: string;
@@ -36,6 +38,11 @@ interface ContactProfileHoverCardProps {
   contactPhone?: string;
   bookingId?: string;
   shouldMaskContact?: boolean;
+  // Props for priority calculation
+  bookingStatus?: string;
+  moveInDate?: Date;
+  bookingDate?: Date;
+  lastContactDate?: Date | null;
   children: React.ReactNode;
 }
 
@@ -70,12 +77,35 @@ export function ContactProfileHoverCard({
   contactPhone,
   bookingId,
   shouldMaskContact = false,
+  bookingStatus,
+  moveInDate,
+  bookingDate,
+  lastContactDate,
   children,
 }: ContactProfileHoverCardProps) {
   const hasInsights = callKeyPoints && transcriptionStatus === 'completed';
   const isProcessing = transcriptionStatus === 'pending' || transcriptionStatus === 'processing';
   
   const { lastCommunication, canSendCommunications, logCommunication } = useContactCommunications(bookingId);
+
+  // Calculate follow-up priority if we have status info
+  const priority = React.useMemo(() => {
+    if (!bookingStatus || !moveInDate || !bookingDate) {
+      return { level: null, reason: '' };
+    }
+    const bookingForPriority: BookingForPriority = {
+      status: bookingStatus,
+      moveInDate,
+      bookingDate,
+      callKeyPoints,
+      transcriptionStatus,
+    };
+    // Use lastCommunication date if available, otherwise fall back to passed lastContactDate
+    const effectiveLastContact = lastCommunication?.sentAt 
+      ? new Date(lastCommunication.sentAt) 
+      : lastContactDate;
+    return calculateFollowUpPriority(bookingForPriority, effectiveLastContact);
+  }, [bookingStatus, moveInDate, bookingDate, callKeyPoints, transcriptionStatus, lastCommunication, lastContactDate]);
 
   const handleEmailClick = () => {
     if (contactEmail && bookingId) {
@@ -140,16 +170,21 @@ export function ContactProfileHoverCard({
               <div className="h-8 w-8 rounded-full bg-primary/20 flex items-center justify-center">
                 <User className="h-4 w-4 text-primary" />
               </div>
-              <span className="font-semibold text-foreground text-sm truncate max-w-[140px]">
+              <span className="font-semibold text-foreground text-sm truncate max-w-[120px]">
                 {memberName}
               </span>
             </div>
-            {hasInsights && (
-              <div className="flex items-center gap-1">
-                <Target className="h-3.5 w-3.5 text-muted-foreground" />
-                <ReadinessBadge readiness={callKeyPoints.moveInReadiness} />
-              </div>
-            )}
+            <div className="flex items-center gap-1.5">
+              {/* Follow-up Priority Badge */}
+              <FollowUpPriorityBadge priority={priority} size="sm" />
+              {/* Readiness Badge */}
+              {hasInsights && (
+                <div className="flex items-center gap-1">
+                  <Target className="h-3.5 w-3.5 text-muted-foreground" />
+                  <ReadinessBadge readiness={callKeyPoints.moveInReadiness} />
+                </div>
+              )}
+            </div>
           </div>
         </div>
 
