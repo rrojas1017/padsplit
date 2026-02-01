@@ -1,90 +1,198 @@
 
 
-# Batch Re-transcribe 9 Uncorrected Deepgram Transcripts
+# Enable Non-Booking Analysis for 70 Transcribed Records
 
 ## Overview
 
-Re-process 9 Deepgram transcripts that still contain uncorrected brand mishearings from before the pipeline fix was deployed.
+Create a Non-Booking specific analysis pipeline that mirrors the existing Booking Insights pattern but focuses on understanding why members didn't convert. This will analyze the 70 currently transcribed Non-Booking records.
 
 ---
 
-## Affected Bookings
+## Current State
 
-| # | Booking ID | Member | Date | Mishearing |
-|---|------------|--------|------|------------|
-| 1 | `7e6fa939...` | Keshunna Mills | Nov 26 | pathway |
-| 2 | `cb4eda18...` | Maribel Campa | Nov 26 | bad supplies |
-| 3 | `53b728db...` | Bryan Taylor | Nov 26 | pagespeed |
-| 4 | `eed4c732...` | Shadrack Suyanka | Nov 26 | pathway |
-| 5 | `63bfa223...` | Darrell Waddell | Nov 26 | bad supplies |
-| 6 | `2f55aee9...` | Demetric Parker | Nov 26 | bad supplies |
-| 7 | `4be4b230...` | Adam Taylor | Nov 26 | path to place |
-| 8 | `d3f9ddae...` | Lawrence Barr | Nov 25 | pathway |
-| 9 | `67e2a611...` | Terika Shabazz | Nov 25 | pathway |
+| Metric | Value |
+|--------|-------|
+| Total Non-Booking Records | 3,286 |
+| Transcribed with call_key_points | 70 |
+| Available data per record | concerns, objections, sentiment, readiness, summary |
+
+Sample data shows rich insights including:
+- Reasons for not booking ("shared living model doesn't meet needs", "found an apartment")
+- Sentiment breakdown (positive/neutral/negative)
+- Move-in readiness levels (high/medium/low)
+- Recommended follow-up actions
 
 ---
 
 ## Implementation
 
-### Approach
+### Phase 1: Database Schema
 
-Use the existing `batch-retry-transcriptions` edge function to re-process these specific bookings. The function will:
+Create a `non_booking_insights` table to store aggregated analysis results:
 
-1. Reset transcription status to `pending`
-2. Call `transcribe-call` for each booking
-3. Apply 30-second pacing between requests to avoid rate limiting
-4. The updated pipeline will now correctly apply polishing AFTER speaker identification
+```text
+non_booking_insights
++-- id (uuid, primary key)
++-- analysis_period (text)
++-- date_range_start (date)
++-- date_range_end (date)
++-- total_calls_analyzed (integer)
++-- rejection_reasons (jsonb)         -- categorized reasons they didn't book
++-- missed_opportunities (jsonb)      -- high-readiness non-bookers
++-- sentiment_distribution (jsonb)    -- positive/neutral/negative breakdown
++-- objection_patterns (jsonb)        -- common hesitations with responses
++-- recovery_recommendations (jsonb)  -- AI-generated strategies
++-- agent_breakdown (jsonb)           -- per-agent non-booking stats
++-- market_breakdown (jsonb)          -- geographic patterns
++-- trend_comparison (jsonb)          -- vs previous period
++-- avg_call_duration_seconds (numeric)
++-- raw_analysis (text)
++-- status (text)                     -- processing/completed/failed
++-- error_message (text)
++-- created_at (timestamptz)
++-- created_by (uuid)
+```
 
-### Execution
+### Phase 2: Edge Function
 
-Call the edge function with the 9 booking IDs:
+Create `analyze-non-booking-insights` edge function following the existing background processing pattern:
 
-```json
+**Data Collection:**
+1. Query `bookings` where `status = 'Non Booking'` and `transcription_status = 'completed'`
+2. Join with `booking_transcriptions` to get `call_key_points`
+3. Aggregate concerns, objections, sentiment, readiness scores
+
+**AI Analysis Focus (Non-Booking Specific Prompt):**
+- Why didn't they book? (categorize rejection reasons)
+- What objections came up? (with suggested responses)
+- Which were missed opportunities? (high readiness but didn't convert)
+- Recovery recommendations by pattern
+- Agent performance breakdown
+
+**Processing Pattern:**
+- Use `EdgeRuntime.waitUntil()` for background processing
+- Return immediate "processing" response with insight ID
+- Update status to "completed" when done
+
+### Phase 3: Frontend Integration
+
+**File: NonBookingAnalysisTab.tsx**
+1. Enable "Run Analysis" button (remove disabled state and tooltip)
+2. Add state management for `isAnalyzing` and `selectedInsight`
+3. Create `useNonBookingInsightsPolling` hook (similar to member insights)
+4. Wire up edge function invocation
+5. Add previous analyses selector dropdown
+6. Pass real data to child components
+
+**File: NonBookingReasonsChart.tsx**
+- Accept `reasons` prop from parent
+- Display real rejection reasons with percentages
+- Remove placeholder state when data exists
+
+**File: NonBookingSentimentChart.tsx**
+- Accept `sentiment` prop from parent
+- Show actual positive/neutral/negative distribution
+
+**File: NonBookingMissedOpportunitiesPanel.tsx**
+- Accept `missedOpportunities` prop with details
+- Show recoverable opportunities with suggestions
+
+**File: NonBookingRecommendationsPanel.tsx**
+- Accept AI-generated recovery strategies
+- Display actionable items with priority badges
+
+---
+
+## AI Prompt Design
+
+The edge function will use a specialized prompt for Non-Booking analysis:
+
+```text
+You are analyzing PadSplit calls that DID NOT result in a booking.
+Your goal is to understand why members didn't convert and identify recovery opportunities.
+
+CONTEXT: PadSplit offers affordable room rentals with shared living.
+These are calls where the member did NOT book a room.
+
+DATA FROM [X] NON-BOOKING CALLS:
+- Concerns: [aggregated from call_key_points.memberConcerns]
+- Objections: [aggregated from call_key_points.objections]
+- Sentiment breakdown: [counts]
+- Readiness breakdown: [counts]
+
+ANALYZE AND RETURN:
 {
-  "bookingIds": [
-    "7e6fa939-b5d4-4676-90e9-88613b81ed5b",
-    "cb4eda18-39d7-4b58-94a7-8b4701a3d547",
-    "53b728db-afbe-4a43-a7c6-f5d7f8d4b2a7",
-    "eed4c732-0ea8-4b21-8b2f-7db7a8b566eb",
-    "63bfa223-19f6-4baf-8fd7-3b92cfe00176",
-    "2f55aee9-da4b-4e04-a524-8165fc7559f4",
-    "4be4b230-bcb8-4281-9e4b-f1bd6bb02935",
-    "d3f9ddae-f1a1-4c6f-a067-b2783ff57add",
-    "67e2a611-5530-4fd2-9a45-7a9fd1960cea"
-  ]
+  "rejection_reasons": [
+    {"reason": "Product-Market Mismatch", "percentage": 35, 
+     "examples": ["Looking for whole apartment", "Don't want roommates"]}
+  ],
+  "missed_opportunities": [
+    {"pattern": "High readiness but no availability", 
+     "count": 12, "recovery_suggestion": "Follow up when units open"}
+  ],
+  "objection_patterns": [
+    {"objection": "Pricing concerns", "frequency": 15,
+     "suggested_response": "Emphasize weekly payment flexibility"}
+  ],
+  "recovery_recommendations": [
+    {"recommendation": "24-hour follow-up for voicemails",
+     "priority": "high", "category": "Process", 
+     "expected_impact": "Could recover 15% of non-bookers"}
+  ],
+  "agent_breakdown": {
+    "Abdul": {"non_booking_rate": 12, "common_objection": "timing"}
+  }
 }
 ```
 
 ---
 
-## Expected Outcome
+## File Changes Summary
 
-| Before | After |
-|--------|-------|
-| "pathway" | "PadSplit" |
-| "bad supplies" | "PadSplit" |
-| "pagespeed" | "PadSplit" |
-| "path to place" | "PadSplit" |
-| "pad split" | "PadSplit" |
-
----
-
-## Processing Time
-
-- 9 bookings × 30 seconds pacing = ~4.5 minutes total
-- Background processing, immediate response
+| File | Action |
+|------|--------|
+| `supabase/migrations/xxx_create_non_booking_insights.sql` | Create table + RLS |
+| `supabase/functions/analyze-non-booking-insights/index.ts` | New edge function |
+| `supabase/config.toml` | Add function config |
+| `src/hooks/useNonBookingInsightsPolling.ts` | New polling hook |
+| `src/components/call-insights/NonBookingAnalysisTab.tsx` | Enable analysis, wire data |
+| `src/components/call-insights/NonBookingReasonsChart.tsx` | Accept real data |
+| `src/components/call-insights/NonBookingSentimentChart.tsx` | Accept real data |
+| `src/components/call-insights/NonBookingMissedOpportunitiesPanel.tsx` | Accept detailed data |
+| `src/components/call-insights/NonBookingRecommendationsPanel.tsx` | Accept recommendations |
 
 ---
 
-## Verification
+## Expected Output
 
-After processing completes, run a follow-up query to confirm all mishearings have been corrected:
+After running analysis on the 70 transcribed Non-Booking calls:
 
-```sql
-SELECT COUNT(*) FROM booking_transcriptions 
-WHERE stt_provider = 'deepgram' 
-AND call_transcription ILIKE ANY(ARRAY['%pathway%', '%bad supplies%', '%pagespeed%', '%path to place%', '%pad split%'])
-```
+**Rejection Reasons Chart:**
+- Product-Market Mismatch (e.g., "wanted whole apartment")
+- Timing Issues (e.g., "busy, call back later")
+- Already Found Housing
+- Pricing Concerns
+- Availability Issues
 
-Expected result: 0 uncorrected transcripts
+**Missed Opportunities Panel:**
+- High-readiness non-bookers with recovery suggestions
+- Voicemail patterns with follow-up recommendations
+
+**Recommendations Panel:**
+- AI-generated recovery strategies
+- Priority-ranked action items
+- Expected impact estimates
+
+---
+
+## Processing Estimate
+
+| Step | Time |
+|------|------|
+| Data aggregation (70 records) | ~1 second |
+| AI analysis (Gemini 2.5 Pro) | ~15-30 seconds |
+| Database update | ~1 second |
+| **Total** | ~30 seconds |
+
+**Cost:** ~$0.02 per analysis run
 
