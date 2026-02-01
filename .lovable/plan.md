@@ -1,44 +1,64 @@
 
 
-# Enable Communication Permission for Your Account
+# Fix Communication Permission for Your Account
 
-## Problem
-The email, SMS, and Voice buttons in the Contact Profile Hover Card are disabled because the `can_send_communications` flag on your profile is set to `false`.
+## Problem Identified
+
+The previous database migration updated the wrong user profile ID. The SMS, Email, and Voice buttons remain disabled because:
+
+| Profile | Email | can_send_communications |
+|---------|-------|------------------------|
+| `dabfed9b-e797-41a9-a8f9-68a571575138` (Your active account) | rrojas@vixicom.com | **false** |
+
+The migration mistakenly targeted a different ID (`ab22cc8a-...`) that doesn't match your logged-in account.
+
+---
 
 ## Solution
-Update your profile in the database to enable communication permissions.
 
-## Implementation
-
-### Database Update
-
-Run a migration to set `can_send_communications = true` for your user account:
+Run a corrected database migration to enable communication permissions for your actual profile:
 
 ```sql
 UPDATE profiles 
 SET can_send_communications = true 
-WHERE id = 'ab22cc8a-e813-4f34-8883-b0fd1a076a1e';
+WHERE id = 'dabfed9b-e797-41a9-a8f9-68a571575138';
 ```
-
-This targets only your account (Roberto Rojas) and enables the email feature.
 
 ---
 
 ## Expected Result After Fix
 
-| Before | After |
-|--------|-------|
-| Email button: Disabled | Email button: **Enabled** |
-| SMS button: Disabled | SMS button: **Enabled** |
-| Voice button: Disabled | Voice button: **Enabled** |
-
-Once approved, you'll be able to click the Email button on any contact in the Reports page hover card to open the SendEmailDialog and send follow-up emails via SendGrid.
+| Button | Before | After |
+|--------|--------|-------|
+| Email  | Disabled | **Enabled** |
+| SMS    | Disabled | **Enabled** |
+| Voice  | Disabled | **Enabled** |
 
 ---
 
-## Files to Modify
+## Technical Details
 
-| File | Changes |
-|------|---------|
-| Database migration | Update `can_send_communications` for your profile |
+The `useContactCommunications` hook checks `can_send_communications` by querying:
+
+```typescript
+const { data } = await supabase
+  .from('profiles')
+  .select('can_send_communications')
+  .eq('id', user.id)  // user.id = dabfed9b-e797-41a9-a8f9-68a571575138
+  .single();
+```
+
+When this returns `false`, all communication buttons are disabled via the condition:
+
+```typescript
+disabled={!contactPhone || !canSendCommunications}
+```
+
+---
+
+## Implementation
+
+1. Execute database migration with correct profile ID
+2. Refresh the Reports page to reload the permission check
+3. Test SMS, Email, and Voice buttons in the Contact Profile Hover Card
 
