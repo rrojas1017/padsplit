@@ -7,6 +7,8 @@ import { useReportsData, ReportsFilters, ReportsPagination, ReportsSorting, Sort
 import { Button } from '@/components/ui/button';
 import { Download, Search, PlusCircle, Pencil, ChevronDown, Building2, User, MessageSquare, Tag, CheckCircle, RotateCcw, ArrowUp, ArrowDown, ArrowUpDown, X, ExternalLink, Phone, UserCircle, Headphones, FileText, Loader2, MoreHorizontal, Clock, CalendarX, XCircle, Ban, AlertTriangle, Package } from 'lucide-react';
 import { ContactProfileHoverCard } from '@/components/reports/ContactProfileHoverCard';
+import { FollowUpPriorityBadge } from '@/components/reports/FollowUpPriorityBadge';
+import { calculateFollowUpPriority } from '@/utils/followUpPriority';
 import { Input } from '@/components/ui/input';
 import { format, startOfDay, endOfDay } from 'date-fns';
 import { cn } from '@/lib/utils';
@@ -370,6 +372,7 @@ export default function Reports() {
           <td className="py-3 px-4"><Skeleton className="h-4 w-24" /></td>
           <td className="py-3 px-4"><Skeleton className="h-4 w-20" /></td>
           <td className="py-3 px-4"><Skeleton className="h-6 w-24 rounded-full" /></td>
+          <td className="py-3 px-4"><Skeleton className="h-6 w-16 rounded-full" /></td>
           <td className="py-3 px-4"><Skeleton className="h-4 w-16" /></td>
           <td className="py-3 px-4"><Skeleton className="h-4 w-20" /></td>
           <td className="py-3 px-4"><Skeleton className="h-8 w-8" /></td>
@@ -703,6 +706,7 @@ export default function Reports() {
                 <SortableHeader column="market" label="Market" />
                 <SortableHeader column="bookingType" label="Type" />
                 <SortableHeader column="status" label="Status" />
+                <th className="text-left py-3 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Priority</th>
                 <SortableHeader column="communicationMethod" label="Method" />
                 <th className="text-left py-3 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Links</th>
                 <th className="text-left py-3 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Actions</th>
@@ -713,7 +717,7 @@ export default function Reports() {
                 <TableSkeleton />
               ) : records.length === 0 ? (
                 <tr>
-                  <td colSpan={12} className="py-8 text-center text-muted-foreground">
+                  <td colSpan={13} className="py-8 text-center text-muted-foreground">
                     No records found matching your filters
                   </td>
                 </tr>
@@ -740,6 +744,9 @@ export default function Reports() {
                         contactPhone={booking.contactPhone || undefined}
                         bookingId={booking.id}
                         shouldMaskContact={shouldMaskContactInfo(user?.role)}
+                        bookingStatus={booking.status}
+                        moveInDate={booking.moveInDate}
+                        bookingDate={booking.bookingDate}
                       >
                         <div className="flex items-center gap-2 cursor-default">
                           <span className="hover:text-primary transition-colors">{booking.memberName}</span>
@@ -805,6 +812,21 @@ export default function Reports() {
                       )}>
                         {booking.status}
                       </span>
+                    </td>
+                    <td className="py-3 px-4">
+                      <FollowUpPriorityBadge 
+                        priority={calculateFollowUpPriority(
+                          {
+                            status: booking.status,
+                            moveInDate: booking.moveInDate,
+                            bookingDate: booking.bookingDate,
+                            callKeyPoints: booking.callKeyPoints,
+                            transcriptionStatus: booking.transcriptionStatus,
+                          },
+                          null // lastContactDate - would need batch fetch for efficiency
+                        )}
+                        size="sm"
+                      />
                     </td>
                     <td className="py-3 px-4 text-sm text-muted-foreground">
                       {booking.communicationMethod}
