@@ -134,6 +134,7 @@ export interface KPIData {
   previousValue: number;
   change: number;
   changeType: 'increase' | 'decrease' | 'neutral';
+  comparisonLabel?: string;
 }
 
 export interface ChartDataPoint {

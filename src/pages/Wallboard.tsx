@@ -60,20 +60,44 @@ export default function Wallboard() {
   const todayBookings = bookings.filter(b => format(new Date(b.bookingDate), 'yyyy-MM-dd') === today);
   const yesterdayBookings = bookings.filter(b => format(new Date(b.bookingDate), 'yyyy-MM-dd') === yesterday);
   
-  const vixicomToday = todayBookings.filter(b => 
+  // Same-time comparison: filter by createdAt time
+  const currentHour = time.getHours();
+  const currentMinutes = time.getMinutes();
+  
+  const createdByNow = (b: typeof bookings[0]): boolean => {
+    if (!b.createdAt) return true; // Include if no timestamp
+    const createdAt = b.createdAt instanceof Date ? b.createdAt : new Date(b.createdAt);
+    const createdHour = createdAt.getHours();
+    const createdMinutes = createdAt.getMinutes();
+    return createdHour < currentHour || 
+           (createdHour === currentHour && createdMinutes <= currentMinutes);
+  };
+  
+  const todayByNow = todayBookings.filter(createdByNow);
+  const yesterdayByNow = yesterdayBookings.filter(createdByNow);
+  
+  const vixicomToday = todayByNow.filter(b => 
     agents.find(a => a.id === b.agentId)?.siteId === vixicomSite?.id
   ).length;
   
-  const padsplitToday = todayBookings.filter(b => 
+  const vixicomYesterday = yesterdayByNow.filter(b => 
+    agents.find(a => a.id === b.agentId)?.siteId === vixicomSite?.id
+  ).length;
+  
+  const padsplitToday = todayByNow.filter(b => 
+    agents.find(a => a.id === b.agentId)?.siteId === padsplitSite?.id
+  ).length;
+  
+  const padsplitYesterday = yesterdayByNow.filter(b => 
     agents.find(a => a.id === b.agentId)?.siteId === padsplitSite?.id
   ).length;
 
   const leaderboard = calculateLeaderboard(bookings, agents).slice(0, 10);
 
-  const change = todayBookings.length - yesterdayBookings.length;
-  const changePercent = yesterdayBookings.length > 0 
-    ? Math.round((change / yesterdayBookings.length) * 100) 
-    : 0;
+  const change = todayByNow.length - yesterdayByNow.length;
+  const changePercent = yesterdayByNow.length > 0 
+    ? Math.round((change / yesterdayByNow.length) * 100) 
+    : (todayByNow.length > 0 ? 100 : 0);
 
   if (isLoading) {
     return (
@@ -157,8 +181,9 @@ export default function Wallboard() {
                 {change >= 0 ? '+' : ''}{changePercent}%
               </div>
             </div>
-            <p className="text-5xl lg:text-6xl font-bold text-foreground">{todayBookings.length}</p>
+            <p className="text-5xl lg:text-6xl font-bold text-foreground">{todayByNow.length}</p>
             <p className="text-muted-foreground mt-2">Total Bookings Today</p>
+            <p className="text-xs text-muted-foreground">vs {yesterdayByNow.length} at this time yesterday</p>
           </div>
 
           {/* Vixicom */}
@@ -172,6 +197,7 @@ export default function Wallboard() {
             </div>
             <p className="text-5xl lg:text-6xl font-bold text-foreground">{vixicomToday}</p>
             <p className="text-muted-foreground mt-2">Bookings</p>
+            <p className="text-xs text-muted-foreground">vs {vixicomYesterday} at this time yesterday</p>
           </div>
 
           {/* PadSplit Internal */}
@@ -185,6 +211,7 @@ export default function Wallboard() {
             </div>
             <p className="text-5xl lg:text-6xl font-bold text-foreground">{padsplitToday}</p>
             <p className="text-muted-foreground mt-2">Bookings</p>
+            <p className="text-xs text-muted-foreground">vs {padsplitYesterday} at this time yesterday</p>
           </div>
 
           {/* vs Yesterday */}
