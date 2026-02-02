@@ -64,7 +64,7 @@ export function BookingsProvider({ children }: { children: ReactNode }) {
           `)
           .gte('booking_date', dateLimit)
           .order('booking_date', { ascending: false })
-          .limit(500);
+          .limit(2000);
 
         if (error) throw error;
         return data;
