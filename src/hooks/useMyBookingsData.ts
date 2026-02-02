@@ -15,7 +15,7 @@ interface MyBookingsDataReturn {
 
 export function useMyBookingsData(): MyBookingsDataReturn {
   const { user } = useAuth();
-  const { agents } = useAgents();
+  const { agents, isLoading: agentsLoading } = useAgents();
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -29,9 +29,16 @@ export function useMyBookingsData(): MyBookingsDataReturn {
   }, [agents, user]);
 
   const fetchBookings = useCallback(async () => {
+    console.log('[useMyBookingsData] fetchBookings called, myAgent:', myAgent?.id, 'agentsLoading:', agentsLoading);
+    
     if (!myAgent) {
-      setBookings([]);
-      setIsLoading(false);
+      if (!agentsLoading) {
+        // Only set empty if agents have finished loading and user has no agent
+        console.log('[useMyBookingsData] No agent found after agents loaded');
+        setBookings([]);
+        setIsLoading(false);
+      }
+      // Keep loading true while agents are still loading
       return;
     }
 
@@ -39,6 +46,7 @@ export function useMyBookingsData(): MyBookingsDataReturn {
     setError(null);
 
     try {
+      console.log('[useMyBookingsData] Fetching bookings for agent:', myAgent.id);
       // Fetch bookings with transcription data joined
       const { data, error: fetchError } = await supabase
         .from('bookings')
@@ -84,6 +92,9 @@ export function useMyBookingsData(): MyBookingsDataReturn {
         .order('booking_date', { ascending: false });
 
       if (fetchError) throw fetchError;
+
+      console.log('[useMyBookingsData] Fetched', data?.length, 'bookings');
+      console.log('[useMyBookingsData] First booking transcription:', data?.[0]?.booking_transcriptions);
 
       // Transform data to match Booking interface
       const transformedBookings: Booking[] = (data || []).map(row => {
@@ -138,7 +149,7 @@ export function useMyBookingsData(): MyBookingsDataReturn {
     } finally {
       setIsLoading(false);
     }
-  }, [myAgent]);
+  }, [myAgent, agentsLoading]);
 
   useEffect(() => {
     fetchBookings();
