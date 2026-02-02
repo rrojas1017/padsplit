@@ -284,8 +284,8 @@ export function useReportsData(
         const transcription = row.booking_transcriptions as any;
         return {
           id: row.id,
-          bookingDate: new Date(row.booking_date),
-          moveInDate: new Date(row.move_in_date),
+          bookingDate: new Date(row.booking_date + 'T00:00:00'),
+          moveInDate: new Date(row.move_in_date + 'T00:00:00'),
           memberName: row.member_name,
           agentId: row.agent_id,
           agentName: agents.find(a => a.id === row.agent_id)?.name || 'Unknown',
