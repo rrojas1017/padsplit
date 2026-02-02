@@ -24,6 +24,13 @@ interface SendEmailParams {
   textBody?: string;
 }
 
+interface SendSMSParams {
+  bookingId: string;
+  recipientPhone: string;
+  recipientName: string;
+  message: string;
+}
+
 interface UseContactCommunicationsReturn {
   communications: ContactCommunication[];
   lastCommunication: ContactCommunication | null;
@@ -37,6 +44,7 @@ interface UseContactCommunicationsReturn {
     messagePreview?: string;
   }) => Promise<boolean>;
   sendEmail: (params: SendEmailParams) => Promise<{ success: boolean; error?: string }>;
+  sendSMS: (params: SendSMSParams) => Promise<{ success: boolean; error?: string }>;
   refreshCommunications: () => Promise<void>;
 }
 
@@ -198,6 +206,32 @@ export function useContactCommunications(bookingId?: string): UseContactCommunic
     }
   };
 
+  const sendSMS = async (params: SendSMSParams): Promise<{ success: boolean; error?: string }> => {
+    try {
+      const { data, error } = await supabase.functions.invoke('send-follow-up-sms', {
+        body: params,
+      });
+
+      if (error) {
+        return { success: false, error: error.message || 'Failed to send SMS' };
+      }
+
+      if (data?.error) {
+        return { success: false, error: data.error };
+      }
+
+      // Refresh communications list if this is the same booking
+      if (params.bookingId === bookingId) {
+        await refreshCommunications();
+      }
+
+      return { success: true };
+    } catch (error: any) {
+      console.error('Error sending SMS:', error);
+      return { success: false, error: error.message || 'An unexpected error occurred' };
+    }
+  };
+
   const lastCommunication = communications.length > 0 ? communications[0] : null;
 
   return {
@@ -207,6 +241,7 @@ export function useContactCommunications(bookingId?: string): UseContactCommunic
     canSendCommunications,
     logCommunication,
     sendEmail,
+    sendSMS,
     refreshCommunications,
   };
 }
