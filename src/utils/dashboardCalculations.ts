@@ -90,8 +90,29 @@ export const calculateKPIData = (
   const prevEnd = subDays(start, 1);
   const prevStart = subDays(prevEnd, periodDays - 1);
 
-  const currentBookings = filterBookingsByDateRange(bookings, start, end);
-  const previousBookings = filterBookingsByDateRange(bookings, prevStart, prevEnd);
+  let currentBookings = filterBookingsByDateRange(bookings, start, end);
+  let previousBookings = filterBookingsByDateRange(bookings, prevStart, prevEnd);
+
+  // For "today" filter, use same-time comparison based on createdAt
+  const useSameTimeComparison = dateFilter === 'today';
+  if (useSameTimeComparison) {
+    const now = new Date();
+    const currentHour = now.getHours();
+    const currentMinutes = now.getMinutes();
+
+    // Helper to check if booking was created by current time
+    const createdByNow = (b: Booking): boolean => {
+      if (!b.createdAt) return true; // Include if no timestamp (legacy imports)
+      const createdAt = b.createdAt instanceof Date ? b.createdAt : new Date(b.createdAt);
+      const createdHour = createdAt.getHours();
+      const createdMinutes = createdAt.getMinutes();
+      return createdHour < currentHour || 
+             (createdHour === currentHour && createdMinutes <= currentMinutes);
+    };
+
+    currentBookings = currentBookings.filter(createdByNow);
+    previousBookings = previousBookings.filter(createdByNow);
+  }
 
   const currentVixicom = getBookingsBySite(currentBookings, agents, 'vixicom');
   const previousVixicom = getBookingsBySite(previousBookings, agents, 'vixicom');
@@ -124,7 +145,7 @@ export const calculateKPIData = (
     dateFilter === '30d' ? 'Last 30 Days' : 
     dateFilter === 'custom' ? 'Custom Range' : 'This Month';
 
-  const comparisonLabel = dateFilter === 'today' ? 'yesterday' : 'previous period';
+  const comparisonLabel = useSameTimeComparison ? 'at this time yesterday' : 'previous period';
 
   return [
     {
@@ -133,6 +154,7 @@ export const calculateKPIData = (
       previousValue: previousBookings.length,
       change: totalChange.change,
       changeType: totalChange.changeType,
+      comparisonLabel,
     },
     {
       label: 'Vixicom Bookings',
@@ -140,6 +162,7 @@ export const calculateKPIData = (
       previousValue: previousVixicom.length,
       change: vixicomChange.change,
       changeType: vixicomChange.changeType,
+      comparisonLabel,
     },
     {
       label: 'PadSplit Internal',
@@ -147,6 +170,7 @@ export const calculateKPIData = (
       previousValue: previousPadsplit.length,
       change: padsplitChange.change,
       changeType: padsplitChange.changeType,
+      comparisonLabel,
     },
     {
       label: 'Pending Move-Ins',
@@ -154,6 +178,7 @@ export const calculateKPIData = (
       previousValue: previousPending.length,
       change: pendingChange.change,
       changeType: pendingChange.changeType,
+      comparisonLabel,
     },
   ];
 };

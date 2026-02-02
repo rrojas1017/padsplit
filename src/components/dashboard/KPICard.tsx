@@ -9,7 +9,7 @@ interface KPICardProps {
 }
 
 export function KPICard({ data, icon, delay = 0 }: KPICardProps) {
-  const { label, value, previousValue, change, changeType } = data;
+  const { label, value, previousValue, change, changeType, comparisonLabel } = data;
 
   const changeIcon = {
     increase: <TrendingUp className="w-4 h-4" />,
@@ -41,7 +41,7 @@ export function KPICard({ data, icon, delay = 0 }: KPICardProps) {
         <div>
           <p className="text-3xl font-bold text-foreground">{value}</p>
           <p className="text-sm text-muted-foreground mt-1">
-            vs {previousValue} yesterday
+            vs {previousValue} {comparisonLabel || 'yesterday'}
           </p>
         </div>
         
