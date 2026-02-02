@@ -1,24 +1,84 @@
 
-# Integrate ClickSend for SMS Messaging
+
+# Add Contact Verification Badges (Email & WhatsApp)
 
 ## Overview
 
-Add in-app SMS messaging functionality using ClickSend API, following the exact patterns established by the email implementation. This replaces the native `sms:` link behavior with a dialog-based experience.
+Add automatic verification of email addresses and WhatsApp numbers when bookings are created. Uses APILayer for email validation and Maytapi for WhatsApp number checking. Results are stored in the database and displayed as verification badges in the UI.
 
 ---
 
-## Prerequisites
+## API Integration Details
 
-**ClickSend API Credentials Required**
+### APILayer Email Verification
 
-You'll need to add two secrets before the implementation:
+| Property | Value |
+|----------|-------|
+| Endpoint | `GET https://api.apilayer.com/email_verification/{email}` |
+| Auth | Header: `apikey: YOUR_API_KEY` |
+| Key Status | Valid (deliverable mailbox) |
+| Invalid Statuses | invalid, disposable, spamtrap, abuse |
 
-| Secret Name | Description |
-|-------------|-------------|
-| `CLICKSEND_USERNAME` | Your ClickSend account username |
-| `CLICKSEND_API_KEY` | Your ClickSend API key |
+**Response Example:**
+```json
+{
+  "email": "test@example.com",
+  "format_valid": true,
+  "mx_found": true,
+  "smtp_check": true,
+  "catch_all": false,
+  "role": false,
+  "disposable": false,
+  "score": 0.96
+}
+```
 
-Get these from: https://dashboard.clicksend.com → Settings → API Credentials
+### Maytapi WhatsApp Check
+
+| Property | Value |
+|----------|-------|
+| Endpoint | `GET https://api.maytapi.com/api/{product_id}/{phone_id}/checkNumberStatus` |
+| Auth | Query param: `token={api_token}` |
+| Number Format | `{phone}@c.us` |
+
+**Response Example:**
+```json
+{
+  "success": true,
+  "result": {
+    "id": { "user": "1234567890" },
+    "status": 200,
+    "isBusiness": false,
+    "canReceiveMessage": true
+  }
+}
+```
+
+---
+
+## Required Secrets
+
+| Secret Name | Purpose | Status |
+|-------------|---------|--------|
+| `APILAYER_API_KEY` | Email verification via APILayer | **Needs to be added** |
+| `MAYTAPI_PRODUCT_ID` | Maytapi WhatsApp product ID | **Needs to be added** |
+| `MAYTAPI_PHONE_ID` | Maytapi phone instance ID | **Needs to be added** |
+| `MAYTAPI_TOKEN` | Maytapi API authentication | **Needs to be added** |
+
+---
+
+## Database Changes
+
+Add verification columns to the `bookings` table:
+
+| Column | Type | Default | Description |
+|--------|------|---------|-------------|
+| `email_verified` | boolean | null | null = not checked, true = valid, false = invalid |
+| `email_verified_at` | timestamptz | null | When verification was performed |
+| `email_verification_status` | text | null | Detailed: valid, invalid, catch_all, disposable, unknown |
+| `whatsapp_verified` | boolean | null | null = not checked, true = on WhatsApp, false = not on WhatsApp |
+| `whatsapp_verified_at` | timestamptz | null | When verification was performed |
+| `whatsapp_is_business` | boolean | null | Whether the WhatsApp account is a business account |
 
 ---
 
@@ -28,170 +88,141 @@ Get these from: https://dashboard.clicksend.com → Settings → API Credentials
 
 | File | Purpose |
 |------|---------|
-| `supabase/functions/send-follow-up-sms/index.ts` | Edge function to send SMS via ClickSend REST API |
-| `src/components/reports/SendSMSDialog.tsx` | SMS composition dialog with templates |
+| `supabase/functions/verify-contact/index.ts` | Edge function to call both verification APIs |
+| `src/components/reports/VerificationBadge.tsx` | UI component for displaying verification status |
 
 ### Files to Modify
 
 | File | Changes |
 |------|---------|
-| `src/hooks/useContactCommunications.ts` | Add `sendSMS` method |
-| `src/components/reports/ContactProfileHoverCard.tsx` | Replace native `sms:` with dialog trigger |
-| `supabase/config.toml` | Add `send-follow-up-sms` function config |
+| `src/pages/AddBooking.tsx` | Trigger verification after booking creation |
+| `src/components/reports/ContactProfileHoverCard.tsx` | Display verification badges next to email/phone |
+| `supabase/config.toml` | Add new function configuration |
 
 ---
 
-## Technical Details
+## Edge Function: `verify-contact`
 
-### 1. Edge Function: `send-follow-up-sms`
+The function handles both email and WhatsApp verification in parallel:
 
-Following the same pattern as `send-follow-up-email`:
-
-**Authentication Flow:**
-1. Extract JWT from authorization header
-2. Decode to get user ID
-3. Check `can_send_communications` permission in profiles table
-4. Return 403 if not permitted
-
-**ClickSend API Integration:**
-```text
-POST https://rest.clicksend.com/v3/sms/send
-Authorization: Basic base64(username:api_key)
-Content-Type: application/json
-
-Request Body:
+**Input:**
+```typescript
 {
-  "messages": [{
-    "to": "+1234567890",
-    "from": "PadSplit",
-    "body": "Message content here"
-  }]
-}
-
-Success Response: HTTP 200 with status "SUCCESS"
-Error Responses: INVALID_RECIPIENT, INSUFFICIENT_CREDIT, etc.
-```
-
-**Logging:**
-- On success: Insert to `contact_communications` with status `sent`
-- On failure: Insert with status `failed`
-
-**Validation:**
-- Phone number format (E.164 or standard US format)
-- Message length (≤ 1600 characters for concatenated SMS)
-- Required fields (bookingId, recipientPhone, message)
-
----
-
-### 2. UI Component: `SendSMSDialog`
-
-Modeled after `SendEmailDialog` with SMS-specific features:
-
-**Template Selection:**
-
-| Template | Trigger Condition | Example Message |
-|----------|-------------------|-----------------|
-| Quick Follow-Up | Default | "Hi {name}, checking in on your PadSplit interest in {market}. Questions? -{agent}" |
-| Move-In Reminder | status = "Pending Move-In" | "Hi {name}, reminder about your move-in on {date}. Need anything? -{agent}" |
-| Re-Engagement | status = "Non Booking" or "Postponed" | "Hi {name}, still looking in {market}? I can help find the right fit. -{agent}" |
-| Custom | User selects | Pre-filled greeting + signature |
-
-**SMS-Specific Features:**
-- Character counter showing current/max (160 per segment)
-- Segment indicator (1 SMS = 160 chars, 2 SMS = 306 chars, etc.)
-- No preview toggle needed (text-only)
-- Shorter, more direct templates than email
-
-**Layout:**
-- Recipient display (name + phone)
-- Template selector dropdown
-- Message textarea with character count
-- Send button with loading state
-
----
-
-### 3. Hook Update: `useContactCommunications`
-
-Add new method:
-
-```typescript
-interface SendSMSParams {
   bookingId: string;
-  recipientPhone: string;
-  recipientName: string;
-  message: string;
+  email?: string;
+  phone?: string;
 }
-
-sendSMS: (params: SendSMSParams) => Promise<{ success: boolean; error?: string }>
 ```
 
-Implementation invokes `supabase.functions.invoke('send-follow-up-sms', { body: params })` and handles response/errors.
+**Flow:**
+1. Validate input (at least one of email/phone required)
+2. Call APILayer email verification (if email provided)
+3. Call Maytapi WhatsApp check (if phone provided)
+4. Update booking record with verification results
+5. Return combined results
+
+**Error Handling:**
+- API failures don't fail the whole request
+- Each verification is logged individually
+- Graceful degradation (partial results OK)
 
 ---
 
-### 4. HoverCard Update
+## Verification Badge Component
 
-Current SMS button behavior:
-```typescript
-window.location.href = `sms:${cleanPhone}`;
+Visual indicators displayed in the hover card:
+
+| State | Icon | Color | Label |
+|-------|------|-------|-------|
+| Email verified | ✓ | Green | "Verified" |
+| Email invalid | ✗ | Red | "Invalid" |
+| Email disposable | ⚠ | Amber | "Disposable" |
+| Not checked | - | Gray | No badge |
+| WhatsApp active | 📱 | Green | "WhatsApp" |
+| WhatsApp business | 💼 | Blue | "WhatsApp Business" |
+| Not on WhatsApp | - | Gray | No badge |
+
+---
+
+## Integration Flow
+
+```text
+User Creates Booking
+        │
+        ▼
+  Booking Saved
+        │
+        ▼
+ ┌──────────────────────────────────────┐
+ │  invoke('verify-contact', {...})     │
+ │  (non-blocking, fires and forgets)   │
+ └──────────────────────────────────────┘
+        │
+        ├───────────────┬───────────────┐
+        ▼               ▼               │
+   APILayer         Maytapi             │
+   Email Check      WhatsApp Check      │
+        │               │               │
+        └───────┬───────┘               │
+                ▼                       │
+         Update bookings table          │
+                                        │
+        ┌───────────────────────────────┘
+        ▼
+  HoverCard displays badges
+  (on next data refresh)
 ```
 
-New behavior:
-```typescript
-setShowSMSDialog(true);
+---
+
+## HoverCard UI Update
+
+The contact details section will show verification badges:
+
+```text
+Contact Details (Before):
+┌─────────────────────────────────────────┐
+│ ✉ john@example.com · 📞 (404) 555-1234  │
+└─────────────────────────────────────────┘
+
+Contact Details (After):
+┌─────────────────────────────────────────────────────┐
+│ ✉ john@example.com ✓    · 📞 (404) 555-1234 📱      │
+│                    ↑                          ↑      │
+│            Email verified           On WhatsApp      │
+└─────────────────────────────────────────────────────┘
 ```
 
-Add state and render `SendSMSDialog` component with required props.
+---
+
+## Execution Steps
+
+1. Add the required secrets:
+   - `APILAYER_API_KEY` - from https://apilayer.com → Email Verification API
+   - `MAYTAPI_PRODUCT_ID`, `MAYTAPI_PHONE_ID`, `MAYTAPI_TOKEN` - from https://maytapi.com dashboard
+
+2. Create database migration to add verification columns to bookings
+
+3. Create `supabase/functions/verify-contact/index.ts` edge function
+
+4. Create `src/components/reports/VerificationBadge.tsx` component
+
+5. Update `src/pages/AddBooking.tsx` to trigger verification after save
+
+6. Update `src/components/reports/ContactProfileHoverCard.tsx` to display badges
+
+7. Update `supabase/config.toml` with new function
+
+8. Test the verification flow end-to-end
 
 ---
 
-### 5. Config Update
+## Cost Estimation
 
-Add to `supabase/config.toml`:
-```toml
-[functions.send-follow-up-sms]
-verify_jwt = false
-```
+| Service | Pricing | Monthly Est (500 bookings) |
+|---------|---------|---------------------------|
+| APILayer Email | 100 free/month, then ~$0.003/email | Free tier likely sufficient |
+| Maytapi | $24/mo Developer plan | $24/month |
 
----
+**Note:** Verification only runs on new bookings, not historical data. Batch verification for existing records can be added later if needed.
 
-## SMS Character Limits
-
-| Segments | Characters (GSM-7) | Characters (Unicode) |
-|----------|-------------------|---------------------|
-| 1 | 160 | 70 |
-| 2 | 306 | 134 |
-| 3 | 459 | 201 |
-| 4+ | 153 per segment | 67 per segment |
-
-The dialog will show segment count to help agents stay within budget-friendly limits.
-
----
-
-## Expected User Flow
-
-1. User hovers over contact name in Reports
-2. Hover card appears with SMS button
-3. User clicks SMS button
-4. SendSMSDialog opens with:
-   - Auto-selected template based on booking status
-   - Pre-filled message with member name, market, dates
-5. User optionally edits message
-6. Character counter updates in real-time
-7. User clicks "Send SMS"
-8. Edge function validates permission and sends via ClickSend
-9. Success toast appears, dialog closes
-10. Communication logged in `contact_communications` table
-11. "Last Contacted" updates in hover card
-
----
-
-## Next Steps After Approval
-
-1. Prompt you to add ClickSend secrets (Username and API Key)
-2. Create the Edge Function
-3. Create the SendSMSDialog component
-4. Update the hook with sendSMS method
-5. Update ContactProfileHoverCard to use the dialog
-6. Update config.toml
-7. Test the SMS flow end-to-end
