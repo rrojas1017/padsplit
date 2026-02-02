@@ -103,8 +103,8 @@ export function useMyBookingsData(): MyBookingsDataReturn {
         return {
           id: row.id,
           memberName: row.member_name,
-          bookingDate: new Date(row.booking_date),
-          moveInDate: new Date(row.move_in_date),
+          bookingDate: new Date(row.booking_date + 'T00:00:00'),
+          moveInDate: new Date(row.move_in_date + 'T00:00:00'),
           agentId: row.agent_id,
           agentName: myAgent.name,
           status: row.status as Booking['status'],
