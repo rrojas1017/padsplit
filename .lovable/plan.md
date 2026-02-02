@@ -1,108 +1,139 @@
 
-# Same-Time Comparison for Dashboard KPIs
+# Extract Market Information from Call Transcriptions
 
-## Problem Statement
-Currently, the Dashboard KPI cards (Total Bookings Today, Vixicom Bookings, PadSplit Internal) compare today's count against **all of yesterday's bookings**. This creates a misleading comparison early in the day - at 10 AM, comparing 5 bookings against yesterday's full-day total of 20 would show -75%, when the real same-time comparison might be +25%.
+## Problem Summary
+- **5,163 imported records** have no market data (city/state)
+- **105 of those** have completed transcriptions with market info in the audio
+- Market locations are mentioned in calls (e.g., "Houston", "Tampa", "Lawrenceville", "Stone Mountain")
+- Current AI analysis extracts `propertyAddress` but not explicit city/state fields
 
-The user wants a **real-time apples-to-apples comparison**: today's bookings created by the current time vs yesterday's bookings created by the same time.
+## Solution Overview
 
-## Current Architecture
+### Part 1: Enhance Future Transcriptions
+Update the AI analysis prompt in `transcribe-call/index.ts` to extract `marketCity` and `marketState` explicitly as new fields in `memberDetails`. After transcription, automatically update the booking's `market_city` and `market_state` fields when they are empty but extracted from the call.
 
-| Component | Current Behavior | Desired Behavior |
-|-----------|-----------------|------------------|
-| KPI Cards (Total, Vixicom, PadSplit) | Full day vs full day | Same time vs same time |
-| Insights "Today vs Yesterday" card | Already uses same-time comparison | Keep as-is |
-| Wallboard stats | Full day vs full day | Same time vs same time |
+### Part 2: Backfill Existing Transcriptions
+Create a new edge function `backfill-markets-from-transcriptions` that:
+1. Finds bookings with completed transcriptions but missing market data
+2. Uses AI to extract city/state from the transcription or summary
+3. Updates the booking record with the extracted market info
 
-## Solution
+---
 
-### 1. Update `calculateKPIData` Function
-Modify the KPI calculation in `src/utils/dashboardCalculations.ts` to filter bookings by `createdAt` timestamp when comparing "today" vs "yesterday":
+## Technical Implementation
+
+### 1. Update AI Analysis Prompt (transcribe-call/index.ts)
+
+Add to the `memberDetails` schema in both `buildDynamicPrompt` and `buildDefaultPrompt`:
 
 ```typescript
-// When dateFilter is 'today', use same-time comparison
-if (dateFilter === 'today') {
-  const now = new Date();
-  const currentHour = now.getHours();
-  const currentMinutes = now.getMinutes();
-  
-  // Filter today's bookings by creation time
-  currentBookings = currentBookings.filter(b => {
-    if (!b.createdAt) return true;
-    return b.createdAt.getHours() < currentHour || 
-           (b.createdAt.getHours() === currentHour && 
-            b.createdAt.getMinutes() <= currentMinutes);
-  });
-  
-  // Filter yesterday's bookings by same time cutoff
-  previousBookings = previousBookings.filter(b => {
-    if (!b.createdAt) return true;
-    return b.createdAt.getHours() < currentHour || 
-           (b.createdAt.getHours() === currentHour && 
-            b.createdAt.getMinutes() <= currentMinutes);
-  });
+"memberDetails": {
+  // ... existing fields ...
+  "propertyAddress": "string or null",
+  "marketCity": "string or null - the city name where the property is located (e.g., 'Atlanta', 'Houston', 'Tampa')",
+  "marketState": "string or null - the US state abbreviation (e.g., 'GA', 'TX', 'FL')"
 }
 ```
 
-### 2. Update `KPICard` Component
-Modify the comparison label to show the time context:
+### 2. Auto-Update Booking Markets After Transcription
 
-- Current: "vs 15 yesterday"
-- Updated: "vs 15 at this time yesterday" (when dateFilter is 'today')
-
-### 3. Update Wallboard Page
-Apply the same logic to `src/pages/Wallboard.tsx`:
+After successful analysis, if the booking has no market data but the AI extracted it:
 
 ```typescript
-// Filter by createdAt time for same-time comparison
-const now = new Date();
-const currentHour = now.getHours();
-const currentMinutes = now.getMinutes();
-
-const todayByNow = todayBookings.filter(b => {
-  if (!b.createdAt) return true;
-  return b.createdAt.getHours() < currentHour || 
-         (b.createdAt.getHours() === currentHour && 
-          b.createdAt.getMinutes() <= currentMinutes);
-});
-
-const yesterdayByNow = yesterdayBookings.filter(b => {
-  if (!b.createdAt) return true;
-  return b.createdAt.getHours() < currentHour || 
-         (b.createdAt.getHours() === currentHour && 
-          b.createdAt.getMinutes() <= currentMinutes);
-});
+// After saving transcription, check for market enrichment
+const memberDetails = keyPoints?.memberDetails;
+if (memberDetails?.marketCity || memberDetails?.marketState) {
+  // Check if booking needs market data
+  const { data: booking } = await supabase
+    .from('bookings')
+    .select('market_city, market_state')
+    .eq('id', bookingId)
+    .single();
+  
+  if (!booking?.market_city && memberDetails.marketCity) {
+    await supabase
+      .from('bookings')
+      .update({
+        market_city: memberDetails.marketCity,
+        market_state: memberDetails.marketState || null
+      })
+      .eq('id', bookingId);
+    console.log(`[Background] Market enriched: ${memberDetails.marketCity}, ${memberDetails.marketState}`);
+  }
+}
 ```
 
-## Files to Modify
+### 3. New Edge Function: backfill-markets-from-transcriptions
 
-| File | Changes |
-|------|---------|
-| `src/utils/dashboardCalculations.ts` | Add same-time filtering logic to `calculateKPIData` |
-| `src/components/dashboard/KPICard.tsx` | Update comparison label to include time context |
-| `src/pages/Wallboard.tsx` | Add same-time filtering for all stat cards |
-| `src/types/index.ts` | Add optional `comparisonLabel` field to `KPIData` interface |
-
-## Visual Impact
-
-### Before (at 10:30 AM)
-```
-Total Bookings Today: 8
-vs 25 yesterday (-68%)  <-- Misleading: comparing partial day to full day
+```text
+supabase/functions/backfill-markets-from-transcriptions/index.ts
 ```
 
-### After (at 10:30 AM)
+**Logic:**
+1. Query bookings with `transcription_status = 'completed'` AND (`market_city IS NULL OR market_city = ''`)
+2. For each booking, fetch transcription from `booking_transcriptions`
+3. Use a lightweight AI call to extract city/state from the transcription or summary
+4. Update the `bookings.market_city` and `bookings.market_state` fields
+5. Process in batches with 10-second delays (following existing pattern)
+
+**AI Prompt for extraction:**
+
+```typescript
+const prompt = `Extract the city and state from this PadSplit call.
+
+CONTEXT: PadSplit operates in these major markets: Atlanta GA, Houston TX, Dallas TX, Tampa FL, Charlotte NC, Raleigh NC, Phoenix AZ, Las Vegas NV, Denver CO, Nashville TN, Birmingham AL, Memphis TN, Jacksonville FL, Orlando FL, Miami FL, San Antonio TX.
+
+CALL SUMMARY:
+${callSummary}
+
+PROPERTY ADDRESS MENTIONED:
+${propertyAddress || 'Not specified'}
+
+Return JSON (no markdown):
+{
+  "city": "city name or null",
+  "state": "two-letter state code or null"
+}`;
 ```
-Total Bookings Today: 8
-vs 6 at this time yesterday (+33%)  <-- Accurate: comparing same time windows
-```
 
-## Technical Notes
+---
 
-1. **Fallback for missing `createdAt`**: Bookings without a `createdAt` timestamp (legacy imports) will be included to avoid excluding valid data
+## Files to Create/Modify
 
-2. **Only affects "today" filter**: Other date ranges (7d, 30d, month, custom) will continue using full-period comparisons since same-time logic doesn't apply
+| File | Action | Description |
+|------|--------|-------------|
+| `supabase/functions/transcribe-call/index.ts` | Modify | Add marketCity/marketState to AI prompt, auto-update empty markets |
+| `supabase/functions/backfill-markets-from-transcriptions/index.ts` | Create | Batch process existing transcriptions to extract market data |
+| `src/types/index.ts` | Modify | Add marketCity/marketState to MemberDetails interface |
 
-3. **Reuses existing pattern**: The implementation mirrors the existing `calculateInsightsData` function's same-time logic for consistency
+---
 
-4. **Real-time updates**: The Wallboard updates every 60 seconds and uses the current `time` state, so comparisons will stay accurate throughout the day
+## Estimated Impact
+
+| Records | Status | Action |
+|---------|--------|--------|
+| 105 | Transcribed, no market | Will be backfilled by new function |
+| 657 | Transcribed, has market | No action needed |
+| 5,058 | Not transcribed, no market | Will get market on future transcription |
+
+---
+
+## Cost Estimate
+
+**Backfill (105 existing records):**
+- Using `gemini-2.5-flash-lite` for lightweight extraction
+- ~500 tokens per call = $0.0001 per record
+- Total: ~$0.01 for all 105 records
+
+**Future (per transcription):**
+- Already included in existing AI analysis prompt (no additional cost)
+- Auto-enrichment is just a database update
+
+---
+
+## Execution Steps
+
+1. Update `transcribe-call` with new prompt fields and auto-enrichment logic
+2. Create `backfill-markets-from-transcriptions` edge function
+3. Deploy and run the backfill function to process 105 existing records
+4. Verify markets are being populated for new transcriptions
