@@ -1,50 +1,108 @@
 
-# Switch to Deepgram-Only Transcription
+# Same-Time Comparison for Dashboard KPIs
 
-## Current State
-The system uses A/B testing between ElevenLabs and Deepgram with a **50/50 weight split** in the `stt_provider_settings` table:
-- `deepgram`: weight 50, is_active: true
-- `elevenlabs`: weight 50, is_active: true
+## Problem Statement
+Currently, the Dashboard KPI cards (Total Bookings Today, Vixicom Bookings, PadSplit Internal) compare today's count against **all of yesterday's bookings**. This creates a misleading comparison early in the day - at 10 AM, comparing 5 bookings against yesterday's full-day total of 20 would show -75%, when the real same-time comparison might be +25%.
 
-This explains why 4 out of 5 calls today still used ElevenLabs despite Deepgram being configured.
+The user wants a **real-time apples-to-apples comparison**: today's bookings created by the current time vs yesterday's bookings created by the same time.
+
+## Current Architecture
+
+| Component | Current Behavior | Desired Behavior |
+|-----------|-----------------|------------------|
+| KPI Cards (Total, Vixicom, PadSplit) | Full day vs full day | Same time vs same time |
+| Insights "Today vs Yesterday" card | Already uses same-time comparison | Keep as-is |
+| Wallboard stats | Full day vs full day | Same time vs same time |
 
 ## Solution
-Update the database settings to route **100% of new transcriptions to Deepgram**:
 
-| Provider | Current Weight | New Weight | is_active |
-|----------|---------------|------------|-----------|
-| deepgram | 50 | 100 | true |
-| elevenlabs | 50 | 0 | true (kept for fallback) |
+### 1. Update `calculateKPIData` Function
+Modify the KPI calculation in `src/utils/dashboardCalculations.ts` to filter bookings by `createdAt` timestamp when comparing "today" vs "yesterday":
 
-## Database Migration
-
-```sql
--- Set Deepgram as the sole STT provider (100% weight)
-UPDATE stt_provider_settings 
-SET weight = 100, updated_at = now() 
-WHERE provider_name = 'deepgram';
-
--- Disable ElevenLabs for STT by setting weight to 0
-UPDATE stt_provider_settings 
-SET weight = 0, updated_at = now() 
-WHERE provider_name = 'elevenlabs';
+```typescript
+// When dateFilter is 'today', use same-time comparison
+if (dateFilter === 'today') {
+  const now = new Date();
+  const currentHour = now.getHours();
+  const currentMinutes = now.getMinutes();
+  
+  // Filter today's bookings by creation time
+  currentBookings = currentBookings.filter(b => {
+    if (!b.createdAt) return true;
+    return b.createdAt.getHours() < currentHour || 
+           (b.createdAt.getHours() === currentHour && 
+            b.createdAt.getMinutes() <= currentMinutes);
+  });
+  
+  // Filter yesterday's bookings by same time cutoff
+  previousBookings = previousBookings.filter(b => {
+    if (!b.createdAt) return true;
+    return b.createdAt.getHours() < currentHour || 
+           (b.createdAt.getHours() === currentHour && 
+            b.createdAt.getMinutes() <= currentMinutes);
+  });
+}
 ```
 
-## Cost Impact
+### 2. Update `KPICard` Component
+Modify the comparison label to show the time context:
 
-Based on today's data (4 ElevenLabs calls = $1.20):
-- **Current rate (ElevenLabs)**: $0.034/min
-- **New rate (Deepgram)**: $0.0043/min
-- **Savings per call**: ~87%
+- Current: "vs 15 yesterday"
+- Updated: "vs 15 at this time yesterday" (when dateFilter is 'today')
 
-For the same 35 minutes processed today:
-- ElevenLabs cost: $1.20
-- Deepgram cost: $0.15
-- **Daily savings**: ~$1.05
+### 3. Update Wallboard Page
+Apply the same logic to `src/pages/Wallboard.tsx`:
+
+```typescript
+// Filter by createdAt time for same-time comparison
+const now = new Date();
+const currentHour = now.getHours();
+const currentMinutes = now.getMinutes();
+
+const todayByNow = todayBookings.filter(b => {
+  if (!b.createdAt) return true;
+  return b.createdAt.getHours() < currentHour || 
+         (b.createdAt.getHours() === currentHour && 
+          b.createdAt.getMinutes() <= currentMinutes);
+});
+
+const yesterdayByNow = yesterdayBookings.filter(b => {
+  if (!b.createdAt) return true;
+  return b.createdAt.getHours() < currentHour || 
+         (b.createdAt.getHours() === currentHour && 
+          b.createdAt.getMinutes() <= currentMinutes);
+});
+```
+
+## Files to Modify
+
+| File | Changes |
+|------|---------|
+| `src/utils/dashboardCalculations.ts` | Add same-time filtering logic to `calculateKPIData` |
+| `src/components/dashboard/KPICard.tsx` | Update comparison label to include time context |
+| `src/pages/Wallboard.tsx` | Add same-time filtering for all stat cards |
+| `src/types/index.ts` | Add optional `comparisonLabel` field to `KPIData` interface |
+
+## Visual Impact
+
+### Before (at 10:30 AM)
+```
+Total Bookings Today: 8
+vs 25 yesterday (-68%)  <-- Misleading: comparing partial day to full day
+```
+
+### After (at 10:30 AM)
+```
+Total Bookings Today: 8
+vs 6 at this time yesterday (+33%)  <-- Accurate: comparing same time windows
+```
 
 ## Technical Notes
 
-1. **No code changes required** - The `selectSTTProvider` function in `transcribe-call/index.ts` already reads weights from the database
-2. **AI polishing preserved** - Deepgram transcripts will continue to be polished by Lovable AI to fix brand names like "PadSplit"
-3. **ElevenLabs kept as fallback** - Setting weight to 0 (not deleting) allows quick revert if needed
-4. **TTS unchanged** - ElevenLabs will still be used for Jeff and Katty voice generation (TTS), only STT changes
+1. **Fallback for missing `createdAt`**: Bookings without a `createdAt` timestamp (legacy imports) will be included to avoid excluding valid data
+
+2. **Only affects "today" filter**: Other date ranges (7d, 30d, month, custom) will continue using full-period comparisons since same-time logic doesn't apply
+
+3. **Reuses existing pattern**: The implementation mirrors the existing `calculateInsightsData` function's same-time logic for consistency
+
+4. **Real-time updates**: The Wallboard updates every 60 seconds and uses the current `time` state, so comparisons will stay accurate throughout the day
