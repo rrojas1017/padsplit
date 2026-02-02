@@ -1,99 +1,140 @@
 
 
-# Switch Email Verification Provider to EmailListVerify
+# Real-Time Email Validation During Booking Entry
 
 ## Overview
 
-Replace the current APILayer email verification service with **EmailListVerify** for improved reliability. This change involves updating the Edge Function to use the new API endpoint and response format.
+Add instant email verification as agents type in the email field when creating a new booking. The agent will immediately see whether the email is valid, invalid, or has issues before submitting the form.
 
 ---
 
-## API Comparison
+## User Experience Flow
 
-| Feature | APILayer (Current) | EmailListVerify (New) |
-|---------|-------------------|----------------------|
-| Endpoint | `api.apilayer.com/email_verification/{email}` | `apps.emaillistverify.com/api/verifyEmail?secret=KEY&email=EMAIL` |
-| Auth | Header: `apikey: KEY` | Query param: `secret=KEY` |
-| Response | JSON object | Plain text status |
+```text
+Agent types email → Debounce 800ms → API verification → Show badge/status
+       ↓                                                      ↓
+   Green check (format ok)              ✓ Valid | ⚠ Disposable | ✕ Invalid
+```
 
----
-
-## EmailListVerify Response Codes
-
-The API returns simple text responses:
-
-| Response | Meaning | Our Status Mapping |
-|----------|---------|-------------------|
-| `ok` | Email passed all tests | `valid` (verified: true) |
-| `failed` | Email failed verification | `invalid` (verified: false) |
-| `unknown` | Cannot be accurately tested | `unknown` (verified: false) |
-| `incorrect` | Syntax error or empty | `invalid` (verified: false) |
-| `key_not_valid` | Invalid API key | Error handling |
-| `missing parameters` | Request issue | Error handling |
+**Visual Feedback:**
+- While typing: Green checkmark appears when format is valid (current behavior)
+- After pause: Spinner shows "Verifying..." 
+- Result: Badge appears showing verification status (valid/invalid/disposable/catch-all)
 
 ---
 
 ## Changes Required
 
-### 1. Add New Secret
+### 1. Create New Edge Function: `verify-email-realtime`
 
-A new secret `EMAILLISTVERIFY_API_KEY` needs to be added for the EmailListVerify API key.
+A lightweight version of the verify-email function that:
+- Does NOT require a bookingId (email-only verification)
+- Returns the verification result directly
+- Does NOT update any database records
 
-### 2. Update Edge Function
+**Endpoint:** `POST /verify-email-realtime`  
+**Body:** `{ email: string }`  
+**Response:** `{ verified: boolean, status: 'valid' | 'invalid' | 'disposable' | 'catch_all' | 'unknown' }`
 
-**File:** `supabase/functions/verify-email/index.ts`
+### 2. Update AddBooking.tsx
 
-Changes:
-- Update endpoint URL from APILayer to EmailListVerify
-- Change authentication from header-based to query parameter
-- Simplify response parsing (text instead of JSON)
-- Map text responses to verification statuses
+Add real-time verification logic:
+- **Debounced API call** - Wait 800ms after user stops typing to avoid excessive API calls
+- **Loading state** - Show spinner while verifying
+- **Result display** - Show the EmailVerificationBadge inline with the input
+- **Warning logic** - If email is invalid/disposable, show amber warning message but allow submission
+
+### 3. Optional Enhancement for EditBooking.tsx
+
+Apply the same real-time validation to the edit form if contact_email field is present there.
 
 ---
 
-## Technical Details
+## Technical Implementation
 
-### New API Call Format
+### New Edge Function Structure
 
 ```typescript
-const apiResponse = await fetch(
-  `https://apps.emaillistverify.com/api/verifyEmail?secret=${apiKey}&email=${encodeURIComponent(email)}`,
-  { method: 'GET' }
-);
-
-const responseText = await apiResponse.text();
-// responseText will be: "ok", "failed", "unknown", "incorrect", etc.
+// supabase/functions/verify-email-realtime/index.ts
+Deno.serve(async (req) => {
+  const { email } = await req.json();
+  
+  // Call EmailListVerify API
+  const response = await fetch(`https://apps.emaillistverify.com/api/verifyEmail?secret=${apiKey}&email=${email}`);
+  
+  // Return result without updating database
+  return Response.json({ verified, status });
+});
 ```
 
-### Status Mapping Logic
+### Frontend Integration
 
 ```typescript
-switch (responseText.trim().toLowerCase()) {
-  case 'ok':
-    return { verified: true, status: 'valid' };
-  case 'failed':
-    return { verified: false, status: 'invalid' };
-  case 'unknown':
-    return { verified: false, status: 'unknown' };
-  case 'incorrect':
-    return { verified: false, status: 'invalid' };
-  default:
-    return { verified: false, status: 'unknown' };
-}
+// In AddBooking.tsx
+const [emailVerificationStatus, setEmailVerificationStatus] = useState<EmailVerificationStatus>(null);
+const [isVerifyingEmail, setIsVerifyingEmail] = useState(false);
+
+// Debounced verification call
+useEffect(() => {
+  if (!isValidEmail(contactEmail)) {
+    setEmailVerificationStatus(null);
+    return;
+  }
+  
+  const timer = setTimeout(async () => {
+    setIsVerifyingEmail(true);
+    const result = await supabase.functions.invoke('verify-email-realtime', { 
+      body: { email: contactEmail } 
+    });
+    setEmailVerificationStatus(result.data?.status || null);
+    setIsVerifyingEmail(false);
+  }, 800);
+  
+  return () => clearTimeout(timer);
+}, [contactEmail]);
+```
+
+### UI Updates
+
+```jsx
+{/* Email field with real-time verification */}
+<div className="relative">
+  <Input value={contactEmail} onChange={...} />
+  
+  {/* Show spinner while verifying */}
+  {isVerifyingEmail && <Loader2 className="animate-spin ..." />}
+  
+  {/* Show verification badge when done */}
+  {!isVerifyingEmail && emailVerificationStatus && (
+    <EmailVerificationBadge status={emailVerificationStatus} />
+  )}
+</div>
+
+{/* Warning message for problematic emails */}
+{emailVerificationStatus === 'invalid' && (
+  <p className="text-destructive text-xs">
+    ⚠️ This email appears to be invalid. Please verify with the member.
+  </p>
+)}
 ```
 
 ---
 
-## Implementation Steps
+## Files to Create/Modify
 
-1. **Add the EmailListVerify API key secret** - You'll be prompted to enter your API key
-2. **Update the Edge Function** - Replace APILayer logic with EmailListVerify
-3. **Deploy the updated function** - Automatic deployment
-4. **Test verification** - Run test on existing bookings to confirm it works
+| File | Action |
+|------|--------|
+| `supabase/functions/verify-email-realtime/index.ts` | Create new |
+| `src/pages/AddBooking.tsx` | Add verification logic + UI |
+| `src/pages/EditBooking.tsx` | Add same verification (if email field exists) |
 
 ---
 
-## No UI Changes Required
+## Behavior Notes
 
-The existing `EmailVerificationBadge` component and database schema remain unchanged. Only the backend verification provider is swapped.
+- **Format check first**: The green checkmark for valid format still appears immediately
+- **API verification second**: After 800ms pause, real verification runs
+- **Non-blocking**: Invalid emails show a warning but don't block form submission (agent may have confirmed with member)
+- **Error handling**: If API fails, status shows "unknown" with no error to user
+- **Cost control**: 800ms debounce prevents excessive API calls
 
