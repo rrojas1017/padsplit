@@ -1,140 +1,110 @@
 
+# Fix Date Display Issue in Reports Page
 
-# Real-Time Email Validation During Booking Entry
+## Problem Identified
 
-## Overview
+When filtering by Record Date (January 30th), the records appear in the table but show **incorrect dates** (e.g., January 29th instead of January 30th). This is a **timezone conversion bug**.
 
-Add instant email verification as agents type in the email field when creating a new booking. The agent will immediately see whether the email is valid, invalid, or has issues before submitting the form.
+## Root Cause
 
----
-
-## User Experience Flow
-
-```text
-Agent types email → Debounce 800ms → API verification → Show badge/status
-       ↓                                                      ↓
-   Green check (format ok)              ✓ Valid | ⚠ Disposable | ✕ Invalid
-```
-
-**Visual Feedback:**
-- While typing: Green checkmark appears when format is valid (current behavior)
-- After pause: Spinner shows "Verifying..." 
-- Result: Badge appears showing verification status (valid/invalid/disposable/catch-all)
-
----
-
-## Changes Required
-
-### 1. Create New Edge Function: `verify-email-realtime`
-
-A lightweight version of the verify-email function that:
-- Does NOT require a bookingId (email-only verification)
-- Returns the verification result directly
-- Does NOT update any database records
-
-**Endpoint:** `POST /verify-email-realtime`  
-**Body:** `{ email: string }`  
-**Response:** `{ verified: boolean, status: 'valid' | 'invalid' | 'disposable' | 'catch_all' | 'unknown' }`
-
-### 2. Update AddBooking.tsx
-
-Add real-time verification logic:
-- **Debounced API call** - Wait 800ms after user stops typing to avoid excessive API calls
-- **Loading state** - Show spinner while verifying
-- **Result display** - Show the EmailVerificationBadge inline with the input
-- **Warning logic** - If email is invalid/disposable, show amber warning message but allow submission
-
-### 3. Optional Enhancement for EditBooking.tsx
-
-Apply the same real-time validation to the edit form if contact_email field is present there.
-
----
-
-## Technical Implementation
-
-### New Edge Function Structure
+In `src/hooks/useReportsData.ts`, dates are being parsed without timezone awareness:
 
 ```typescript
-// supabase/functions/verify-email-realtime/index.ts
-Deno.serve(async (req) => {
-  const { email } = await req.json();
-  
-  // Call EmailListVerify API
-  const response = await fetch(`https://apps.emaillistverify.com/api/verifyEmail?secret=${apiKey}&email=${email}`);
-  
-  // Return result without updating database
-  return Response.json({ verified, status });
-});
+// Current (BROKEN)
+bookingDate: new Date(row.booking_date),
+moveInDate: new Date(row.move_in_date),
 ```
 
-### Frontend Integration
+When JavaScript parses `'2026-01-30'` without a time component, it interprets this as **midnight UTC**. For users in timezones behind UTC (like EST which is UTC-5), this gets converted to the **previous day** when displayed.
+
+**Example:**
+- Database stores: `2026-01-30`
+- JavaScript parses as: `2026-01-30T00:00:00Z` (UTC)
+- Displayed in EST as: `January 29, 2026 7:00 PM` → **Shows as Jan 29!**
+
+## Solution
+
+Apply the established timezone fix pattern used throughout the codebase - append `T00:00:00` to treat the date as **local midnight** instead of **UTC midnight**:
 
 ```typescript
-// In AddBooking.tsx
-const [emailVerificationStatus, setEmailVerificationStatus] = useState<EmailVerificationStatus>(null);
-const [isVerifyingEmail, setIsVerifyingEmail] = useState(false);
-
-// Debounced verification call
-useEffect(() => {
-  if (!isValidEmail(contactEmail)) {
-    setEmailVerificationStatus(null);
-    return;
-  }
-  
-  const timer = setTimeout(async () => {
-    setIsVerifyingEmail(true);
-    const result = await supabase.functions.invoke('verify-email-realtime', { 
-      body: { email: contactEmail } 
-    });
-    setEmailVerificationStatus(result.data?.status || null);
-    setIsVerifyingEmail(false);
-  }, 800);
-  
-  return () => clearTimeout(timer);
-}, [contactEmail]);
+// Fixed
+bookingDate: new Date(row.booking_date + 'T00:00:00'),
+moveInDate: new Date(row.move_in_date + 'T00:00:00'),
 ```
 
-### UI Updates
-
-```jsx
-{/* Email field with real-time verification */}
-<div className="relative">
-  <Input value={contactEmail} onChange={...} />
-  
-  {/* Show spinner while verifying */}
-  {isVerifyingEmail && <Loader2 className="animate-spin ..." />}
-  
-  {/* Show verification badge when done */}
-  {!isVerifyingEmail && emailVerificationStatus && (
-    <EmailVerificationBadge status={emailVerificationStatus} />
-  )}
-</div>
-
-{/* Warning message for problematic emails */}
-{emailVerificationStatus === 'invalid' && (
-  <p className="text-destructive text-xs">
-    ⚠️ This email appears to be invalid. Please verify with the member.
-  </p>
-)}
-```
+This pattern is already used in:
+- `BookingsContext.tsx` (line 82-83)
+- `useCoachingData.ts` (line 91)
+- `PublicWallboard.tsx` (line 79-80)
+- `MyQA.tsx` (multiple locations)
 
 ---
 
-## Files to Create/Modify
+## Files to Modify
 
-| File | Action |
+| File | Change |
 |------|--------|
-| `supabase/functions/verify-email-realtime/index.ts` | Create new |
-| `src/pages/AddBooking.tsx` | Add verification logic + UI |
-| `src/pages/EditBooking.tsx` | Add same verification (if email field exists) |
+| `src/hooks/useReportsData.ts` | Add `+ 'T00:00:00'` to date parsing (lines 287-288) |
 
 ---
 
-## Behavior Notes
+## Implementation Details
 
-- **Format check first**: The green checkmark for valid format still appears immediately
-- **API verification second**: After 800ms pause, real verification runs
-- **Non-blocking**: Invalid emails show a warning but don't block form submission (agent may have confirmed with member)
-- **Error handling**: If API fails, status shows "unknown" with no error to user
-- **Cost control**: 800ms debounce prevents excessive API calls
+### Update `useReportsData.ts`
 
+**Line 287-288 - Change from:**
+```typescript
+bookingDate: new Date(row.booking_date),
+moveInDate: new Date(row.move_in_date),
+```
+
+**To:**
+```typescript
+bookingDate: new Date(row.booking_date + 'T00:00:00'),
+moveInDate: new Date(row.move_in_date + 'T00:00:00'),
+```
+
+Also update the following date fields that use the same pattern:
+
+**Line 308 - `transcribedAt`:**
+```typescript
+// From:
+transcribedAt: row.transcribed_at ? new Date(row.transcribed_at) : undefined,
+// Note: This is a timestamp, so it should remain unchanged
+```
+
+**Line 315 - `createdAt`:**
+```typescript
+// From:
+createdAt: row.created_at ? new Date(row.created_at) : undefined,
+// Note: This is a timestamp with timezone, so it should remain unchanged
+```
+
+**Line 319 - `emailVerifiedAt`:**
+```typescript
+// From:
+emailVerifiedAt: row.email_verified_at ? new Date(row.email_verified_at) : undefined,
+// Note: This is a timestamp with timezone, so it should remain unchanged
+```
+
+Only `booking_date` and `move_in_date` need the fix because they are DATE-only columns (no time component). Timestamp columns (`created_at`, `transcribed_at`, etc.) include timezone info and are handled correctly.
+
+---
+
+## Why This Fix Works
+
+| Parse Method | Interpretation | EST Display |
+|--------------|----------------|-------------|
+| `new Date('2026-01-30')` | UTC midnight | Jan 29, 7:00 PM |
+| `new Date('2026-01-30T00:00:00')` | Local midnight | Jan 30, 12:00 AM ✅ |
+
+By appending `T00:00:00`, JavaScript treats the date string as local time instead of UTC, preserving the intended date regardless of the user's timezone.
+
+---
+
+## Expected Result
+
+After this fix:
+- Filtering for January 30th will show records with "Jan 30, 2026" in the Record Date column
+- All dates in the Reports table will display correctly
+- CSV exports will use the correct dates
