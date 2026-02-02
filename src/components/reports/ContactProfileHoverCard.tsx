@@ -29,6 +29,7 @@ import { maskEmail, maskPhone } from '@/utils/contactPrivacy';
 import { calculateFollowUpPriority, BookingForPriority } from '@/utils/followUpPriority';
 import { FollowUpPriorityBadge } from './FollowUpPriorityBadge';
 import { SendEmailDialog } from './SendEmailDialog';
+import { SendSMSDialog } from './SendSMSDialog';
 
 interface ContactProfileHoverCardProps {
   memberName: string;
@@ -93,8 +94,9 @@ export function ContactProfileHoverCard({
   
   const { lastCommunication, canSendCommunications, logCommunication, refreshCommunications } = useContactCommunications(bookingId);
   
-  // State for email dialog
+  // State for dialogs
   const [showEmailDialog, setShowEmailDialog] = useState(false);
+  const [showSMSDialog, setShowSMSDialog] = useState(false);
 
   // Calculate follow-up priority if we have status info
   const priority = React.useMemo(() => {
@@ -123,14 +125,9 @@ export function ContactProfileHoverCard({
   };
 
   const handleSmsClick = () => {
-    if (contactPhone && bookingId) {
-      const cleanPhone = contactPhone.replace(/\D/g, '');
-      window.location.href = `sms:${cleanPhone}`;
-      logCommunication({
-        bookingId,
-        communicationType: 'sms',
-        recipientPhone: contactPhone,
-      });
+    if (contactPhone && bookingId && canSendCommunications) {
+      // Open the SMS dialog instead of native sms: URL
+      setShowSMSDialog(true);
     }
   };
 
@@ -406,6 +403,22 @@ export function ContactProfileHoverCard({
           moveInDate={moveInDate}
           status={bookingStatus}
           onEmailSent={refreshCommunications}
+        />
+      )}
+
+      {/* SMS Dialog */}
+      {contactPhone && bookingId && (
+        <SendSMSDialog
+          isOpen={showSMSDialog}
+          onClose={() => setShowSMSDialog(false)}
+          bookingId={bookingId}
+          recipientPhone={contactPhone}
+          memberName={memberName}
+          marketCity={marketCity}
+          marketState={marketState}
+          moveInDate={moveInDate}
+          status={bookingStatus}
+          onSMSSent={refreshCommunications}
         />
       )}
     </HoverCard>
