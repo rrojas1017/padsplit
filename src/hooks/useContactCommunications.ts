@@ -36,6 +36,9 @@ interface UseContactCommunicationsReturn {
   lastCommunication: ContactCommunication | null;
   isLoading: boolean;
   canSendCommunications: boolean;
+  canSendEmail: boolean;
+  canSendSMS: boolean;
+  canSendVoice: boolean;
   logCommunication: (data: {
     bookingId: string;
     communicationType: 'sms' | 'email' | 'voice_note';
@@ -53,23 +56,34 @@ export function useContactCommunications(bookingId?: string): UseContactCommunic
   const [communications, setCommunications] = useState<ContactCommunication[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [canSendCommunications, setCanSendCommunications] = useState(false);
+  const [canSendEmail, setCanSendEmail] = useState(false);
+  const [canSendSMS, setCanSendSMS] = useState(false);
+  const [canSendVoice, setCanSendVoice] = useState(false);
 
   // Check if current user can send communications
   useEffect(() => {
     const checkPermission = async () => {
       if (!user?.id) {
         setCanSendCommunications(false);
+        setCanSendEmail(false);
+        setCanSendSMS(false);
+        setCanSendVoice(false);
         return;
       }
 
       const { data, error } = await supabase
         .from('profiles')
-        .select('can_send_communications')
+        .select('can_send_communications, can_send_email, can_send_sms, can_send_voice')
         .eq('id', user.id)
         .single();
 
       if (!error && data) {
-        setCanSendCommunications(data.can_send_communications ?? false);
+        const masterEnabled = data.can_send_communications ?? false;
+        setCanSendCommunications(masterEnabled);
+        // Each channel requires both master toggle AND specific channel toggle
+        setCanSendEmail(masterEnabled && (data.can_send_email ?? false));
+        setCanSendSMS(masterEnabled && (data.can_send_sms ?? false));
+        setCanSendVoice(masterEnabled && (data.can_send_voice ?? false));
       }
     };
 
@@ -239,6 +253,9 @@ export function useContactCommunications(bookingId?: string): UseContactCommunic
     lastCommunication,
     isLoading,
     canSendCommunications,
+    canSendEmail,
+    canSendSMS,
+    canSendVoice,
     logCommunication,
     sendEmail,
     sendSMS,

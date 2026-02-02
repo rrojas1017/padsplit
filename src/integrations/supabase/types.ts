@@ -1410,6 +1410,9 @@ export type Database = {
         Row: {
           avatar_url: string | null
           can_send_communications: boolean
+          can_send_email: boolean
+          can_send_sms: boolean
+          can_send_voice: boolean
           created_at: string
           email: string | null
           id: string
@@ -1421,6 +1424,9 @@ export type Database = {
         Insert: {
           avatar_url?: string | null
           can_send_communications?: boolean
+          can_send_email?: boolean
+          can_send_sms?: boolean
+          can_send_voice?: boolean
           created_at?: string
           email?: string | null
           id: string
@@ -1432,6 +1438,9 @@ export type Database = {
         Update: {
           avatar_url?: string | null
           can_send_communications?: boolean
+          can_send_email?: boolean
+          can_send_sms?: boolean
+          can_send_voice?: boolean
           created_at?: string
           email?: string | null
           id?: string

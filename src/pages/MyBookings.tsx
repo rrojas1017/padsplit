@@ -1,8 +1,7 @@
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
-import { useBookings } from '@/contexts/BookingsContext';
+import { useMyBookingsData } from '@/hooks/useMyBookingsData';
 import { usePageTracking } from '@/hooks/usePageTracking';
 import { useAuth } from '@/contexts/AuthContext';
-import { useAgents } from '@/contexts/AgentsContext';
 import { BroadcastBanner } from '@/components/broadcast/BroadcastBanner';
 import { ContactProfileHoverCard } from '@/components/reports/ContactProfileHoverCard';
 import { shouldMaskContactInfo } from '@/utils/contactPrivacy';
@@ -18,7 +17,6 @@ import { TranscriptionModal } from '@/components/booking/TranscriptionModal';
 import { BookingEditReasonDialog } from '@/components/booking/BookingEditReasonDialog';
 import { BookingHistoryTimeline } from '@/components/booking/BookingHistoryTimeline';
 import { Booking } from '@/types';
-import { getAgentName } from '@/utils/agentUtils';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import {
   DropdownMenu,
@@ -48,9 +46,8 @@ const statusOptions = [
 
 export default function MyBookings() {
   usePageTracking('view_my_bookings');
-  const { bookings, isLoading, updateBooking } = useBookings();
+  const { bookings, isLoading, updateBooking, myAgent } = useMyBookingsData();
   const { user } = useAuth();
-  const { agents } = useAgents();
   const navigate = useNavigate();
 
   // Transcription modal state
@@ -78,21 +75,10 @@ export default function MyBookings() {
   const [statusFilter, setStatusFilter] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
 
-  // Get the agent record for the current user
-  const myAgent = useMemo(() => {
-    if (!user) return null;
-    return agents.find(a => a.userId === user.id);
-  }, [agents, user]);
-
-  // Filter bookings to only show agent's own bookings
-  const myBookings = useMemo(() => {
-    if (!myAgent) return [];
-    return bookings.filter(booking => booking.agentId === myAgent.id);
-  }, [bookings, myAgent]);
-
-  // Apply filters
+  // Bookings are already filtered for the agent in the hook
+  // Apply additional filters
   const filteredBookings = useMemo(() => {
-    return myBookings.filter(booking => {
+    return bookings.filter(booking => {
       // Booking date range filter
       if (bookingDateRange.from && bookingDateRange.to) {
         const bookingDate = new Date(booking.bookingDate);
@@ -118,7 +104,7 @@ export default function MyBookings() {
 
       return true;
     });
-  }, [myBookings, bookingDateRange, statusFilter, searchQuery]);
+  }, [bookings, bookingDateRange, statusFilter, searchQuery]);
 
   // Sort by booking date descending
   const sortedBookings = useMemo(() => {
