@@ -58,7 +58,9 @@ export function BookingsProvider({ children }: { children: ReactNode }) {
             created_by, created_at,
             transcription_status, transcription_error_message, transcribed_at, 
             call_duration_seconds, call_type_id,
-            is_rebooking, original_booking_id
+            is_rebooking, original_booking_id,
+            contact_email, contact_phone,
+            email_verified, email_verified_at, email_verification_status
           `)
           .gte('booking_date', dateLimit)
           .order('booking_date', { ascending: false })
@@ -108,6 +110,11 @@ export function BookingsProvider({ children }: { children: ReactNode }) {
         callTypeId: b.call_type_id || undefined,
         isRebooking: b.is_rebooking || false,
         originalBookingId: b.original_booking_id || undefined,
+        contactEmail: b.contact_email || undefined,
+        contactPhone: b.contact_phone || undefined,
+        emailVerified: b.email_verified,
+        emailVerifiedAt: b.email_verified_at ? new Date(b.email_verified_at) : undefined,
+        emailVerificationStatus: b.email_verification_status as Booking['emailVerificationStatus'],
       }));
 
       setBookings(transformedBookings);

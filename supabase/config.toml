@@ -86,3 +86,6 @@ verify_jwt = false
 
 [functions.send-follow-up-sms]
 verify_jwt = false
+
+[functions.verify-email]
+verify_jwt = false

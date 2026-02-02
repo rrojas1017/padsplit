@@ -101,6 +101,10 @@ export interface Booking {
   callTypeId?: string;
   contactEmail?: string | null;
   contactPhone?: string | null;
+  // Email verification fields
+  emailVerified?: boolean | null;
+  emailVerifiedAt?: Date | null;
+  emailVerificationStatus?: 'valid' | 'invalid' | 'disposable' | 'catch_all' | 'unknown' | null;
 }
 
 export interface DailyMetrics {

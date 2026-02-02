@@ -395,6 +395,8 @@ export default function MyBookings() {
                         contactPhone={booking.contactPhone || undefined}
                         bookingId={booking.id}
                         shouldMaskContact={shouldMaskContactInfo(user?.role)}
+                        emailVerificationStatus={booking.emailVerificationStatus}
+                        emailVerified={booking.emailVerified}
                       >
                         <div className="flex items-center gap-2 cursor-default">
                           <span className="text-sm font-medium text-foreground hover:text-primary transition-colors">
