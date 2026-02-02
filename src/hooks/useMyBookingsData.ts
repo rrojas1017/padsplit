@@ -98,7 +98,7 @@ export function useMyBookingsData(): MyBookingsDataReturn {
 
       // Transform data to match Booking interface
       const transformedBookings: Booking[] = (data || []).map(row => {
-        const transcription = row.booking_transcriptions?.[0];
+        const transcription = row.booking_transcriptions as any;
         
         return {
           id: row.id,
