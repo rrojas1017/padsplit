@@ -183,6 +183,9 @@ export function useReportsData(
           created_at,
           contact_email,
           contact_phone,
+          email_verified,
+          email_verified_at,
+          email_verification_status,
           booking_transcriptions (
             call_transcription,
             call_summary,
@@ -312,6 +315,9 @@ export function useReportsData(
           createdAt: row.created_at ? new Date(row.created_at) : undefined,
           contactEmail: row.contact_email || undefined,
           contactPhone: row.contact_phone || undefined,
+          emailVerified: row.email_verified,
+          emailVerifiedAt: row.email_verified_at ? new Date(row.email_verified_at) : undefined,
+          emailVerificationStatus: row.email_verification_status as Booking['emailVerificationStatus'],
         };
       });
 

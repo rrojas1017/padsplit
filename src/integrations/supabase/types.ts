@@ -513,6 +513,9 @@ export type Database = {
           contact_phone: string | null
           created_at: string
           created_by: string | null
+          email_verification_status: string | null
+          email_verified: boolean | null
+          email_verified_at: string | null
           hubspot_link: string | null
           id: string
           import_batch_id: string | null
@@ -550,6 +553,9 @@ export type Database = {
           contact_phone?: string | null
           created_at?: string
           created_by?: string | null
+          email_verification_status?: string | null
+          email_verified?: boolean | null
+          email_verified_at?: string | null
           hubspot_link?: string | null
           id?: string
           import_batch_id?: string | null
@@ -587,6 +593,9 @@ export type Database = {
           contact_phone?: string | null
           created_at?: string
           created_by?: string | null
+          email_verification_status?: string | null
+          email_verified?: boolean | null
+          email_verified_at?: string | null
           hubspot_link?: string | null
           id?: string
           import_batch_id?: string | null

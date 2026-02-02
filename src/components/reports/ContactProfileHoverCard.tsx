@@ -30,6 +30,7 @@ import { calculateFollowUpPriority, BookingForPriority } from '@/utils/followUpP
 import { FollowUpPriorityBadge } from './FollowUpPriorityBadge';
 import { SendEmailDialog } from './SendEmailDialog';
 import { SendSMSDialog } from './SendSMSDialog';
+import { EmailVerificationBadge, EmailVerificationStatus } from './EmailVerificationBadge';
 
 interface ContactProfileHoverCardProps {
   memberName: string;
@@ -47,6 +48,9 @@ interface ContactProfileHoverCardProps {
   lastContactDate?: Date | null;
   marketCity?: string;
   marketState?: string;
+  // Email verification status
+  emailVerificationStatus?: EmailVerificationStatus;
+  emailVerified?: boolean | null;
   children: React.ReactNode;
 }
 
@@ -87,6 +91,8 @@ export function ContactProfileHoverCard({
   lastContactDate,
   marketCity,
   marketState,
+  emailVerificationStatus,
+  emailVerified,
   children,
 }: ContactProfileHoverCardProps) {
   const hasInsights = callKeyPoints && transcriptionStatus === 'completed';
@@ -309,9 +315,10 @@ export function ContactProfileHoverCard({
               {/* Contact Details */}
               <div className="flex items-center gap-2 text-xs text-muted-foreground mb-3 flex-wrap">
                 {contactEmail && (
-                  <span className="flex items-center gap-1 truncate max-w-[140px]">
+                  <span className="flex items-center gap-1 truncate max-w-[160px]">
                     <Mail className="h-3 w-3" />
                     {shouldMaskContact ? maskEmail(contactEmail) : contactEmail}
+                    <EmailVerificationBadge status={emailVerificationStatus} verified={emailVerified} />
                   </span>
                 )}
                 {contactEmail && contactPhone && <span>·</span>}

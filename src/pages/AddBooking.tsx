@@ -153,7 +153,7 @@ export default function AddBooking() {
         }
       }
 
-      await addBooking({
+      const newBookingId = await addBooking({
         bookingDate,
         moveInDate,
         memberName: memberName.trim(),
@@ -174,6 +174,15 @@ export default function AddBooking() {
         contactEmail: contactEmail.trim(),
         contactPhone: contactPhone.trim(),
       });
+
+      // Trigger email verification in background (fire and forget)
+      if (newBookingId && contactEmail.trim()) {
+        supabase.functions.invoke('verify-email', {
+          body: { bookingId: newBookingId, email: contactEmail.trim() }
+        }).catch(err => {
+          console.error('Email verification trigger failed:', err);
+        });
+      }
 
       toast({
         title: 'Booking Added',
