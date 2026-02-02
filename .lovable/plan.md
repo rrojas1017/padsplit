@@ -1,62 +1,70 @@
 
 
-# Fix Market Backfill to Process All Records
+# Fix Market Backfill to Target Only Imported Records
 
 ## Problem Identified
-The backfill function keeps re-processing the same 82 records because:
-1. Records without extractable market data return `null` from AI
-2. When `null` is returned, we don't update the database
-3. The same records are queried again on the next run
+The backfill function is processing **real-time records** that already have market data from the transcription auto-enrichment. It should only target **imported records** (those from the historical file upload) that have been transcribed but are missing market data.
 
-**Meanwhile, 5+ records WITH extractable market data** (Houston, Dallas, Atlanta, Tampa, Phoenix) are stuck behind records without market info in the query results.
+### Current State
+| Record Type | Total | Transcribed | Pending | Already Processed |
+|-------------|-------|-------------|---------|-------------------|
+| Imported | 5,163 | 105 | **105 ← These need backfill** | 0 |
+| Real-time | 693 | 657 | 367 | 290 (wasted API calls) |
 
-## Solution: Mark Checked Records
+The 290 "already backfilled" records are all real-time bookings that already had market data from transcription - we spent ~$0.03 on unnecessary AI calls.
 
-Add a `market_backfill_checked` column to the `bookings` table to track which records have been processed, regardless of whether market data was found.
+## Solution
 
-### Database Migration
-
-```sql
--- Add column to track backfill processing
-ALTER TABLE bookings ADD COLUMN IF NOT EXISTS market_backfill_checked boolean DEFAULT false;
-```
-
-### Updated Function Logic
+Update the backfill query to only process imported records without market data:
 
 ```typescript
-// Always mark as checked after processing
-if (city || state) {
-  await supabase.from('bookings').update({
-    market_city: city,
-    market_state: state,
-    market_backfill_checked: true
-  }).eq('id', booking.id);
-} else {
-  // Mark as checked even when no market found
-  await supabase.from('bookings').update({
-    market_backfill_checked: true
-  }).eq('id', booking.id);
-}
-```
+// Before (too broad)
+.eq('transcription_status', 'completed')
+.eq('market_backfill_checked', false)
 
-### Updated Query Filter
-
-```typescript
-.eq('market_backfill_checked', false)  // Only process unchecked records
+// After (targeted to imports only)
+.eq('transcription_status', 'completed')
+.eq('market_backfill_checked', false)
+.not('import_batch_id', 'is', null)  // Only imported records
+.is('market_city', null)              // Only those missing market
 ```
 
 ## Files to Modify
 
 | File | Changes |
 |------|---------|
-| Database | Add `market_backfill_checked` column |
-| `backfill-markets-from-transcriptions/index.ts` | Mark all processed records, filter by checked flag |
+| `supabase/functions/backfill-markets-from-transcriptions/index.ts` | Add `import_batch_id` and `market_city IS NULL` filters |
 
 ## Expected Outcome
 
-After fix:
-1. First batch: Process 20 records, mark all as checked
-2. Subsequent batches: Process NEW unchecked records (including Houston, Dallas, Atlanta ones)
-3. Continue until all 82 records are checked
-4. Final result: Some enriched with market data, others marked as "no market found"
+After this fix:
+- Backfill will process only the **105 imported transcribed records**
+- Real-time records (which already have markets from auto-enrichment) will be skipped
+- Estimated cost: ~$0.01 for remaining 105 records
+
+## Technical Details
+
+The updated query will be:
+
+```typescript
+const { data: bookingsToProcess, error: queryError } = await supabase
+  .from('bookings')
+  .select(`
+    id,
+    member_name,
+    market_city,
+    market_state,
+    booking_transcriptions!inner(
+      call_summary,
+      call_key_points
+    )
+  `)
+  .eq('transcription_status', 'completed')
+  .eq('market_backfill_checked', false)
+  .not('import_batch_id', 'is', null)  // Only imported records
+  .is('market_city', null)              // Only those missing market data
+  .limit(batchSize);
+```
+
+This ensures we only spend AI credits on records that actually need market extraction.
 
