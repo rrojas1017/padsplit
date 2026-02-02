@@ -116,7 +116,7 @@ serve(async (req) => {
 
     console.log(`[Backfill] Starting market backfill (batchSize: ${batchSize}, dryRun: ${dryRun})`);
 
-    // Find bookings with completed transcriptions that haven't been checked yet
+    // Find IMPORTED bookings with completed transcriptions that are missing market data
     const { data: bookingsToProcess, error: queryError } = await supabase
       .from('bookings')
       .select(`
@@ -131,6 +131,8 @@ serve(async (req) => {
       `)
       .eq('transcription_status', 'completed')
       .eq('market_backfill_checked', false)
+      .not('import_batch_id', 'is', null)  // Only imported records
+      .is('market_city', null)              // Only those missing market data
       .limit(batchSize);
 
     if (queryError) {
