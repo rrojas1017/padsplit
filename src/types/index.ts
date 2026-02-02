@@ -37,6 +37,8 @@ export interface MemberDetails {
   commitmentWeeks?: number | null;
   preferredPaymentMethod?: string | null;
   propertyAddress?: string | null;
+  marketCity?: string | null;
+  marketState?: string | null;
 }
 
 export interface CallKeyPoints {
