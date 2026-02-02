@@ -594,7 +594,9 @@ Return a JSON object with EXACTLY this structure (no markdown, just raw JSON):
     "moveInDate": "string or null - specific move-in date mentioned (e.g., 'December 15' or 'next Monday')",
     "commitmentWeeks": "number or null - how many weeks they plan to stay",
     "preferredPaymentMethod": "string or null - cash, card, etc.",
-    "propertyAddress": "string or null - specific property address or listing being discussed"
+    "propertyAddress": "string or null - specific property address or listing being discussed",
+    "marketCity": "string or null - the city name where the property is located (e.g., 'Atlanta', 'Houston', 'Tampa', 'Dallas')",
+    "marketState": "string or null - the US state abbreviation where the property is located (e.g., 'GA', 'TX', 'FL', 'NC')"
   },
   "memberConcerns": ["List every concern, worry, hesitation, or question raised by the member"],
   "memberPreferences": ["List ALL preferences mentioned: location, budget, timing, room type, amenities, etc."],
@@ -650,7 +652,9 @@ Return a JSON object with EXACTLY this structure (no markdown, just raw JSON):
     "moveInDate": "string or null - specific move-in date mentioned (e.g., 'December 15' or 'next Monday')",
     "commitmentWeeks": "number or null - how many weeks they plan to stay",
     "preferredPaymentMethod": "string or null - cash, card, etc.",
-    "propertyAddress": "string or null - specific property address or listing being discussed"
+    "propertyAddress": "string or null - specific property address or listing being discussed",
+    "marketCity": "string or null - the city name where the property is located (e.g., 'Atlanta', 'Houston', 'Tampa', 'Dallas')",
+    "marketState": "string or null - the US state abbreviation where the property is located (e.g., 'GA', 'TX', 'FL', 'NC')"
   },
   "memberConcerns": ["List every concern, worry, hesitation, or question raised by the member, even minor ones. Example: 'Worried about parking availability', 'Concerned about noise levels'"],
   "memberPreferences": ["List ALL preferences mentioned: location, budget, timing, room type, amenities, etc. Example: 'Prefers ground floor', 'Budget under $800', 'Needs to move by next week'"],
@@ -1284,6 +1288,33 @@ async function processTranscription(bookingId: string, kixieUrl: string) {
     if (transcriptionError) {
       console.error('[Background] Transcription insert error:', transcriptionError);
       throw new Error(`Failed to save transcription: ${transcriptionError.message}`);
+    }
+
+    // ===== AUTO-ENRICH MARKET DATA FROM TRANSCRIPTION =====
+    const memberDetails = keyPoints?.memberDetails;
+    if (memberDetails?.marketCity || memberDetails?.marketState) {
+      // Check if booking needs market data
+      const { data: currentBooking } = await supabase
+        .from('bookings')
+        .select('market_city, market_state')
+        .eq('id', bookingId)
+        .single();
+      
+      if (!currentBooking?.market_city && memberDetails.marketCity) {
+        const { error: marketUpdateError } = await supabase
+          .from('bookings')
+          .update({
+            market_city: memberDetails.marketCity,
+            market_state: memberDetails.marketState || null
+          })
+          .eq('id', bookingId);
+        
+        if (marketUpdateError) {
+          console.error('[Background] Market enrichment error:', marketUpdateError);
+        } else {
+          console.log(`[Background] Market enriched: ${memberDetails.marketCity}, ${memberDetails.marketState}`);
+        }
+      }
     }
 
     // Clear timeout on success
