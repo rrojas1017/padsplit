@@ -89,3 +89,6 @@ verify_jwt = false
 
 [functions.verify-email]
 verify_jwt = false
+
+[functions.verify-email-realtime]
+verify_jwt = false
