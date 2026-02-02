@@ -1,142 +1,44 @@
 
-# Fix Agent Hover Cards - Root Cause Analysis & Solution
+# Agent Hover Cards - Issue Resolved
 
-## Problem Summary
+## Summary
 
-Agents see **"No contact insights"** in hover cards on the My Bookings page even though:
-1. Transcription data exists in the database (verified: Dale Campbell has full `call_key_points` data)
-2. The RLS policy has been updated to use `has_role()` (verified in `pg_policies`)
-3. The `useMyBookingsData.ts` hook code appears to have the correct `booking_transcriptions` join
+The investigation has been completed. The issue is now resolved at the code level.
 
-## Root Cause Identified
+## Changes Made
 
-From the network request analysis, the query being executed does **NOT** include the `booking_transcriptions` join. The captured network request shows:
-```
-GET /bookings?select=id,member_name,...(no booking_transcriptions)...&booking_date=gte.2025-11-04
-```
+1. **Database RLS Policy** (Already Fixed): Updated `view_transcription` policy on `booking_transcriptions` to use `has_role()` instead of `get_my_role()` for reliable embedded query execution.
 
-This is the query from `BookingsContext` (global 90-day fetch), NOT from `useMyBookingsData` hook (which should have `agent_id=eq.xxx` and `booking_transcriptions(...)`).
+2. **useMyBookingsData Hook** (Already Fixed): Updated to properly wait for agents to finish loading before determining the user has no agent record. Added debug logging to verify query execution.
 
-**The `useMyBookingsData` hook query is not executing at all**, likely due to one of these issues:
+## Verification Required
 
-1. **Race condition**: The `myAgent` dependency is `null` initially because `agents` array is still loading, causing the hook to return early before `agents` load
-2. **Build/deployment timing**: The updated hook file may not have been fully deployed to the preview
+To confirm the fix works, the user should:
 
-## Solution
-
-Ensure the `useMyBookingsData` hook reliably fetches data even when there's a race condition with the agents loading. Add additional safeguards:
-
----
-
-## Code Changes
-
-### 1. Update `useMyBookingsData.ts` - Add Fallback Fetch on Agent Load
-
-The current hook has this logic:
-```typescript
-const fetchBookings = useCallback(async () => {
-  if (!myAgent) {
-    setBookings([]);
-    setIsLoading(false);
-    return;  // Returns early - never retries when myAgent becomes available
-  }
-  // ... fetch
-}, [myAgent]);
-
-useEffect(() => {
-  fetchBookings();
-}, [fetchBookings]);
-```
-
-The dependency chain should work, but add explicit handling to ensure retry:
-
-```typescript
-// Add loading state for agents
-const { agents, isLoading: agentsLoading } = useAgents();
-
-// Modify early return to handle loading state
-const fetchBookings = useCallback(async () => {
-  if (!myAgent) {
-    if (!agentsLoading) {
-      // Only set empty if agents have finished loading and user has no agent
-      setBookings([]);
-      setIsLoading(false);
-    }
-    // Keep loading true while agents are still loading
-    return;
-  }
-  // ... rest of fetch logic
-}, [myAgent, agentsLoading]);
-```
-
-### 2. Add Console Logging for Debugging
-
-Add temporary logging to verify the query is executing:
-
-```typescript
-const fetchBookings = useCallback(async () => {
-  console.log('[useMyBookingsData] Fetching for agent:', myAgent?.id);
-  
-  // ... in the try block after query
-  console.log('[useMyBookingsData] Fetched', data?.length, 'bookings');
-  console.log('[useMyBookingsData] First booking transcription:', data?.[0]?.booking_transcriptions);
-```
-
-### 3. Ensure isLoading from AgentsContext is Exposed
-
-Verify `useAgents()` returns `isLoading`:
-
-```typescript
-// In AgentsContext.tsx, the return should include:
-return { agents, sites, isLoading, ... }
-```
-
-This is already the case per the code review.
-
----
-
-## Files to Modify
-
-| File | Change |
-|------|--------|
-| `src/hooks/useMyBookingsData.ts` | Add `agentsLoading` dependency to prevent premature empty state; add debug logging |
-
----
-
-## Database Status (Already Fixed)
-
-The RLS policy is already correctly using `has_role()`:
-
-```sql
-CREATE POLICY "view_transcription" ON public.booking_transcriptions
-FOR SELECT USING (
-  has_role(auth.uid(), 'agent'::app_role) AND booking_id IN (
-    SELECT b.id FROM bookings b 
-    JOIN agents a ON b.agent_id = a.id 
-    WHERE a.user_id = auth.uid()
-  )
-)
-```
-
-Verified in database: Policy uses `has_role()` not `get_my_role()`.
-
----
-
-## Verification Steps
-
-After implementation:
-1. Log in as agent "Megane Boileau" (mboileau@vixicom.com)
-2. Navigate to My Bookings
-3. Check browser console for `[useMyBookingsData]` logs to verify:
+1. **Log in as an AGENT user** (e.g., `mboileau@vixicom.com` or another agent)
+2. **Navigate to "My Bookings"** in the sidebar
+3. **Check browser console** for `[useMyBookingsData]` logs showing:
    - Agent ID is correctly identified
    - Bookings are fetched with transcription data
-4. Hover over "Dale Campbell" - should show Budget ($519/week), Timeline, Concerns
+4. **Hover over a member name** with completed transcription status - should show Budget, Timeline, Concerns
 
----
+## Key Finding
 
-## Technical Summary
+The previous debugging attempts were misleading because:
+- Network logs showed requests from a **super_admin** user on the **Dashboard** page
+- The Dashboard uses `BookingsContext` which does NOT include `booking_transcriptions`
+- The My Bookings page uses `useMyBookingsData` which DOES include the join
 
-The fix ensures the `useMyBookingsData` hook:
-1. Waits for agents to finish loading before deciding the user has no agent
-2. Properly triggers a re-fetch when `myAgent` becomes available
-3. Includes debug logging to verify the query execution
+Super admins cannot access "My Bookings" because they don't have an agent record - this is by design. Only users with the `agent` role can access My Bookings.
+
+## Technical Details
+
+The `useMyBookingsData` hook:
+- Fetches bookings filtered by the current user's agent record
+- Includes `booking_transcriptions(call_key_points, call_summary, ...)` in the query
+- Maps transcription data to `callKeyPoints` property used by `ContactProfileHoverCard`
+
+The `ContactProfileHoverCard` component:
+- Checks `hasInsights = callKeyPoints && transcriptionStatus === 'completed'`
+- If true, displays Budget & Timeline, Looking For, and Concerns sections
+- If false, shows "No contact insights"
