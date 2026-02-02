@@ -10,16 +10,23 @@ interface VerifyEmailRequest {
   email: string;
 }
 
-interface APILayerResponse {
-  email: string;
-  syntax_valid: boolean;
-  mx_records: boolean;
-  can_connect_smtp: boolean;
-  is_catch_all: boolean | null;
-  is_role_account: boolean;
-  is_disposable: boolean;
-  is_deliverable: boolean;
-  score: number;
+// EmailListVerify can return either plain text or JSON depending on the endpoint
+interface EmailListVerifyResponse {
+  email?: string;
+  did_you_mean?: string;
+  user?: string;
+  domain?: string;
+  syntax_valid?: boolean;
+  is_disposable?: boolean | null;
+  is_role_account?: boolean | null;
+  is_catch_all?: boolean | null;
+  is_deliverable?: boolean | null;
+  can_connect_smtp?: boolean | null;
+  is_inbox_full?: string;
+  is_disabled?: string;
+  mx_records?: boolean | null;
+  free?: boolean | null;
+  score?: number | null;
 }
 
 Deno.serve(async (req) => {
@@ -42,17 +49,17 @@ Deno.serve(async (req) => {
 
     console.log(`Verifying email for booking ${bookingId}: ${email}`);
 
-    // Get APILayer API key
-    const apiKey = Deno.env.get('APILAYER_API_KEY');
+    // Get EmailListVerify API key
+    const apiKey = Deno.env.get('EMAILLISTVERIFY_API_KEY');
     if (!apiKey) {
-      console.error('APILAYER_API_KEY not configured');
+      console.error('EMAILLISTVERIFY_API_KEY not configured');
       return new Response(
         JSON.stringify({ error: 'Email verification service not configured' }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    // Call APILayer email verification API
+    // Call EmailListVerify API
     let verificationResult: {
       verified: boolean;
       status: string;
@@ -60,41 +67,75 @@ Deno.serve(async (req) => {
 
     try {
       const apiResponse = await fetch(
-        `https://api.apilayer.com/email_verification/${encodeURIComponent(email)}`,
-        {
-          method: 'GET',
-          headers: {
-            'apikey': apiKey,
-          },
-        }
+        `https://apps.emaillistverify.com/api/verifyEmail?secret=${apiKey}&email=${encodeURIComponent(email)}`,
+        { method: 'GET' }
       );
 
       if (!apiResponse.ok) {
         const errorText = await apiResponse.text();
-        console.error('APILayer error:', apiResponse.status, errorText);
+        console.error('EmailListVerify error:', apiResponse.status, errorText);
         verificationResult = { verified: false, status: 'unknown' };
       } else {
-        const data: APILayerResponse = await apiResponse.json();
-        console.log('APILayer response:', JSON.stringify(data));
+        const responseText = await apiResponse.text();
+        console.log('EmailListVerify response:', responseText);
 
-        // Determine verification status
-        if (!data.syntax_valid) {
-          verificationResult = { verified: false, status: 'invalid' };
-        } else if (data.is_disposable) {
-          verificationResult = { verified: false, status: 'disposable' };
-        } else if (data.is_catch_all) {
-          verificationResult = { verified: true, status: 'catch_all' };
-        } else if (data.is_deliverable && data.can_connect_smtp) {
-          verificationResult = { verified: true, status: 'valid' };
-        } else if (data.mx_records && data.syntax_valid) {
-          // Has valid format and MX records, but couldn't verify deliverability
-          verificationResult = { verified: true, status: 'valid' };
-        } else {
-          verificationResult = { verified: false, status: 'invalid' };
+        // Try to parse as JSON first (some endpoints return JSON)
+        try {
+          const jsonResponse: EmailListVerifyResponse = JSON.parse(responseText);
+          
+          // Handle JSON response format
+          if (jsonResponse.is_deliverable === false || jsonResponse.is_disabled === 'true') {
+            verificationResult = { verified: false, status: 'invalid' };
+          } else if (jsonResponse.is_disposable === true) {
+            verificationResult = { verified: false, status: 'disposable' };
+          } else if (jsonResponse.is_catch_all === true) {
+            verificationResult = { verified: true, status: 'catch_all' };
+          } else if (jsonResponse.is_deliverable === true && jsonResponse.can_connect_smtp === true) {
+            verificationResult = { verified: true, status: 'valid' };
+          } else if (jsonResponse.syntax_valid === true && jsonResponse.mx_records === true) {
+            // Has valid format and MX records
+            verificationResult = { verified: true, status: 'valid' };
+          } else if (jsonResponse.syntax_valid === false) {
+            verificationResult = { verified: false, status: 'invalid' };
+          } else if (jsonResponse.syntax_valid === true && jsonResponse.is_deliverable === null) {
+            // Syntax valid but couldn't determine deliverability - treat as unknown
+            verificationResult = { verified: false, status: 'unknown' };
+          } else {
+            verificationResult = { verified: false, status: 'unknown' };
+          }
+        } catch {
+          // Handle plain text response format
+          const normalizedResponse = responseText.trim().toLowerCase();
+          
+          switch (normalizedResponse) {
+            case 'ok':
+              verificationResult = { verified: true, status: 'valid' };
+              break;
+            case 'failed':
+              verificationResult = { verified: false, status: 'invalid' };
+              break;
+            case 'unknown':
+              verificationResult = { verified: false, status: 'unknown' };
+              break;
+            case 'incorrect':
+              verificationResult = { verified: false, status: 'invalid' };
+              break;
+            case 'key_not_valid':
+              console.error('EmailListVerify API key is invalid');
+              verificationResult = { verified: false, status: 'unknown' };
+              break;
+            case 'missing parameters':
+              console.error('EmailListVerify missing parameters');
+              verificationResult = { verified: false, status: 'unknown' };
+              break;
+            default:
+              console.log('Unknown EmailListVerify response:', normalizedResponse);
+              verificationResult = { verified: false, status: 'unknown' };
+          }
         }
       }
     } catch (apiError) {
-      console.error('Error calling APILayer:', apiError);
+      console.error('Error calling EmailListVerify:', apiError);
       verificationResult = { verified: false, status: 'unknown' };
     }
 
