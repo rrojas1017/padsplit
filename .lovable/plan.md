@@ -1,113 +1,88 @@
 
+# Fix Contact Insights in Agent Hover Cards
 
-# Fix Agent My Bookings Page - Complete Investigation
+## Problem Summary
 
-## Summary of Issues Found
+Agents see **"No contact insights"** in hover cards on the My Bookings page even though:
+1. The database contains the transcription data (verified: Tracy Compton has full `call_key_points`)
+2. The RLS policy is correct (uses `has_role()`)
+3. The network request successfully returns `booking_transcriptions` data
 
-After thorough investigation, I identified **two distinct bugs** affecting the My Bookings page for agents:
+## Root Cause Identified
 
----
+The `useMyBookingsData.ts` hook incorrectly parses the `booking_transcriptions` data.
 
-## Issue 1: Dates Displaying One Day Behind (Critical)
-
-**Symptom**: Bookings with `booking_date: 2026-01-30` display as "Jan 29, 2026" in the UI.
-
-**Root Cause**: In `src/hooks/useMyBookingsData.ts` (lines 106-107), dates are parsed incorrectly:
-
+**Line 101 contains the bug:**
 ```typescript
-bookingDate: new Date(row.booking_date),  // WRONG - parses as UTC midnight
-moveInDate: new Date(row.move_in_date),   // WRONG
+const transcription = row.booking_transcriptions?.[0];  // WRONG
 ```
 
-When JavaScript parses `"2026-01-30"` without a time component, it interprets it as **UTC midnight**. For users in western timezones (EST/CST/PST), this shifts to the previous day.
+The Supabase JS client returns embedded relations as:
+- **Object** when there's a one-to-one relationship (single record)
+- **Array** when there's a one-to-many relationship (multiple records)
 
-**Correct Pattern** (used in other files like `BookingsContext.tsx`, `useReportsData.ts`):
+Since `booking_transcriptions` has a unique constraint on `booking_id`, it's a one-to-one relationship, so Supabase returns **an object**, not an array. The `[0]` indexing returns `undefined`, causing `callKeyPoints` to be missing.
+
+**Evidence from network logs:**
+```json
+"booking_transcriptions": {
+  "call_summary": "...",
+  "call_key_points": { "memberDetails": { "weeklyBudget": 519 }, ... }
+}
+```
+This is an object, not an array like `[{...}]`.
+
+**Correct pattern** (from `useReportsData.ts` line 284):
 ```typescript
-bookingDate: new Date(row.booking_date + 'T00:00:00'),  // CORRECT - local midnight
-moveInDate: new Date(row.move_in_date + 'T00:00:00'),  // CORRECT
-```
-
-**Fix Location**: `src/hooks/useMyBookingsData.ts` lines 106-107
-
----
-
-## Issue 2: Hover Cards Show "No contact insights" (Critical)
-
-**Symptom**: Even for bookings with `transcription_status: completed`, the hover card shows "No contact insights" instead of Budget & Timeline, Looking For, Concerns.
-
-**Analysis**: 
-- Database verification confirms transcription data exists (Dale Campbell has full `call_key_points` data with budget "$519/week")
-- RLS policy on `booking_transcriptions` has been correctly updated to use `has_role()`
-- The agent role exists in `user_roles` for the logged-in user
-- The `useMyBookingsData` hook code correctly includes the `booking_transcriptions` join
-- Network logs show **no requests containing `booking_transcriptions`**
-
-**Root Cause**: The updated `useMyBookingsData.ts` hook code may not be deployed to the preview environment yet, OR there's a caching issue. The network requests observed are still from `BookingsContext` (which doesn't include transcription data).
-
-**Verification Needed**: After deployment, the browser console should show:
-```
-[useMyBookingsData] Fetching bookings for agent: f7dd2216-9443-4927-9c9b-1c85486c7742
-[useMyBookingsData] Fetched 30 bookings
-[useMyBookingsData] First booking transcription: [{call_key_points: {...}}]
+const transcription = row.booking_transcriptions as any;  // CORRECT
 ```
 
 ---
 
-## Implementation Plan
+## Solution
 
-### Step 1: Fix Date Parsing Bug
+Update `src/hooks/useMyBookingsData.ts` line 101 to treat `booking_transcriptions` as an object instead of an array.
 
-**File**: `src/hooks/useMyBookingsData.ts`
-
-**Change** (lines 106-107):
+**Before:**
 ```typescript
-// Before
-bookingDate: new Date(row.booking_date),
-moveInDate: new Date(row.move_in_date),
-
-// After
-bookingDate: new Date(row.booking_date + 'T00:00:00'),
-moveInDate: new Date(row.move_in_date + 'T00:00:00'),
+const transcription = row.booking_transcriptions?.[0];
 ```
 
-This matches the pattern used in:
-- `src/contexts/BookingsContext.tsx` (lines 82-83)
-- `src/hooks/useReportsData.ts` (lines 287-288)
-- `src/hooks/useCoachingData.ts` (lines 91, 113)
-- `src/pages/PublicWallboard.tsx` (lines 79-80)
+**After:**
+```typescript
+const transcription = row.booking_transcriptions as any;
+```
 
-### Step 2: Force Fresh Build
-
-After the fix is applied, ensure the preview rebuilds completely so the agent session gets the updated hook code.
+This matches the pattern used in `useReportsData.ts` where the same join works correctly.
 
 ---
 
-## Expected Results After Fix
+## Files to Modify
 
-1. **Dates will display correctly**: Jan 30th bookings will show as "Jan 30, 2026"
-2. **Hover cards will show insights**: Dale Campbell and other transcribed bookings will display:
-   - Budget & Timeline: `$519/wk`
-   - Looking For: Member preferences
-   - Concerns: Any flagged concerns
-
----
-
-## Technical Details
-
-### Files to Modify
 | File | Change |
 |------|--------|
-| `src/hooks/useMyBookingsData.ts` | Fix date parsing on lines 106-107 |
+| `src/hooks/useMyBookingsData.ts` | Change line 101 from `[0]` array access to direct object access |
 
-### Database Status
-- RLS policy for `booking_transcriptions` is correct (uses `has_role()`)
-- Agent role exists for user `c2fdfa75-0265-4c07-b168-7e3f58501e2f`
-- Transcription data exists with full `call_key_points` for test bookings
+---
 
-### Verification Steps After Fix
+## Expected Results
+
+After this fix:
+1. Tracy Compton's hover card will show Budget ($174/wk), Timeline (Feb 1st), Concerns, Preferences
+2. Dale Campbell's hover card will show Budget ($519/wk), Timeline, etc.
+3. All bookings with `transcription_status: completed` will display their insights in hover cards
+
+---
+
+## Verification Steps
+
 1. Log in as agent Megane Boileau
 2. Navigate to My Bookings
-3. Verify dates show correctly (Jan 30 bookings should show as "Jan 30")
-4. Check console for `[useMyBookingsData]` log messages confirming transcription data is loaded
-5. Hover over Dale Campbell - should see Budget & Timeline, Looking For, Concerns sections
-
+3. Hover over "Tracy Compton" - should see:
+   - Budget & Timeline: `$174/wk`, Move: February 1st, 12 weeks commitment
+   - Looking For: Same house as daughter, prefers bi-weekly payments
+   - Concerns: Asked for clarification on the '12-week minimum stay'
+4. Hover over "Dale Campbell" - should see:
+   - Budget & Timeline: `$519/wk`, Move: February 7th
+   - Looking For: South Austin, bi-weekly payments, text before call
+   - Concerns: Payment schedule questions, furniture rules
