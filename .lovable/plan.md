@@ -1,60 +1,97 @@
 
-# Fix Agent Hover Cards - RLS Policy Issue
+# Fix Agent Hover Cards - Root Cause Analysis & Solution
 
-## Problem Identified
+## Problem Summary
 
-Agents see **"No contact insights"** in hover cards even when transcription data exists. Through investigation, I found the root cause:
+Agents see **"No contact insights"** in hover cards on the My Bookings page even though:
+1. Transcription data exists in the database (verified: Dale Campbell has full `call_key_points` data)
+2. The RLS policy has been updated to use `has_role()` (verified in `pg_policies`)
+3. The `useMyBookingsData.ts` hook code appears to have the correct `booking_transcriptions` join
 
-The `booking_transcriptions` table's RLS policy uses `get_my_role()` function which **fails during embedded relation queries** (when Supabase JS client uses `.select('..., booking_transcriptions(...)')`).
+## Root Cause Identified
 
-The current policy:
-```sql
-get_my_role() = 'agent' AND booking_id IN (
-  SELECT b.id FROM bookings b JOIN agents a ON b.agent_id = a.id 
-  WHERE a.user_id = auth.uid()
-)
+From the network request analysis, the query being executed does **NOT** include the `booking_transcriptions` join. The captured network request shows:
+```
+GET /bookings?select=id,member_name,...(no booking_transcriptions)...&booking_date=gte.2025-11-04
 ```
 
-When the query runs as a nested/embedded relation, the `get_my_role()` function returns NULL, causing the agent clause to fail and returning no transcription data.
+This is the query from `BookingsContext` (global 90-day fetch), NOT from `useMyBookingsData` hook (which should have `agent_id=eq.xxx` and `booking_transcriptions(...)`).
+
+**The `useMyBookingsData` hook query is not executing at all**, likely due to one of these issues:
+
+1. **Race condition**: The `myAgent` dependency is `null` initially because `agents` array is still loading, causing the hook to return early before `agents` load
+2. **Build/deployment timing**: The updated hook file may not have been fully deployed to the preview
 
 ## Solution
 
-Update the RLS policy to use `has_role()` function which is designed to work correctly in all query contexts:
-
-```sql
-has_role(auth.uid(), 'agent'::app_role) AND booking_id IN (
-  SELECT b.id FROM bookings b JOIN agents a ON b.agent_id = a.id 
-  WHERE a.user_id = auth.uid()
-)
-```
+Ensure the `useMyBookingsData` hook reliably fetches data even when there's a race condition with the agents loading. Add additional safeguards:
 
 ---
 
-## Database Changes
+## Code Changes
 
-Drop and recreate the `view_transcription` policy on `booking_transcriptions`:
+### 1. Update `useMyBookingsData.ts` - Add Fallback Fetch on Agent Load
 
-```sql
--- Drop existing policy
-DROP POLICY IF EXISTS "view_transcription" ON public.booking_transcriptions;
+The current hook has this logic:
+```typescript
+const fetchBookings = useCallback(async () => {
+  if (!myAgent) {
+    setBookings([]);
+    setIsLoading(false);
+    return;  // Returns early - never retries when myAgent becomes available
+  }
+  // ... fetch
+}, [myAgent]);
 
--- Recreate with has_role() for reliability in embedded queries
-CREATE POLICY "view_transcription" ON public.booking_transcriptions
-FOR SELECT USING (
-  has_role(auth.uid(), 'super_admin'::app_role) OR 
-  has_role(auth.uid(), 'admin'::app_role) OR
-  (has_role(auth.uid(), 'supervisor'::app_role) AND booking_id IN (
-    SELECT b.id FROM bookings b 
-    JOIN agents a ON b.agent_id = a.id 
-    WHERE a.site_id = get_user_site_id(auth.uid())
-  )) OR
-  (has_role(auth.uid(), 'agent'::app_role) AND booking_id IN (
-    SELECT b.id FROM bookings b 
-    JOIN agents a ON b.agent_id = a.id 
-    WHERE a.user_id = auth.uid()
-  ))
-);
+useEffect(() => {
+  fetchBookings();
+}, [fetchBookings]);
 ```
+
+The dependency chain should work, but add explicit handling to ensure retry:
+
+```typescript
+// Add loading state for agents
+const { agents, isLoading: agentsLoading } = useAgents();
+
+// Modify early return to handle loading state
+const fetchBookings = useCallback(async () => {
+  if (!myAgent) {
+    if (!agentsLoading) {
+      // Only set empty if agents have finished loading and user has no agent
+      setBookings([]);
+      setIsLoading(false);
+    }
+    // Keep loading true while agents are still loading
+    return;
+  }
+  // ... rest of fetch logic
+}, [myAgent, agentsLoading]);
+```
+
+### 2. Add Console Logging for Debugging
+
+Add temporary logging to verify the query is executing:
+
+```typescript
+const fetchBookings = useCallback(async () => {
+  console.log('[useMyBookingsData] Fetching for agent:', myAgent?.id);
+  
+  // ... in the try block after query
+  console.log('[useMyBookingsData] Fetched', data?.length, 'bookings');
+  console.log('[useMyBookingsData] First booking transcription:', data?.[0]?.booking_transcriptions);
+```
+
+### 3. Ensure isLoading from AgentsContext is Exposed
+
+Verify `useAgents()` returns `isLoading`:
+
+```typescript
+// In AgentsContext.tsx, the return should include:
+return { agents, sites, isLoading, ... }
+```
+
+This is already the case per the code review.
 
 ---
 
@@ -62,37 +99,44 @@ FOR SELECT USING (
 
 | File | Change |
 |------|--------|
-| Database Migration | Update `view_transcription` policy to use `has_role()` instead of `get_my_role()` |
-
-No frontend changes needed - the `useMyBookingsData` hook and `ContactProfileHoverCard` are already correctly implemented.
+| `src/hooks/useMyBookingsData.ts` | Add `agentsLoading` dependency to prevent premature empty state; add debug logging |
 
 ---
 
-## Why This Works
+## Database Status (Already Fixed)
 
-The `has_role()` function:
-- Takes explicit parameters (`user_id`, `role`)
-- Is a `SECURITY DEFINER` function that executes with elevated privileges
-- Works correctly in all query contexts including embedded relations
+The RLS policy is already correctly using `has_role()`:
 
-The `get_my_role()` function:
-- Uses `auth.uid()` internally
-- Can fail or return NULL during nested query evaluation
-- Not reliable for embedded relation queries
+```sql
+CREATE POLICY "view_transcription" ON public.booking_transcriptions
+FOR SELECT USING (
+  has_role(auth.uid(), 'agent'::app_role) AND booking_id IN (
+    SELECT b.id FROM bookings b 
+    JOIN agents a ON b.agent_id = a.id 
+    WHERE a.user_id = auth.uid()
+  )
+)
+```
 
----
-
-## Expected Outcome
-
-After this fix:
-1. Agents will see full call insights (budget, timeline, concerns, preferences) in hover cards on the My Bookings page
-2. The transcription data will be properly joined when the agent fetches their bookings
-3. No changes needed to frontend code - the existing implementation will work correctly once the data is returned
+Verified in database: Policy uses `has_role()` not `get_my_role()`.
 
 ---
 
-## Verification
+## Verification Steps
 
-After deployment, log in as agent "Megane Boileau" and verify:
-- Hover over "Dale Campbell" or any other booking with completed transcription
-- The hover card should show Budget & Timeline, Looking For, and Concerns sections instead of "No contact insights"
+After implementation:
+1. Log in as agent "Megane Boileau" (mboileau@vixicom.com)
+2. Navigate to My Bookings
+3. Check browser console for `[useMyBookingsData]` logs to verify:
+   - Agent ID is correctly identified
+   - Bookings are fetched with transcription data
+4. Hover over "Dale Campbell" - should show Budget ($519/week), Timeline, Concerns
+
+---
+
+## Technical Summary
+
+The fix ensures the `useMyBookingsData` hook:
+1. Waits for agents to finish loading before deciding the user has no agent
+2. Properly triggers a re-fetch when `myAgent` becomes available
+3. Includes debug logging to verify the query execution
