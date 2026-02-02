@@ -12,12 +12,13 @@ interface VerifyEmailRequest {
 
 interface APILayerResponse {
   email: string;
-  format_valid: boolean;
-  mx_found: boolean;
-  smtp_check: boolean;
-  catch_all: boolean | null;
-  role: boolean;
-  disposable: boolean;
+  syntax_valid: boolean;
+  mx_records: boolean;
+  can_connect_smtp: boolean;
+  is_catch_all: boolean | null;
+  is_role_account: boolean;
+  is_disposable: boolean;
+  is_deliverable: boolean;
   score: number;
 }
 
@@ -77,13 +78,16 @@ Deno.serve(async (req) => {
         console.log('APILayer response:', JSON.stringify(data));
 
         // Determine verification status
-        if (!data.format_valid) {
+        if (!data.syntax_valid) {
           verificationResult = { verified: false, status: 'invalid' };
-        } else if (data.disposable) {
+        } else if (data.is_disposable) {
           verificationResult = { verified: false, status: 'disposable' };
-        } else if (data.catch_all) {
+        } else if (data.is_catch_all) {
           verificationResult = { verified: true, status: 'catch_all' };
-        } else if (data.smtp_check && data.format_valid) {
+        } else if (data.is_deliverable && data.can_connect_smtp) {
+          verificationResult = { verified: true, status: 'valid' };
+        } else if (data.mx_records && data.syntax_valid) {
+          // Has valid format and MX records, but couldn't verify deliverability
           verificationResult = { verified: true, status: 'valid' };
         } else {
           verificationResult = { verified: false, status: 'invalid' };
