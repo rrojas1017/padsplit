@@ -1,31 +1,62 @@
 
-# Extract Market Information from Call Transcriptions
 
-## ✅ COMPLETED
+# Fix Market Backfill to Process All Records
 
-### Implementation Summary
+## Problem Identified
+The backfill function keeps re-processing the same 82 records because:
+1. Records without extractable market data return `null` from AI
+2. When `null` is returned, we don't update the database
+3. The same records are queried again on the next run
 
-**Part 1: Future Transcriptions Enhanced**
-- Updated `transcribe-call/index.ts` to extract `marketCity` and `marketState` in the AI analysis prompt
-- Auto-enrichment logic now updates `bookings.market_city` and `bookings.market_state` after successful transcription
+**Meanwhile, 5+ records WITH extractable market data** (Houston, Dallas, Atlanta, Tampa, Phoenix) are stuck behind records without market info in the query results.
 
-**Part 2: Backfill Function Created**
-- Created `backfill-markets-from-transcriptions` edge function
-- Successfully tested: 7 out of 20 records enriched in first batch (Atlanta GA, Houston TX, Fort Worth TX, Alpharetta GA, etc.)
-- Use batch size of 20 to avoid timeouts
+## Solution: Mark Checked Records
 
-### How to Run Backfill
+Add a `market_backfill_checked` column to the `bookings` table to track which records have been processed, regardless of whether market data was found.
 
-Call the function multiple times with batch size 20:
-```bash
-# Run from Supabase dashboard or curl
-POST /functions/v1/backfill-markets-from-transcriptions
-Body: {"batchSize": 20, "dryRun": false}
+### Database Migration
+
+```sql
+-- Add column to track backfill processing
+ALTER TABLE bookings ADD COLUMN IF NOT EXISTS market_backfill_checked boolean DEFAULT false;
 ```
 
-### Files Modified
-- `supabase/functions/transcribe-call/index.ts` - Added marketCity/marketState to prompts + auto-enrichment
-- `supabase/functions/backfill-markets-from-transcriptions/index.ts` - New backfill function
-- `supabase/config.toml` - Added function config
-- `src/types/index.ts` - Added marketCity/marketState to MemberDetails interface
+### Updated Function Logic
+
+```typescript
+// Always mark as checked after processing
+if (city || state) {
+  await supabase.from('bookings').update({
+    market_city: city,
+    market_state: state,
+    market_backfill_checked: true
+  }).eq('id', booking.id);
+} else {
+  // Mark as checked even when no market found
+  await supabase.from('bookings').update({
+    market_backfill_checked: true
+  }).eq('id', booking.id);
+}
+```
+
+### Updated Query Filter
+
+```typescript
+.eq('market_backfill_checked', false)  // Only process unchecked records
+```
+
+## Files to Modify
+
+| File | Changes |
+|------|---------|
+| Database | Add `market_backfill_checked` column |
+| `backfill-markets-from-transcriptions/index.ts` | Mark all processed records, filter by checked flag |
+
+## Expected Outcome
+
+After fix:
+1. First batch: Process 20 records, mark all as checked
+2. Subsequent batches: Process NEW unchecked records (including Houston, Dallas, Atlanta ones)
+3. Continue until all 82 records are checked
+4. Final result: Some enriched with market data, others marked as "no market found"
 
