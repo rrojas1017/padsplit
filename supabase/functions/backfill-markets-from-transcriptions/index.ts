@@ -116,7 +116,7 @@ serve(async (req) => {
 
     console.log(`[Backfill] Starting market backfill (batchSize: ${batchSize}, dryRun: ${dryRun})`);
 
-    // Find bookings with completed transcriptions but missing market data
+    // Find bookings with completed transcriptions that haven't been checked yet
     const { data: bookingsToProcess, error: queryError } = await supabase
       .from('bookings')
       .select(`
@@ -130,7 +130,7 @@ serve(async (req) => {
         )
       `)
       .eq('transcription_status', 'completed')
-      .or('market_city.is.null,market_city.eq.')
+      .eq('market_backfill_checked', false)
       .limit(batchSize);
 
     if (queryError) {
@@ -176,29 +176,31 @@ serve(async (req) => {
 
         console.log(`[Backfill]   - Extracted: city=${city}, state=${state}`);
 
-        if (city || state) {
-          if (!dryRun) {
-            // Update the booking with extracted market data
-            const { error: updateError } = await supabase
-              .from('bookings')
-              .update({
-                market_city: city,
-                market_state: state
-              })
-              .eq('id', booking.id);
+        if (!dryRun) {
+          // Always mark as checked, update market data if found
+          const updateData: Record<string, unknown> = {
+            market_backfill_checked: true
+          };
+          
+          if (city) updateData.market_city = city;
+          if (state) updateData.market_state = state;
 
-            if (updateError) {
-              console.error(`[Backfill] Update error for ${booking.id}:`, updateError);
-              results.push({ bookingId: booking.id, success: false, error: updateError.message });
-              continue;
-            }
+          const { error: updateError } = await supabase
+            .from('bookings')
+            .update(updateData)
+            .eq('id', booking.id);
+
+          if (updateError) {
+            console.error(`[Backfill] Update error for ${booking.id}:`, updateError);
+            results.push({ bookingId: booking.id, success: false, error: updateError.message });
+            continue;
           }
-
-          enrichedCount++;
-          results.push({ bookingId: booking.id, success: true, city, state });
-        } else {
-          results.push({ bookingId: booking.id, success: true, city: null, state: null });
         }
+
+        if (city || state) {
+          enrichedCount++;
+        }
+        results.push({ bookingId: booking.id, success: true, city, state });
 
         successCount++;
 
