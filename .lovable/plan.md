@@ -1,217 +1,181 @@
 
+# Fix Agent Hover Cards + Add Granular Communication Permissions
 
-# Telnyx Click-to-Call Integration
+## Problem Summary
 
-## Overview
+Two issues were identified:
 
-This plan implements a **click-to-call** feature using Telnyx's Programmable Voice API. When agents click the "Voice" button in the Contact Profile Hover Card, the system will initiate an outbound call through Telnyx that:
-1. First calls the agent's phone
-2. When the agent answers, bridges the call to the contact
+1. **Agents cannot see call insights in hover cards** - The `MyBookings` page uses `BookingsContext` which does NOT fetch `callKeyPoints` data from the `booking_transcriptions` table (this was moved out for performance optimization). However, this means agents always see "No contact insights" even for transcribed bookings.
 
-This is a **server-initiated call** pattern (not WebRTC) that works with any phone - no browser audio required.
-
-## Architecture
-
-```text
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                         Click-to-Call Flow                                   │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                             │
-│   Agent clicks "Voice"     Edge Function           Telnyx API              │
-│   in Hover Card        →   initiate-call   →   POST /v2/calls              │
-│                                                                             │
-│   1. Agent's phone rings ←──────────────────── Telnyx dials agent         │
-│   2. Agent answers       →  Webhook received → call.answered               │
-│   3. Contact rings       ←──────────────────── Telnyx bridges to contact  │
-│   4. Call connected!                                                        │
-│                                                                             │
-│   Webhooks track:                                                           │
-│   - call.initiated → Log call started                                       │
-│   - call.answered  → Update call status                                     │
-│   - call.hangup    → Log duration, save recording URL                      │
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
-
-## What You'll Get
-
-- **One-click calling** from the Reports page hover card
-- **Call tracking** integrated with existing `calls` table
-- **Recording support** (automatic if enabled in Telnyx)
-- **Call history** in communication logs
-- **Caller ID** shows PadSplit number
-
-## Requirements
-
-Before implementation, you'll need to provide:
-
-| Requirement | Where to Get It |
-|-------------|-----------------|
-| **Telnyx API Key** | Telnyx Portal → API Keys |
-| **Connection ID** | Telnyx Portal → SIP Connections or Call Control App |
-| **From Number** | A Telnyx phone number to use as Caller ID |
-| **Agent Phone Numbers** | Added to profiles table (new column) |
+2. **Communication permissions are all-or-nothing** - Currently, `can_send_communications` controls Email, SMS, AND Voice together. Admins need per-channel control.
 
 ---
 
-## Implementation Steps
+## Solution Overview
 
-### Phase 1: Database Updates
+### Fix 1: Agent Hover Cards Data Fetching
 
-**Add agent phone number column to profiles:**
-- Store the agent's personal/work phone number that Telnyx will dial first
-- This is the number that rings when an agent initiates a click-to-call
+Change the `MyBookings` page to fetch transcription data directly (like the Reports page does) instead of relying on `BookingsContext`.
 
-**Add Telnyx tracking columns to calls table:**
-- `telnyx_call_control_id` - For sending commands to active calls
-- `telnyx_call_session_id` - For grouping related call legs
-- `initiated_by` - Track which user started the call
+**Why this approach:**
+- The `BookingsContext` intentionally omits heavy data for performance across all users
+- Reports page already has a pattern (`useReportsData`) that joins `booking_transcriptions` 
+- MyBookings is agent-specific with a smaller dataset, so joining transcription data is acceptable
+- RLS policies already allow agents to view their own transcriptions
 
-### Phase 2: Edge Functions
+### Fix 2: Granular Communication Permissions
 
-**Create `initiate-telnyx-call` edge function:**
-- Validates user has `can_send_communications` permission
-- Fetches agent's phone number from profiles
-- Calls Telnyx API to initiate outbound call:
-  ```text
-  POST https://api.telnyx.com/v2/calls
-  {
-    "to": "+1AGENT_PHONE",
-    "from": "+1PADSPLIT_NUMBER",
-    "connection_id": "YOUR_CONNECTION_ID",
-    "webhook_url": "https://.../receive-telnyx-webhook",
-    "answering_machine_detection": "detect_words"
-  }
-  ```
-- Creates initial call record in `calls` table
-- Returns call ID for tracking
-
-**Create `receive-telnyx-webhook` edge function:**
-- Handles `call.initiated` - Log call start
-- Handles `call.answered` - Bridge to contact's phone:
-  ```text
-  POST /v2/calls/{call_control_id}/actions/bridge
-  {
-    "call_control_id": "CONTACT_LEG_ID"
-  }
-  ```
-- Handles `call.hangup` - Update call record with duration, recording URL
-- Handles `call.recording.saved` - Store recording URL
-
-### Phase 3: Frontend Updates
-
-**Update Contact Profile Hover Card:**
-- Replace `handleVoiceNoteClick` to open a call dialog (like SMS/Email)
-- Show call status (ringing, connected, ended)
-- Display estimated cost
-
-**Create `InitiateCallDialog` component:**
-- Shows agent's phone number (where they'll receive the call)
-- Displays contact number being called
-- "Start Call" button triggers edge function
-- Shows real-time status updates
-
-**Update `useContactCommunications` hook:**
-- Add `initiateCall` method
-- Handle `voice_call` communication type (distinct from `voice_note`)
-
-### Phase 4: Settings & Configuration
-
-**Add Telnyx settings to Admin panel:**
-- Store `from_number` in system settings
-- Allow admins to configure default behaviors
+Add per-channel permission columns and update the User Management UI.
 
 ---
 
-## Technical Details
+## Database Changes
 
-### New Secrets Required
-
-| Secret Name | Description |
-|-------------|-------------|
-| `TELNYX_API_KEY` | Telnyx API v2 bearer token |
-| `TELNYX_CONNECTION_ID` | Your Call Control connection ID |
-| `TELNYX_FROM_NUMBER` | PadSplit caller ID number (e.g., +18001234567) |
-
-### Database Schema Changes
+Add three new permission columns:
 
 ```sql
--- Add phone number column to profiles
-ALTER TABLE profiles 
-ADD COLUMN phone_number text;
+ALTER TABLE profiles
+ADD COLUMN can_send_email boolean NOT NULL DEFAULT false,
+ADD COLUMN can_send_sms boolean NOT NULL DEFAULT false,
+ADD COLUMN can_send_voice boolean NOT NULL DEFAULT false;
 
--- Add Telnyx tracking to calls table
-ALTER TABLE calls
-ADD COLUMN telnyx_call_control_id text,
-ADD COLUMN telnyx_call_session_id text,
-ADD COLUMN initiated_by uuid REFERENCES profiles(id);
+-- Migrate existing permissions to all channels
+UPDATE profiles 
+SET can_send_email = can_send_communications,
+    can_send_sms = can_send_communications,
+    can_send_voice = can_send_communications;
 
--- Update source options
--- Allow 'telnyx' as a source value
+COMMENT ON COLUMN profiles.can_send_email IS 'Permission to send emails from contact hover cards';
+COMMENT ON COLUMN profiles.can_send_sms IS 'Permission to send SMS from contact hover cards';
+COMMENT ON COLUMN profiles.can_send_voice IS 'Permission to initiate voice calls from contact hover cards';
 ```
 
-### Edge Function: initiate-telnyx-call
+---
 
-Key logic:
-1. Verify user has communication permissions
-2. Lookup agent's phone from profiles
-3. Lookup contact's phone from booking
-4. Call Telnyx API with webhook URL pointing to `receive-telnyx-webhook`
-5. Store initial call record with status `initiating`
-6. Return call ID for frontend tracking
+## Frontend Changes
 
-### Edge Function: receive-telnyx-webhook
+### 1. MyBookings Page - Fetch Transcription Data
 
-Webhook event handling:
+Create a custom data fetching approach for MyBookings that joins `booking_transcriptions`:
 
-| Event | Action |
-|-------|--------|
-| `call.initiated` | Update call status to `ringing` |
-| `call.answered` (agent leg) | Initiate dial to contact, update status to `connecting` |
-| `call.answered` (contact leg) | Bridge calls, update status to `connected` |
-| `call.hangup` | Update status to `completed`, store duration & recording |
+```typescript
+// In MyBookings.tsx - replace BookingsContext usage with direct query
+const { data: myBookingsData } = await supabase
+  .from('bookings')
+  .select(`
+    id, member_name, booking_date, move_in_date, agent_id, status, ...,
+    booking_transcriptions (
+      call_key_points,
+      call_summary
+    )
+  `)
+  .eq('agent_id', myAgent.id)
+  .gte('booking_date', dateLimit);
+```
 
-### Communication Type
+This ensures agents see the same insights as other roles in their hover cards.
 
-Add new type `voice_call` to distinguish from manual `voice_note`:
-- `voice_note` = Agent manually dialed from their phone
-- `voice_call` = System-initiated call via Telnyx
+### 2. useContactCommunications Hook Updates
+
+Fetch and expose individual permission states:
+
+```typescript
+interface UseContactCommunicationsReturn {
+  canSendCommunications: boolean;  // Master toggle
+  canSendEmail: boolean;           // Email only
+  canSendSMS: boolean;             // SMS only
+  canSendVoice: boolean;           // Voice only
+  // ... existing fields
+}
+```
+
+Permission logic:
+- Each channel is enabled if BOTH `can_send_communications` AND the specific channel flag are true
+- This maintains backward compatibility (master toggle can disable all)
+
+### 3. ContactProfileHoverCard Updates
+
+Update button disabled states to use granular permissions:
+
+```typescript
+// Email button
+disabled={!contactEmail || !canSendEmail}
+title={!canSendEmail ? 'Email permission required' : 'Send Email'}
+
+// SMS button  
+disabled={!contactPhone || !canSendSMS}
+title={!canSendSMS ? 'SMS permission required' : 'Send SMS'}
+
+// Voice button
+disabled={!contactPhone || !canSendVoice}
+title={!canSendVoice ? 'Voice permission required' : 'Call'}
+```
+
+### 4. User Management UI
+
+Replace the single "Communications" toggle with an expandable panel:
+
+```text
+Communications
++----------------------------------------------+
+| [Master Toggle] Enable Outreach              |
+|                                              |
+| When enabled:                                |
+|   [Email] [SMS] [Voice]                      |
++----------------------------------------------+
+```
+
+- Master toggle shows/hides individual channel toggles
+- Individual toggles are checkboxes or small switches
+- Changes are logged to audit log with specific channel names
 
 ---
 
-## Files to Create/Modify
+## Files to Modify
 
-| File | Action |
-|------|--------|
-| `supabase/functions/initiate-telnyx-call/index.ts` | **Create** - Initiate outbound calls |
-| `supabase/functions/receive-telnyx-webhook/index.ts` | **Create** - Handle call events |
-| `supabase/config.toml` | **Modify** - Add new function configs |
-| `src/components/reports/InitiateCallDialog.tsx` | **Create** - Call initiation UI |
-| `src/components/reports/ContactProfileHoverCard.tsx` | **Modify** - Use new call dialog |
-| `src/hooks/useContactCommunications.ts` | **Modify** - Add initiateCall method |
-| Database migration | **Create** - Add phone_number, telnyx columns |
+| File | Changes |
+|------|---------|
+| Database Migration | Add `can_send_email`, `can_send_sms`, `can_send_voice` columns |
+| `src/pages/MyBookings.tsx` | Replace BookingsContext with direct query that joins booking_transcriptions |
+| `src/hooks/useContactCommunications.ts` | Fetch and expose granular permissions |
+| `src/components/reports/ContactProfileHoverCard.tsx` | Use granular permission checks per button |
+| `src/pages/UserManagement.tsx` | Replace single toggle with expandable permission UI |
 
 ---
 
-## Testing Checklist
+## Technical Notes
+
+### RLS Verification
+
+The existing `booking_transcriptions` RLS policy `view_transcription` already allows agents to read their own transcriptions:
+
+```sql
+(get_my_role() = 'agent'::text) AND (booking_id IN (
+  SELECT b.id FROM bookings b JOIN agents a ON (b.agent_id = a.id)
+  WHERE a.user_id = auth.uid()
+))
+```
+
+No RLS changes needed.
+
+### Backward Compatibility
+
+- Existing `can_send_communications` values are migrated to all three new columns
+- Master toggle behavior is preserved
+- Agents with no permissions stay disabled
+
+### Audit Logging
+
+Permission changes will be logged with specifics:
+- `"Changed {user}'s can_send_email from false to true"`
+- `"Changed {user}'s can_send_sms permission: enabled"`
+
+---
+
+## Expected Outcome
 
 After implementation:
-- [ ] Add Telnyx API credentials as secrets
-- [ ] Add agent phone number to a test profile
-- [ ] Click "Voice" button on a contact with phone number
-- [ ] Verify agent's phone rings first
-- [ ] Answer agent phone, verify contact is dialed
-- [ ] Complete call, verify recording URL captured
-- [ ] Check `contact_communications` log entry
-
----
-
-## Cost Considerations
-
-Telnyx pricing is usage-based:
-- **Outbound calls**: ~$0.01-0.02/minute
-- **Recording storage**: ~$0.0025/minute/month
-- No monthly minimum
-
-Consider displaying estimated cost in the call dialog.
-
+1. Agents will see full call insights (budget, timeline, concerns) in hover cards on MyBookings page
+2. Admins can enable/disable Email, SMS, and Voice separately per agent
+3. Agents see disabled state with tooltip for channels they don't have permission for
+4. All permission changes are logged to audit
