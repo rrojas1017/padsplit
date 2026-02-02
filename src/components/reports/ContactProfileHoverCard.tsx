@@ -98,7 +98,7 @@ export function ContactProfileHoverCard({
   const hasInsights = callKeyPoints && transcriptionStatus === 'completed';
   const isProcessing = transcriptionStatus === 'pending' || transcriptionStatus === 'processing';
   
-  const { lastCommunication, canSendCommunications, logCommunication, refreshCommunications } = useContactCommunications(bookingId);
+  const { lastCommunication, canSendCommunications, canSendEmail, canSendSMS, canSendVoice, logCommunication, refreshCommunications } = useContactCommunications(bookingId);
   
   // State for dialogs
   const [showEmailDialog, setShowEmailDialog] = useState(false);
@@ -124,21 +124,21 @@ export function ContactProfileHoverCard({
   }, [bookingStatus, moveInDate, bookingDate, callKeyPoints, transcriptionStatus, lastCommunication, lastContactDate]);
 
   const handleEmailClick = () => {
-    if (contactEmail && bookingId && canSendCommunications) {
+    if (contactEmail && bookingId && canSendEmail) {
       // Open the email dialog instead of mailto
       setShowEmailDialog(true);
     }
   };
 
   const handleSmsClick = () => {
-    if (contactPhone && bookingId && canSendCommunications) {
+    if (contactPhone && bookingId && canSendSMS) {
       // Open the SMS dialog instead of native sms: URL
       setShowSMSDialog(true);
     }
   };
 
   const handleVoiceNoteClick = () => {
-    if (contactPhone && bookingId) {
+    if (contactPhone && bookingId && canSendVoice) {
       const cleanPhone = contactPhone.replace(/\D/g, '');
       window.location.href = `tel:${cleanPhone}`;
       logCommunication({
@@ -337,8 +337,8 @@ export function ContactProfileHoverCard({
                   size="sm"
                   className="flex-1 h-8 text-xs"
                   onClick={handleEmailClick}
-                  disabled={!contactEmail || !canSendCommunications}
-                  title={!canSendCommunications ? 'Communication permission required' : 'Send Email'}
+                  disabled={!contactEmail || !canSendEmail}
+                  title={!canSendEmail ? 'Email permission required' : 'Send Email'}
                 >
                   <Mail className="h-3.5 w-3.5 mr-1.5" />
                   Email
@@ -348,8 +348,8 @@ export function ContactProfileHoverCard({
                   size="sm"
                   className="flex-1 h-8 text-xs"
                   onClick={handleSmsClick}
-                  disabled={!contactPhone || !canSendCommunications}
-                  title={!canSendCommunications ? 'Communication permission required' : 'Send SMS'}
+                  disabled={!contactPhone || !canSendSMS}
+                  title={!canSendSMS ? 'SMS permission required' : 'Send SMS'}
                 >
                   <MessageSquare className="h-3.5 w-3.5 mr-1.5" />
                   SMS
@@ -359,8 +359,8 @@ export function ContactProfileHoverCard({
                   size="sm"
                   className="flex-1 h-8 text-xs"
                   onClick={handleVoiceNoteClick}
-                  disabled={!contactPhone || !canSendCommunications}
-                  title={!canSendCommunications ? 'Communication permission required' : 'Call'}
+                  disabled={!contactPhone || !canSendVoice}
+                  title={!canSendVoice ? 'Voice permission required' : 'Call'}
                 >
                   <Mic className="h-3.5 w-3.5 mr-1.5" />
                   Voice
@@ -377,10 +377,17 @@ export function ContactProfileHoverCard({
                 </div>
               )}
 
-              {/* Permission notice */}
-              {!canSendCommunications && (
+              {/* Permission notice - show specific channels that need permission */}
+              {(!canSendEmail || !canSendSMS || !canSendVoice) && (
                 <p className="mt-2 text-[10px] text-muted-foreground italic">
-                  Contact admin for communication access
+                  {!canSendCommunications 
+                    ? 'Contact admin for communication access'
+                    : `Missing access: ${[
+                        !canSendEmail && 'Email',
+                        !canSendSMS && 'SMS', 
+                        !canSendVoice && 'Voice'
+                      ].filter(Boolean).join(', ')}`
+                  }
                 </p>
               )}
             </div>

@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { usePageTracking } from '@/hooks/usePageTracking';
 import { Button } from '@/components/ui/button';
-import { Plus, MoreVertical, Shield, ShieldCheck, User, Crown, Loader2, Link, Pencil, Trash2, MessageSquare } from 'lucide-react';
+import { Plus, MoreVertical, Shield, ShieldCheck, User, Crown, Loader2, Link, Pencil, Trash2, ChevronDown, ChevronUp, Mail, MessageSquare, Mic } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
@@ -34,6 +34,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/contexts/AuthContext';
 import { useAgents } from '@/contexts/AgentsContext';
+import { CommunicationPermissionsCell } from '@/components/user-management/CommunicationPermissionsCell';
 
 interface UserWithRole {
   id: string;
@@ -44,6 +45,9 @@ interface UserWithRole {
   role: string;
   site_name?: string;
   can_send_communications?: boolean;
+  can_send_email?: boolean;
+  can_send_sms?: boolean;
+  can_send_voice?: boolean;
 }
 
 interface Site {
@@ -207,7 +211,7 @@ export default function UserManagement() {
     try {
       const { data: profiles, error: profilesError } = await supabase
         .from('profiles')
-        .select('id, name, email, status, site_id, can_send_communications');
+        .select('id, name, email, status, site_id, can_send_communications, can_send_email, can_send_sms, can_send_voice');
 
       if (profilesError) throw profilesError;
 
@@ -231,6 +235,9 @@ export default function UserManagement() {
           role: userRole?.role || 'agent',
           site_name: site?.name,
           can_send_communications: profile.can_send_communications ?? false,
+          can_send_email: profile.can_send_email ?? false,
+          can_send_sms: profile.can_send_sms ?? false,
+          can_send_voice: profile.can_send_voice ?? false,
         };
       });
 
@@ -498,12 +505,12 @@ export default function UserManagement() {
     }
   };
 
-  // Handle toggling communication permission
+  // Handle toggling communication permission (master toggle)
   const handleToggleCommunicationPermission = async (userId: string, userName: string, currentValue: boolean) => {
     try {
       const newValue = !currentValue;
       
-      // Update profile
+      // Update profile - master toggle
       const { error } = await supabase
         .from('profiles')
         .update({ can_send_communications: newValue })
@@ -516,7 +523,7 @@ export default function UserManagement() {
         user_id: currentUser?.id,
         user_name: currentUser?.name,
         action: newValue ? 'communication_permission_grant' : 'communication_permission_revoke',
-        resource: `user:${userId} (${userName})`,
+        resource: `user:${userId} (${userName}) - master toggle`,
       });
 
       toast({
@@ -531,6 +538,51 @@ export default function UserManagement() {
       toast({
         title: 'Error',
         description: 'Failed to update communication permission',
+        variant: 'destructive',
+      });
+    }
+  };
+
+  // Handle toggling individual channel permissions
+  const handleToggleChannelPermission = async (
+    userId: string, 
+    userName: string, 
+    channel: 'email' | 'sms' | 'voice',
+    currentValue: boolean
+  ) => {
+    try {
+      const newValue = !currentValue;
+      const columnName = `can_send_${channel}`;
+      
+      // Update profile
+      const { error } = await supabase
+        .from('profiles')
+        .update({ [columnName]: newValue })
+        .eq('id', userId);
+
+      if (error) throw error;
+
+      // Log the action
+      const channelLabel = channel === 'email' ? 'Email' : channel === 'sms' ? 'SMS' : 'Voice';
+      await supabase.from('access_logs').insert({
+        user_id: currentUser?.id,
+        user_name: currentUser?.name,
+        action: newValue ? 'channel_permission_grant' : 'channel_permission_revoke',
+        resource: `user:${userId} (${userName}) - ${channelLabel}`,
+      });
+
+      toast({
+        title: 'Permission Updated',
+        description: `${channelLabel} permission ${newValue ? 'granted to' : 'revoked from'} ${userName}`,
+      });
+
+      // Refresh users list
+      fetchUsers();
+    } catch (error) {
+      console.error('Error toggling channel permission:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to update channel permission',
         variant: 'destructive',
       });
     }
@@ -670,18 +722,16 @@ export default function UserManagement() {
                         </td>
                         {(isSuperAdmin || isAdmin) && (
                           <td className="py-4 px-4">
-                            <div className="flex items-center gap-2">
-                              <Switch
-                                checked={user.can_send_communications ?? false}
-                                onCheckedChange={() => handleToggleCommunicationPermission(user.id, user.name, user.can_send_communications ?? false)}
-                              />
-                              <span className={cn(
-                                "text-xs font-medium",
-                                user.can_send_communications ? "text-success" : "text-muted-foreground"
-                              )}>
-                                {user.can_send_communications ? 'Enabled' : 'Disabled'}
-                              </span>
-                            </div>
+                            <CommunicationPermissionsCell
+                              userId={user.id}
+                              userName={user.name}
+                              canSendCommunications={user.can_send_communications ?? false}
+                              canSendEmail={user.can_send_email ?? false}
+                              canSendSMS={user.can_send_sms ?? false}
+                              canSendVoice={user.can_send_voice ?? false}
+                              onToggleMaster={handleToggleCommunicationPermission}
+                              onToggleChannel={handleToggleChannelPermission}
+                            />
                           </td>
                         )}
                         <td className="py-4 px-4 text-right">
@@ -837,18 +887,16 @@ export default function UserManagement() {
                                 </td>
                                 {(isSuperAdmin || isAdmin) && (
                                   <td className="py-4 px-4">
-                                    <div className="flex items-center gap-2">
-                                      <Switch
-                                        checked={user.can_send_communications ?? false}
-                                        onCheckedChange={() => handleToggleCommunicationPermission(user.id, user.name, user.can_send_communications ?? false)}
-                                      />
-                                      <span className={cn(
-                                        "text-xs font-medium",
-                                        user.can_send_communications ? "text-success" : "text-muted-foreground"
-                                      )}>
-                                        {user.can_send_communications ? 'Enabled' : 'Disabled'}
-                                      </span>
-                                    </div>
+                                    <CommunicationPermissionsCell
+                                      userId={user.id}
+                                      userName={user.name}
+                                      canSendCommunications={user.can_send_communications ?? false}
+                                      canSendEmail={user.can_send_email ?? false}
+                                      canSendSMS={user.can_send_sms ?? false}
+                                      canSendVoice={user.can_send_voice ?? false}
+                                      onToggleMaster={handleToggleCommunicationPermission}
+                                      onToggleChannel={handleToggleChannelPermission}
+                                    />
                                   </td>
                                 )}
                                 <td className="py-4 px-4 text-right">
