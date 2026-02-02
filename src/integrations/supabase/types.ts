@@ -521,6 +521,7 @@ export type Database = {
           import_batch_id: string | null
           is_rebooking: boolean
           kixie_link: string | null
+          market_backfill_checked: boolean | null
           market_city: string | null
           market_state: string | null
           member_name: string
@@ -561,6 +562,7 @@ export type Database = {
           import_batch_id?: string | null
           is_rebooking?: boolean
           kixie_link?: string | null
+          market_backfill_checked?: boolean | null
           market_city?: string | null
           market_state?: string | null
           member_name: string
@@ -601,6 +603,7 @@ export type Database = {
           import_batch_id?: string | null
           is_rebooking?: boolean
           kixie_link?: string | null
+          market_backfill_checked?: boolean | null
           market_city?: string | null
           market_state?: string | null
           member_name?: string
