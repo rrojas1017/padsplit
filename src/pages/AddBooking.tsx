@@ -23,8 +23,10 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from '@/hooks/use-toast';
 import { format } from 'date-fns';
-import { CalendarIcon, Save, PlusCircle, ArrowLeft, RotateCcw, Check } from 'lucide-react';
+import { CalendarIcon, Save, PlusCircle, ArrowLeft, RotateCcw, Check, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { useEmailVerification } from '@/hooks/useEmailVerification';
+import { EmailVerificationBadge } from '@/components/reports/EmailVerificationBadge';
 
 const bookingTypes: Booking['bookingType'][] = ['Inbound', 'Outbound', 'Referral'];
 const statuses: Booking['status'][] = ['Pending Move-In', 'Moved In', 'Member Rejected', 'No Show', 'Cancelled', 'Postponed'];
@@ -56,6 +58,13 @@ export default function AddBooking() {
   const [contactEmail, setContactEmail] = useState('');
   const [contactPhone, setContactPhone] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Real-time email verification
+  const { 
+    status: emailVerificationStatus, 
+    isVerifying: isVerifyingEmail, 
+    isValidFormat: isValidEmailFormat 
+  } = useEmailVerification(contactEmail);
 
   // Validation helpers for real-time feedback
   const isValidEmail = (email: string) => {
@@ -379,12 +388,34 @@ export default function AddBooking() {
                     value={contactEmail}
                     onChange={(e) => setContactEmail(e.target.value)}
                     placeholder="member@email.com"
-                    className={isValidEmail(contactEmail) ? 'pr-10' : ''}
+                    className={cn(
+                      'pr-10',
+                      emailVerificationStatus === 'invalid' && 'border-destructive focus-visible:ring-destructive',
+                      emailVerificationStatus === 'disposable' && 'border-warning focus-visible:ring-warning'
+                    )}
                   />
-                  {isValidEmail(contactEmail) && (
-                    <Check className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-green-500" />
-                  )}
+                  <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1">
+                    {isVerifyingEmail && (
+                      <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                    )}
+                    {!isVerifyingEmail && isValidEmailFormat && emailVerificationStatus && (
+                      <EmailVerificationBadge status={emailVerificationStatus} />
+                    )}
+                    {!isVerifyingEmail && isValidEmailFormat && !emailVerificationStatus && (
+                      <Check className="h-4 w-4 text-muted-foreground" />
+                    )}
+                  </div>
                 </div>
+                {emailVerificationStatus === 'invalid' && (
+                  <p className="text-xs text-destructive">
+                    ⚠️ This email appears to be invalid. Please verify with the member.
+                  </p>
+                )}
+                {emailVerificationStatus === 'disposable' && (
+                  <p className="text-xs text-warning">
+                    ⚠️ This appears to be a disposable email. Consider requesting a permanent email.
+                  </p>
+                )}
               </div>
               <div className="space-y-2">
                 <Label htmlFor="contactPhone">Phone Number *</Label>
@@ -398,7 +429,7 @@ export default function AddBooking() {
                     className={isValidPhone(contactPhone) ? 'pr-10' : ''}
                   />
                   {isValidPhone(contactPhone) && (
-                    <Check className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-green-500" />
+                    <Check className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-success" />
                   )}
                 </div>
               </div>
