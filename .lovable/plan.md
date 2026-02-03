@@ -1,118 +1,88 @@
 
-# Plan: Exclude Non-Booking Records from Agent Booking Stats
+# Plan: Apply Non-Booking Separation to All Wallboard Views
 
 ## Overview
-Update all booking-related calculations and displays to exclude "Non Booking" status records from actual booking counts, while adding a dedicated summary card showing the total non-booking calls for the selected period.
+Update the internal Wallboard and Public Wallboard pages to exclude "Non Booking" records from their booking counts. This ensures consistency across all agent-facing views where performance metrics should only reflect actual bookings.
 
 ## Background
-The `bookings` table stores both actual bookings (with statuses like "Pending Move-In", "Moved In", etc.) and call records that did not result in a booking (status = "Non Booking"). Currently, these non-booking records are being counted in agent performance metrics, inflating their booking numbers.
+The changes made to Dashboard, Leaderboard, My Performance, and My Bookings now correctly separate actual bookings from call activity records (status = "Non Booking"). However, two additional pages still need this update:
+- Internal Wallboard (live operations dashboard)
+- Public Wallboard (externally shareable display link)
 
-## Changes Required
+Additionally, the edge function that serves the Public Wallboard data should filter at the database level for efficiency.
 
-### 1. Update Dashboard Calculations (`src/utils/dashboardCalculations.ts`)
-Add a filter to exclude "Non Booking" status from all booking-related calculations:
+## Files Affected
 
-- **`calculateKPIData`**: Filter out Non Booking records before counting total bookings, site bookings, and pending move-ins
-- **`calculateChartData`**: Filter out Non Booking records from daily chart data
-- **`calculateLeaderboard`**: Filter out Non Booking records from agent booking counts
-- **`calculateMarketData`**: Filter out Non Booking records from market breakdown
-- **`calculateInsightsData`**: Filter out Non Booking records from insights calculations
+| File | Current State | Change Required |
+|------|--------------|-----------------|
+| `src/pages/Wallboard.tsx` | Counts all bookings regardless of status | Add filter to exclude Non Booking |
+| `src/pages/PublicWallboard.tsx` | Counts all bookings regardless of status | Add filter to exclude Non Booking |
+| `supabase/functions/get-wallboard-data/index.ts` | Returns all bookings | Add database-level filter to exclude Non Booking |
 
-Create a helper function:
+## Technical Details
+
+### 1. Internal Wallboard (`src/pages/Wallboard.tsx`)
+
+Add a helper function and apply it to all booking filters:
+
 ```text
-const ACTUAL_BOOKING_STATUSES = ['Pending Move-In', 'Moved In', 'Member Rejected', 'No Show', 'Cancelled', 'Postponed'];
+// Helper to filter actual bookings (exclude Non Booking status)
+const filterActualBookings = (list: typeof bookings) => 
+  list.filter(b => b.status !== 'Non Booking');
 
-const filterActualBookings = (bookings: Booking[]): Booking[] => {
-  return bookings.filter(b => b.status !== 'Non Booking');
-};
+// Apply to existing filters
+const actualBookings = filterActualBookings(bookings);
+const todayBookings = actualBookings.filter(...);
+const yesterdayBookings = actualBookings.filter(...);
 ```
 
-Add a new function to calculate non-booking counts for any date range:
+This ensures:
+- "Total Bookings Today" card shows only real bookings
+- "Vixicom" and "PadSplit Internal" site cards show only real bookings
+- "Yesterday" comparison shows only real bookings
+- All percentage change calculations are accurate
+
+### 2. Public Wallboard (`src/pages/PublicWallboard.tsx`)
+
+Same pattern as Internal Wallboard:
+
 ```text
-export const calculateNonBookingCount = (
-  bookings: Booking[],
-  dateFilter: DateRangeFilter,
-  customDates?: CustomDateRange
-): number => {
-  const { start, end } = getDateRangeFromFilter(dateFilter, customDates);
-  const filtered = filterBookingsByDateRange(bookings, start, end);
-  return filtered.filter(b => b.status === 'Non Booking').length;
-};
+// Helper to filter actual bookings
+const filterActualBookings = (list: Booking[]) => 
+  list.filter(b => b.status !== 'Non Booking');
+
+// Apply to existing filters
+const actualBookings = filterActualBookings(bookings);
+const todayBookings = actualBookings.filter(...);
+const yesterdayBookings = actualBookings.filter(...);
 ```
 
-### 2. Update Dashboard Page (`src/pages/Dashboard.tsx`)
-- Import the new `calculateNonBookingCount` function
-- Add a Non-Bookings summary card in the "Today's Insights" section showing the count for the selected period
+### 3. Edge Function (`supabase/functions/get-wallboard-data/index.ts`)
 
-### 3. Update My Performance Page (`src/pages/MyPerformance.tsx`)
-- Filter agent's bookings to exclude "Non Booking" status in all calculations
-- Add a Non-Bookings summary card showing the agent's total non-booking calls for the period
-- Update the chart data to only show actual bookings
+Add status filter to the database query for efficiency:
 
-### 4. Update My Bookings Page (`src/pages/MyBookings.tsx`)
-- Update the status filter options to exclude "Non Booking" from the default list (since it's a different type of record)
-- Add a new summary card showing total Non-Booking calls
-- Filter the main booking list to exclude "Non Booking" by default (they should view these in Call Insights/Reports)
-- Update `summaryStats` calculation to exclude Non Booking from totals
-
-### 5. Update Leaderboard Page (`src/pages/Leaderboard.tsx`)
-- Add a summary card showing total Non-Booking calls for all agents
-- The leaderboard will automatically be corrected once `calculateLeaderboard` is updated
-
-## Visual Changes
-
-### Dashboard
-Add a new insight card in the "Today's Insights" section:
 ```text
-+-----------------------------------+
-| Non-Booking Calls                 |
-| [amber color indicator]           |
-| X calls                           |
-| In selected period                |
-+-----------------------------------+
+const { data: bookings, error: bookingsError } = await supabase
+  .from('bookings')
+  .select('*')
+  .gte('booking_date', dateLimit)
+  .neq('status', 'Non Booking')  // <-- Add this filter
+  .order('booking_date', { ascending: false })
+  .limit(500);
 ```
 
-### My Performance
-Add a new summary stat card:
-```text
-+-----------------------------------+
-| Non-Booking Calls                 |
-| [Phone icon - amber]              |
-| X                                 |
-| vs Y previous period              |
-+-----------------------------------+
-```
-
-### My Bookings
-Add a new summary card and update totals:
-```text
-Before: Total shows bookings + non-bookings mixed
-After:  Total shows only actual bookings
-        + New card: "Non-Bookings: X"
-```
-
-### Leaderboard
-Add a summary card in the stats row:
-```text
-+-----------------------------------+
-| Non-Booking Calls                 |
-| [Phone icon]                      |
-| X total                           |
-+-----------------------------------+
-```
-
-## Files to Modify
-
-| File | Change |
-|------|--------|
-| `src/utils/dashboardCalculations.ts` | Add non-booking filter to all calculations, add `calculateNonBookingCount` function |
-| `src/pages/Dashboard.tsx` | Add Non-Bookings summary in insights section |
-| `src/pages/MyPerformance.tsx` | Filter non-bookings from stats, add summary card |
-| `src/pages/MyBookings.tsx` | Filter non-bookings from list and stats, add summary card |
-| `src/pages/Leaderboard.tsx` | Add non-bookings summary card |
+This reduces data transfer and processing by excluding Non Booking records at the database level.
 
 ## Impact
-- Agent booking counts will decrease to reflect only actual bookings
-- Non-booking call activity will be clearly separated and visible
-- Reports page already handles this correctly and needs no changes
-- Historical data integrity is maintained - no database changes required
+
+- Internal Wallboard will show accurate booking counts
+- Public (TV) displays will show accurate booking counts  
+- Leaderboard on both wallboards uses `calculateLeaderboard` which already filters correctly
+- Data transfer to Public Wallboard will be reduced slightly
+
+## No Changes Needed
+
+The following files are already correct:
+- `src/hooks/useAgentGoals.ts` - Already filters with `.in('status', ['Pending Move-In', 'Moved In'])`
+- All dashboard calculation utilities - Already use `filterActualBookings`
+- All previously updated pages (Dashboard, Leaderboard, MyPerformance, MyBookings)
