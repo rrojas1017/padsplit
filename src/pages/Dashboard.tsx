@@ -7,12 +7,12 @@ import { LeaderboardTable } from '@/components/dashboard/LeaderboardTable';
 import { MarketChart } from '@/components/dashboard/MarketChart';
 import { DateRangeFilter, DateFilterValue, CustomDateRange } from '@/components/dashboard/DateRangeFilter';
 import { SiteFilter } from '@/components/dashboard/SiteFilter';
-import { CalendarDays, Users, Clock, CheckCircle2, DollarSign, Timer, FileCheck, TrendingDown } from 'lucide-react';
+import { CalendarDays, Users, Clock, CheckCircle2, DollarSign, Timer, FileCheck, TrendingDown, PhoneOff } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useBookings } from '@/contexts/BookingsContext';
 import { useAgents } from '@/contexts/AgentsContext';
 import { Navigate, Link } from 'react-router-dom';
-import { calculateKPIData, calculateChartData, calculateLeaderboard, calculateMarketData, calculateInsightsData, DateRangeFilter as DateRangeFilterType, CustomDateRange as CalcCustomDateRange } from '@/utils/dashboardCalculations';
+import { calculateKPIData, calculateChartData, calculateLeaderboard, calculateMarketData, calculateInsightsData, calculateNonBookingCount, DateRangeFilter as DateRangeFilterType, CustomDateRange as CalcCustomDateRange } from '@/utils/dashboardCalculations';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useBillingData, DateRangeType } from '@/hooks/useBillingData';
 import { formatCurrency } from '@/utils/billingCalculations';
@@ -74,6 +74,7 @@ export default function Dashboard() {
   const leaderboard = calculateLeaderboard(filteredBookings, filteredAgents, dateRange, customDates);
   const marketData = calculateMarketData(filteredBookings, dateRange, customDates);
   const insights = calculateInsightsData(filteredBookings, filteredAgents);
+  const nonBookingCount = calculateNonBookingCount(filteredBookings, dateRange, customDates);
 
   const kpiIcons = [
     <CalendarDays className="w-5 h-5" />,
@@ -154,7 +155,7 @@ export default function Dashboard() {
       {/* Insights */}
       <div className="mt-6 p-6 rounded-xl bg-card border border-border animate-slide-up" style={{ animationDelay: '500ms' }}>
         <h3 className="text-lg font-semibold text-foreground mb-3">Today's Insights</h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-4">
           {/* Today vs Yesterday Same Time */}
           <div className="p-4 rounded-lg bg-success/10 border border-success/20">
             <p className="text-sm text-success font-medium">
@@ -199,6 +200,17 @@ export default function Dashboard() {
             <p className="text-sm text-orange-500 font-medium">Pending Move-ins</p>
             <p className="text-muted-foreground text-sm mt-1">
               {insights.pendingMoveInsThisWeek} move-ins scheduled in the next 7 days
+            </p>
+          </div>
+          
+          {/* Non-Booking Calls */}
+          <div className="p-4 rounded-lg bg-amber-500/10 border border-amber-500/20">
+            <div className="flex items-center gap-2">
+              <PhoneOff className="w-4 h-4 text-amber-500" />
+              <p className="text-sm text-amber-500 font-medium">Non-Booking Calls</p>
+            </div>
+            <p className="text-muted-foreground text-sm mt-1">
+              {nonBookingCount} call{nonBookingCount !== 1 ? 's' : ''} in selected period
             </p>
           </div>
         </div>

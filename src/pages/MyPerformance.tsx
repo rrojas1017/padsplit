@@ -9,7 +9,7 @@ import { useAgents } from '@/contexts/AgentsContext';
 import { useCoachingData, CoachingBookingWithAudio } from '@/hooks/useCoachingData';
 import { useMyGoal } from '@/hooks/useAgentGoals';
 import { BroadcastBanner } from '@/components/broadcast/BroadcastBanner';
-import { CalendarDays, TrendingUp, Clock, CheckCircle2, Trophy, GraduationCap, ThumbsUp, Lightbulb, Star, Headphones, Timer, Check, Info, Target } from 'lucide-react';
+import { CalendarDays, TrendingUp, Clock, CheckCircle2, Trophy, GraduationCap, ThumbsUp, Lightbulb, Star, Headphones, Timer, Check, Info, Target, PhoneOff } from 'lucide-react';
 import { format, subDays, startOfMonth, startOfDay, endOfDay, differenceInDays } from 'date-fns';
 import { Area, AreaChart, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer } from 'recharts';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -142,25 +142,36 @@ export default function MyPerformance() {
   const { start: periodStart, end: periodEnd } = getDateRangeFromFilterLocal(dateFilter, customDates);
   const { start: prevStart, end: prevEnd } = getPreviousPeriod(dateFilter, customDates);
   
-  // Get agent's bookings
-  const myBookings = myAgent ? bookings.filter(b => b.agentId === myAgent.id) : [];
+  // Get agent's bookings (filter out Non Booking records for actual performance metrics)
+  const myBookings = myAgent ? bookings.filter(b => b.agentId === myAgent.id && b.status !== 'Non Booking') : [];
+  
+  // Calculate non-booking calls for the agent
+  const myNonBookings = myAgent ? bookings.filter(b => b.agentId === myAgent.id && b.status === 'Non Booking') : [];
   
   // Filter bookings for selected period
   const periodBookings = myBookings.filter(b => 
     b.bookingDate >= periodStart && b.bookingDate <= periodEnd
   );
   
+  // Non-bookings for selected period
+  const periodNonBookings = myNonBookings.filter(b => 
+    b.bookingDate >= periodStart && b.bookingDate <= periodEnd
+  );
+  const prevPeriodNonBookings = dateFilter !== 'all' 
+    ? myNonBookings.filter(b => b.bookingDate >= prevStart && b.bookingDate <= prevEnd)
+    : [];
+  
   // Filter bookings for previous period (for comparison)
   const prevPeriodBookings = dateFilter !== 'all' 
     ? myBookings.filter(b => b.bookingDate >= prevStart && b.bookingDate <= prevEnd)
     : [];
   
-  // Calculate rank among all active agents for the selected period
+  // Calculate rank among all active agents for the selected period (exclude Non Booking records)
   const activeAgents = agents.filter(a => a.active);
   const allAgentBookings = activeAgents.map(a => ({
     agent: a,
     bookings: bookings.filter(b => 
-      b.agentId === a.id && b.bookingDate >= periodStart && b.bookingDate <= periodEnd
+      b.agentId === a.id && b.status !== 'Non Booking' && b.bookingDate >= periodStart && b.bookingDate <= periodEnd
     ).length
   })).sort((a, b) => {
     if (b.bookings !== a.bookings) {
@@ -239,6 +250,13 @@ export default function MyPerformance() {
       change: 0,
       changeType: 'neutral',
     },
+    {
+      label: 'Non-Booking Calls',
+      value: periodNonBookings.length,
+      previousValue: prevPeriodNonBookings.length,
+      change: dateFilter === 'all' ? 0 : calculateChange(periodNonBookings.length, prevPeriodNonBookings.length),
+      changeType: 'neutral',
+    },
   ];
 
   const icons = [
@@ -246,6 +264,7 @@ export default function MyPerformance() {
     <TrendingUp className="w-5 h-5" />,
     <CheckCircle2 className="w-5 h-5" />,
     <Trophy className="w-5 h-5" />,
+    <PhoneOff className="w-5 h-5" />,
   ];
 
   if (isLoading) {
@@ -257,8 +276,8 @@ export default function MyPerformance() {
         <div className="mb-6">
           <Skeleton className="h-20 w-full rounded-xl" />
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-          {[...Array(4)].map((_, i) => (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
+          {[...Array(5)].map((_, i) => (
             <Skeleton key={i} className="h-32 rounded-xl" />
           ))}
         </div>
@@ -416,7 +435,7 @@ export default function MyPerformance() {
       })()}
 
       {/* KPI Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
         {kpiData.map((kpi, index) => (
           <div key={kpi.label} className="relative">
             <KPICard 

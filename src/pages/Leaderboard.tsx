@@ -6,9 +6,9 @@ import { DateRangeFilter, DateFilterValue, CustomDateRange } from '@/components/
 import { SiteFilter } from '@/components/dashboard/SiteFilter';
 import { useBookings } from '@/contexts/BookingsContext';
 import { useAgents } from '@/contexts/AgentsContext';
-import { calculateLeaderboard, DateRangeFilter as DateRangeFilterType, CustomDateRange as CalcCustomDateRange } from '@/utils/dashboardCalculations';
+import { calculateLeaderboard, calculateNonBookingCount, DateRangeFilter as DateRangeFilterType, CustomDateRange as CalcCustomDateRange } from '@/utils/dashboardCalculations';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Calendar, Sparkles, RotateCcw, Users } from 'lucide-react';
+import { Calendar, Sparkles, RotateCcw, Users, PhoneOff } from 'lucide-react';
 
 export default function Leaderboard() {
   usePageTracking('view_leaderboard');
@@ -24,6 +24,7 @@ export default function Leaderboard() {
 
   const isLoading = bookingsLoading || agentsLoading;
   const leaderboard = calculateLeaderboard(bookings, agents, dateRange, customDates);
+  const nonBookingCount = calculateNonBookingCount(bookings, dateRange, customDates);
 
   const summaryStats = useMemo(() => {
     const totalBookings = leaderboard.reduce((sum, entry) => sum + entry.bookings, 0);
@@ -69,7 +70,7 @@ export default function Leaderboard() {
       ) : (
         <>
           {/* Summary Cards */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 mb-6">
             <div className="bg-card rounded-xl p-4 border border-border shadow-sm">
               <div className="flex items-center gap-2">
                 <Calendar className="w-4 h-4 text-foreground" />
@@ -103,6 +104,14 @@ export default function Leaderboard() {
                 <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Active Agents</p>
               </div>
               <p className="text-2xl font-bold text-success mt-1">{summaryStats.activeAgents}</p>
+            </div>
+            
+            <div className="bg-card rounded-xl p-4 border border-border shadow-sm">
+              <div className="flex items-center gap-2">
+                <PhoneOff className="w-4 h-4 text-amber-500" />
+                <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Non-Bookings</p>
+              </div>
+              <p className="text-2xl font-bold text-amber-500 mt-1">{nonBookingCount}</p>
             </div>
           </div>
 
