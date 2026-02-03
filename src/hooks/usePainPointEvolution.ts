@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
-import { format } from 'date-fns';
+import { format, subMonths } from 'date-fns';
 
 interface PainPointData {
   category: string;
@@ -39,6 +39,8 @@ interface ChartDataPoint {
   [category: string]: string | number;
 }
 
+export type TimeRangeOption = '3m' | '6m' | '12m' | 'all';
+
 interface UsePainPointEvolutionResult {
   chartData: ChartDataPoint[];
   categories: string[];
@@ -47,6 +49,53 @@ interface UsePainPointEvolutionResult {
   isLoading: boolean;
   error: Error | null;
   refetch: () => void;
+}
+
+// Stop words to filter out when extracting keywords
+const STOP_WORDS = new Set([
+  'and', 'or', 'the', 'a', 'an', 'of', 'for', 'to', 'with', 'in', 'on', '&',
+  'about', 'around', 'at', 'by', 'from', 'into', 'over', 'than', 'that', 'this',
+  'be', 'been', 'being', 'have', 'has', 'had', 'do', 'does', 'did', 'will',
+  'would', 'could', 'should', 'may', 'might', 'must', 'shall', 'can',
+  'not', 'no', 'nor', 'but', 'if', 'then', 'else', 'when', 'where', 'why', 'how',
+  'all', 'any', 'both', 'each', 'few', 'more', 'most', 'other', 'some', 'such',
+  'only', 'own', 'same', 'so', 'too', 'very', 'just', 'also', 'even', 'still'
+]);
+
+const SIMILARITY_THRESHOLD = 0.5;
+
+// Extract meaningful keywords from a category name
+function extractKeywords(category: string): Set<string> {
+  return new Set(
+    category.toLowerCase()
+      .replace(/[&\/\\-]/g, ' ')
+      .replace(/[^\w\s]/g, '')
+      .split(/\s+/)
+      .filter(word => word.length > 2 && !STOP_WORDS.has(word))
+  );
+}
+
+// Calculate Jaccard similarity between two keyword sets
+function calculateSimilarity(set1: Set<string>, set2: Set<string>): number {
+  if (set1.size === 0 || set2.size === 0) return 0;
+  const intersection = new Set([...set1].filter(x => set2.has(x)));
+  const union = new Set([...set1, ...set2]);
+  return union.size > 0 ? intersection.size / union.size : 0;
+}
+
+// Find canonical category from existing ones
+function findCanonicalCategory(
+  newCategory: string,
+  existingCategories: Map<string, { display: string; keywords: Set<string> }>
+): string | null {
+  const newKeywords = extractKeywords(newCategory);
+  
+  for (const [normalized, data] of existingCategories) {
+    if (calculateSimilarity(newKeywords, data.keywords) >= SIMILARITY_THRESHOLD) {
+      return normalized;
+    }
+  }
+  return null;
 }
 
 function normalizeCategory(category: string): string {
@@ -78,7 +127,7 @@ function getTrendStatus(
   return 'stable';
 }
 
-export function usePainPointEvolution(): UsePainPointEvolutionResult {
+export function usePainPointEvolution(timeRange: TimeRangeOption = '6m'): UsePainPointEvolutionResult {
   const [chartData, setChartData] = useState<ChartDataPoint[]>([]);
   const [categories, setCategories] = useState<string[]>([]);
   const [statuses, setStatuses] = useState<PainPointStatus[]>([]);
@@ -97,13 +146,37 @@ export function usePainPointEvolution(): UsePainPointEvolutionResult {
     setError(null);
 
     try {
-      // Fetch all completed analyses to cover multiple months
-      const { data: analyses, error: fetchError } = await supabase
+      // Calculate date cutoff based on timeRange
+      const now = new Date();
+      let cutoffDate: Date | null = null;
+      
+      switch (timeRange) {
+        case '3m':
+          cutoffDate = subMonths(now, 3);
+          break;
+        case '6m':
+          cutoffDate = subMonths(now, 6);
+          break;
+        case '12m':
+          cutoffDate = subMonths(now, 12);
+          break;
+        case 'all':
+          cutoffDate = null;
+          break;
+      }
+
+      // Build query with optional date filter
+      let query = supabase
         .from('member_insights')
         .select('id, created_at, date_range_start, date_range_end, pain_points, status')
         .eq('status', 'completed')
-        .order('date_range_end', { ascending: true })
-        .limit(100);
+        .order('date_range_end', { ascending: true });
+
+      if (cutoffDate) {
+        query = query.gte('date_range_end', cutoffDate.toISOString());
+      }
+
+      const { data: analyses, error: fetchError } = await query.limit(100);
 
       if (fetchError) throw fetchError;
 
@@ -117,14 +190,20 @@ export function usePainPointEvolution(): UsePainPointEvolutionResult {
 
       // Group analyses by month using date_range_end
       const monthlyBuckets = new Map<string, MonthlyBucket>();
-      const allCategories = new Map<string, {
+      
+      // Track canonical categories with fuzzy matching
+      const canonicalCategories = new Map<string, {
         normalized: string;
         display: string;
+        keywords: Set<string>;
         firstSeen: string;
         lastSeen: string;
         occurrenceCount: number;
-        monthlyFrequencies: Map<string, number>;
+        monthlyFrequencies: Map<string, number[]>;
       }>();
+      
+      // Mapping from raw category → canonical normalized name
+      const categoryMapping = new Map<string, string>();
 
       for (const analysis of analyses) {
         const endDate = new Date(analysis.date_range_end);
@@ -145,52 +224,65 @@ export function usePainPointEvolution(): UsePainPointEvolutionResult {
         for (const pp of painPoints) {
           if (!pp.category) continue;
           
-          const normalized = normalizeCategory(pp.category);
+          const rawCategory = pp.category;
           const frequency = pp.frequency ?? pp.frequency_percent ?? 0;
+          let canonicalKey: string;
           
-          // Add to monthly bucket
-          if (!bucket.painPoints.has(normalized)) {
-            bucket.painPoints.set(normalized, []);
-          }
-          bucket.painPoints.get(normalized)!.push(frequency);
-          
-          // Track category metadata
-          if (!allCategories.has(normalized)) {
-            allCategories.set(normalized, {
-              normalized,
-              display: pp.category,
-              firstSeen: monthLabel,
-              lastSeen: monthLabel,
-              occurrenceCount: 1,
-              monthlyFrequencies: new Map()
-            });
+          // Check if we've already mapped this exact category
+          if (categoryMapping.has(rawCategory)) {
+            canonicalKey = categoryMapping.get(rawCategory)!;
           } else {
-            const existing = allCategories.get(normalized)!;
-            existing.lastSeen = monthLabel;
-            existing.occurrenceCount++;
+            // Try to find a similar existing category
+            const matchedKey = findCanonicalCategory(rawCategory, canonicalCategories);
+            
+            if (matchedKey) {
+              canonicalKey = matchedKey;
+            } else {
+              // New unique category
+              canonicalKey = normalizeCategory(rawCategory);
+              canonicalCategories.set(canonicalKey, {
+                normalized: canonicalKey,
+                display: rawCategory,
+                keywords: extractKeywords(rawCategory),
+                firstSeen: monthLabel,
+                lastSeen: monthLabel,
+                occurrenceCount: 0,
+                monthlyFrequencies: new Map()
+              });
+            }
+            categoryMapping.set(rawCategory, canonicalKey);
           }
+          
+          // Update the canonical category
+          const catData = canonicalCategories.get(canonicalKey)!;
+          catData.lastSeen = monthLabel;
+          catData.occurrenceCount++;
+          
+          // Add frequency to monthly frequencies
+          if (!catData.monthlyFrequencies.has(monthKey)) {
+            catData.monthlyFrequencies.set(monthKey, []);
+          }
+          catData.monthlyFrequencies.get(monthKey)!.push(frequency);
+          
+          // Add to monthly bucket using canonical key
+          if (!bucket.painPoints.has(canonicalKey)) {
+            bucket.painPoints.set(canonicalKey, []);
+          }
+          bucket.painPoints.get(canonicalKey)!.push(frequency);
         }
       }
 
-      // Calculate average frequency per category per month
+      // Sort months chronologically
       const sortedMonths = Array.from(monthlyBuckets.values())
         .sort((a, b) => a.monthKey.localeCompare(b.monthKey));
 
-      // Build monthly averages for each category
-      for (const bucket of sortedMonths) {
-        for (const [normalized, frequencies] of bucket.painPoints.entries()) {
-          const avgFrequency = frequencies.reduce((sum, f) => sum + f, 0) / frequencies.length;
-          const catData = allCategories.get(normalized);
-          if (catData) {
-            catData.monthlyFrequencies.set(bucket.monthKey, avgFrequency);
-          }
-        }
-      }
-
       // Get top 5 categories by average frequency across all months
-      const sortedCategories = Array.from(allCategories.values())
+      const sortedCategories = Array.from(canonicalCategories.values())
         .map(cat => {
-          const allFreqs = Array.from(cat.monthlyFrequencies.values());
+          const allFreqs: number[] = [];
+          for (const freqs of cat.monthlyFrequencies.values()) {
+            allFreqs.push(...freqs);
+          }
           const avgFreq = allFreqs.length > 0 
             ? allFreqs.reduce((sum, f) => sum + f, 0) / allFreqs.length 
             : 0;
@@ -224,9 +316,8 @@ export function usePainPointEvolution(): UsePainPointEvolutionResult {
       const previousMonth = sortedMonths.length > 1 ? sortedMonths[sortedMonths.length - 2] : null;
 
       const statusList: PainPointStatus[] = [];
-      const summary: StatusSummary = { rising: 0, falling: 0, stable: 0, emerging: 0, resolved: 0 };
 
-      for (const catData of allCategories.values()) {
+      for (const catData of canonicalCategories.values()) {
         const currentFreqs = latestMonth?.painPoints.get(catData.normalized);
         const previousFreqs = previousMonth?.painPoints.get(catData.normalized);
         
@@ -250,8 +341,6 @@ export function usePainPointEvolution(): UsePainPointEvolutionResult {
           lastSeen: catData.lastSeen,
           occurrenceCount: catData.occurrenceCount
         });
-        
-        summary[trend]++;
       }
 
       // Sort statuses: current issues first (by frequency desc), then resolved
@@ -261,17 +350,26 @@ export function usePainPointEvolution(): UsePainPointEvolutionResult {
         return (b.currentFrequency ?? 0) - (a.currentFrequency ?? 0);
       });
 
+      // Limit to top 15 for the status table
+      const limitedStatusList = statusList.slice(0, 15);
+
+      // Recalculate summary based on limited list
+      const limitedSummary: StatusSummary = { rising: 0, falling: 0, stable: 0, emerging: 0, resolved: 0 };
+      for (const status of limitedStatusList) {
+        limitedSummary[status.trend]++;
+      }
+
       setChartData(chartDataPoints);
       setCategories(sortedCategories.map(c => c.display));
-      setStatuses(statusList);
-      setStatusSummary(summary);
+      setStatuses(limitedStatusList);
+      setStatusSummary(limitedSummary);
     } catch (err) {
       console.error('Error fetching pain point evolution:', err);
       setError(err as Error);
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [timeRange]);
 
   useEffect(() => {
     fetchEvolutionData();
