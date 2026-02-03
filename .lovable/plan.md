@@ -1,88 +1,63 @@
 
-# Plan: Apply Non-Booking Separation to All Wallboard Views
+# Plan: Filter Non-Booking Records from Booking Insights Analysis
 
-## Overview
-Update the internal Wallboard and Public Wallboard pages to exclude "Non Booking" records from their booking counts. This ensures consistency across all agent-facing views where performance metrics should only reflect actual bookings.
+## Problem
+The "Booking Insights" analysis in the Communication Insights page is currently analyzing ALL transcribed calls, including "Non Booking" call records. The 771 calls shown includes both actual bookings AND non-booking call activity records.
 
-## Background
-The changes made to Dashboard, Leaderboard, My Performance, and My Bookings now correctly separate actual bookings from call activity records (status = "Non Booking"). However, two additional pages still need this update:
-- Internal Wallboard (live operations dashboard)
-- Public Wallboard (externally shareable display link)
+## Root Cause
+The edge function `analyze-member-insights` fetches bookings with completed transcriptions but does not filter out records where `status = 'Non Booking'`.
 
-Additionally, the edge function that serves the Public Wallboard data should filter at the database level for efficiency.
-
-## Files Affected
-
-| File | Current State | Change Required |
-|------|--------------|-----------------|
-| `src/pages/Wallboard.tsx` | Counts all bookings regardless of status | Add filter to exclude Non Booking |
-| `src/pages/PublicWallboard.tsx` | Counts all bookings regardless of status | Add filter to exclude Non Booking |
-| `supabase/functions/get-wallboard-data/index.ts` | Returns all bookings | Add database-level filter to exclude Non Booking |
-
-## Technical Details
-
-### 1. Internal Wallboard (`src/pages/Wallboard.tsx`)
-
-Add a helper function and apply it to all booking filters:
-
+**Current Query (lines 181-196):**
 ```text
-// Helper to filter actual bookings (exclude Non Booking status)
-const filterActualBookings = (list: typeof bookings) => 
-  list.filter(b => b.status !== 'Non Booking');
-
-// Apply to existing filters
-const actualBookings = filterActualBookings(bookings);
-const todayBookings = actualBookings.filter(...);
-const yesterdayBookings = actualBookings.filter(...);
-```
-
-This ensures:
-- "Total Bookings Today" card shows only real bookings
-- "Vixicom" and "PadSplit Internal" site cards show only real bookings
-- "Yesterday" comparison shows only real bookings
-- All percentage change calculations are accurate
-
-### 2. Public Wallboard (`src/pages/PublicWallboard.tsx`)
-
-Same pattern as Internal Wallboard:
-
-```text
-// Helper to filter actual bookings
-const filterActualBookings = (list: Booking[]) => 
-  list.filter(b => b.status !== 'Non Booking');
-
-// Apply to existing filters
-const actualBookings = filterActualBookings(bookings);
-const todayBookings = actualBookings.filter(...);
-const yesterdayBookings = actualBookings.filter(...);
-```
-
-### 3. Edge Function (`supabase/functions/get-wallboard-data/index.ts`)
-
-Add status filter to the database query for efficiency:
-
-```text
-const { data: bookings, error: bookingsError } = await supabase
+const { data: bookingsRaw, error: bookingsError } = await supabase
   .from('bookings')
-  .select('*')
-  .gte('booking_date', dateLimit)
-  .neq('status', 'Non Booking')  // <-- Add this filter
-  .order('booking_date', { ascending: false })
-  .limit(500);
+  .select(`...`)
+  .eq('transcription_status', 'completed')
+  .gte('booking_date', date_range_start)
+  .lte('booking_date', date_range_end);
 ```
 
-This reduces data transfer and processing by excluding Non Booking records at the database level.
+The Non-Booking Analysis edge function correctly filters with `.eq('status', 'Non Booking')`, but the Booking Insights function has no status filter.
+
+## Solution
+Add a filter to exclude "Non Booking" records from the member insights analysis query.
+
+## File to Modify
+
+| File | Change |
+|------|--------|
+| `supabase/functions/analyze-member-insights/index.ts` | Add `.neq('status', 'Non Booking')` to the bookings query |
+
+## Technical Change
+
+**Updated Query:**
+```text
+const { data: bookingsRaw, error: bookingsError } = await supabase
+  .from('bookings')
+  .select(`
+    id, 
+    member_name, 
+    market_city, 
+    market_state,
+    booking_date,
+    call_duration_seconds,
+    booking_transcriptions (
+      call_key_points
+    )
+  `)
+  .eq('transcription_status', 'completed')
+  .neq('status', 'Non Booking')  // <-- ADD THIS FILTER
+  .gte('booking_date', date_range_start)
+  .lte('booking_date', date_range_end);
+```
 
 ## Impact
 
-- Internal Wallboard will show accurate booking counts
-- Public (TV) displays will show accurate booking counts  
-- Leaderboard on both wallboards uses `calculateLeaderboard` which already filters correctly
-- Data transfer to Public Wallboard will be reduced slightly
+- Booking Insights will analyze ONLY actual bookings (Pending Move-In, Moved In, Cancelled, etc.)
+- Non-Booking call analysis remains unchanged and correctly scoped
+- Future analyses will have accurate call counts
+- Existing historical analyses are unaffected (they're already stored)
 
-## No Changes Needed
+## Verification
 
-The following files are already correct:
-- `src/hooks/useAgentGoals.ts` - Already filters with `.in('status', ['Pending Move-In', 'Moved In'])`
-- All dashboard calculation utilities - Already use `filterActualBookings`
-- All previously updated pages (Dashboard, Leaderboard, MyPerformance, MyBookings)
+After deploying, running a new "Booking Insights" analysis should show a lower call count that reflects only actual bookings, not the full 771 that included non-booking records.
