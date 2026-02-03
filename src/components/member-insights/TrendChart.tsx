@@ -1,60 +1,16 @@
+import { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Skeleton } from '@/components/ui/skeleton';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import { TrendingUp } from 'lucide-react';
-import { format } from 'date-fns';
+import { useSentimentTrends, TimeRangeOption } from '@/hooks/useSentimentTrends';
 
-interface MemberInsight {
-  id: string;
-  created_at: string;
-  date_range_start?: string;
-  date_range_end?: string;
-  total_calls_analyzed: number;
-  sentiment_distribution: { positive: number; neutral: number; negative: number };
-  pain_points: any[];
-}
+const TrendChart = () => {
+  const [timeRange, setTimeRange] = useState<TimeRangeOption>('6m');
+  const { chartData, isLoading, error } = useSentimentTrends(timeRange);
 
-interface TrendChartProps {
-  insights: MemberInsight[];
-}
-
-const TrendChart = ({ insights }: TrendChartProps) => {
-  // Reverse to show oldest first for trend line
-  const reversedInsights = [...insights].reverse().slice(-10);
-  
-  // Count occurrences of each date to detect duplicates
-  const dateCounts: Record<string, number> = {};
-  reversedInsights.forEach((insight) => {
-    const dateKey = format(new Date(insight.created_at), 'MMM d');
-    dateCounts[dateKey] = (dateCounts[dateKey] || 0) + 1;
-  });
-  
-  const chartData = reversedInsights.map((insight) => {
-    const dateKey = format(new Date(insight.created_at), 'MMM d');
-    const needsTime = dateCounts[dateKey] > 1;
-    
-    // Format date range for tooltip
-    let dateRangeText = '';
-    if (insight.date_range_start && insight.date_range_end) {
-      const start = format(new Date(insight.date_range_start), 'MMM d');
-      const end = format(new Date(insight.date_range_end), 'MMM d');
-      dateRangeText = `${start} - ${end}`;
-    }
-    
-    return {
-      date: needsTime 
-        ? format(new Date(insight.created_at), 'MMM d ha') // e.g., "Jan 30 4pm"
-        : dateKey,
-      fullDate: format(new Date(insight.created_at), 'MMM d, yyyy h:mm a'),
-      dateRange: dateRangeText,
-      calls: insight.total_calls_analyzed,
-      positive: insight.sentiment_distribution?.positive || 0,
-      neutral: insight.sentiment_distribution?.neutral || 0,
-      negative: insight.sentiment_distribution?.negative || 0,
-      painPointCount: insight.pain_points?.length || 0,
-    };
-  });
-
-  const CustomTooltip = ({ active, payload, label }: any) => {
+  const CustomTooltip = ({ active, payload }: any) => {
     if (active && payload && payload.length) {
       const data = payload[0].payload;
       return (
@@ -84,14 +40,71 @@ const TrendChart = ({ insights }: TrendChartProps) => {
     return null;
   };
 
-  if (chartData.length < 2) {
+  const getTimeRangeLabel = (range: TimeRangeOption): string => {
+    switch (range) {
+      case '3m': return 'Last 3 months';
+      case '6m': return 'Last 6 months';
+      case '12m': return 'Last 12 months';
+      case 'all': return 'All time';
+    }
+  };
+
+  if (isLoading) {
     return (
       <Card>
-        <CardHeader>
+        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
           <CardTitle className="flex items-center gap-2">
             <TrendingUp className="h-5 w-5 text-primary" />
             Sentiment Trends Over Time
           </CardTitle>
+          <Skeleton className="h-9 w-[140px]" />
+        </CardHeader>
+        <CardContent>
+          <Skeleton className="h-[300px] w-full" />
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (error) {
+    return (
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+          <CardTitle className="flex items-center gap-2">
+            <TrendingUp className="h-5 w-5 text-primary" />
+            Sentiment Trends Over Time
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
+            <TrendingUp className="h-10 w-10 mb-2 opacity-50" />
+            <p>Failed to load trends</p>
+            <p className="text-xs mt-1">Please try again later</p>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (chartData.length < 2) {
+    return (
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+          <CardTitle className="flex items-center gap-2">
+            <TrendingUp className="h-5 w-5 text-primary" />
+            Sentiment Trends Over Time
+          </CardTitle>
+          <Select value={timeRange} onValueChange={(v) => setTimeRange(v as TimeRangeOption)}>
+            <SelectTrigger className="w-[140px]">
+              <SelectValue>{getTimeRangeLabel(timeRange)}</SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="3m">Last 3 months</SelectItem>
+              <SelectItem value="6m">Last 6 months</SelectItem>
+              <SelectItem value="12m">Last 12 months</SelectItem>
+              <SelectItem value="all">All time</SelectItem>
+            </SelectContent>
+          </Select>
         </CardHeader>
         <CardContent>
           <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
@@ -106,11 +119,22 @@ const TrendChart = ({ insights }: TrendChartProps) => {
 
   return (
     <Card>
-      <CardHeader>
+      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
         <CardTitle className="flex items-center gap-2">
           <TrendingUp className="h-5 w-5 text-primary" />
           Sentiment Trends Over Time
         </CardTitle>
+        <Select value={timeRange} onValueChange={(v) => setTimeRange(v as TimeRangeOption)}>
+          <SelectTrigger className="w-[140px]">
+            <SelectValue>{getTimeRangeLabel(timeRange)}</SelectValue>
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="3m">Last 3 months</SelectItem>
+            <SelectItem value="6m">Last 6 months</SelectItem>
+            <SelectItem value="12m">Last 12 months</SelectItem>
+            <SelectItem value="all">All time</SelectItem>
+          </SelectContent>
+        </Select>
       </CardHeader>
       <CardContent>
         <div className="h-[300px]">

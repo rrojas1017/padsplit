@@ -471,7 +471,7 @@ export function BookingInsightsTab({ dateRange, onDateRangeChange }: BookingInsi
             <MarketInsights marketData={selectedInsight.market_breakdown} />
           </div>
 
-          <TrendChart insights={insights} />
+          <TrendChart />
 
           <RecommendationsPanel 
             recommendations={selectedInsight.ai_recommendations}
