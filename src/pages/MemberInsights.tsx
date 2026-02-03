@@ -54,37 +54,16 @@ const MemberInsights = () => {
   const [dateRange, setDateRange] = useState<DateRangeOption>('last30days');
   const [dbSlowMode, setDbSlowMode] = useState(false);
 
-  const fetchInsightsCallback = useCallback(() => {
-    fetchInsights();
-    setIsAnalyzing(false);
-  }, []);
-
-  const { startPolling, checkExistingAnalysis } = useMemberInsightsPolling({
-    onComplete: fetchInsightsCallback
-  });
-
-  useEffect(() => {
-    const init = async () => {
-      await fetchInsights();
-      // Check if there's an analysis in progress
-      const existingId = await checkExistingAnalysis();
-      if (existingId) {
-        setIsAnalyzing(true);
-      }
-    };
-    init();
-  }, [dateRange]); // Re-fetch when date range changes
-
   // Get period filter values (include 'manual' for backward compatibility)
-  const getPeriodFilters = (period: DateRangeOption): string[] => {
+  const getPeriodFilters = useCallback((period: DateRangeOption): string[] => {
     if (period === 'allTime') {
       return ['allTime', 'manual']; // Treat old 'manual' entries as 'allTime'
     }
     return [period];
-  };
+  }, []);
 
-  // Phase 1: Fetch only lightweight metadata for the list
-  const fetchInsights = async () => {
+  // Memoized fetch function to prevent stale closures
+  const fetchInsights = useCallback(async () => {
     try {
       const periodFilters = getPeriodFilters(dateRange);
       
@@ -106,7 +85,6 @@ const MemberInsights = () => {
       const { data, error } = result;
       if (error) throw error;
 
-      // Set lightweight list data with empty detail fields
       const listData = (data || []).map((d: any) => ({
         ...d,
         sentiment_distribution: { positive: 0, neutral: 0, negative: 0 },
@@ -125,14 +103,12 @@ const MemberInsights = () => {
       
       setInsights(listData);
       
-      // Check if the most recent is still processing
       if (listData.length > 0 && listData[0].status === 'processing') {
         setIsAnalyzing(true);
       } else {
         setIsAnalyzing(false);
       }
       
-      // Phase 2: Load full detail for the first/most recent insight
       if (listData.length > 0) {
         await fetchInsightDetail(listData[0].id);
       } else {
@@ -144,7 +120,29 @@ const MemberInsights = () => {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [dateRange, getPeriodFilters]);
+
+  const fetchInsightsCallback = useCallback(() => {
+    setIsLoading(true);
+    fetchInsights();
+    setIsAnalyzing(false);
+  }, [fetchInsights]);
+
+  const { startPolling, checkExistingAnalysis } = useMemberInsightsPolling({
+    onComplete: fetchInsightsCallback
+  });
+
+  useEffect(() => {
+    const init = async () => {
+      await fetchInsights();
+      const existingId = await checkExistingAnalysis();
+      if (existingId) {
+        setIsAnalyzing(true);
+      }
+    };
+    init();
+  }, [dateRange, fetchInsights, checkExistingAnalysis]);
+
 
   // Phase 2: Fetch full detail for a specific insight
   const fetchInsightDetail = async (insightId: string) => {
