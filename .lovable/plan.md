@@ -1,153 +1,178 @@
 
-## Fix: Handle AI Parsing Failures with Retry and Proper Error Status
 
-This plan addresses the issue where the "This Month" Booking Insights analysis completed but returned empty results due to an unparsable AI response.
+## Pain Point & Barrier Evolution Tracking
 
-### Summary
+### Overview
 
-When the AI model returns a response without valid JSON, the system currently:
-1. Logs an error but continues
-2. Uses empty arrays for all fields
-3. Marks the analysis as "completed"
-4. Shows users empty charts with no explanation
+Create a new **Pain Point Evolution Panel** that visually tracks how member concerns change over time across multiple analyses. This will answer: "Are issues getting better, worse, appearing, or disappearing?"
 
-### Changes
+### Current State
 
-**Phase 1: Add Retry Logic for Failed AI Responses**
+**What exists today:**
+- Each analysis already stores `trend_delta` and `is_emerging` flags on individual pain points (comparing to the previous analysis only)
+- The `TrendBadge` component in `PainPointsPanel` shows NEW badges and +/-% changes
+- `TrendChart` exists but only tracks sentiment over time, not pain point evolution
+- Historical analyses are stored in `member_insights` table with full pain point arrays
 
-**File: `supabase/functions/analyze-member-insights/index.ts`**
+**Limitation:** Current trend data only compares to the immediately previous analysis - there's no visualization of long-term patterns across multiple periods.
 
-Wrap the AI call in a retry loop (up to 2 retries) when JSON parsing fails:
+---
+
+### Solution Design
+
+**New Component: `PainPointEvolutionPanel.tsx`**
+
+A dedicated panel that:
+1. Fetches the last 5-10 completed analyses (regardless of current period filter)
+2. Aggregates pain point categories across all analyses
+3. Visualizes evolution with multiple chart types
+
+**Location:** Add below the existing `PainPointsPanel` in the Booking Insights layout
+
+---
+
+### UI/UX Design
+
+**Panel Layout:**
+
+```text
+┌─────────────────────────────────────────────────────────────────┐
+│ 📈 Pain Point Evolution                               [?] Help  │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  [Line Chart: Top 5 Pain Points Over Time]                      │
+│  - X-axis: Analysis dates (Jan 15, Jan 22, Jan 29, Feb 3)       │
+│  - Y-axis: Frequency %                                          │
+│  - Lines: Each pain point category is a colored line            │
+│                                                                 │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  Status Badges:                                                 │
+│  ┌────────────┐ ┌────────────┐ ┌────────────────┐               │
+│  │ 📈 Rising  │ │ 📉 Falling │ │ ✨ New Issues  │               │
+│  │ 2 issues   │ │ 1 issue    │ │ 1 this period  │               │
+│  └────────────┘ └────────────┘ └────────────────┘               │
+│                                                                 │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  Issue Status Table:                                            │
+│  ┌──────────────────────┬─────────┬───────────┬────────────────┐│
+│  │ Pain Point           │ Current │ Trend     │ Status         ││
+│  ├──────────────────────┼─────────┼───────────┼────────────────┤│
+│  │ Payment Confusion    │ 38%     │ +8% ↑     │ 🔴 Worsening   ││
+│  │ Move-In Timing       │ 31%     │ -5% ↓     │ 🟢 Improving   ││
+│  │ Technical Issues     │ 19%     │ —         │ ⚪ Stable      ││
+│  │ Trust & Property     │ 15%     │ NEW       │ 🟣 Emerging    ││
+│  │ Transportation       │ —       │ -12%      │ 🟢 Resolved    ││
+│  └──────────────────────┴─────────┴───────────┴────────────────┘│
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**Status Classifications:**
+- **Worsening** (🔴): Frequency increased >5% vs previous analysis
+- **Improving** (🟢): Frequency decreased >5% vs previous analysis  
+- **Stable** (⚪): Change within ±5%
+- **Emerging** (🟣): New issue not seen in previous 3+ analyses
+- **Resolved** (🔵): Issue present before but not in current analysis
+
+---
+
+### Technical Implementation
+
+**Phase 1: Data Aggregation Hook**
+
+Create `src/hooks/usePainPointEvolution.ts`:
 
 ```typescript
-// Around lines 442-508
-let parsedAnalysis;
-let retryCount = 0;
-const maxRetries = 2;
+interface EvolutionDataPoint {
+  date: string;
+  analysisId: string;
+  dateRange: string;
+  painPoints: Record<string, number>; // category -> frequency
+}
 
-while (retryCount <= maxRetries) {
-  const aiResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
-    // ... existing fetch config
-  });
-  
-  const aiData = await aiResponse.json();
-  const analysisText = aiData.choices?.[0]?.message?.content || '';
-  
-  try {
-    const jsonMatch = analysisText.match(/\{[\s\S]*\}/);
-    if (jsonMatch) {
-      parsedAnalysis = JSON.parse(jsonMatch[0]);
-      break; // Success - exit retry loop
-    } else {
-      throw new Error('No JSON found in response');
-    }
-  } catch (parseError) {
-    retryCount++;
-    console.error(`[Background] JSON parse failed (attempt ${retryCount}/${maxRetries + 1}):`, parseError);
-    
-    if (retryCount > maxRetries) {
-      // All retries exhausted - mark as failed
-      throw new Error('AI returned invalid response after multiple attempts');
-    }
-    
-    // Wait before retry
-    await new Promise(resolve => setTimeout(resolve, 2000));
-  }
+interface PainPointStatus {
+  category: string;
+  currentFrequency: number | null;
+  previousFrequency: number | null;
+  trend: 'rising' | 'falling' | 'stable' | 'emerging' | 'resolved';
+  trendDelta: number;
+  firstSeen: string;
+  lastSeen: string;
+  occurrenceCount: number;
+}
+
+function usePainPointEvolution(limit?: number) {
+  // Fetch last N completed analyses
+  // Aggregate pain points across all
+  // Calculate status for each category
+  return { data, isLoading, statusSummary };
 }
 ```
 
-**Phase 2: Mark Failed Analyses Properly**
+**Phase 2: Evolution Panel Component**
 
-**File: `supabase/functions/analyze-member-insights/index.ts`**
+Create `src/components/member-insights/PainPointEvolutionPanel.tsx`:
 
-When retries are exhausted, mark the record as `status: 'failed'` instead of completing with empty data:
+- Uses Recharts `LineChart` for the trend visualization
+- Shows summary badges for quick status overview
+- Expandable table with full history per pain point
 
-- Remove the fallback that sets empty arrays (lines 496-507)
-- Throw an error instead, which triggers the existing error handler (lines 615-627)
-- The error handler already updates status to 'failed' with an error message
+**Phase 3: Integration**
 
-**Phase 3: Add Validation Before Saving**
+Update `BookingInsightsTab.tsx`:
+- Import and render `PainPointEvolutionPanel` after `PainPointsPanel`
+- Pass the existing `insights` array (already contains last 10 analyses)
 
-**File: `supabase/functions/analyze-member-insights/index.ts`**
+---
 
-Before marking as completed, verify that at least some insights were extracted:
+### Data Flow
 
-```typescript
-// Before the update at line 582
-const hasAnyInsights = 
-  (parsedAnalysis.pain_points?.length > 0) ||
-  (parsedAnalysis.objection_patterns?.length > 0) ||
-  (parsedAnalysis.ai_recommendations?.length > 0) ||
-  (parsedAnalysis.customer_journeys?.length > 0);
-
-if (!hasAnyInsights && totalCalls > 0) {
-  throw new Error('AI analysis returned no insights from available data');
-}
+```text
+member_insights table
+        │
+        ▼
+┌───────────────────────────┐
+│ usePainPointEvolution     │
+│ - Fetches last 10 analyses│
+│ - Aggregates categories   │
+│ - Calculates trends       │
+└───────────────────────────┘
+        │
+        ▼
+┌───────────────────────────┐
+│ PainPointEvolutionPanel   │
+│ - Line chart over time    │
+│ - Status badges           │
+│ - Detailed table          │
+└───────────────────────────┘
 ```
 
-**Phase 4: UI - Show Failed Status to Users**
+---
 
-**File: `src/components/call-insights/BookingInsightsTab.tsx`**
+### Edge Cases Handled
 
-Add handling for `status: 'failed'` insights:
+1. **Single analysis only**: Show message "Run more analyses to see evolution trends"
+2. **Category name variations**: Normalize category names (lowercase, trim) for matching
+3. **Gaps in data**: Handle missing pain points gracefully (null in chart)
+4. **New period types**: Works across all analysis periods, not filtered
 
-```typescript
-// In the insights display section
-{selectedInsight?.status === 'failed' && (
-  <Card className="border-red-500/50 bg-red-500/5">
-    <CardContent className="py-4">
-      <div className="flex items-center gap-3">
-        <AlertTriangle className="h-5 w-5 text-red-500" />
-        <div>
-          <p className="font-medium">Analysis failed</p>
-          <p className="text-sm text-muted-foreground">
-            {selectedInsight.error_message || 'The AI was unable to process this data. Please try again.'}
-          </p>
-        </div>
-        <Button size="sm" onClick={runAnalysis}>Retry</Button>
-      </div>
-    </CardContent>
-  </Card>
-)}
-```
+---
 
-**Phase 5: Improve AI Prompt for Small Datasets**
+### Files to Create/Modify
 
-**File: `supabase/functions/analyze-member-insights/index.ts`**
+| File | Action | Purpose |
+|------|--------|---------|
+| `src/hooks/usePainPointEvolution.ts` | Create | Data aggregation logic |
+| `src/components/member-insights/PainPointEvolutionPanel.tsx` | Create | Main evolution visualization |
+| `src/components/call-insights/BookingInsightsTab.tsx` | Modify | Add new panel to layout |
 
-Add instructions for handling smaller datasets:
+---
 
-```typescript
-// Add to the AI prompt (around line 324)
-const promptSuffix = totalCalls < 30 
-  ? `\n\nNOTE: This is a smaller dataset (${totalCalls} calls). Still provide analysis with the data available - do not skip categories. If there isn't enough data for a category, include it with an empty array. ALWAYS return valid JSON.`
-  : '';
-```
+### Future Enhancements (Not in this scope)
 
-Also add explicit JSON formatting instruction:
+- Filter by market to see market-specific evolution
+- Export evolution data to CSV
+- AI-generated summary of trends ("Payment confusion has worsened 15% over the last month, primarily in Atlanta")
 
-```typescript
-// Before the closing of the prompt
-CRITICAL: Your response must start with { and end with }. Return ONLY the JSON object, no explanations or markdown.
-```
-
-### Expected Behavior After Fix
-
-1. **When AI returns invalid response:**
-   - System retries up to 2 times with 2-second delays
-   - If all retries fail, status is set to 'failed' with error message
-
-2. **When analysis has no insights:**
-   - System marks as 'failed' instead of 'completed'
-   - Error message explains what went wrong
-
-3. **In the UI:**
-   - Failed analyses show a red warning banner with "Retry" button
-   - Users understand why their results are empty
-   - Easy one-click retry without re-selecting options
-
-### Technical Notes
-
-- Retry adds up to 4 seconds latency in worst case (2 retries x 2 seconds)
-- Failed analyses are preserved in history so users can see what happened
-- Improved prompt reduces likelihood of non-JSON responses
