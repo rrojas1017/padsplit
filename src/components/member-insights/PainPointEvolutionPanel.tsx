@@ -70,7 +70,7 @@ function formatTrendDelta(delta: number, trend: PainPointStatus['trend']): strin
 }
 
 export function PainPointEvolutionPanel() {
-  const { chartData, categories, statuses, statusSummary, isLoading, error } = usePainPointEvolution(10);
+  const { chartData, categories, statuses, statusSummary, isLoading, error } = usePainPointEvolution();
   const [isTableExpanded, setIsTableExpanded] = useState(false);
 
   if (isLoading) {
@@ -129,17 +129,6 @@ export function PainPointEvolutionPanel() {
     );
   }
 
-  // Prepare chart data with normalized category keys
-  const normalizedChartData = chartData.map(point => {
-    const normalized: Record<string, string | number> = { date: point.date };
-    Object.keys(point).forEach(key => {
-      if (key !== 'date') {
-        normalized[key] = point[key];
-      }
-    });
-    return normalized;
-  });
-
   // Get normalized category names for chart
   const normalizedCategories = categories.map(cat => 
     cat.toLowerCase().trim().replace(/\s+/g, ' ')
@@ -155,7 +144,7 @@ export function PainPointEvolutionPanel() {
               Pain Point Evolution
             </CardTitle>
             <p className="text-sm text-muted-foreground mt-1">
-              Tracking across {chartData.length} analyses (independent of date filter above)
+              Monthly trends across {chartData.length} months of historical analyses
             </p>
           </div>
           <TooltipProvider>
@@ -179,7 +168,7 @@ export function PainPointEvolutionPanel() {
         {/* Line Chart */}
         <div className="h-64">
           <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={normalizedChartData}>
+            <LineChart data={chartData}>
               <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
               <XAxis 
                 dataKey="date" 
@@ -197,11 +186,7 @@ export function PainPointEvolutionPanel() {
                   border: '1px solid hsl(var(--border))',
                   borderRadius: '8px'
                 }}
-                labelFormatter={(label, payload) => {
-                  const point = payload?.[0]?.payload;
-                  return point?.dateRange || label;
-                }}
-                formatter={(value: number) => [`${value.toFixed(0)}%`, '']}
+                formatter={(value: number) => [`${value}%`, '']}
               />
               <Legend />
               {normalizedCategories.map((cat, index) => (

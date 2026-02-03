@@ -1,19 +1,18 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
+import { format } from 'date-fns';
 
 interface PainPointData {
   category: string;
   frequency: number;
-  frequency_percent?: number; // Keep as fallback for backwards compatibility
+  frequency_percent?: number;
   quote?: string;
 }
 
-interface EvolutionDataPoint {
-  date: string;
-  analysisId: string;
-  dateRangeStart: string;
-  dateRangeEnd: string;
-  painPoints: Record<string, number>; // category -> frequency
+interface MonthlyBucket {
+  monthKey: string;
+  monthLabel: string;
+  painPoints: Map<string, number[]>;
 }
 
 export interface PainPointStatus {
@@ -37,7 +36,6 @@ interface StatusSummary {
 
 interface ChartDataPoint {
   date: string;
-  dateRange: string;
   [category: string]: string | number;
 }
 
@@ -59,19 +57,16 @@ function getTrendStatus(
   current: number | null,
   previous: number | null,
   occurrenceCount: number,
-  totalAnalyses: number
+  totalMonths: number
 ): 'rising' | 'falling' | 'stable' | 'emerging' | 'resolved' {
-  // Resolved: was present before but not in current
   if (current === null && previous !== null) {
     return 'resolved';
   }
   
-  // Emerging: new in recent analyses (seen in less than 30% of analyses)
-  if (current !== null && occurrenceCount <= Math.max(1, totalAnalyses * 0.3)) {
+  if (current !== null && occurrenceCount <= Math.max(1, totalMonths * 0.3)) {
     return 'emerging';
   }
   
-  // No previous to compare
   if (previous === null || current === null) {
     return 'stable';
   }
@@ -83,7 +78,7 @@ function getTrendStatus(
   return 'stable';
 }
 
-export function usePainPointEvolution(limit: number = 10): UsePainPointEvolutionResult {
+export function usePainPointEvolution(): UsePainPointEvolutionResult {
   const [chartData, setChartData] = useState<ChartDataPoint[]>([]);
   const [categories, setCategories] = useState<string[]>([]);
   const [statuses, setStatuses] = useState<PainPointStatus[]>([]);
@@ -102,13 +97,13 @@ export function usePainPointEvolution(limit: number = 10): UsePainPointEvolution
     setError(null);
 
     try {
-      // Fetch last N completed analyses with pain points
+      // Fetch all completed analyses to cover multiple months
       const { data: analyses, error: fetchError } = await supabase
         .from('member_insights')
         .select('id, created_at, date_range_start, date_range_end, pain_points, status')
         .eq('status', 'completed')
-        .order('created_at', { ascending: true })
-        .limit(limit);
+        .order('date_range_end', { ascending: true })
+        .limit(100);
 
       if (fetchError) throw fetchError;
 
@@ -120,114 +115,135 @@ export function usePainPointEvolution(limit: number = 10): UsePainPointEvolution
         return;
       }
 
-      // Deduplicate analyses by date range - keep the latest analysis for each unique period
-      const deduplicatedAnalyses = new Map<string, typeof analyses[0]>();
-      for (const analysis of analyses) {
-        const key = `${analysis.date_range_start}_${analysis.date_range_end}`;
-        // Keep the latest analysis for each unique date range (last one wins since sorted by created_at asc)
-        deduplicatedAnalyses.set(key, analysis);
-      }
-      const uniqueAnalyses = Array.from(deduplicatedAnalyses.values())
-        .sort((a, b) => new Date(a.date_range_end).getTime() - new Date(b.date_range_end).getTime());
-
-      // Build evolution data points
-      const evolutionPoints: EvolutionDataPoint[] = [];
+      // Group analyses by month using date_range_end
+      const monthlyBuckets = new Map<string, MonthlyBucket>();
       const allCategories = new Map<string, {
         normalized: string;
         display: string;
         firstSeen: string;
         lastSeen: string;
         occurrenceCount: number;
-        frequencyHistory: { date: string; frequency: number }[];
+        monthlyFrequencies: Map<string, number>;
       }>();
 
-      for (const analysis of uniqueAnalyses) {
-        const painPoints = (Array.isArray(analysis.pain_points) ? analysis.pain_points : []) as unknown as PainPointData[];
-        // Use date_range_end instead of created_at for the X-axis
-        const date = new Date(analysis.date_range_end).toLocaleDateString('en-US', { 
-          month: 'short', 
-          day: 'numeric' 
-        });
+      for (const analysis of analyses) {
+        const endDate = new Date(analysis.date_range_end);
+        const monthKey = format(endDate, 'yyyy-MM');
+        const monthLabel = format(endDate, 'MMM yyyy');
         
-        const pointData: Record<string, number> = {};
+        if (!monthlyBuckets.has(monthKey)) {
+          monthlyBuckets.set(monthKey, {
+            monthKey,
+            monthLabel,
+            painPoints: new Map()
+          });
+        }
+        
+        const bucket = monthlyBuckets.get(monthKey)!;
+        const painPoints = (Array.isArray(analysis.pain_points) ? analysis.pain_points : []) as unknown as PainPointData[];
         
         for (const pp of painPoints) {
           if (!pp.category) continue;
           
           const normalized = normalizeCategory(pp.category);
           const frequency = pp.frequency ?? pp.frequency_percent ?? 0;
-          pointData[normalized] = frequency;
           
+          // Add to monthly bucket
+          if (!bucket.painPoints.has(normalized)) {
+            bucket.painPoints.set(normalized, []);
+          }
+          bucket.painPoints.get(normalized)!.push(frequency);
+          
+          // Track category metadata
           if (!allCategories.has(normalized)) {
             allCategories.set(normalized, {
               normalized,
               display: pp.category,
-              firstSeen: date,
-              lastSeen: date,
+              firstSeen: monthLabel,
+              lastSeen: monthLabel,
               occurrenceCount: 1,
-              frequencyHistory: [{ date, frequency }]
+              monthlyFrequencies: new Map()
             });
           } else {
             const existing = allCategories.get(normalized)!;
-            existing.lastSeen = date;
+            existing.lastSeen = monthLabel;
             existing.occurrenceCount++;
-            existing.frequencyHistory.push({ date, frequency });
           }
         }
-        
-        evolutionPoints.push({
-          date,
-          analysisId: analysis.id,
-          dateRangeStart: analysis.date_range_start,
-          dateRangeEnd: analysis.date_range_end,
-          painPoints: pointData
-        });
       }
 
-      // Get top 5 categories by total occurrences and average frequency
+      // Calculate average frequency per category per month
+      const sortedMonths = Array.from(monthlyBuckets.values())
+        .sort((a, b) => a.monthKey.localeCompare(b.monthKey));
+
+      // Build monthly averages for each category
+      for (const bucket of sortedMonths) {
+        for (const [normalized, frequencies] of bucket.painPoints.entries()) {
+          const avgFrequency = frequencies.reduce((sum, f) => sum + f, 0) / frequencies.length;
+          const catData = allCategories.get(normalized);
+          if (catData) {
+            catData.monthlyFrequencies.set(bucket.monthKey, avgFrequency);
+          }
+        }
+      }
+
+      // Get top 5 categories by average frequency across all months
       const sortedCategories = Array.from(allCategories.values())
-        .sort((a, b) => {
-          const avgA = a.frequencyHistory.reduce((sum, h) => sum + h.frequency, 0) / a.frequencyHistory.length;
-          const avgB = b.frequencyHistory.reduce((sum, h) => sum + h.frequency, 0) / b.frequencyHistory.length;
-          return avgB - avgA;
+        .map(cat => {
+          const allFreqs = Array.from(cat.monthlyFrequencies.values());
+          const avgFreq = allFreqs.length > 0 
+            ? allFreqs.reduce((sum, f) => sum + f, 0) / allFreqs.length 
+            : 0;
+          return { ...cat, avgFreq };
         })
+        .sort((a, b) => b.avgFreq - a.avgFreq)
         .slice(0, 5);
 
       const topCategoryNames = sortedCategories.map(c => c.normalized);
 
-      // Build chart data with date range context
-      const chartDataPoints: ChartDataPoint[] = evolutionPoints.map(point => {
-        const startDate = new Date(point.dateRangeStart).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-        const endDate = new Date(point.dateRangeEnd).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-        const dateRange = `${startDate} - ${endDate}`;
+      // Build chart data with monthly aggregation
+      const chartDataPoints: ChartDataPoint[] = sortedMonths.map(bucket => {
+        const dataPoint: ChartDataPoint = { date: bucket.monthLabel };
         
-        const dataPoint: ChartDataPoint = { date: point.date, dateRange };
         for (const catName of topCategoryNames) {
-          dataPoint[catName] = point.painPoints[catName] ?? 0;
+          const frequencies = bucket.painPoints.get(catName);
+          if (frequencies && frequencies.length > 0) {
+            dataPoint[catName] = Math.round(
+              frequencies.reduce((sum, f) => sum + f, 0) / frequencies.length
+            );
+          } else {
+            dataPoint[catName] = 0;
+          }
         }
         return dataPoint;
       });
 
-      // Calculate statuses for all categories using uniqueAnalyses count
-      const latestPoint = evolutionPoints[evolutionPoints.length - 1];
-      const previousPoint = evolutionPoints.length > 1 ? evolutionPoints[evolutionPoints.length - 2] : null;
-      const totalAnalyses = uniqueAnalyses.length;
+      // Calculate statuses comparing current month to previous month
+      const totalMonths = sortedMonths.length;
+      const latestMonth = sortedMonths[sortedMonths.length - 1];
+      const previousMonth = sortedMonths.length > 1 ? sortedMonths[sortedMonths.length - 2] : null;
 
       const statusList: PainPointStatus[] = [];
       const summary: StatusSummary = { rising: 0, falling: 0, stable: 0, emerging: 0, resolved: 0 };
 
-      // Process current pain points
-      for (const [normalized, catData] of allCategories.entries()) {
-        const current = latestPoint.painPoints[normalized] ?? null;
-        const previous = previousPoint ? (previousPoint.painPoints[normalized] ?? null) : null;
+      for (const catData of allCategories.values()) {
+        const currentFreqs = latestMonth?.painPoints.get(catData.normalized);
+        const previousFreqs = previousMonth?.painPoints.get(catData.normalized);
         
-        const trend = getTrendStatus(current, previous, catData.occurrenceCount, totalAnalyses);
+        const current = currentFreqs && currentFreqs.length > 0
+          ? currentFreqs.reduce((sum, f) => sum + f, 0) / currentFreqs.length
+          : null;
+        const previous = previousFreqs && previousFreqs.length > 0
+          ? previousFreqs.reduce((sum, f) => sum + f, 0) / previousFreqs.length
+          : null;
+        
+        const trend = getTrendStatus(current, previous, catData.occurrenceCount, totalMonths);
         const trendDelta = current !== null && previous !== null ? current - previous : 0;
         
         statusList.push({
           category: catData.display,
-          currentFrequency: current,
-          previousFrequency: previous,
+          currentFrequency: current !== null ? Math.round(current) : null,
+          previousFrequency: previous !== null ? Math.round(previous) : null,
           trend,
           trendDelta,
           firstSeen: catData.firstSeen,
@@ -255,7 +271,7 @@ export function usePainPointEvolution(limit: number = 10): UsePainPointEvolution
     } finally {
       setIsLoading(false);
     }
-  }, [limit]);
+  }, []);
 
   useEffect(() => {
     fetchEvolutionData();
