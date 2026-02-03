@@ -328,14 +328,72 @@ async function isAIPolishEnabled(supabase: any): Promise<boolean> {
   }
 }
 
-// Transcribe with Deepgram Nova-3
+// Transcribe with Deepgram Nova-2 using URL-based API (recommended for large files)
+// This eliminates the need to upload audio blobs and prevents SLOW_UPLOAD timeouts
+async function transcribeWithDeepgramUrl(
+  audioUrl: string,
+  apiKey: string
+): Promise<STTResult> {
+  const startTime = Date.now();
+  console.log('[Deepgram] Using URL-based transcription to avoid upload timeouts');
+
+  const response = await fetch(
+    'https://api.deepgram.com/v1/listen?model=nova-2&smart_format=true&diarize=true&language=en-US&punctuate=true',
+    {
+      method: 'POST',
+      headers: {
+        'Authorization': `Token ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ url: audioUrl }),
+    }
+  );
+
+  const latencyMs = Date.now() - startTime;
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Deepgram API error: ${response.status} - ${errorText}`);
+  }
+
+  const result = await response.json();
+  const channel = result.results?.channels?.[0];
+  const alternative = channel?.alternatives?.[0];
+
+  if (!alternative) {
+    throw new Error('Deepgram returned no transcription results');
+  }
+
+  // Map Deepgram words format to our standard format
+  const words = (alternative.words || []).map((w: any) => ({
+    text: w.word || w.punctuated_word || '',
+    start: w.start,
+    end: w.end,
+    speaker_id: w.speaker !== undefined ? `speaker_${w.speaker}` : undefined,
+  }));
+
+  const durationSeconds = result.metadata?.duration 
+    ? Math.ceil(result.metadata.duration)
+    : (words.length > 0 ? Math.ceil(words[words.length - 1].end) : 0);
+
+  return {
+    transcription: alternative.transcript || '',
+    words,
+    durationSeconds,
+    confidence: alternative.confidence,
+    latencyMs,
+    wordCount: words.length,
+  };
+}
+
+// Transcribe with Deepgram Nova-2 using blob upload (fallback for non-URL sources)
 async function transcribeWithDeepgram(
   audioBlob: Blob,
   apiKey: string
 ): Promise<STTResult> {
   const startTime = Date.now();
+  console.log('[Deepgram] Using blob upload fallback');
 
-  // Deepgram accepts direct audio upload
   const response = await fetch(
     'https://api.deepgram.com/v1/listen?model=nova-2&smart_format=true&diarize=true&language=en-US&punctuate=true',
     {
@@ -383,6 +441,61 @@ async function transcribeWithDeepgram(
     latencyMs,
     wordCount: words.length,
   };
+}
+
+// Validate audio URL with HEAD request (lightweight, no download)
+async function validateAudioUrl(audioUrl: string): Promise<{ valid: boolean; contentType: string; fileSizeMB: number; error?: string }> {
+  console.log('[Validate] Performing HEAD request to validate audio URL...');
+  
+  try {
+    const headResponse = await fetch(audioUrl, {
+      method: 'HEAD',
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (compatible; Lovable/1.0)',
+      },
+    });
+
+    if (!headResponse.ok) {
+      const statusText = headResponse.statusText || 'Unknown error';
+      let errorMessage = '';
+      
+      if (headResponse.status === 404) {
+        errorMessage = 'Audio file not found (404). The recording may have been deleted or the link is invalid.';
+      } else if (headResponse.status === 403) {
+        errorMessage = 'Access denied to audio file (403). The recording link may have expired.';
+      } else if (headResponse.status === 401) {
+        errorMessage = 'Authentication required for audio file (401). The recording link may have expired.';
+      } else if (headResponse.status >= 500) {
+        errorMessage = `Recording server error (${headResponse.status}). Please try again later.`;
+      } else {
+        errorMessage = `Failed to access audio: ${headResponse.status} ${statusText}`;
+      }
+      
+      return { valid: false, contentType: '', fileSizeMB: 0, error: errorMessage };
+    }
+
+    const contentType = headResponse.headers.get('content-type') || '';
+    const contentLength = headResponse.headers.get('content-length');
+    const fileSizeMB = contentLength ? parseInt(contentLength, 10) / (1024 * 1024) : 0;
+
+    console.log(`[Validate] Content-Type: ${contentType}, Size: ${fileSizeMB.toFixed(2)} MB`);
+
+    // Check for HTML/webpage responses (invalid audio URL)
+    if (contentType.includes('text/html') || contentType.includes('application/json')) {
+      return { 
+        valid: false, 
+        contentType, 
+        fileSizeMB,
+        error: 'Invalid recording URL - received a webpage instead of audio. Please check the Kixie link. Expected format: https://calls.kixie.com/...wav'
+      };
+    }
+
+    return { valid: true, contentType, fileSizeMB };
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : 'Unknown network error';
+    console.error('[Validate] HEAD request failed:', errorMsg);
+    return { valid: false, contentType: '', fileSizeMB: 0, error: `Audio validation failed: ${errorMsg}` };
+  }
 }
 
 // Types for call type configuration
@@ -915,82 +1028,20 @@ async function processTranscription(bookingId: string, kixieUrl: string) {
     // Fetch call type configuration if available
     const config = await fetchCallTypeConfig(supabase, callTypeId);
 
-    // Step 1: Download the audio file with detailed error handling
-    console.log('[Background] Downloading audio file...');
+    // Step 1: Validate the audio URL using lightweight HEAD request
+    console.log('[Background] Validating audio URL...');
     console.log('[Background] Audio URL:', kixieUrl.substring(0, 80) + '...');
     
-    let audioResponse;
-    try {
-      audioResponse = await fetch(kixieUrl, {
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (compatible; Lovable/1.0)',
-        },
-      });
-    } catch (fetchError) {
-      const errorMsg = fetchError instanceof Error ? fetchError.message : 'Unknown network error';
-      console.error('[Background] Audio download network error:', errorMsg);
+    const validation = await validateAudioUrl(kixieUrl);
+    if (!validation.valid) {
+      console.error('[Background] Audio URL validation failed:', validation.error);
       clearTimeout(timeoutId);
-      await updateBookingError(supabase, bookingId, `Audio download failed: ${errorMsg}. The recording link may be invalid or expired.`);
-      return;
-    }
-
-    if (!audioResponse.ok) {
-      const statusText = audioResponse.statusText || 'Unknown error';
-      console.error(`[Background] Audio download failed: ${audioResponse.status} ${statusText}`);
-      clearTimeout(timeoutId);
-      
-      let errorMessage = '';
-      if (audioResponse.status === 404) {
-        errorMessage = 'Audio file not found (404). The recording may have been deleted or the link is invalid.';
-      } else if (audioResponse.status === 403) {
-        errorMessage = 'Access denied to audio file (403). The recording link may have expired.';
-      } else if (audioResponse.status === 401) {
-        errorMessage = 'Authentication required for audio file (401). The recording link may have expired.';
-      } else if (audioResponse.status >= 500) {
-        errorMessage = `Recording server error (${audioResponse.status}). Please try again later.`;
-      } else {
-        errorMessage = `Failed to download audio: ${audioResponse.status} ${statusText}`;
-      }
-      
-      await updateBookingError(supabase, bookingId, errorMessage);
+      await updateBookingError(supabase, bookingId, validation.error || 'Audio validation failed');
       return;
     }
     
-    // Check content type before downloading - detect HTML pages (wrong URL type)
-    const contentType = audioResponse.headers.get('content-type') || '';
-    console.log(`[Background] Response content-type: ${contentType}`);
-    
-    if (contentType.includes('text/html') || contentType.includes('application/json')) {
-      console.error('[Background] Received non-audio content type:', contentType);
-      clearTimeout(timeoutId);
-      await updateBookingError(supabase, bookingId, 
-        'Invalid recording URL - received a webpage instead of audio. Please check the Kixie link. ' +
-        'Expected format: https://calls.kixie.com/...wav (not a HubSpot or other webpage link)');
-      return;
-    }
-    
-    const audioBlob = await audioResponse.blob();
-    const fileSizeMB = audioBlob.size / (1024 * 1024);
-    console.log(`[Background] Audio downloaded, size: ${audioBlob.size} bytes (${fileSizeMB.toFixed(2)} MB)`);
-    
-    // Check if audio file is valid (not empty or too small)
-    if (audioBlob.size < 1000) {
-      console.error('[Background] Audio file too small, likely invalid');
-      clearTimeout(timeoutId);
-      await updateBookingError(supabase, bookingId, 'Audio file is empty or corrupted. The recording may not have been saved properly.');
-      return;
-    }
-    
-    // Additional check: if the content looks like HTML despite content-type header
-    const firstBytes = await audioBlob.slice(0, 100).text();
-    if (firstBytes.includes('<!DOCTYPE') || firstBytes.includes('<html') || firstBytes.includes('<!doctype')) {
-      console.error('[Background] Content appears to be HTML despite content-type header');
-      clearTimeout(timeoutId);
-      await updateBookingError(supabase, bookingId, 
-        'Invalid recording URL - the link points to a webpage, not an audio file. ' +
-        'Please paste the actual Kixie recording URL (format: https://calls.kixie.com/...wav)');
-      return;
-    }
+    const fileSizeMB = validation.fileSizeMB;
+    console.log(`[Background] Audio validated, estimated size: ${fileSizeMB.toFixed(2)} MB`);
 
     // Step 2: Select STT provider and transcribe using A/B testing
     const selectedProvider = await selectSTTProvider(supabase);
@@ -1002,10 +1053,35 @@ async function processTranscription(bookingId: string, kixieUrl: string) {
 
     try {
       if (selectedProvider === 'deepgram' && deepgramApiKey) {
-        console.log('[Background] Sending to Deepgram Nova-2...');
-        sttResult = await transcribeWithDeepgram(audioBlob, deepgramApiKey);
+        // Use URL-based transcription for Deepgram - eliminates SLOW_UPLOAD timeouts
+        // Deepgram fetches the audio directly from Kixie CDN
+        console.log('[Background] Sending URL to Deepgram Nova-2 (URL-based, no upload)...');
+        sttResult = await transcribeWithDeepgramUrl(kixieUrl, deepgramApiKey);
       } else {
-        // Default to ElevenLabs
+        // ElevenLabs requires blob upload, so download the audio first
+        console.log('[Background] Downloading audio for ElevenLabs...');
+        const audioResponse = await fetch(kixieUrl, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (compatible; Lovable/1.0)',
+          },
+        });
+        
+        if (!audioResponse.ok) {
+          throw new Error(`Audio download failed: ${audioResponse.status}`);
+        }
+        
+        const audioBlob = await audioResponse.blob();
+        
+        // Validate blob content
+        if (audioBlob.size < 1000) {
+          throw new Error('Audio file is empty or corrupted');
+        }
+        
+        const firstBytes = await audioBlob.slice(0, 100).text();
+        if (firstBytes.includes('<!DOCTYPE') || firstBytes.includes('<html')) {
+          throw new Error('URL points to a webpage, not an audio file');
+        }
+        
         console.log('[Background] Sending to ElevenLabs Speech-to-Text...');
         sttResult = await transcribeWithElevenLabs(audioBlob, elevenLabsApiKey!);
       }
