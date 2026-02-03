@@ -18,6 +18,24 @@ interface DeepgramBalance {
   purchase?: string;
 }
 
+interface UsageBreakdownResult {
+  hours: number;
+  total_hours: number;
+  requests: number;
+  grouping?: {
+    models?: string;
+    start?: string;
+    end?: string;
+  };
+}
+
+interface UsageBreakdownResponse {
+  start: string;
+  end: string;
+  resolution: { units: string; amount: number };
+  results: UsageBreakdownResult[];
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -25,125 +43,205 @@ serve(async (req) => {
 
   try {
     const DEEPGRAM_API_KEY = Deno.env.get('DEEPGRAM_API_KEY');
+    const DEEPGRAM_PROJECT_ID = Deno.env.get('DEEPGRAM_PROJECT_ID');
     
     if (!DEEPGRAM_API_KEY) {
       throw new Error('DEEPGRAM_API_KEY not configured');
     }
 
-    // Step 1: List all projects to discover project IDs
-    console.log('Fetching Deepgram projects...');
-    const projectsResponse = await fetch('https://api.deepgram.com/v1/projects', {
-      headers: {
-        'Authorization': `Token ${DEEPGRAM_API_KEY}`,
-        'Content-Type': 'application/json',
-      },
-    });
+    let projectId = DEEPGRAM_PROJECT_ID;
+    let projects: DeepgramProject[] = [];
 
-    if (!projectsResponse.ok) {
-      const errorText = await projectsResponse.text();
-      
-      if (projectsResponse.status === 401) {
-        throw new Error('Invalid or expired Deepgram API key');
+    // If no explicit project ID, try to discover projects
+    if (!projectId) {
+      console.log('No DEEPGRAM_PROJECT_ID set, attempting auto-discovery...');
+      const projectsResponse = await fetch('https://api.deepgram.com/v1/projects', {
+        headers: {
+          'Authorization': `Token ${DEEPGRAM_API_KEY}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (!projectsResponse.ok) {
+        const errorText = await projectsResponse.text();
+        if (projectsResponse.status === 401) {
+          throw new Error('Invalid or expired Deepgram API key');
+        }
+        if (projectsResponse.status === 403) {
+          throw new Error('API key lacks management permissions. Set DEEPGRAM_PROJECT_ID manually or use a key with "member" access.');
+        }
+        throw new Error(`Deepgram API error: ${projectsResponse.status} - ${errorText}`);
       }
-      if (projectsResponse.status === 403) {
-        throw new Error('API key lacks management permissions. Ensure the key has "member" or higher access.');
-      }
+
+      const projectsData = await projectsResponse.json();
+      projects = projectsData.projects || [];
       
-      throw new Error(`Deepgram API error: ${projectsResponse.status} - ${errorText}`);
+      if (projects.length > 0) {
+        projectId = projects[0].project_id;
+        console.log(`Auto-discovered project: ${projects[0].name} (${projectId})`);
+      }
+    } else {
+      console.log(`Using configured DEEPGRAM_PROJECT_ID: ${projectId}`);
     }
 
-    const projectsData = await projectsResponse.json();
-    const projects: DeepgramProject[] = projectsData.projects || [];
+    if (!projectId) {
+      throw new Error('No Deepgram project found. Please set DEEPGRAM_PROJECT_ID secret.');
+    }
+
+    // Fetch balances for the project
+    let balances: DeepgramBalance[] = [];
+    let balanceError: string | null = null;
     
-    console.log(`Found ${projects.length} Deepgram project(s)`);
-
-    // Step 2: For each project, fetch balances
-    const projectsWithBalances = await Promise.all(
-      projects.map(async (project) => {
-        try {
-          console.log(`Fetching balances for project: ${project.name} (${project.project_id})`);
-          
-          const balancesResponse = await fetch(
-            `https://api.deepgram.com/v1/projects/${project.project_id}/balances`,
-            {
-              headers: {
-                'Authorization': `Token ${DEEPGRAM_API_KEY}`,
-                'Content-Type': 'application/json',
-              },
-            }
-          );
-
-          if (!balancesResponse.ok) {
-            console.error(`Failed to fetch balances for ${project.project_id}: ${balancesResponse.status}`);
-            return {
-              project_id: project.project_id,
-              name: project.name,
-              company: project.company,
-              balances: [],
-              error: `Failed to fetch balances: ${balancesResponse.status}`,
-            };
-          }
-
-          const balancesData = await balancesResponse.json();
-          const balances: DeepgramBalance[] = balancesData.balances || [];
-
-          return {
-            project_id: project.project_id,
-            name: project.name,
-            company: project.company,
-            balances: balances.map((b) => ({
-              balance_id: b.balance_id,
-              amount: b.amount,
-              units: b.units,
-              purchase: b.purchase,
-            })),
-          };
-        } catch (error) {
-          console.error(`Error fetching balances for ${project.project_id}:`, error);
-          return {
-            project_id: project.project_id,
-            name: project.name,
-            company: project.company,
-            balances: [],
-            error: error instanceof Error ? error.message : 'Unknown error',
-          };
+    try {
+      const balancesResponse = await fetch(
+        `https://api.deepgram.com/v1/projects/${projectId}/balances`,
+        {
+          headers: {
+            'Authorization': `Token ${DEEPGRAM_API_KEY}`,
+            'Content-Type': 'application/json',
+          },
         }
-      })
-    );
+      );
 
-    // Calculate total credits across all projects
+      if (balancesResponse.ok) {
+        const balancesData = await balancesResponse.json();
+        balances = (balancesData.balances || []).map((b: DeepgramBalance) => ({
+          balance_id: b.balance_id,
+          amount: b.amount,
+          units: b.units,
+          purchase: b.purchase,
+        }));
+      } else if (balancesResponse.status === 403) {
+        balanceError = 'API key lacks permission to view balances';
+        console.log('Balance fetch returned 403 - permission denied');
+      } else {
+        balanceError = `Failed to fetch balances: ${balancesResponse.status}`;
+      }
+    } catch (error) {
+      balanceError = error instanceof Error ? error.message : 'Unknown error fetching balances';
+    }
+
+    // Fetch usage breakdown for current month
+    const now = new Date();
+    const startOfMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
+    const today = now.toISOString().split('T')[0];
+    
+    let usage: {
+      period: { start: string; end: string };
+      total_hours: number;
+      total_requests: number;
+      estimated_cost_usd: number;
+      breakdown_by_model: { model: string; hours: number; requests: number }[];
+    } | null = null;
+    let usageError: string | null = null;
+
+    try {
+      console.log(`Fetching usage breakdown from ${startOfMonth} to ${today}...`);
+      const usageResponse = await fetch(
+        `https://api.deepgram.com/v1/projects/${projectId}/usage/breakdown?start=${startOfMonth}&end=${today}&grouping=models`,
+        {
+          headers: {
+            'Authorization': `Token ${DEEPGRAM_API_KEY}`,
+            'Content-Type': 'application/json',
+          },
+        }
+      );
+
+      if (usageResponse.ok) {
+        const usageData: UsageBreakdownResponse = await usageResponse.json();
+        console.log('Usage data received:', JSON.stringify(usageData, null, 2));
+        
+        let totalHours = 0;
+        let totalRequests = 0;
+        const breakdownByModel: { model: string; hours: number; requests: number }[] = [];
+
+        for (const result of usageData.results || []) {
+          totalHours += result.hours || 0;
+          totalRequests += result.requests || 0;
+          
+          if (result.grouping?.models) {
+            breakdownByModel.push({
+              model: result.grouping.models,
+              hours: result.hours || 0,
+              requests: result.requests || 0,
+            });
+          }
+        }
+
+        // Deepgram Nova-2 pricing: $0.0043/minute = $0.258/hour
+        const estimatedCost = totalHours * 0.258;
+
+        usage = {
+          period: { start: startOfMonth, end: today },
+          total_hours: Math.round(totalHours * 1000) / 1000,
+          total_requests: totalRequests,
+          estimated_cost_usd: Math.round(estimatedCost * 100) / 100,
+          breakdown_by_model: breakdownByModel,
+        };
+      } else if (usageResponse.status === 403) {
+        usageError = 'API key lacks permission to view usage breakdown';
+        console.log('Usage fetch returned 403 - permission denied');
+      } else {
+        const errorText = await usageResponse.text();
+        usageError = `Failed to fetch usage: ${usageResponse.status} - ${errorText}`;
+        console.error(usageError);
+      }
+    } catch (error) {
+      usageError = error instanceof Error ? error.message : 'Unknown error fetching usage';
+      console.error('Usage fetch error:', usageError);
+    }
+
+    // Calculate total credits
     let totalCredits = 0;
     let creditUnits = 'USD';
-    
-    for (const project of projectsWithBalances) {
-      for (const balance of project.balances) {
-        if (balance.units === 'usd' || balance.units === 'USD') {
-          totalCredits += balance.amount;
-          creditUnits = 'USD';
-        }
+    for (const balance of balances) {
+      if (balance.units === 'usd' || balance.units === 'USD') {
+        totalCredits += balance.amount;
+        creditUnits = 'USD';
       }
     }
 
-    // Determine pricing note based on available info
-    const pricingNote = totalCredits > 0
-      ? `✅ Account has $${totalCredits.toFixed(2)} ${creditUnits} credits remaining. Current STT rate: $0.0043/min (Nova-2)`
-      : '⚠️ No credit balance found. Account may be on pay-as-you-go or credits depleted.';
+    // Build pricing note
+    let pricingNote = '';
+    if (totalCredits > 0) {
+      pricingNote = `✅ Account has $${totalCredits.toFixed(2)} ${creditUnits} credits remaining.`;
+    } else if (balanceError) {
+      pricingNote = `⚠️ Could not check credits (${balanceError}). Account may be pay-as-you-go.`;
+    } else {
+      pricingNote = '⚠️ No credit balance found. Account is on pay-as-you-go billing.';
+    }
+    
+    if (usage) {
+      pricingNote += ` This month: ${usage.total_hours.toFixed(3)} hours processed (~$${usage.estimated_cost_usd.toFixed(2)} estimated).`;
+    }
 
     console.log('Deepgram plan check complete');
 
     return new Response(JSON.stringify({
       success: true,
       key_type: 'api_key',
-      projects: projectsWithBalances,
+      project_id: projectId,
+      projects: projects.length > 0 ? projects.map(p => ({
+        project_id: p.project_id,
+        name: p.name,
+        company: p.company,
+      })) : [{ project_id: projectId, name: 'Configured Project' }],
+      balances,
+      usage,
       summary: {
-        total_projects: projects.length,
+        total_projects: projects.length || 1,
         total_credits: totalCredits,
         credit_units: creditUnits,
+      },
+      errors: {
+        balance_error: balanceError,
+        usage_error: usageError,
       },
       pricing_note: pricingNote,
       stt_pricing: {
         model: 'Nova-2',
         rate_per_minute: 0.0043,
+        rate_per_hour: 0.258,
         currency: 'USD',
       },
     }), {
