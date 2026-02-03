@@ -5,6 +5,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Button } from '@/components/ui/button';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { 
   TrendingUp, 
   TrendingDown, 
@@ -16,7 +17,7 @@ import {
   LineChart as LineChartIcon
 } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer } from 'recharts';
-import { usePainPointEvolution, PainPointStatus } from '@/hooks/usePainPointEvolution';
+import { usePainPointEvolution, PainPointStatus, TimeRangeOption } from '@/hooks/usePainPointEvolution';
 import { useState } from 'react';
 import { cn } from '@/lib/utils';
 
@@ -28,6 +29,13 @@ const CHART_COLORS = [
   'hsl(var(--chart-4))',
   'hsl(var(--chart-5))',
 ];
+
+const TIME_RANGE_LABELS: Record<TimeRangeOption, string> = {
+  '3m': 'Last 3 months',
+  '6m': 'Last 6 months',
+  '12m': 'Last 12 months',
+  'all': 'All time'
+};
 
 function getTrendIcon(trend: PainPointStatus['trend']) {
   switch (trend) {
@@ -71,7 +79,8 @@ function formatTrendDelta(delta: number, trend: PainPointStatus['trend']): strin
 }
 
 export function PainPointEvolutionPanel() {
-  const { chartData, categories, statuses, statusSummary, isLoading, error } = usePainPointEvolution();
+  const [timeRange, setTimeRange] = useState<TimeRangeOption>('6m');
+  const { chartData, categories, statuses, statusSummary, isLoading, error } = usePainPointEvolution(timeRange);
   const [isTableExpanded, setIsTableExpanded] = useState(false);
   const [hiddenCategories, setHiddenCategories] = useState<Set<string>>(new Set());
 
@@ -123,10 +132,23 @@ export function PainPointEvolutionPanel() {
     return (
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <LineChartIcon className="h-5 w-5" />
-            Pain Point Evolution
-          </CardTitle>
+          <div className="flex items-center justify-between">
+            <CardTitle className="flex items-center gap-2">
+              <LineChartIcon className="h-5 w-5" />
+              Pain Point Evolution
+            </CardTitle>
+            <Select value={timeRange} onValueChange={(v) => setTimeRange(v as TimeRangeOption)}>
+              <SelectTrigger className="w-[140px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="3m">Last 3 months</SelectItem>
+                <SelectItem value="6m">Last 6 months</SelectItem>
+                <SelectItem value="12m">Last 12 months</SelectItem>
+                <SelectItem value="all">All time</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
         </CardHeader>
         <CardContent>
           <div className="flex flex-col items-center justify-center py-8 text-center">
@@ -135,7 +157,7 @@ export function PainPointEvolutionPanel() {
               Run more analyses to see how pain points evolve over time
             </p>
             <p className="text-xs text-muted-foreground mt-1">
-              At least 2 completed analyses are needed
+              At least 2 completed analyses are needed within {TIME_RANGE_LABELS[timeRange].toLowerCase()}
             </p>
           </div>
         </CardContent>
@@ -158,24 +180,37 @@ export function PainPointEvolutionPanel() {
               Pain Point Evolution
             </CardTitle>
             <p className="text-sm text-muted-foreground mt-1">
-              Monthly trends across {chartData.length} months of historical analyses
+              Monthly trends across {chartData.length} months
             </p>
           </div>
-          <TooltipProvider>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button variant="ghost" size="icon" className="h-6 w-6">
-                  <HelpCircle className="h-4 w-4 text-muted-foreground" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent side="left" className="max-w-xs">
-                <p className="text-sm">
-                  Track how member concerns change over time across multiple analyses. 
-                  See which issues are growing, shrinking, or newly emerging.
-                </p>
-              </TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
+          <div className="flex items-center gap-2">
+            <Select value={timeRange} onValueChange={(v) => setTimeRange(v as TimeRangeOption)}>
+              <SelectTrigger className="w-[140px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="3m">Last 3 months</SelectItem>
+                <SelectItem value="6m">Last 6 months</SelectItem>
+                <SelectItem value="12m">Last 12 months</SelectItem>
+                <SelectItem value="all">All time</SelectItem>
+              </SelectContent>
+            </Select>
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button variant="ghost" size="icon" className="h-6 w-6">
+                    <HelpCircle className="h-4 w-4 text-muted-foreground" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="left" className="max-w-xs">
+                  <p className="text-sm">
+                    Track how member concerns change over time across multiple analyses. 
+                    See which issues are growing, shrinking, or newly emerging.
+                  </p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          </div>
         </div>
       </CardHeader>
       <CardContent className="space-y-6">
@@ -288,7 +323,7 @@ export function PainPointEvolutionPanel() {
         <Collapsible open={isTableExpanded} onOpenChange={setIsTableExpanded}>
           <CollapsibleTrigger asChild>
             <Button variant="ghost" className="w-full justify-between">
-              <span>View All Pain Points ({statuses.length})</span>
+              <span>View Top Pain Points ({statuses.length})</span>
               <ChevronDown className={`h-4 w-4 transition-transform ${isTableExpanded ? 'rotate-180' : ''}`} />
             </Button>
           </CollapsibleTrigger>
@@ -304,7 +339,7 @@ export function PainPointEvolutionPanel() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {statuses.slice(0, 10).map((status) => (
+                  {statuses.map((status) => (
                     <TableRow key={status.category}>
                       <TableCell className="font-medium">{status.category}</TableCell>
                       <TableCell className="text-right">
