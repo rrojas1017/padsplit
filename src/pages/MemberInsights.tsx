@@ -396,7 +396,7 @@ const MemberInsights = () => {
             </div>
 
             {/* Trend Chart */}
-            <TrendChart insights={insights} />
+            <TrendChart />
 
             {/* AI Recommendations */}
             <RecommendationsPanel 
