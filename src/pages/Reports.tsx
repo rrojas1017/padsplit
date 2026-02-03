@@ -900,6 +900,24 @@ export default function Reports() {
                             <DropdownMenuItem
                               onClick={async () => {
                                 try {
+                                  await updateBooking(booking.id, { status: 'Pending Move-In' });
+                                  toast.success('Status updated to Pending Move-In');
+                                  refetch();
+                                } catch (error) {
+                                  console.error('Error updating booking:', error);
+                                  toast.error('Failed to update status. You may not have permission to edit this booking.');
+                                }
+                              }}
+                              className="text-yellow-600 focus:text-yellow-600"
+                              disabled={booking.status === 'Pending Move-In'}
+                            >
+                              <Clock className="h-4 w-4 mr-2" />
+                              Mark as Pending Move-In
+                              {booking.status === 'Pending Move-In' && <span className="ml-auto text-xs">✓</span>}
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onClick={async () => {
+                                try {
                                   await updateBooking(booking.id, { status: 'Moved In' });
                                   toast.success('Status updated to Moved In');
                                   refetch();
