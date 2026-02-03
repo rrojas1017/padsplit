@@ -1,78 +1,93 @@
 
 
-# Plan: Enhance check-deepgram-plan with Usage Breakdown
+# Plan: Add Billing Breakdown to check-deepgram-plan
 
 ## Overview
-Enhance the existing `check-deepgram-plan` edge function to:
-1. Use an explicit `DEEPGRAM_PROJECT_ID` secret (bypassing permission issues)
-2. Fetch usage breakdown data (hours processed, request counts) for the current month
-3. Calculate estimated costs based on actual usage
+Enhance the `check-deepgram-plan` edge function to fetch **actual billing data in USD** from Deepgram's Billing Breakdown API, providing accurate cost figures instead of estimates.
 
-## Changes Required
+## Current vs. Proposed
 
-### Step 1: Add New Secret
-| Secret Name | Description |
-|------------|-------------|
-| `DEEPGRAM_PROJECT_ID` | Your Deepgram project ID for direct API access |
+| Metric | Current | Proposed |
+|--------|---------|----------|
+| Cost Source | Estimated (hours × $0.258) | Actual USD from Deepgram API |
+| Granularity | Total only | Breakdown by line_item (model/feature) |
+| Accuracy | Approximate | Exact billing data |
 
-### Step 2: Update Edge Function
+## Technical Changes
 
-**File:** `supabase/functions/check-deepgram-plan/index.ts`
+### File: `supabase/functions/check-deepgram-plan/index.ts`
 
-**New Capabilities:**
-- Accept optional `DEEPGRAM_PROJECT_ID` from environment (falls back to auto-discovery if not set)
-- Call `GET /v1/projects/{project_id}/usage/breakdown` with current month date range
-- Return usage metrics:
-  - `hours` - Total audio hours transcribed
-  - `requests` - Number of API requests
-  - `estimated_cost` - Calculated from hours × $0.0043/min
+**New Interface:**
+```typescript
+interface BillingBreakdownResult {
+  dollars: number;
+  grouping?: {
+    start?: string;
+    end?: string;
+    line_item?: string;
+    deployment?: string;
+  };
+}
+
+interface BillingBreakdownResponse {
+  start: string;
+  end: string;
+  resolution: { units: string; amount: number };
+  results: BillingBreakdownResult[];
+}
+```
+
+**New API Call:**
+```typescript
+const billingResponse = await fetch(
+  `https://api.deepgram.com/v1/projects/${projectId}/billing/breakdown?start=${startOfMonth}&end=${today}&grouping=line_item`,
+  { headers: { 'Authorization': `Token ${DEEPGRAM_API_KEY}` } }
+);
+```
 
 **Updated Response Structure:**
 ```json
 {
   "success": true,
-  "projects": [...],
   "usage": {
-    "period": { "start": "2026-02-01", "end": "2026-02-03" },
     "total_hours": 15.5,
     "total_requests": 245,
-    "estimated_cost_usd": 4.00,
-    "breakdown_by_model": [...]
+    "estimated_cost_usd": 4.00
   },
-  "summary": {
-    "total_credits": 0,
-    "credit_units": "USD"
+  "billing": {
+    "period": { "start": "2026-02-01", "end": "2026-02-03" },
+    "total_cost_usd": 3.87,
+    "breakdown_by_line_item": [
+      { "line_item": "streaming::nova-3", "dollars": 2.15 },
+      { "line_item": "async::nova-2", "dollars": 1.72 }
+    ]
   },
-  "pricing_note": "..."
+  "pricing_note": "This month: 15.5 hours processed ($3.87 actual)."
 }
 ```
 
-**Error Handling:**
-- If usage endpoint returns 403, include partial data with note about permission limitations
-- If project ID is invalid, provide clear error message
+## Implementation Details
 
-## Technical Details
+1. **Add billing fetch** after usage breakdown fetch
+2. **Sum total dollars** from all billing results
+3. **Group by line_item** to show cost per model/feature
+4. **Prioritize actual billing** over estimated cost in `pricing_note`
+5. **Handle 403 gracefully** - fall back to estimated cost if billing endpoint lacks permissions
 
-### API Call for Usage
-```javascript
-const now = new Date();
-const startOfMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
-const today = now.toISOString().split('T')[0];
+## Error Handling
 
-const usageResponse = await fetch(
-  `https://api.deepgram.com/v1/projects/${projectId}/usage/breakdown?start=${startOfMonth}&end=${today}&grouping=models`,
-  { headers: { 'Authorization': `Token ${apiKey}` } }
-);
+| Scenario | Behavior |
+|----------|----------|
+| Billing API returns 403 | Use estimated cost, set `billing_error` |
+| Billing API returns data | Show actual `$X.XX` in pricing note |
+| Both APIs fail | Show message with available information |
+
+## Updated Pricing Note Logic
+```typescript
+if (billing) {
+  pricingNote += ` This month: ${usage.total_hours.toFixed(3)} hours ($${billing.total_cost_usd.toFixed(2)} actual).`;
+} else if (usage) {
+  pricingNote += ` This month: ${usage.total_hours.toFixed(3)} hours (~$${usage.estimated_cost_usd.toFixed(2)} estimated).`;
+}
 ```
-
-### Cost Calculation
-```javascript
-// Deepgram Nova-2 pricing: $0.0043/minute = $0.258/hour
-const estimatedCost = totalHours * 0.258;
-```
-
-## Implementation Order
-1. Request `DEEPGRAM_PROJECT_ID` secret from user
-2. Update edge function with usage breakdown logic
-3. Deploy and test the enhanced function
 
