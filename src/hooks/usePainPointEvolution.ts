@@ -37,6 +37,7 @@ interface StatusSummary {
 
 interface ChartDataPoint {
   date: string;
+  dateRange: string;
   [category: string]: string | number;
 }
 
@@ -119,6 +120,16 @@ export function usePainPointEvolution(limit: number = 10): UsePainPointEvolution
         return;
       }
 
+      // Deduplicate analyses by date range - keep the latest analysis for each unique period
+      const deduplicatedAnalyses = new Map<string, typeof analyses[0]>();
+      for (const analysis of analyses) {
+        const key = `${analysis.date_range_start}_${analysis.date_range_end}`;
+        // Keep the latest analysis for each unique date range (last one wins since sorted by created_at asc)
+        deduplicatedAnalyses.set(key, analysis);
+      }
+      const uniqueAnalyses = Array.from(deduplicatedAnalyses.values())
+        .sort((a, b) => new Date(a.date_range_end).getTime() - new Date(b.date_range_end).getTime());
+
       // Build evolution data points
       const evolutionPoints: EvolutionDataPoint[] = [];
       const allCategories = new Map<string, {
@@ -130,9 +141,10 @@ export function usePainPointEvolution(limit: number = 10): UsePainPointEvolution
         frequencyHistory: { date: string; frequency: number }[];
       }>();
 
-      for (const analysis of analyses) {
+      for (const analysis of uniqueAnalyses) {
         const painPoints = (Array.isArray(analysis.pain_points) ? analysis.pain_points : []) as unknown as PainPointData[];
-        const date = new Date(analysis.created_at).toLocaleDateString('en-US', { 
+        // Use date_range_end instead of created_at for the X-axis
+        const date = new Date(analysis.date_range_end).toLocaleDateString('en-US', { 
           month: 'short', 
           day: 'numeric' 
         });
@@ -183,18 +195,23 @@ export function usePainPointEvolution(limit: number = 10): UsePainPointEvolution
 
       const topCategoryNames = sortedCategories.map(c => c.normalized);
 
-      // Build chart data
+      // Build chart data with date range context
       const chartDataPoints: ChartDataPoint[] = evolutionPoints.map(point => {
-        const dataPoint: ChartDataPoint = { date: point.date };
+        const startDate = new Date(point.dateRangeStart).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        const endDate = new Date(point.dateRangeEnd).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        const dateRange = `${startDate} - ${endDate}`;
+        
+        const dataPoint: ChartDataPoint = { date: point.date, dateRange };
         for (const catName of topCategoryNames) {
           dataPoint[catName] = point.painPoints[catName] ?? 0;
         }
         return dataPoint;
       });
 
-      // Calculate statuses for all categories
+      // Calculate statuses for all categories using uniqueAnalyses count
       const latestPoint = evolutionPoints[evolutionPoints.length - 1];
       const previousPoint = evolutionPoints.length > 1 ? evolutionPoints[evolutionPoints.length - 2] : null;
+      const totalAnalyses = uniqueAnalyses.length;
 
       const statusList: PainPointStatus[] = [];
       const summary: StatusSummary = { rising: 0, falling: 0, stable: 0, emerging: 0, resolved: 0 };
@@ -204,7 +221,7 @@ export function usePainPointEvolution(limit: number = 10): UsePainPointEvolution
         const current = latestPoint.painPoints[normalized] ?? null;
         const previous = previousPoint ? (previousPoint.painPoints[normalized] ?? null) : null;
         
-        const trend = getTrendStatus(current, previous, catData.occurrenceCount, analyses.length);
+        const trend = getTrendStatus(current, previous, catData.occurrenceCount, totalAnalyses);
         const trendDelta = current !== null && previous !== null ? current - previous : 0;
         
         statusList.push({

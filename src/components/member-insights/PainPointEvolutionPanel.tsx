@@ -149,10 +149,15 @@ export function PainPointEvolutionPanel() {
     <Card>
       <CardHeader>
         <div className="flex items-center justify-between">
-          <CardTitle className="flex items-center gap-2">
-            <LineChartIcon className="h-5 w-5" />
-            Pain Point Evolution
-          </CardTitle>
+          <div>
+            <CardTitle className="flex items-center gap-2">
+              <LineChartIcon className="h-5 w-5" />
+              Pain Point Evolution
+            </CardTitle>
+            <p className="text-sm text-muted-foreground mt-1">
+              Tracking across {chartData.length} analyses (independent of date filter above)
+            </p>
+          </div>
           <TooltipProvider>
             <Tooltip>
               <TooltipTrigger asChild>
@@ -191,6 +196,10 @@ export function PainPointEvolutionPanel() {
                   backgroundColor: 'hsl(var(--card))', 
                   border: '1px solid hsl(var(--border))',
                   borderRadius: '8px'
+                }}
+                labelFormatter={(label, payload) => {
+                  const point = payload?.[0]?.payload;
+                  return point?.dateRange || label;
                 }}
                 formatter={(value: number) => [`${value.toFixed(0)}%`, '']}
               />
