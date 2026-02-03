@@ -3,7 +3,8 @@ import { supabase } from '@/integrations/supabase/client';
 
 interface PainPointData {
   category: string;
-  frequency_percent: number;
+  frequency: number;
+  frequency_percent?: number; // Keep as fallback for backwards compatibility
   quote?: string;
 }
 
@@ -142,7 +143,7 @@ export function usePainPointEvolution(limit: number = 10): UsePainPointEvolution
           if (!pp.category) continue;
           
           const normalized = normalizeCategory(pp.category);
-          const frequency = pp.frequency_percent || 0;
+          const frequency = pp.frequency ?? pp.frequency_percent ?? 0;
           pointData[normalized] = frequency;
           
           if (!allCategories.has(normalized)) {
