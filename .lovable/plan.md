@@ -1,116 +1,106 @@
 
 
-## Fix Pain Point Evolution Chart - Date Display & Clarity
+## Monthly Pain Point Evolution - Aggregated by Calendar Month
 
-### Problems Identified
+### The Problem
 
-1. **Wrong date source**: Currently using `created_at` (when analysis ran) instead of `date_range_end` (what period was analyzed)
-2. **Duplicate dates**: Multiple analyses were run on the same day (e.g., 5 on Dec 5), creating repeated X-axis labels
-3. **No context**: Users don't understand this chart is independent from the date filter above
+The current evolution chart uses arbitrary analysis dates (Dec 4, Dec 7, Dec 8, etc.) which don't represent meaningful time periods. Most analyses are "All Time" analyses that overlap, making the "evolution" view confusing.
 
-### Solution
+### Proposed Solution
 
-**Phase 1: Use Analysis Period End Date**
+Change the approach from "show each analysis as a data point" to "aggregate all analyses into monthly buckets based on their `date_range_end`":
+
+```text
+Current Approach (confusing):
+┌──────────────────────────────────────────────────────┐
+│ Dec 4  │ Dec 7  │ Dec 8  │ Dec 9  │ Dec 14 │ Dec 21 │  ← arbitrary dates
+└──────────────────────────────────────────────────────┘
+
+New Approach (monthly aggregation):
+┌──────────────────────────────────────────────────────────────────┐
+│   Oct    │   Nov    │   Dec    │   Jan    │   Feb    │          │  ← calendar months
+│   2025   │   2025   │   2025   │   2026   │   2026   │          │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+### How It Works
+
+1. **Fetch all completed analyses** (not just last 10)
+2. **Group by month** using `date_range_end` (e.g., all analyses ending in January 2026 → "Jan 2026")
+3. **Average pain point frequencies** within each month
+4. **Display monthly evolution** with clean month labels on X-axis
+
+### Technical Changes
 
 **File: `src/hooks/usePainPointEvolution.ts`**
 
-Change the date displayed from `created_at` to `date_range_end`:
+Replace the current logic with monthly aggregation:
 
 ```typescript
-// Line 135-138: Change from created_at to date_range_end
-const date = new Date(analysis.date_range_end).toLocaleDateString('en-US', { 
-  month: 'short', 
-  day: 'numeric' 
-});
-```
+// 1. Fetch more analyses to cover multiple months
+const { data: analyses } = await supabase
+  .from('member_insights')
+  .select('...')
+  .eq('status', 'completed')
+  .order('date_range_end', { ascending: true })
+  .limit(50);
 
-This makes the X-axis show the period being analyzed (e.g., "Dec 8" = analysis of data ending Dec 8).
+// 2. Group analyses by month (YYYY-MM format)
+const monthlyBuckets = new Map<string, {
+  month: string;           // e.g., "Jan 2026"
+  painPoints: Map<string, number[]>;  // category → [frequencies]
+}>();
 
-**Phase 2: Deduplicate by Date Range**
-
-When multiple analyses exist for the same date range, use only the most recent one:
-
-```typescript
-// After fetching analyses, deduplicate by date_range_end
-const deduplicatedAnalyses = new Map<string, typeof analyses[0]>();
 for (const analysis of analyses) {
-  const key = `${analysis.date_range_start}_${analysis.date_range_end}`;
-  // Keep the latest analysis for each unique date range
-  deduplicatedAnalyses.set(key, analysis);
+  const monthKey = format(new Date(analysis.date_range_end), 'yyyy-MM');
+  const monthLabel = format(new Date(analysis.date_range_end), 'MMM yyyy');
+  
+  // Add each pain point frequency to the month's bucket
+  for (const pp of analysis.pain_points) {
+    bucket.painPoints.get(category).push(pp.frequency);
+  }
 }
-const uniqueAnalyses = Array.from(deduplicatedAnalyses.values())
-  .sort((a, b) => new Date(a.date_range_end).getTime() - new Date(b.date_range_end).getTime());
+
+// 3. Calculate average frequency per category per month
+const chartData = monthlyBuckets.map(bucket => ({
+  date: bucket.monthLabel,  // "Jan 2026"
+  [category]: averageFrequency
+}));
 ```
 
-**Phase 3: Add Descriptive Subtitle**
+### UI Changes
 
 **File: `src/components/member-insights/PainPointEvolutionPanel.tsx`**
 
-Add a subtitle explaining the chart's scope:
+Update subtitle to reflect monthly aggregation:
 
 ```typescript
-<CardHeader>
-  <div className="flex items-center justify-between">
-    <div>
-      <CardTitle className="flex items-center gap-2">
-        <LineChartIcon className="h-5 w-5" />
-        Pain Point Evolution
-      </CardTitle>
-      <p className="text-sm text-muted-foreground mt-1">
-        Tracking across last {chartData.length} analyses (all periods)
-      </p>
-    </div>
-    // ... help tooltip
-  </div>
-</CardHeader>
-```
-
-**Phase 4: Improve Tooltip Context**
-
-Show the full date range in the chart tooltip:
-
-```typescript
-// Store full date range info in chart data
-interface ChartDataPoint {
-  date: string;
-  dateRange: string; // e.g., "Nov 8 - Dec 8"
-  [category: string]: string | number;
-}
-
-// In RechartsTooltip, show the date range
-<RechartsTooltip
-  labelFormatter={(label, payload) => {
-    const point = payload?.[0]?.payload;
-    return point?.dateRange || label;
-  }}
-  // ...
-/>
+<p className="text-sm text-muted-foreground mt-1">
+  Monthly trends across all historical analyses
+</p>
 ```
 
 ### Expected Result
 
-**Before:**
-```
-X-axis: Dec 5 | Dec 5 | Dec 5 | Dec 5 | Dec 5 | Dec 8 | Dec 9 | ...
+```text
+X-axis: Oct 2025 | Nov 2025 | Dec 2025 | Jan 2026 | Feb 2026
 ```
 
-**After:**
-```
-X-axis: Dec 5 | Dec 8 | Dec 9 | Dec 10 | Dec 15 | Dec 22 | Dec 30 | Jan 12
-Subtitle: "Tracking across last 8 analyses (all periods)"
-Tooltip: "Nov 8 - Dec 8" with pain point percentages
-```
+- Clean monthly labels on X-axis
+- Pain point percentages averaged across all analyses that ended in each month
+- True month-over-month evolution tracking
+- Status badges (Rising, Falling, etc.) compare current month to previous month
+
+### Edge Cases
+
+- **Months with no analyses**: Skip that month (gap in chart)
+- **Multiple analyses in same month**: Average their pain point frequencies
+- **Future months**: Excluded from aggregation
 
 ### Files to Modify
 
 | File | Changes |
 |------|---------|
-| `src/hooks/usePainPointEvolution.ts` | Use `date_range_end`, deduplicate by period, add date range context |
-| `src/components/member-insights/PainPointEvolutionPanel.tsx` | Add subtitle, improve tooltip |
-
-### Technical Notes
-
-- Sort by `date_range_end` to get chronological order of analyzed periods
-- Deduplication keeps the latest analysis when multiple exist for the same period
-- The evolution chart intentionally spans ALL analyses regardless of the current date filter—this is correct behavior for showing long-term trends
+| `src/hooks/usePainPointEvolution.ts` | Replace per-analysis logic with monthly aggregation |
+| `src/components/member-insights/PainPointEvolutionPanel.tsx` | Update subtitle text |
 
