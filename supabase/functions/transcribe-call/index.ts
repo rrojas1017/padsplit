@@ -603,10 +603,10 @@ async function fetchCallTypeConfig(
 }
 
 // Build dynamic prompt based on configuration
-function buildDynamicPrompt(transcription: string, config: CallTypeConfig | null): string {
+function buildDynamicPrompt(transcription: string, config: CallTypeConfig | null, isNonBooking: boolean = false): string {
   // Default prompt if no config
   if (!config) {
-    return buildDefaultPrompt(transcription);
+    return buildDefaultPrompt(transcription, isNonBooking);
   }
 
   const sections: string[] = [];
@@ -716,7 +716,15 @@ Return a JSON object with EXACTLY this structure (no markdown, just raw JSON):
   "recommendedActions": ["Specific follow-up actions for the agent"],
   "objections": ["Any hesitations, pushback, or reasons the member gave for not committing"],
   "moveInReadiness": "high | medium | low",
-  "callSentiment": "positive | neutral | negative",
+  "callSentiment": "positive | neutral | negative"${isNonBooking ? `,
+  "buyerIntent": {
+    "score": 65,
+    "intentLevel": "hot (75-100: high conversion potential) | warm (40-74: interested but needs nurturing) | cold (0-39: low immediate potential)",
+    "positiveSignals": ["List signals indicating buying intent: specific move-in date, budget confirmed, asked about booking process, decision maker, detailed questions"],
+    "negativeSignals": ["List signals reducing intent: 'just looking', price objections, needs to ask others, comparison shopping, no timeline"],
+    "decisionMaker": true,
+    "timeframe": "immediate (moving ASAP) | this_week | this_month | exploring (just researching)"
+  }` : ''},
   "agentFeedback": {
     "overallRating": "excellent | good | needs_improvement | poor",
     "strengths": ["Specific things the agent did well, especially related to the evaluation criteria"],
@@ -731,7 +739,26 @@ Return a JSON object with EXACTLY this structure (no markdown, just raw JSON):
   }
 }
 
-${scoringGuide}
+${scoringGuide}${isNonBooking ? `
+
+BUYER INTENT SCORING GUIDE (0-100):
+Calculate the buyerIntent.score by adding/subtracting these weights:
++20: Specific move-in date within 7 days
++15: Budget confirmed and within PadSplit range ($150-$250/week)
++15: Asked about booking/move-in process or deposits
++10: Single decision maker confirmed
++10: First-time caller with specific property interest
++5:  Positive call sentiment
++5:  Asked follow-up questions
+-10: "Just looking" or "researching for someone else"
+-15: Price objections unresolved at call end
+-15: Decision maker absent ("need to ask my wife/husband")
+-10: Comparison shopping explicitly mentioned
+-10: No specific timeline mentioned
+-5:  Negative call sentiment
+
+Start at 50 as baseline. Final score should be 0-100.
+intentLevel: "hot" (75-100), "warm" (40-74), "cold" (0-39)` : ''}
 
 IMPORTANT: Even for very short calls, provide meaningful analysis. Reference the evaluation criteria in your feedback.`);
 
@@ -739,7 +766,7 @@ IMPORTANT: Even for very short calls, provide meaningful analysis. Reference the
 }
 
 // Default prompt for calls without call type configuration
-function buildDefaultPrompt(transcription: string): string {
+function buildDefaultPrompt(transcription: string, isNonBooking: boolean = false): string {
   return `You are an expert at analyzing sales call transcriptions for PadSplit, a housing/rental service.
 
 CRITICAL INSTRUCTIONS:
@@ -774,7 +801,15 @@ Return a JSON object with EXACTLY this structure (no markdown, just raw JSON):
   "recommendedActions": ["Specific follow-up actions for the agent. Example: 'Send listing links for downtown properties', 'Follow up about move-in date confirmation', 'Schedule property tour'"],
   "objections": ["Any hesitations, pushback, or reasons the member gave for not committing. Example: 'Wants to see other options first', 'Price is higher than expected'"],
   "moveInReadiness": "high (ready to move within days, very motivated) | medium (interested but exploring options, flexible timeline) | low (just researching, no urgency)",
-  "callSentiment": "positive (member engaged, interested, good rapport) | neutral (standard business conversation) | negative (frustrated, disengaged, complaints)",
+  "callSentiment": "positive (member engaged, interested, good rapport) | neutral (standard business conversation) | negative (frustrated, disengaged, complaints)"${isNonBooking ? `,
+  "buyerIntent": {
+    "score": 65,
+    "intentLevel": "hot (75-100: high conversion potential) | warm (40-74: interested but needs nurturing) | cold (0-39: low immediate potential)",
+    "positiveSignals": ["List signals indicating buying intent: specific move-in date, budget confirmed, asked about booking process, decision maker, detailed questions about properties"],
+    "negativeSignals": ["List signals reducing intent: 'just looking', unresolved price objections, needs to ask spouse/others, comparison shopping, no specific timeline"],
+    "decisionMaker": true,
+    "timeframe": "immediate (moving ASAP/within days) | this_week | this_month | exploring (just researching)"
+  }` : ''},
   "agentFeedback": {
     "overallRating": "excellent (exceeded expectations) | good (solid performance) | needs_improvement (missed opportunities) | poor (significant issues)",
     "strengths": ["Specific things the agent did well. Quote exact moments when possible. Example: 'Great rapport building when discussing the member's job situation', 'Clearly explained the booking process'"],
@@ -794,7 +829,26 @@ SCORING GUIDE (1-10):
 - 7-8: Good, minor improvements possible  
 - 5-6: Average, noticeable gaps
 - 3-4: Below average, significant issues
-- 1-2: Poor, major problems
+- 1-2: Poor, major problems${isNonBooking ? `
+
+BUYER INTENT SCORING GUIDE (0-100):
+Calculate the buyerIntent.score by adding/subtracting these weights:
++20: Specific move-in date within 7 days
++15: Budget confirmed and within PadSplit range ($150-$250/week)
++15: Asked about booking/move-in process or deposits
++10: Single decision maker confirmed
++10: First-time caller with specific property interest
++5:  Positive call sentiment
++5:  Asked follow-up questions
+-10: "Just looking" or "researching for someone else"
+-15: Price objections unresolved at call end
+-15: Decision maker absent ("need to ask my wife/husband")
+-10: Comparison shopping explicitly mentioned
+-10: No specific timeline mentioned
+-5:  Negative call sentiment
+
+Start at 50 as baseline. Final score should be 0-100.
+intentLevel: "hot" (75-100), "warm" (40-74), "cold" (0-39)` : ''}
 
 IMPORTANT: Even for very short calls, provide meaningful analysis. A 1-minute call checking availability still has extractable insights (member's location interest, timing, urgency level).`;
 }
@@ -1009,10 +1063,10 @@ async function processTranscription(bookingId: string, kixieUrl: string) {
       })
       .eq('id', bookingId);
 
-    // Fetch booking to get call_type_id, agent_id, and site_id
+    // Fetch booking to get call_type_id, agent_id, site_id, and status
     const { data: bookingData, error: bookingError } = await supabase
       .from('bookings')
-      .select('call_type_id, agent_id, agents(site_id)')
+      .select('call_type_id, agent_id, status, agents(site_id)')
       .eq('id', bookingId)
       .maybeSingle();
 
@@ -1023,7 +1077,9 @@ async function processTranscription(bookingId: string, kixieUrl: string) {
     const callTypeId = bookingData?.call_type_id || null;
     agentId = bookingData?.agent_id || null;
     siteId = (bookingData?.agents as any)?.site_id || null;
-    console.log(`[Background] Booking call_type_id: ${callTypeId || 'none'}, agent_id: ${agentId}, site_id: ${siteId}`);
+    const bookingStatus = bookingData?.status || null;
+    const isNonBooking = bookingStatus === 'Non Booking';
+    console.log(`[Background] Booking call_type_id: ${callTypeId || 'none'}, agent_id: ${agentId}, site_id: ${siteId}, status: ${bookingStatus}`);
 
     // Fetch call type configuration if available
     const config = await fetchCallTypeConfig(supabase, callTypeId);
@@ -1237,7 +1293,7 @@ async function processTranscription(bookingId: string, kixieUrl: string) {
     }
     // Step 3: Generate summary, key points, and agent feedback with dynamic prompt
     console.log('[Background] Generating AI summary and agent feedback...');
-    const summaryPrompt = buildDynamicPrompt(transcription, config);
+    const summaryPrompt = buildDynamicPrompt(transcription, config, isNonBooking);
 
     const aiResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
       method: 'POST',
@@ -1308,7 +1364,9 @@ async function processTranscription(bookingId: string, kixieUrl: string) {
         objections: parsed.objections || [],
         moveInReadiness: parsed.moveInReadiness || 'medium',
         callSentiment: parsed.callSentiment || 'neutral',
-        memberDetails: parsed.memberDetails || null
+        memberDetails: parsed.memberDetails || null,
+        // Only include buyerIntent for Non-Booking calls
+        ...(isNonBooking && parsed.buyerIntent ? { buyerIntent: parsed.buyerIntent } : {})
       };
     } catch (parseError) {
       console.error('[Background] Failed to parse AI response:', parseError);

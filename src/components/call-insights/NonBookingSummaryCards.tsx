@@ -1,11 +1,12 @@
 import { Card, CardContent } from '@/components/ui/card';
-import { Phone, CheckCircle, UserCheck, Clock } from 'lucide-react';
+import { Phone, CheckCircle, UserCheck, Clock, Flame } from 'lucide-react';
 
 interface NonBookingStats {
   totalCalls: number;
   transcribedCalls: number;
   avgDurationSeconds: number;
   highReadinessCalls: number;
+  hotLeads?: number; // Intent score >= 75
 }
 
 interface NonBookingSummaryCardsProps {
@@ -13,7 +14,7 @@ interface NonBookingSummaryCardsProps {
 }
 
 export function NonBookingSummaryCards({ stats }: NonBookingSummaryCardsProps) {
-  const { totalCalls, transcribedCalls, avgDurationSeconds, highReadinessCalls } = stats;
+  const { totalCalls, transcribedCalls, avgDurationSeconds, highReadinessCalls, hotLeads = 0 } = stats;
 
   const formatDuration = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
@@ -24,7 +25,7 @@ export function NonBookingSummaryCards({ stats }: NonBookingSummaryCardsProps) {
   const transcribedPercent = totalCalls > 0 ? Math.round((transcribedCalls / totalCalls) * 100) : 0;
 
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
       {/* Total Non-Booking Calls */}
       <Card className="relative overflow-hidden">
         <CardContent className="pt-6">
@@ -63,6 +64,25 @@ export function NonBookingSummaryCards({ stats }: NonBookingSummaryCardsProps) {
         <div className="absolute bottom-0 left-0 right-0 h-1 bg-gradient-to-r from-green-500/50 to-emerald-500/50" />
       </Card>
 
+      {/* Hot Leads (NEW - Buyer Intent >= 75) */}
+      <Card className="relative overflow-hidden">
+        <CardContent className="pt-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm text-muted-foreground">🔥 Hot Leads</p>
+              <p className="text-3xl font-bold">{hotLeads.toLocaleString()}</p>
+              <p className="text-xs text-muted-foreground mt-1">
+                Intent score ≥75
+              </p>
+            </div>
+            <div className="p-3 rounded-full bg-destructive/10">
+              <Flame className="h-6 w-6 text-destructive" />
+            </div>
+          </div>
+        </CardContent>
+        <div className="absolute bottom-0 left-0 right-0 h-1 bg-gradient-to-r from-destructive/50 to-orange-500/50" />
+      </Card>
+
       {/* High Readiness (Missed Opportunities) */}
       <Card className="relative overflow-hidden">
         <CardContent className="pt-6">
@@ -71,15 +91,15 @@ export function NonBookingSummaryCards({ stats }: NonBookingSummaryCardsProps) {
               <p className="text-sm text-muted-foreground">High Readiness</p>
               <p className="text-3xl font-bold">{highReadinessCalls.toLocaleString()}</p>
               <p className="text-xs text-muted-foreground mt-1">
-                Potential missed opportunities
+                5+ min engaged calls
               </p>
             </div>
-            <div className="p-3 rounded-full bg-destructive/10">
-              <UserCheck className="h-6 w-6 text-destructive" />
+            <div className="p-3 rounded-full bg-orange-500/10">
+              <UserCheck className="h-6 w-6 text-orange-500" />
             </div>
           </div>
         </CardContent>
-        <div className="absolute bottom-0 left-0 right-0 h-1 bg-gradient-to-r from-destructive/50 to-red-500/50" />
+        <div className="absolute bottom-0 left-0 right-0 h-1 bg-gradient-to-r from-orange-500/50 to-amber-500/50" />
       </Card>
 
       {/* Average Duration */}
