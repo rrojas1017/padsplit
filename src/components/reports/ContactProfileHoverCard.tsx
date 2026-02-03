@@ -31,6 +31,7 @@ import { FollowUpPriorityBadge } from './FollowUpPriorityBadge';
 import { SendEmailDialog } from './SendEmailDialog';
 import { SendSMSDialog } from './SendSMSDialog';
 import { EmailVerificationBadge, EmailVerificationStatus } from './EmailVerificationBadge';
+import { BuyerIntentIndicator } from '@/components/call-insights/BuyerIntentIndicator';
 
 interface ContactProfileHoverCardProps {
   memberName: string;
@@ -181,9 +182,13 @@ export function ContactProfileHoverCard({
                 {memberName}
               </span>
             </div>
-            <div className="flex items-center gap-1.5">
+            <div className="flex items-center gap-1.5 flex-wrap">
               {/* Follow-up Priority Badge */}
               <FollowUpPriorityBadge priority={priority} size="sm" />
+              {/* Buyer Intent Badge (Non-Booking only) */}
+              {bookingStatus === 'Non Booking' && callKeyPoints?.buyerIntent && (
+                <BuyerIntentIndicator intent={callKeyPoints.buyerIntent} size="sm" showSignals={false} />
+              )}
               {/* Readiness Badge */}
               {hasInsights && (
                 <div className="flex items-center gap-1">

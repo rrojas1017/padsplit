@@ -1,5 +1,5 @@
 import { differenceInDays, parseISO, isValid } from 'date-fns';
-import { CallKeyPoints } from '@/types';
+import { CallKeyPoints, BuyerIntent } from '@/types';
 
 export type PriorityLevel = 'urgent' | 'high' | 'medium' | 'low' | null;
 
@@ -22,9 +22,15 @@ const CLOSED_STATUSES = ['Moved In', 'Cancelled', 'No Show', 'Member Rejected'];
 // Statuses that need follow-up
 const ACTIONABLE_STATUSES = ['Pending Move-In', 'Postponed', 'Non Booking'];
 
+// Helper to get buyer intent from call key points
+function getBuyerIntent(callKeyPoints?: CallKeyPoints): BuyerIntent | undefined {
+  return callKeyPoints?.buyerIntent;
+}
+
 /**
  * Calculate the follow-up priority for a booking based on:
  * - Status (closed statuses return null)
+ * - Buyer intent score (for Non-Booking records)
  * - Move-in readiness from transcription insights
  * - Objections and concerns
  * - Move-in date proximity
@@ -53,6 +59,12 @@ export function calculateFollowUpPriority(
   const hasObjections = (booking.callKeyPoints?.objections?.length || 0) > 0;
   const hasConcerns = (booking.callKeyPoints?.memberConcerns?.length || 0) > 0;
   const hasInsights = booking.transcriptionStatus === 'completed' && booking.callKeyPoints;
+  
+  // Buyer intent scoring for Non-Booking records
+  const buyerIntent = getBuyerIntent(booking.callKeyPoints);
+  const intentScore = buyerIntent?.score || 0;
+  const isHotLead = buyerIntent?.intentLevel === 'hot' || intentScore >= 75;
+  const isWarmLead = buyerIntent?.intentLevel === 'warm' || (intentScore >= 40 && intentScore < 75);
 
   // Calculate days until move-in for Pending Move-In status
   let daysUntilMoveIn: number | null = null;
@@ -61,7 +73,15 @@ export function calculateFollowUpPriority(
   }
 
   // 🔴 URGENT Priority Logic
-  // 1. High readiness + no contact in 5+ days (hot lead going cold)
+  // 1. HOT LEAD Non-Booking (intent >= 75) - immediate follow-up critical
+  if (booking.status === 'Non Booking' && isHotLead) {
+    return { 
+      level: 'urgent', 
+      reason: `🔥 Hot lead (intent: ${intentScore}) - prioritize immediate follow-up` 
+    };
+  }
+
+  // 2. High readiness + no contact in 5+ days (hot lead going cold)
   if (readiness === 'high' && daysSinceContact >= 5) {
     return { 
       level: 'urgent', 
@@ -69,7 +89,7 @@ export function calculateFollowUpPriority(
     };
   }
 
-  // 2. Pending Move-In with move-in within 3 days and no recent contact
+  // 3. Pending Move-In with move-in within 3 days and no recent contact
   if (booking.status === 'Pending Move-In' && daysUntilMoveIn !== null && daysUntilMoveIn <= 3 && daysUntilMoveIn >= 0 && daysSinceContact >= 1) {
     return { 
       level: 'urgent', 
@@ -81,7 +101,15 @@ export function calculateFollowUpPriority(
   // including resolved ones. For Pending Move-In, member booked = objections were addressed.
 
   // 🟠 HIGH Priority Logic
-  // 1. High readiness with recent contact (1-4 days) - maintain momentum
+  // 1. WARM LEAD Non-Booking (intent 40-74) with no contact 3+ days
+  if (booking.status === 'Non Booking' && isWarmLead && daysSinceContact >= 3) {
+    return { 
+      level: 'high', 
+      reason: `Warm lead (intent: ${intentScore}), ${daysSinceContact} days since contact` 
+    };
+  }
+
+  // 2. High readiness with recent contact (1-4 days) - maintain momentum
   if (readiness === 'high' && daysSinceContact >= 1 && daysSinceContact < 5) {
     return { 
       level: 'high', 
@@ -89,7 +117,7 @@ export function calculateFollowUpPriority(
     };
   }
 
-  // 2. Non-Booking with objections - recovery opportunity (objections likely unresolved)
+  // 3. Non-Booking with objections - recovery opportunity (objections likely unresolved)
   if (booking.status === 'Non Booking' && hasObjections && daysSinceContact >= 3) {
     return { 
       level: 'high', 
@@ -97,7 +125,7 @@ export function calculateFollowUpPriority(
     };
   }
 
-  // 3. Non-Booking with high readiness - recovery opportunity
+  // 4. Non-Booking with high readiness - recovery opportunity
   if (booking.status === 'Non Booking' && readiness === 'high') {
     return { 
       level: 'high', 
@@ -105,7 +133,7 @@ export function calculateFollowUpPriority(
     };
   }
 
-  // 4. Medium readiness with unresolved concerns
+  // 5. Medium readiness with unresolved concerns
   if (readiness === 'medium' && hasConcerns) {
     return { 
       level: 'high', 
@@ -113,7 +141,7 @@ export function calculateFollowUpPriority(
     };
   }
 
-  // 5. Pending Move-In approaching (4-7 days out) without recent contact
+  // 6. Pending Move-In approaching (4-7 days out) without recent contact
   if (booking.status === 'Pending Move-In' && daysUntilMoveIn !== null && daysUntilMoveIn > 3 && daysUntilMoveIn <= 7 && daysSinceContact >= 2) {
     return { 
       level: 'high', 

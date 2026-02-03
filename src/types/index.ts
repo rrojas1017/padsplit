@@ -41,6 +41,15 @@ export interface MemberDetails {
   marketState?: string | null;
 }
 
+export interface BuyerIntent {
+  score: number;           // 0-100
+  intentLevel: 'hot' | 'warm' | 'cold';
+  positiveSignals: string[];
+  negativeSignals: string[];
+  decisionMaker: boolean;
+  timeframe: 'immediate' | 'this_week' | 'this_month' | 'exploring';
+}
+
 export interface CallKeyPoints {
   summary: string;
   memberConcerns: string[];
@@ -50,6 +59,7 @@ export interface CallKeyPoints {
   moveInReadiness: 'high' | 'medium' | 'low';
   callSentiment: 'positive' | 'neutral' | 'negative';
   memberDetails?: MemberDetails;
+  buyerIntent?: BuyerIntent; // Only present for Non-Booking calls
 }
 
 export interface AgentFeedback {

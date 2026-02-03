@@ -1,18 +1,21 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { UserX, Sparkles, AlertTriangle, Lightbulb } from 'lucide-react';
+import { UserX, Sparkles, AlertTriangle, Lightbulb, Flame } from 'lucide-react';
+import { BuyerIntent } from '@/types';
 
 interface MissedOpportunity {
   pattern: string;
   count: number;
   recovery_suggestion: string;
   urgency?: 'high' | 'medium' | 'low';
+  avgIntentScore?: number;
 }
 
 interface NonBookingMissedOpportunitiesPanelProps {
   highReadinessCount: number;
   dateRange: string;
   missedOpportunities?: MissedOpportunity[];
+  hotLeadsCount?: number;
 }
 
 const getUrgencyColor = (urgency?: string) => {
@@ -27,7 +30,8 @@ const getUrgencyColor = (urgency?: string) => {
 export function NonBookingMissedOpportunitiesPanel({ 
   highReadinessCount,
   dateRange,
-  missedOpportunities = []
+  missedOpportunities = [],
+  hotLeadsCount = 0
 }: NonBookingMissedOpportunitiesPanelProps) {
   const hasData = missedOpportunities.length > 0;
 
@@ -53,14 +57,18 @@ export function NonBookingMissedOpportunitiesPanel({
         {hasData ? (
           <div className="space-y-4">
             {/* Stats row */}
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-3 gap-3">
+              <div className="p-3 rounded-lg bg-destructive/10 text-center">
+                <p className="text-2xl font-bold text-destructive">{hotLeadsCount}</p>
+                <p className="text-xs text-muted-foreground">🔥 Hot Leads</p>
+              </div>
               <div className="p-3 rounded-lg bg-muted text-center">
-                <p className="text-2xl font-bold text-destructive">{highReadinessCount}</p>
+                <p className="text-2xl font-bold text-orange-500">{highReadinessCount}</p>
                 <p className="text-xs text-muted-foreground">High Readiness</p>
               </div>
               <div className="p-3 rounded-lg bg-muted text-center">
                 <p className="text-2xl font-bold text-amber-500">{totalRecoverable}</p>
-                <p className="text-xs text-muted-foreground">Potentially Recoverable</p>
+                <p className="text-xs text-muted-foreground">Recoverable</p>
               </div>
             </div>
 
