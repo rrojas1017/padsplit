@@ -27,7 +27,7 @@ interface STTResult {
 // Provider pricing constants (per minute)
 const STT_PRICING: Record<STTProviderName, number> = {
   elevenlabs: 0.034,  // ElevenLabs Pro Plan
-  deepgram: 0.0043,   // Deepgram Nova-3
+  deepgram: 0.0043,   // Deepgram Nova-2
 };
 
 // Cost logging helper function
@@ -58,7 +58,7 @@ async function logApiCost(supabase: any, params: {
         cost = params.character_count * 0.00015;
       }
     } else if (params.service_provider === 'deepgram') {
-      // Deepgram Nova-3: ~$0.0043 per minute
+      // Deepgram Nova-2: ~$0.0043 per minute
       if (params.audio_duration_seconds) {
         cost = (params.audio_duration_seconds / 60) * STT_PRICING.deepgram;
       }

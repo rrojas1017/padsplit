@@ -10,7 +10,7 @@ export const PRICING = {
     stt_per_minute: 0.034,
   },
   deepgram: {
-    // Deepgram Nova-3 pricing
+    // Deepgram Nova-2 pricing
     // Pay-as-you-go: $0.0043 per minute
     stt_per_minute: 0.0043,
   },
