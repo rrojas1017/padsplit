@@ -57,6 +57,9 @@ verify_jwt = false
 [functions.check-elevenlabs-plan]
 verify_jwt = true
 
+[functions.check-deepgram-plan]
+verify_jwt = true
+
 [functions.recalculate-pro-pricing]
 verify_jwt = false
 
