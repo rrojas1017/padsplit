@@ -40,6 +40,9 @@ export function KPICard({ data, icon, delay = 0 }: KPICardProps) {
       <div className="flex items-end justify-between">
         <div>
           <p className="text-3xl font-bold text-foreground">{value}</p>
+          {data.subtitle && (
+            <p className="text-xs text-muted-foreground mt-0.5">{data.subtitle}</p>
+          )}
           <p className="text-sm text-muted-foreground mt-1">
             vs {previousValue} {comparisonLabel || 'yesterday'}
           </p>

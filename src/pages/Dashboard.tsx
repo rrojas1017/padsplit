@@ -7,7 +7,7 @@ import { LeaderboardTable } from '@/components/dashboard/LeaderboardTable';
 import { MarketChart } from '@/components/dashboard/MarketChart';
 import { DateRangeFilter, DateFilterValue, CustomDateRange } from '@/components/dashboard/DateRangeFilter';
 import { SiteFilter } from '@/components/dashboard/SiteFilter';
-import { CalendarDays, Users, Clock, CheckCircle2, DollarSign, Timer, FileCheck, TrendingDown, PhoneOff } from 'lucide-react';
+import { CalendarDays, Users, Clock, CheckCircle2, DollarSign, Timer, FileCheck, TrendingDown, PhoneOff, Repeat } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useBookings } from '@/contexts/BookingsContext';
 import { useAgents } from '@/contexts/AgentsContext';
@@ -78,6 +78,7 @@ export default function Dashboard() {
 
   const kpiIcons = [
     <CalendarDays className="w-5 h-5" />,
+    <Repeat className="w-5 h-5" />,
     <Users className="w-5 h-5" />,
     <Clock className="w-5 h-5" />,
     <CheckCircle2 className="w-5 h-5" />,
@@ -128,7 +129,7 @@ export default function Dashboard() {
       </div>
 
       {/* KPI Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
         {kpiData.map((kpi, index) => (
           <KPICard 
             key={kpi.label} 
