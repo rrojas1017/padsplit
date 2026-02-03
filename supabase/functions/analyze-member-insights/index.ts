@@ -321,6 +321,11 @@ async function processAnalysis(
     };
 
     // Build AI prompt for analysis - ENHANCED with source tracking instructions and customer journeys
+    // Add note for smaller datasets
+    const smallDatasetNote = totalCalls < 30 
+      ? `\n\nNOTE: This is a smaller dataset (${totalCalls} calls). Still provide analysis with the data available - do not skip categories. If there isn't enough data for a category, include it with an empty array. ALWAYS return valid JSON.`
+      : '';
+
     const aiPrompt = `You are analyzing PadSplit member call data. PadSplit provides affordable room rentals for working-class individuals, typically single occupants with weekly budgets of $150-250.
 
 CONTEXT:
@@ -435,38 +440,76 @@ ADDITIONAL REQUIREMENTS:
 - Frequencies should be percentages of total calls analyzed
 - Include at least 3-5 items in each category if data supports it
 - ALWAYS include real verbatim quotes in the "examples" arrays
-- Market breakdown should only include markets with 3+ calls`;
+- Market breakdown should only include markets with 3+ calls
+${smallDatasetNote}
+
+CRITICAL: Your response must start with { and end with }. Return ONLY the JSON object, no explanations or markdown.`;
 
     console.log('[Background] Sending data to AI for analysis...');
 
-    const aiResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${lovableApiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'google/gemini-2.5-pro',
-        messages: [
-          { role: 'system', content: 'You are a data analyst specializing in customer insights for affordable housing. Return only valid JSON without markdown formatting.' },
-          { role: 'user', content: aiPrompt }
-        ],
-        temperature: 0.3,
-      }),
-    });
+    // Retry loop for AI calls
+    let parsedAnalysis;
+    let retryCount = 0;
+    const maxRetries = 2;
+    let analysisText = '';
+    let inputTokens = 0;
+    let outputTokens = 0;
 
-    if (!aiResponse.ok) {
-      const errorText = await aiResponse.text();
-      console.error('[Background] AI API error:', aiResponse.status, errorText);
-      throw new Error(`AI analysis failed: ${aiResponse.status}`);
+    while (retryCount <= maxRetries) {
+      const aiResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${lovableApiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: 'google/gemini-2.5-pro',
+          messages: [
+            { role: 'system', content: 'You are a data analyst specializing in customer insights for affordable housing. Return only valid JSON without markdown formatting. Your response must be a single JSON object starting with { and ending with }.' },
+            { role: 'user', content: aiPrompt }
+          ],
+          temperature: 0.3,
+        }),
+      });
+
+      if (!aiResponse.ok) {
+        const errorText = await aiResponse.text();
+        console.error('[Background] AI API error:', aiResponse.status, errorText);
+        throw new Error(`AI analysis failed: ${aiResponse.status}`);
+      }
+
+      const aiData = await aiResponse.json();
+      analysisText = aiData.choices?.[0]?.message?.content || '';
+      
+      // Calculate tokens for cost logging
+      inputTokens = Math.ceil(aiPrompt.length / 4);
+      outputTokens = Math.ceil(analysisText.length / 4);
+
+      try {
+        const jsonMatch = analysisText.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          parsedAnalysis = JSON.parse(jsonMatch[0]);
+          console.log(`[Background] JSON parsed successfully on attempt ${retryCount + 1}`);
+          break; // Success - exit retry loop
+        } else {
+          throw new Error('No JSON found in response');
+        }
+      } catch (parseError) {
+        retryCount++;
+        console.error(`[Background] JSON parse failed (attempt ${retryCount}/${maxRetries + 1}):`, parseError);
+        
+        if (retryCount > maxRetries) {
+          // All retries exhausted - mark as failed
+          throw new Error('AI returned invalid response after multiple attempts. Please try again.');
+        }
+        
+        // Wait before retry
+        console.log(`[Background] Waiting 2 seconds before retry...`);
+        await new Promise(resolve => setTimeout(resolve, 2000));
+      }
     }
 
-    const aiData = await aiResponse.json();
-    const analysisText = aiData.choices?.[0]?.message?.content || '';
-    
     // Log AI cost
-    const inputTokens = Math.ceil(aiPrompt.length / 4);
-    const outputTokens = Math.ceil(analysisText.length / 4);
     logApiCost(supabase, {
       service_provider: 'lovable_ai',
       service_type: 'ai_member_insights',
@@ -476,36 +519,12 @@ ADDITIONAL REQUIREMENTS:
       metadata: { 
         model: 'google/gemini-2.5-pro', 
         analysis_period,
-        total_calls: totalCalls 
+        total_calls: totalCalls,
+        retry_count: retryCount
       }
     });
     
-    console.log('[Background] AI response received, parsing...');
-
-    // Parse AI response
-    let parsedAnalysis;
-    try {
-      const jsonMatch = analysisText.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        parsedAnalysis = JSON.parse(jsonMatch[0]);
-      } else {
-        throw new Error('No JSON found in response');
-      }
-    } catch (parseError) {
-      console.error('[Background] Failed to parse AI response:', parseError);
-      parsedAnalysis = {
-        pain_points: [],
-        payment_insights: [],
-        transportation_insights: [],
-        price_sensitivity: [],
-        move_in_barriers: [],
-        property_preferences: [],
-        objection_patterns: [],
-        market_breakdown: {},
-        ai_recommendations: [],
-        member_journey_insights: []
-      };
-    }
+    console.log('[Background] AI response received and parsed successfully');
 
     // Build source booking IDs mapping for pain points
     const sourceBookingIds: Record<string, string[]> = {};
@@ -576,6 +595,18 @@ ADDITIONAL REQUIREMENTS:
         frequency: Math.round((repeatCallers / Object.keys(memberCallCounts).length) * 100),
         implication: 'Some members need multiple touchpoints before making a decision'
       }];
+    }
+
+    // Validate that we got meaningful insights before marking as completed
+    const hasAnyInsights = 
+      (parsedAnalysis.pain_points?.length > 0) ||
+      (parsedAnalysis.objection_patterns?.length > 0) ||
+      (parsedAnalysis.ai_recommendations?.length > 0) ||
+      (parsedAnalysis.customer_journeys?.length > 0);
+
+    if (!hasAnyInsights && totalCalls > 0) {
+      console.error(`[Background] AI returned no insights despite ${totalCalls} calls with data`);
+      throw new Error(`Analysis returned no insights from ${totalCalls} available calls. Please try again.`);
     }
 
     // Update the insight record with results
