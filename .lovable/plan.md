@@ -1,175 +1,151 @@
 
 
-## Fix TrendChart to Fetch Historical Data Independently
+## Add Rebooking Metrics to Main Dashboard
 
 ### Overview
 
-The TrendChart currently receives its data as a prop from BookingInsightsTab, which filters analyses by the selected period (e.g., "Last 7 Days"). This means when only 1 analysis exists for that period, the chart shows "Run more analyses to see trends" even though historical analyses exist in the database.
+Add rebooking tracking to the main dashboard KPI cards so users can see the total bookings breakdown between new bookings and rebookings at a glance.
 
-The fix will make TrendChart self-sufficient by creating a dedicated hook (similar to `usePainPointEvolution`) that fetches ALL historical analyses independently and includes its own time range filter dropdown.
-
-### Current vs. Proposed Flow
+### Current vs. Proposed Layout
 
 ```text
-CURRENT:
-┌─────────────────────────────────────────────────────────────────┐
-│ BookingInsightsTab                                              │
-│   ├─ dateRange filter: "Last 7 Days"                            │
-│   ├─ fetches insights filtered by period                        │
-│   └─ passes filtered insights to TrendChart                     │
-│        └─ Shows "Need 2+ analyses" if only 1 match              │
-└─────────────────────────────────────────────────────────────────┘
+CURRENT KPI Cards:
+┌────────────────┐ ┌────────────────┐ ┌────────────────┐ ┌────────────────┐
+│ Total Bookings │ │ Vixicom        │ │ PadSplit       │ │ Pending        │
+│     15         │ │     12         │ │      3         │ │ Move-Ins: 8    │
+└────────────────┘ └────────────────┘ └────────────────┘ └────────────────┘
 
-PROPOSED:
-┌─────────────────────────────────────────────────────────────────┐
-│ BookingInsightsTab                                              │
-│   └─ TrendChart (self-contained)                                │
-│        ├─ Own time range dropdown: [Last 6 months ▼]            │
-│        ├─ useSentimentTrends hook fetches independently         │
-│        └─ Always shows data if historical analyses exist        │
-└─────────────────────────────────────────────────────────────────┘
+PROPOSED KPI Cards (5 cards):
+┌────────────────┐ ┌────────────────┐ ┌────────────────┐ ┌────────────────┐ ┌────────────────┐
+│ Total Bookings │ │ Rebookings     │ │ Vixicom        │ │ PadSplit       │ │ Pending        │
+│     15         │ │      3         │ │     12         │ │      3         │ │ Move-Ins: 8    │
+│ (12 new, 3 re) │ │  20% of total  │ │                │ │                │ │                │
+└────────────────┘ └────────────────┘ └────────────────┘ └────────────────┘ └────────────────┘
 ```
 
 ### Implementation Steps
 
-#### Step 1: Create useSentimentTrends Hook
+#### Step 1: Update KPI Calculation to Include Rebooking Data
 
-**New File: `src/hooks/useSentimentTrends.ts`**
+**File: `src/utils/dashboardCalculations.ts`**
 
-This hook will:
-- Accept a `TimeRangeOption` parameter (`'3m' | '6m' | '12m' | 'all'`)
-- Fetch completed analyses from `member_insights` filtered by `date_range_end`
-- Return chart-ready data with sentiment distributions over time
-- Group multiple analyses on the same date intelligently
+Modify `calculateKPIData` to track rebookings:
 
 ```typescript
-export type TimeRangeOption = '3m' | '6m' | '12m' | 'all';
+// Add to current calculations (around line 100-122)
+const currentNewBookings = currentBookings.filter(b => !b.isRebooking).length;
+const currentRebookings = currentBookings.filter(b => b.isRebooking).length;
+const previousNewBookings = previousBookings.filter(b => !b.isRebooking).length;
+const previousRebookings = previousBookings.filter(b => b.isRebooking).length;
 
-interface SentimentDataPoint {
-  date: string;
-  fullDate: string;
-  dateRange: string;
-  calls: number;
-  positive: number;
-  neutral: number;
-  negative: number;
-}
+const rebookingsChange = calculateChange(currentRebookings, previousRebookings);
 
-interface UseSentimentTrendsResult {
-  chartData: SentimentDataPoint[];
-  isLoading: boolean;
-  error: Error | null;
-  refetch: () => void;
-}
+// Update first KPI card label to include breakdown
+// Label: "Total Bookings" 
+// Add subtitle info showing: "X new, Y rebookings"
 
-export function useSentimentTrends(timeRange: TimeRangeOption = '6m'): UseSentimentTrendsResult {
-  // Calculate cutoff date based on timeRange
-  // Query member_insights with date filter
-  // Process and format data for chart
+// Add new rebookings KPI card
+{
+  label: 'Rebookings',
+  value: currentRebookings,
+  previousValue: previousRebookings,
+  change: rebookingsChange.change,
+  changeType: rebookingsChange.changeType,
+  comparisonLabel,
 }
 ```
 
-Key query logic:
-```typescript
-let query = supabase
-  .from('member_insights')
-  .select('id, created_at, date_range_start, date_range_end, total_calls_analyzed, sentiment_distribution, status')
-  .eq('status', 'completed')
-  .order('date_range_end', { ascending: true });
+#### Step 2: Enhance KPIData Type for Subtitle
 
-if (cutoffDate) {
-  query = query.gte('date_range_end', cutoffDate.toISOString());
+**File: `src/types/index.ts`**
+
+Add optional subtitle field to KPIData:
+
+```typescript
+export interface KPIData {
+  label: string;
+  value: number;
+  previousValue: number;
+  change: number;
+  changeType: 'increase' | 'decrease' | 'neutral';
+  comparisonLabel?: string;
+  subtitle?: string;  // NEW: For additional context like "12 new, 3 rebookings"
+}
+```
+
+#### Step 3: Update KPICard Component to Show Subtitle
+
+**File: `src/components/dashboard/KPICard.tsx`**
+
+Add subtitle rendering:
+
+```typescript
+interface KPICardProps {
+  data: KPIData;
+  icon?: React.ReactNode;
+  delay?: number;
 }
 
-const { data } = await query.limit(50);
+// In the component, after the main value:
+{data.subtitle && (
+  <p className="text-xs text-muted-foreground mt-0.5">
+    {data.subtitle}
+  </p>
+)}
 ```
 
-#### Step 2: Update TrendChart Component
+#### Step 4: Update Dashboard Grid for 5 Cards
 
-**Modified File: `src/components/member-insights/TrendChart.tsx`**
+**File: `src/pages/Dashboard.tsx`**
 
-Changes:
-- Remove `insights` prop dependency
-- Add internal state for `timeRange`
-- Use new `useSentimentTrends` hook
-- Add time range dropdown to card header
+Update the KPI grid to handle 5 cards and add a new icon:
 
 ```typescript
-import { useSentimentTrends, TimeRangeOption } from '@/hooks/useSentimentTrends';
+// Add Repeat icon for rebookings
+import { CalendarDays, Users, Clock, CheckCircle2, Repeat } from 'lucide-react';
 
-const TrendChart = () => {
-  const [timeRange, setTimeRange] = useState<TimeRangeOption>('6m');
-  const { chartData, isLoading, error, refetch } = useSentimentTrends(timeRange);
+const kpiIcons = [
+  <CalendarDays className="w-5 h-5" />,  // Total Bookings
+  <Repeat className="w-5 h-5" />,         // Rebookings (NEW)
+  <Users className="w-5 h-5" />,          // Vixicom
+  <Clock className="w-5 h-5" />,          // PadSplit
+  <CheckCircle2 className="w-5 h-5" />,   // Pending Move-Ins
+];
 
-  // Render dropdown in CardHeader:
-  <CardHeader className="flex flex-row items-center justify-between">
-    <CardTitle>...</CardTitle>
-    <Select value={timeRange} onValueChange={(v) => setTimeRange(v as TimeRangeOption)}>
-      <SelectTrigger className="w-[140px]">
-        <SelectValue />
-      </SelectTrigger>
-      <SelectContent>
-        <SelectItem value="3m">Last 3 months</SelectItem>
-        <SelectItem value="6m">Last 6 months</SelectItem>
-        <SelectItem value="12m">Last 12 months</SelectItem>
-        <SelectItem value="all">All time</SelectItem>
-      </SelectContent>
-    </Select>
-  </CardHeader>
-};
+// Update grid to use 5 columns on large screens
+<div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
 ```
-
-#### Step 3: Update BookingInsightsTab Usage
-
-**Modified File: `src/components/call-insights/BookingInsightsTab.tsx`**
-
-Change line 474 from:
-```typescript
-<TrendChart insights={insights} />
-```
-To:
-```typescript
-<TrendChart />
-```
-
-The component no longer needs to pass data - TrendChart is now self-sufficient.
 
 ### Technical Details
 
-#### Data Processing in useSentimentTrends
+#### Rebooking Calculation Logic
 
-1. **Date Filtering**: Apply `subMonths()` from date-fns based on selected time range
-2. **Deduplication**: Handle multiple analyses on the same day by showing time in labels
-3. **Empty State**: Return empty array if no analyses found (chart will show appropriate message)
-4. **Loading State**: Provide loading indicator while fetching
+Uses existing `isRebooking` boolean field on bookings:
+- **New Booking**: `isRebooking === false` or `isRebooking === undefined`
+- **Rebooking**: `isRebooking === true`
 
-#### Chart Data Structure
+The same-time comparison logic (for "Today" filter) will apply to rebooking counts as well.
 
-```typescript
-{
-  date: 'Jan 30',        // Or 'Jan 30 4pm' if multiple same-day
-  fullDate: 'Jan 30, 2025 4:00 PM',
-  dateRange: 'Jan 23 - Jan 30',
-  calls: 150,
-  positive: 45,
-  neutral: 35,
-  negative: 20
-}
-```
+#### Subtitle Format
 
-### Files to Create/Modify
+For Total Bookings card:
+- If rebookings > 0: `"X new, Y rebookings"`
+- If rebookings = 0: `"All new bookings"`
 
-| File | Action | Description |
-|------|--------|-------------|
-| `src/hooks/useSentimentTrends.ts` | Create | New hook for independent data fetching with time filtering |
-| `src/components/member-insights/TrendChart.tsx` | Modify | Remove prop dependency, add hook usage and dropdown |
-| `src/components/call-insights/BookingInsightsTab.tsx` | Modify | Remove insights prop from TrendChart usage |
+### Files to Modify
+
+| File | Changes |
+|------|---------|
+| `src/types/index.ts` | Add `subtitle?: string` to `KPIData` interface |
+| `src/utils/dashboardCalculations.ts` | Add rebooking calculations, add new KPI card, add subtitle to Total Bookings |
+| `src/components/dashboard/KPICard.tsx` | Render subtitle below value if present |
+| `src/pages/Dashboard.tsx` | Update grid to 5 columns, add Repeat icon |
 
 ### Expected Result
 
-| Scenario | Before | After |
-|----------|--------|-------|
-| "Last 7 Days" filter, 1 analysis | Shows "Run more analyses" | Shows trend from last 6 months of analyses |
-| New project, 0 analyses | Shows "Run more analyses" | Shows "Run more analyses" (correct) |
-| Any filter, 10+ historical analyses | May show partial data | Shows all historical trends with own filter |
+| Metric | Display |
+|--------|---------|
+| Total Bookings | Shows count with subtitle "12 new, 3 rebookings" |
+| Rebookings | Dedicated card with count and period comparison |
+| Comparison | Both cards show % change vs previous period |
 
