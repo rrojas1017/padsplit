@@ -121,6 +121,12 @@ export const calculateKPIData = (
     previousBookings = previousBookings.filter(createdByNow);
   }
 
+  // Rebooking calculations
+  const currentNewBookings = currentBookings.filter(b => !b.isRebooking).length;
+  const currentRebookings = currentBookings.filter(b => b.isRebooking).length;
+  const previousNewBookings = previousBookings.filter(b => !b.isRebooking).length;
+  const previousRebookings = previousBookings.filter(b => b.isRebooking).length;
+
   const currentVixicom = getBookingsBySite(currentBookings, agents, 'vixicom');
   const previousVixicom = getBookingsBySite(previousBookings, agents, 'vixicom');
 
@@ -142,6 +148,7 @@ export const calculateKPIData = (
   };
 
   const totalChange = calculateChange(currentBookings.length, previousBookings.length);
+  const rebookingsChange = calculateChange(currentRebookings, previousRebookings);
   const vixicomChange = calculateChange(currentVixicom.length, previousVixicom.length);
   const padsplitChange = calculateChange(currentPadsplit.length, previousPadsplit.length);
   const pendingChange = calculateChange(currentPending.length, previousPending.length);
@@ -154,6 +161,11 @@ export const calculateKPIData = (
 
   const comparisonLabel = useSameTimeComparison ? 'at this time yesterday' : 'previous period';
 
+  // Generate subtitle for Total Bookings
+  const totalSubtitle = currentRebookings > 0 
+    ? `${currentNewBookings} new, ${currentRebookings} rebookings`
+    : currentBookings.length > 0 ? 'All new bookings' : undefined;
+
   return [
     {
       label: `Total Bookings ${periodLabel === 'Today' ? 'Today' : ''}`,
@@ -162,6 +174,18 @@ export const calculateKPIData = (
       change: totalChange.change,
       changeType: totalChange.changeType,
       comparisonLabel,
+      subtitle: totalSubtitle,
+    },
+    {
+      label: 'Rebookings',
+      value: currentRebookings,
+      previousValue: previousRebookings,
+      change: rebookingsChange.change,
+      changeType: rebookingsChange.changeType,
+      comparisonLabel,
+      subtitle: currentBookings.length > 0 
+        ? `${Math.round((currentRebookings / currentBookings.length) * 100)}% of total`
+        : undefined,
     },
     {
       label: 'Vixicom Bookings',
