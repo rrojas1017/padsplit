@@ -85,47 +85,16 @@ export function BookingInsightsTab({ dateRange, onDateRangeChange }: BookingInsi
   const [isLoadingDetail, setIsLoadingDetail] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
 
-  const fetchInsightsCallback = useCallback(() => {
-    fetchInsights();
-    setIsAnalyzing(false);
-  }, []);
-
-  const { startPolling, checkExistingAnalysis } = useMemberInsightsPolling({
-    onComplete: fetchInsightsCallback
-  });
-
-  useEffect(() => {
-    const init = async () => {
-      await fetchInsights();
-      const existingId = await checkExistingAnalysis();
-      if (existingId) {
-        setIsAnalyzing(true);
-      }
-    };
-    init();
-  }, [dateRange]); // Re-fetch when date range changes
-
   // Get period filter values (include 'manual' for backward compatibility)
-  const getPeriodFilters = (period: DateRangeOption): string[] => {
+  const getPeriodFilters = useCallback((period: DateRangeOption): string[] => {
     if (period === 'allTime') {
       return ['allTime', 'manual']; // Treat old 'manual' entries as 'allTime'
     }
     return [period];
-  };
+  }, []);
 
-  const getPeriodLabel = (period: string): string => {
-    switch (period) {
-      case 'last7days': return 'Last 7 Days';
-      case 'last30days': return 'Last 30 Days';
-      case 'thisMonth': return 'This Month';
-      case 'last3months': return 'Last 3 Months';
-      case 'allTime': return 'All Time';
-      case 'manual': return 'All Time'; // Backward compatibility
-      default: return period;
-    }
-  };
-
-  const fetchInsights = async () => {
+  // Memoized fetch function to prevent stale closures
+  const fetchInsights = useCallback(async () => {
     try {
       const periodFilters = getPeriodFilters(dateRange);
       
@@ -181,6 +150,39 @@ export function BookingInsightsTab({ dateRange, onDateRangeChange }: BookingInsi
       toast.error('Failed to load insights');
     } finally {
       setIsLoading(false);
+    }
+  }, [dateRange, getPeriodFilters]);
+
+  const fetchInsightsCallback = useCallback(() => {
+    setIsLoading(true);
+    fetchInsights();
+    setIsAnalyzing(false);
+  }, [fetchInsights]);
+
+  const { startPolling, checkExistingAnalysis } = useMemberInsightsPolling({
+    onComplete: fetchInsightsCallback
+  });
+
+  useEffect(() => {
+    const init = async () => {
+      await fetchInsights();
+      const existingId = await checkExistingAnalysis();
+      if (existingId) {
+        setIsAnalyzing(true);
+      }
+    };
+    init();
+  }, [dateRange, fetchInsights, checkExistingAnalysis]);
+
+  const getPeriodLabel = (period: string): string => {
+    switch (period) {
+      case 'last7days': return 'Last 7 Days';
+      case 'last30days': return 'Last 30 Days';
+      case 'thisMonth': return 'This Month';
+      case 'last3months': return 'Last 3 Months';
+      case 'allTime': return 'All Time';
+      case 'manual': return 'All Time'; // Backward compatibility
+      default: return period;
     }
   };
 
