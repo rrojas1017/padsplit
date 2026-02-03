@@ -1,130 +1,186 @@
 
 
-## Add Interactive Legend Toggle to Pain Point Evolution Chart
+## Add Time Range Filter + Fuzzy Matching to Pain Point Evolution
 
 ### Overview
 
-Add the ability to click on pain point legend items to show/hide their corresponding chart lines. This allows users to focus on specific pain points without visual clutter from others.
+Add a dedicated time range dropdown to the Evolution panel (e.g., "Last 3 months", "Last 6 months", "Last 12 months", "All time") along with fuzzy matching to consolidate similar category names.
 
 ### How It Will Work
 
 ```text
-Before (all lines visible):
-┌─────────────────────────────────────┐
-│  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~     │
-│     ~~~~~~~~~~~~~~~~~~~~~~~~        │
-│  ~~~~    ~~~~~    ~~~~~~            │
-└─────────────────────────────────────┘
- [●] Payment Confusion  [●] Housing Concerns  [●] Process Clarity
+┌─────────────────────────────────────────────────────────────────────┐
+│ Pain Point Evolution                              [Last 6 months ▼] │
+│ Monthly trends across 6 months                                      │
+├─────────────────────────────────────────────────────────────────────┤
+│                          📈 Chart                                   │
+└─────────────────────────────────────────────────────────────────────┘
 
-After clicking "Housing Concerns":
-┌─────────────────────────────────────┐
-│  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~     │
-│                                     │  ← Housing line hidden
-│  ~~~~    ~~~~~    ~~~~~~            │
-└─────────────────────────────────────┘
- [●] Payment Confusion  [○] Housing Concerns  [●] Process Clarity
-                         (faded/struck-through)
+Dropdown Options:
+• Last 3 months
+• Last 6 months  ← default
+• Last 12 months
+• All time
 ```
 
-### Implementation Details
+### Technical Implementation
+
+#### 1. Add Time Range Options
+
+**File: `src/hooks/usePainPointEvolution.ts`**
+
+```typescript
+export type TimeRangeOption = '3m' | '6m' | '12m' | 'all';
+
+export function usePainPointEvolution(timeRange: TimeRangeOption = '6m'): UsePainPointEvolutionResult {
+  // ...
+  
+  const fetchEvolutionData = useCallback(async () => {
+    // Calculate date cutoff based on timeRange
+    const now = new Date();
+    let cutoffDate: Date | null = null;
+    
+    switch (timeRange) {
+      case '3m':
+        cutoffDate = subMonths(now, 3);
+        break;
+      case '6m':
+        cutoffDate = subMonths(now, 6);
+        break;
+      case '12m':
+        cutoffDate = subMonths(now, 12);
+        break;
+      case 'all':
+        cutoffDate = null;
+        break;
+    }
+    
+    // Build query with optional date filter
+    let query = supabase
+      .from('member_insights')
+      .select('...')
+      .eq('status', 'completed')
+      .order('date_range_end', { ascending: true });
+    
+    if (cutoffDate) {
+      query = query.gte('date_range_end', cutoffDate.toISOString());
+    }
+    
+    const { data: analyses } = await query.limit(100);
+    // ... rest of logic
+  }, [timeRange]);
+}
+```
+
+#### 2. Add Fuzzy Matching Functions
+
+```typescript
+// Extract meaningful keywords from a category name
+function extractKeywords(category: string): Set<string> {
+  const stopWords = new Set(['and', 'or', 'the', 'a', 'an', 'of', 'for', 'to', 'with', 'in', 'on', '&']);
+  return new Set(
+    category.toLowerCase()
+      .replace(/[&\/\\]/g, ' ')
+      .split(/\s+/)
+      .filter(word => word.length > 2 && !stopWords.has(word))
+  );
+}
+
+// Calculate Jaccard similarity between two keyword sets
+function calculateSimilarity(set1: Set<string>, set2: Set<string>): number {
+  const intersection = new Set([...set1].filter(x => set2.has(x)));
+  const union = new Set([...set1, ...set2]);
+  return union.size > 0 ? intersection.size / union.size : 0;
+}
+
+// Find canonical category from existing ones
+const SIMILARITY_THRESHOLD = 0.5;
+
+function findCanonicalCategory(
+  newCategory: string,
+  existingCategories: Map<string, { display: string; keywords: Set<string> }>
+): string | null {
+  const newKeywords = extractKeywords(newCategory);
+  
+  for (const [normalized, data] of existingCategories) {
+    if (calculateSimilarity(newKeywords, data.keywords) >= SIMILARITY_THRESHOLD) {
+      return normalized;
+    }
+  }
+  return null;
+}
+```
+
+#### 3. Update Category Processing with Fuzzy Matching
+
+Replace the simple `allCategories` map with a fuzzy-matched version that consolidates similar categories.
+
+#### 4. Limit Status Table to Top 15
+
+```typescript
+const limitedStatusList = statusList.slice(0, 15);
+setStatuses(limitedStatusList);
+```
+
+#### 5. Add Dropdown to UI
 
 **File: `src/components/member-insights/PainPointEvolutionPanel.tsx`**
 
-1. Add state to track which categories are visible
-2. Replace Recharts `<Legend />` with custom clickable legend
-3. Conditionally hide `<Line />` components based on visibility state
-
-### Technical Details
-
-**State Management:**
 ```typescript
-// Track hidden categories (empty = all visible)
-const [hiddenCategories, setHiddenCategories] = useState<Set<string>>(new Set());
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { TimeRangeOption } from '@/hooks/usePainPointEvolution';
 
-// Toggle function
-const toggleCategory = (category: string) => {
-  setHiddenCategories(prev => {
-    const next = new Set(prev);
-    if (next.has(category)) {
-      next.delete(category);
-    } else {
-      next.add(category);
-    }
-    return next;
-  });
-};
-```
-
-**Custom Legend Component:**
-```typescript
-// Interactive legend below the chart
-<div className="flex flex-wrap justify-center gap-3 mt-4">
-  {categories.map((cat, index) => {
-    const isHidden = hiddenCategories.has(normalizedCategories[index]);
-    return (
-      <button
-        key={cat}
-        onClick={() => toggleCategory(normalizedCategories[index])}
-        className={cn(
-          "flex items-center gap-2 px-3 py-1.5 rounded-full border transition-all",
-          isHidden 
-            ? "opacity-40 line-through border-dashed" 
-            : "opacity-100 hover:bg-muted"
-        )}
-      >
-        <span 
-          className="w-3 h-3 rounded-full" 
-          style={{ backgroundColor: CHART_COLORS[index % CHART_COLORS.length] }}
-        />
-        <span className="text-sm">{cat}</span>
-      </button>
-    );
-  })}
-</div>
-```
-
-**Conditional Line Rendering:**
-```typescript
-{normalizedCategories.map((cat, index) => {
-  // Skip hidden categories
-  if (hiddenCategories.has(cat)) return null;
+export function PainPointEvolutionPanel() {
+  const [timeRange, setTimeRange] = useState<TimeRangeOption>('6m');
+  const { chartData, categories, ... } = usePainPointEvolution(timeRange);
   
-  return (
-    <Line
-      key={cat}
-      type="monotone"
-      dataKey={cat}
-      name={categories[index]}
-      stroke={CHART_COLORS[index % CHART_COLORS.length]}
-      strokeWidth={2}
-      dot={{ r: 4 }}
-      activeDot={{ r: 6 }}
-      connectNulls
-    />
-  );
-})}
+  const timeRangeLabels: Record<TimeRangeOption, string> = {
+    '3m': 'Last 3 months',
+    '6m': 'Last 6 months',
+    '12m': 'Last 12 months',
+    'all': 'All time'
+  };
+  
+  // In CardHeader:
+  <Select value={timeRange} onValueChange={(v) => setTimeRange(v as TimeRangeOption)}>
+    <SelectTrigger className="w-[140px]">
+      <SelectValue />
+    </SelectTrigger>
+    <SelectContent>
+      <SelectItem value="3m">Last 3 months</SelectItem>
+      <SelectItem value="6m">Last 6 months</SelectItem>
+      <SelectItem value="12m">Last 12 months</SelectItem>
+      <SelectItem value="all">All time</SelectItem>
+    </SelectContent>
+  </Select>
+}
 ```
 
-### Visual Design
+### Expected Results
 
-| State | Appearance |
-|-------|------------|
-| Visible | Solid border, full opacity, colored dot |
-| Hidden | Dashed border, 40% opacity, line-through text |
-| Hover (visible) | Light background highlight |
+| Improvement | Before | After |
+|-------------|--------|-------|
+| Time filtering | Shows all 100 analyses | User controls timeframe |
+| Category count | 86 unique categories | ~25-35 consolidated |
+| Status table | Shows all 86 | Top 15 only |
+| Similar names | Treated as separate | Merged together |
 
-### User Experience
+### Example Consolidations
 
-- Click any legend item to toggle its visibility
-- Hidden items appear faded with strikethrough text
-- Click again to restore visibility
-- All items visible by default on component load
-- Visual feedback on hover to indicate clickability
+```text
+Before (separate entries):
+• "Application & Approval Process"
+• "Booking & Application Process"
+• "Application Process Concerns"
 
-### File to Modify
+After (merged):
+• "Application & Approval Process" (canonical)
+```
+
+### Files to Modify
 
 | File | Changes |
 |------|---------|
-| `src/components/member-insights/PainPointEvolutionPanel.tsx` | Add `hiddenCategories` state, replace `<Legend />` with custom interactive legend, conditionally render `<Line />` components |
+| `src/hooks/usePainPointEvolution.ts` | Add `TimeRangeOption` type, accept parameter, add date filtering, add fuzzy matching functions, limit status list to 15 |
+| `src/components/member-insights/PainPointEvolutionPanel.tsx` | Add time range state, add Select dropdown in header, pass timeRange to hook |
 
