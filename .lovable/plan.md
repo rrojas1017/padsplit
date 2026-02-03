@@ -1,106 +1,130 @@
 
 
-## Monthly Pain Point Evolution - Aggregated by Calendar Month
+## Add Interactive Legend Toggle to Pain Point Evolution Chart
 
-### The Problem
+### Overview
 
-The current evolution chart uses arbitrary analysis dates (Dec 4, Dec 7, Dec 8, etc.) which don't represent meaningful time periods. Most analyses are "All Time" analyses that overlap, making the "evolution" view confusing.
+Add the ability to click on pain point legend items to show/hide their corresponding chart lines. This allows users to focus on specific pain points without visual clutter from others.
 
-### Proposed Solution
-
-Change the approach from "show each analysis as a data point" to "aggregate all analyses into monthly buckets based on their `date_range_end`":
+### How It Will Work
 
 ```text
-Current Approach (confusing):
-┌──────────────────────────────────────────────────────┐
-│ Dec 4  │ Dec 7  │ Dec 8  │ Dec 9  │ Dec 14 │ Dec 21 │  ← arbitrary dates
-└──────────────────────────────────────────────────────┘
+Before (all lines visible):
+┌─────────────────────────────────────┐
+│  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~     │
+│     ~~~~~~~~~~~~~~~~~~~~~~~~        │
+│  ~~~~    ~~~~~    ~~~~~~            │
+└─────────────────────────────────────┘
+ [●] Payment Confusion  [●] Housing Concerns  [●] Process Clarity
 
-New Approach (monthly aggregation):
-┌──────────────────────────────────────────────────────────────────┐
-│   Oct    │   Nov    │   Dec    │   Jan    │   Feb    │          │  ← calendar months
-│   2025   │   2025   │   2025   │   2026   │   2026   │          │
-└──────────────────────────────────────────────────────────────────┘
+After clicking "Housing Concerns":
+┌─────────────────────────────────────┐
+│  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~     │
+│                                     │  ← Housing line hidden
+│  ~~~~    ~~~~~    ~~~~~~            │
+└─────────────────────────────────────┘
+ [●] Payment Confusion  [○] Housing Concerns  [●] Process Clarity
+                         (faded/struck-through)
 ```
 
-### How It Works
-
-1. **Fetch all completed analyses** (not just last 10)
-2. **Group by month** using `date_range_end` (e.g., all analyses ending in January 2026 → "Jan 2026")
-3. **Average pain point frequencies** within each month
-4. **Display monthly evolution** with clean month labels on X-axis
-
-### Technical Changes
-
-**File: `src/hooks/usePainPointEvolution.ts`**
-
-Replace the current logic with monthly aggregation:
-
-```typescript
-// 1. Fetch more analyses to cover multiple months
-const { data: analyses } = await supabase
-  .from('member_insights')
-  .select('...')
-  .eq('status', 'completed')
-  .order('date_range_end', { ascending: true })
-  .limit(50);
-
-// 2. Group analyses by month (YYYY-MM format)
-const monthlyBuckets = new Map<string, {
-  month: string;           // e.g., "Jan 2026"
-  painPoints: Map<string, number[]>;  // category → [frequencies]
-}>();
-
-for (const analysis of analyses) {
-  const monthKey = format(new Date(analysis.date_range_end), 'yyyy-MM');
-  const monthLabel = format(new Date(analysis.date_range_end), 'MMM yyyy');
-  
-  // Add each pain point frequency to the month's bucket
-  for (const pp of analysis.pain_points) {
-    bucket.painPoints.get(category).push(pp.frequency);
-  }
-}
-
-// 3. Calculate average frequency per category per month
-const chartData = monthlyBuckets.map(bucket => ({
-  date: bucket.monthLabel,  // "Jan 2026"
-  [category]: averageFrequency
-}));
-```
-
-### UI Changes
+### Implementation Details
 
 **File: `src/components/member-insights/PainPointEvolutionPanel.tsx`**
 
-Update subtitle to reflect monthly aggregation:
+1. Add state to track which categories are visible
+2. Replace Recharts `<Legend />` with custom clickable legend
+3. Conditionally hide `<Line />` components based on visibility state
 
+### Technical Details
+
+**State Management:**
 ```typescript
-<p className="text-sm text-muted-foreground mt-1">
-  Monthly trends across all historical analyses
-</p>
+// Track hidden categories (empty = all visible)
+const [hiddenCategories, setHiddenCategories] = useState<Set<string>>(new Set());
+
+// Toggle function
+const toggleCategory = (category: string) => {
+  setHiddenCategories(prev => {
+    const next = new Set(prev);
+    if (next.has(category)) {
+      next.delete(category);
+    } else {
+      next.add(category);
+    }
+    return next;
+  });
+};
 ```
 
-### Expected Result
-
-```text
-X-axis: Oct 2025 | Nov 2025 | Dec 2025 | Jan 2026 | Feb 2026
+**Custom Legend Component:**
+```typescript
+// Interactive legend below the chart
+<div className="flex flex-wrap justify-center gap-3 mt-4">
+  {categories.map((cat, index) => {
+    const isHidden = hiddenCategories.has(normalizedCategories[index]);
+    return (
+      <button
+        key={cat}
+        onClick={() => toggleCategory(normalizedCategories[index])}
+        className={cn(
+          "flex items-center gap-2 px-3 py-1.5 rounded-full border transition-all",
+          isHidden 
+            ? "opacity-40 line-through border-dashed" 
+            : "opacity-100 hover:bg-muted"
+        )}
+      >
+        <span 
+          className="w-3 h-3 rounded-full" 
+          style={{ backgroundColor: CHART_COLORS[index % CHART_COLORS.length] }}
+        />
+        <span className="text-sm">{cat}</span>
+      </button>
+    );
+  })}
+</div>
 ```
 
-- Clean monthly labels on X-axis
-- Pain point percentages averaged across all analyses that ended in each month
-- True month-over-month evolution tracking
-- Status badges (Rising, Falling, etc.) compare current month to previous month
+**Conditional Line Rendering:**
+```typescript
+{normalizedCategories.map((cat, index) => {
+  // Skip hidden categories
+  if (hiddenCategories.has(cat)) return null;
+  
+  return (
+    <Line
+      key={cat}
+      type="monotone"
+      dataKey={cat}
+      name={categories[index]}
+      stroke={CHART_COLORS[index % CHART_COLORS.length]}
+      strokeWidth={2}
+      dot={{ r: 4 }}
+      activeDot={{ r: 6 }}
+      connectNulls
+    />
+  );
+})}
+```
 
-### Edge Cases
+### Visual Design
 
-- **Months with no analyses**: Skip that month (gap in chart)
-- **Multiple analyses in same month**: Average their pain point frequencies
-- **Future months**: Excluded from aggregation
+| State | Appearance |
+|-------|------------|
+| Visible | Solid border, full opacity, colored dot |
+| Hidden | Dashed border, 40% opacity, line-through text |
+| Hover (visible) | Light background highlight |
 
-### Files to Modify
+### User Experience
+
+- Click any legend item to toggle its visibility
+- Hidden items appear faded with strikethrough text
+- Click again to restore visibility
+- All items visible by default on component load
+- Visual feedback on hover to indicate clickability
+
+### File to Modify
 
 | File | Changes |
 |------|---------|
-| `src/hooks/usePainPointEvolution.ts` | Replace per-analysis logic with monthly aggregation |
-| `src/components/member-insights/PainPointEvolutionPanel.tsx` | Update subtitle text |
+| `src/components/member-insights/PainPointEvolutionPanel.tsx` | Add `hiddenCategories` state, replace `<Legend />` with custom interactive legend, conditionally render `<Line />` components |
 
