@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
-import { Lightbulb, RefreshCw, Loader2, Download, Sparkles } from 'lucide-react';
+import { Lightbulb, RefreshCw, Loader2, Download, Sparkles, AlertTriangle } from 'lucide-react';
 import { toast } from 'sonner';
 import { format, subDays, startOfMonth } from 'date-fns';
 import { generateMemberInsightsPDF } from '@/utils/memberInsightsPDF';
@@ -59,6 +59,7 @@ interface MemberInsight {
   avg_call_duration_seconds?: number;
   created_at: string;
   status?: 'processing' | 'completed' | 'failed';
+  error_message?: string;
   // New fields for trends
   trend_comparison?: {
     previous_insight_id?: string;
@@ -412,18 +413,43 @@ export function BookingInsightsTab({ dateRange, onDateRangeChange }: BookingInsi
 
       {selectedInsight ? (
         <>
-          {/* Period Badge */}
-          <div className="flex items-center gap-2">
-            <Badge variant="outline" className="text-xs">
-              Showing results for: {getPeriodLabel(selectedInsight.analysis_period)}
-            </Badge>
-            <span className="text-xs text-muted-foreground">
-              ({format(new Date(selectedInsight.date_range_start), 'MMM d')} - {format(new Date(selectedInsight.date_range_end), 'MMM d, yyyy')})
-            </span>
-            <span className="text-xs text-muted-foreground">
-              • Analyzed {format(new Date(selectedInsight.created_at), 'MMM d, yyyy h:mm a')}
-            </span>
-          </div>
+          {/* Failed Analysis Banner */}
+          {selectedInsight.status === 'failed' && (
+            <Card className="border-red-500/50 bg-red-500/5">
+              <CardContent className="py-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <AlertTriangle className="h-5 w-5 text-red-500" />
+                    <div>
+                      <p className="font-medium text-red-700 dark:text-red-400">Analysis failed</p>
+                      <p className="text-sm text-muted-foreground">
+                        {selectedInsight.error_message || 'The AI was unable to process this data. Please try again.'}
+                      </p>
+                    </div>
+                  </div>
+                  <Button size="sm" onClick={runAnalysis} disabled={isAnalyzing}>
+                    <RefreshCw className="h-4 w-4 mr-2" />
+                    Retry
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Period Badge - only show if not failed */}
+          {selectedInsight.status !== 'failed' && (
+            <div className="flex items-center gap-2">
+              <Badge variant="outline" className="text-xs">
+                Showing results for: {getPeriodLabel(selectedInsight.analysis_period)}
+              </Badge>
+              <span className="text-xs text-muted-foreground">
+                ({format(new Date(selectedInsight.date_range_start), 'MMM d')} - {format(new Date(selectedInsight.date_range_end), 'MMM d, yyyy')})
+              </span>
+              <span className="text-xs text-muted-foreground">
+                • Analyzed {format(new Date(selectedInsight.created_at), 'MMM d, yyyy h:mm a')}
+              </span>
+            </div>
+          )}
 
           <InsightsSummaryCards insight={selectedInsight} />
 
