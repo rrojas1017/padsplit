@@ -1,47 +1,61 @@
 
+## Fix Stale Callback After Analysis Completion
 
-## Fix Communication Insights Date Range Filtering
+### Problem
+When an analysis completes, the polling hook calls `onComplete()` which triggers `fetchInsightsCallback`. However, this callback is memoized with an empty dependency array, potentially causing it to use a stale `fetchInsights` function that doesn't properly refresh the UI.
 
-✅ **COMPLETED**
+### Solution
 
-### Summary
+**File: `src/components/call-insights/BookingInsightsTab.tsx`**
 
-Fixed the issue where selecting different date ranges (e.g., "Last 7 Days" vs. "All Time") did not properly filter the displayed insights.
+Update the callback to ensure fresh data is fetched:
 
-### Changes Made
+```typescript
+// Before (line 88-91):
+const fetchInsightsCallback = useCallback(() => {
+  fetchInsights();
+  setIsAnalyzing(false);
+}, []); // Empty deps = stale closure
 
-**Phase 1: Fixed Period Tagging**
-- Updated `BookingInsightsTab.tsx` and `MemberInsights.tsx` to pass the actual `dateRange` value (e.g., `last7days`, `allTime`) instead of hardcoded `'manual'`
-- Edge functions already correctly stored whatever period they received - the bug was in the frontend
+// After:
+const fetchInsightsCallback = useCallback(() => {
+  // Force fresh fetch by clearing any cached state
+  setIsLoading(true);
+  fetchInsights();
+  setIsAnalyzing(false);
+}, [dateRange]); // Include dateRange dependency
+```
 
-**Phase 2: Added Period Filtering in UI**
-- `BookingInsightsTab.tsx`: Added `getPeriodFilters()` helper for backward compatibility (treats `manual` as `allTime`)
-- Updated `fetchInsights()` to filter by current `dateRange` using `.in('analysis_period', periodFilters)`
-- Added `dateRange` as a dependency to re-fetch when period changes
-- Auto-selects most recent insight for selected period, clears selection when switching to empty period
+Additionally, since `fetchInsights` is defined inside the component but not memoized, we should either:
+1. Move `fetchInsights` inside the useCallback, or
+2. Wrap `fetchInsights` in its own `useCallback` with proper dependencies
 
-- `NonBookingAnalysisTab.tsx`: Already had this filtering in place (confirmed working)
+**Recommended approach** - wrap the fetch in useCallback:
 
-- `MemberInsights.tsx`: Applied same filtering logic to standalone page
+```typescript
+const fetchInsights = useCallback(async () => {
+  try {
+    const periodFilters = getPeriodFilters(dateRange);
+    // ... rest of the function
+  } catch (error) {
+    // ... error handling
+  } finally {
+    setIsLoading(false);
+  }
+}, [dateRange]);
 
-**Phase 3: Added User Feedback**
-- Added "No analysis for this period" banner when switching to a period without existing insights
-- Added period badge showing which date range the currently displayed insight covers
-- Added actual date range display (e.g., "Jan 27 - Feb 3, 2025")
-- Added analysis timestamp next to period info
+const fetchInsightsCallback = useCallback(() => {
+  fetchInsights();
+  setIsAnalyzing(false);
+}, [fetchInsights]);
+```
 
-### Expected Behavior
+**File: `src/pages/MemberInsights.tsx`**
 
-1. **When you select "Last 7 Days":**
-   - The insights list shows only analyses tagged as `last7days`
-   - If none exist, a prompt appears asking you to "Run Analysis" for this period
-   - New analysis will process only calls from the last 7 days
+Apply the same fix to the standalone Member Insights page if it has the same pattern.
 
-2. **When you select "All Time":**
-   - The insights list shows `allTime` AND legacy `manual` tagged analyses
-   - Results reflect all transcribed calls
-
-3. **Visual Indicators:**
-   - Badge showing current insight's analysis period
-   - Actual date range displayed (e.g., "Jan 27 - Feb 3")
-   - Analysis timestamp for reference
+### Verification
+After this fix:
+1. Run an analysis for any date range
+2. Wait for polling to detect completion
+3. UI should automatically refresh and display the new analysis without needing a manual page refresh
