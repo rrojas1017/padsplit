@@ -15,9 +15,10 @@ import {
   HelpCircle,
   LineChart as LineChartIcon
 } from 'lucide-react';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, Legend } from 'recharts';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer } from 'recharts';
 import { usePainPointEvolution, PainPointStatus } from '@/hooks/usePainPointEvolution';
 import { useState } from 'react';
+import { cn } from '@/lib/utils';
 
 // Color palette for chart lines
 const CHART_COLORS = [
@@ -72,6 +73,19 @@ function formatTrendDelta(delta: number, trend: PainPointStatus['trend']): strin
 export function PainPointEvolutionPanel() {
   const { chartData, categories, statuses, statusSummary, isLoading, error } = usePainPointEvolution();
   const [isTableExpanded, setIsTableExpanded] = useState(false);
+  const [hiddenCategories, setHiddenCategories] = useState<Set<string>>(new Set());
+
+  const toggleCategory = (category: string) => {
+    setHiddenCategories(prev => {
+      const next = new Set(prev);
+      if (next.has(category)) {
+        next.delete(category);
+      } else {
+        next.add(category);
+      }
+      return next;
+    });
+  };
 
   if (isLoading) {
     return (
@@ -188,22 +202,50 @@ export function PainPointEvolutionPanel() {
                 }}
                 formatter={(value: number) => [`${value}%`, '']}
               />
-              <Legend />
-              {normalizedCategories.map((cat, index) => (
-                <Line
-                  key={cat}
-                  type="monotone"
-                  dataKey={cat}
-                  name={categories[index]}
-                  stroke={CHART_COLORS[index % CHART_COLORS.length]}
-                  strokeWidth={2}
-                  dot={{ r: 4 }}
-                  activeDot={{ r: 6 }}
-                  connectNulls
-                />
-              ))}
+              {normalizedCategories.map((cat, index) => {
+                if (hiddenCategories.has(cat)) return null;
+                return (
+                  <Line
+                    key={cat}
+                    type="monotone"
+                    dataKey={cat}
+                    name={categories[index]}
+                    stroke={CHART_COLORS[index % CHART_COLORS.length]}
+                    strokeWidth={2}
+                    dot={{ r: 4 }}
+                    activeDot={{ r: 6 }}
+                    connectNulls
+                  />
+                );
+              })}
             </LineChart>
           </ResponsiveContainer>
+        </div>
+
+        {/* Interactive Legend */}
+        <div className="flex flex-wrap justify-center gap-2 mt-2">
+          {categories.map((cat, index) => {
+            const normalizedCat = normalizedCategories[index];
+            const isHidden = hiddenCategories.has(normalizedCat);
+            return (
+              <button
+                key={cat}
+                onClick={() => toggleCategory(normalizedCat)}
+                className={cn(
+                  "flex items-center gap-2 px-3 py-1.5 rounded-full border transition-all text-sm",
+                  isHidden 
+                    ? "opacity-40 line-through border-dashed border-muted-foreground/30" 
+                    : "opacity-100 hover:bg-muted border-border"
+                )}
+              >
+                <span 
+                  className="w-3 h-3 rounded-full shrink-0" 
+                  style={{ backgroundColor: CHART_COLORS[index % CHART_COLORS.length] }}
+                />
+                <span>{cat}</span>
+              </button>
+            );
+          })}
         </div>
 
         {/* Status Summary Badges */}
