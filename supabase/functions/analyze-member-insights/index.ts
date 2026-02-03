@@ -178,6 +178,7 @@ async function processAnalysis(
     const previousAnalysis = await fetchPreviousAnalysis(supabase, analysis_period, date_range_end);
     
     // Fetch all bookings with completed transcriptions in date range
+    // Fetch only actual bookings with completed transcriptions (exclude Non Booking call activity)
     const { data: bookingsRaw, error: bookingsError } = await supabase
       .from('bookings')
       .select(`
@@ -192,6 +193,7 @@ async function processAnalysis(
         )
       `)
       .eq('transcription_status', 'completed')
+      .neq('status', 'Non Booking')
       .gte('booking_date', date_range_start)
       .lte('booking_date', date_range_end);
 
