@@ -899,9 +899,14 @@ export default function Reports() {
                           <DropdownMenuContent align="end" className="w-48">
                             <DropdownMenuItem
                               onClick={async () => {
-                                await updateBooking(booking.id, { status: 'Moved In' });
-                                toast.success('Status updated to Moved In');
-                                refetch();
+                                try {
+                                  await updateBooking(booking.id, { status: 'Moved In' });
+                                  toast.success('Status updated to Moved In');
+                                  refetch();
+                                } catch (error) {
+                                  console.error('Error updating booking:', error);
+                                  toast.error('Failed to update status. You may not have permission to edit this booking.');
+                                }
                               }}
                               className="text-green-600 focus:text-green-600"
                               disabled={booking.status === 'Moved In'}
@@ -912,9 +917,14 @@ export default function Reports() {
                             </DropdownMenuItem>
                             <DropdownMenuItem
                               onClick={async () => {
-                                await updateBooking(booking.id, { status: 'Postponed' });
-                                toast.success('Status updated to Postponed');
-                                refetch();
+                                try {
+                                  await updateBooking(booking.id, { status: 'Postponed' });
+                                  toast.success('Status updated to Postponed');
+                                  refetch();
+                                } catch (error) {
+                                  console.error('Error updating booking:', error);
+                                  toast.error('Failed to update status. You may not have permission to edit this booking.');
+                                }
                               }}
                               className="text-primary focus:text-primary"
                               disabled={booking.status === 'Postponed'}
@@ -925,9 +935,14 @@ export default function Reports() {
                             </DropdownMenuItem>
                             <DropdownMenuItem
                               onClick={async () => {
-                                await updateBooking(booking.id, { status: 'No Show' });
-                                toast.success('Status updated to No Show');
-                                refetch();
+                                try {
+                                  await updateBooking(booking.id, { status: 'No Show' });
+                                  toast.success('Status updated to No Show');
+                                  refetch();
+                                } catch (error) {
+                                  console.error('Error updating booking:', error);
+                                  toast.error('Failed to update status. You may not have permission to edit this booking.');
+                                }
                               }}
                               className="text-muted-foreground focus:text-muted-foreground"
                               disabled={booking.status === 'No Show'}
@@ -938,9 +953,14 @@ export default function Reports() {
                             </DropdownMenuItem>
                             <DropdownMenuItem
                               onClick={async () => {
-                                await updateBooking(booking.id, { status: 'Member Rejected' });
-                                toast.success('Status updated to Member Rejected');
-                                refetch();
+                                try {
+                                  await updateBooking(booking.id, { status: 'Member Rejected' });
+                                  toast.success('Status updated to Member Rejected');
+                                  refetch();
+                                } catch (error) {
+                                  console.error('Error updating booking:', error);
+                                  toast.error('Failed to update status. You may not have permission to edit this booking.');
+                                }
                               }}
                               className="text-destructive focus:text-destructive"
                               disabled={booking.status === 'Member Rejected'}
@@ -951,9 +971,14 @@ export default function Reports() {
                             </DropdownMenuItem>
                             <DropdownMenuItem
                               onClick={async () => {
-                                await updateBooking(booking.id, { status: 'Cancelled' });
-                                toast.success('Status updated to Cancelled');
-                                refetch();
+                                try {
+                                  await updateBooking(booking.id, { status: 'Cancelled' });
+                                  toast.success('Status updated to Cancelled');
+                                  refetch();
+                                } catch (error) {
+                                  console.error('Error updating booking:', error);
+                                  toast.error('Failed to update status. You may not have permission to edit this booking.');
+                                }
                               }}
                               className="text-muted-foreground focus:text-muted-foreground"
                               disabled={booking.status === 'Cancelled'}
