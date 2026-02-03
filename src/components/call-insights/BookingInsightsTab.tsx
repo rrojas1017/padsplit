@@ -20,6 +20,7 @@ import RecommendationsPanel from '@/components/member-insights/RecommendationsPa
 import SentimentChart from '@/components/member-insights/SentimentChart';
 import TrendChart from '@/components/member-insights/TrendChart';
 import CustomerJourneyPanel from '@/components/member-insights/CustomerJourneyPanel';
+import { PainPointEvolutionPanel } from '@/components/member-insights/PainPointEvolutionPanel';
 
 interface CustomerJourney {
   persona_name: string;
@@ -462,6 +463,8 @@ export function BookingInsightsTab({ dateRange, onDateRangeChange }: BookingInsi
             />
             <ObjectionsChart objections={selectedInsight.objection_patterns} />
           </div>
+
+          <PainPointEvolutionPanel />
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <SentimentChart sentiment={selectedInsight.sentiment_distribution} />
