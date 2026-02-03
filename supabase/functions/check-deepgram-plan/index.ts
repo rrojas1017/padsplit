@@ -36,6 +36,23 @@ interface UsageBreakdownResponse {
   results: UsageBreakdownResult[];
 }
 
+interface BillingBreakdownResult {
+  dollars: number;
+  grouping?: {
+    start?: string;
+    end?: string;
+    line_item?: string;
+    deployment?: string;
+  };
+}
+
+interface BillingBreakdownResponse {
+  start: string;
+  end: string;
+  resolution: { units: string; amount: number };
+  results: BillingBreakdownResult[];
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -121,11 +138,12 @@ serve(async (req) => {
       balanceError = error instanceof Error ? error.message : 'Unknown error fetching balances';
     }
 
-    // Fetch usage breakdown for current month
+    // Date range for current month
     const now = new Date();
     const startOfMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
     const today = now.toISOString().split('T')[0];
-    
+
+    // Fetch usage breakdown for current month
     let usage: {
       period: { start: string; end: string };
       total_hours: number;
@@ -191,6 +209,62 @@ serve(async (req) => {
       console.error('Usage fetch error:', usageError);
     }
 
+    // Fetch billing breakdown for current month (actual costs)
+    let billing: {
+      period: { start: string; end: string };
+      total_cost_usd: number;
+      breakdown_by_line_item: { line_item: string; dollars: number }[];
+    } | null = null;
+    let billingError: string | null = null;
+
+    try {
+      console.log(`Fetching billing breakdown from ${startOfMonth} to ${today}...`);
+      const billingResponse = await fetch(
+        `https://api.deepgram.com/v1/projects/${projectId}/billing/breakdown?start=${startOfMonth}&end=${today}&grouping=line_item`,
+        {
+          headers: {
+            'Authorization': `Token ${DEEPGRAM_API_KEY}`,
+            'Content-Type': 'application/json',
+          },
+        }
+      );
+
+      if (billingResponse.ok) {
+        const billingData: BillingBreakdownResponse = await billingResponse.json();
+        console.log('Billing data received:', JSON.stringify(billingData, null, 2));
+        
+        let totalCost = 0;
+        const breakdownByLineItem: { line_item: string; dollars: number }[] = [];
+
+        for (const result of billingData.results || []) {
+          totalCost += result.dollars || 0;
+          
+          if (result.grouping?.line_item) {
+            breakdownByLineItem.push({
+              line_item: result.grouping.line_item,
+              dollars: Math.round(result.dollars * 100) / 100,
+            });
+          }
+        }
+
+        billing = {
+          period: { start: billingData.start || startOfMonth, end: billingData.end || today },
+          total_cost_usd: Math.round(totalCost * 100) / 100,
+          breakdown_by_line_item: breakdownByLineItem,
+        };
+      } else if (billingResponse.status === 403) {
+        billingError = 'API key lacks permission to view billing breakdown';
+        console.log('Billing fetch returned 403 - permission denied');
+      } else {
+        const errorText = await billingResponse.text();
+        billingError = `Failed to fetch billing: ${billingResponse.status} - ${errorText}`;
+        console.error(billingError);
+      }
+    } catch (error) {
+      billingError = error instanceof Error ? error.message : 'Unknown error fetching billing';
+      console.error('Billing fetch error:', billingError);
+    }
+
     // Calculate total credits
     let totalCredits = 0;
     let creditUnits = 'USD';
@@ -201,7 +275,7 @@ serve(async (req) => {
       }
     }
 
-    // Build pricing note
+    // Build pricing note - prioritize actual billing over estimates
     let pricingNote = '';
     if (totalCredits > 0) {
       pricingNote = `✅ Account has $${totalCredits.toFixed(2)} ${creditUnits} credits remaining.`;
@@ -211,7 +285,12 @@ serve(async (req) => {
       pricingNote = '⚠️ No credit balance found. Account is on pay-as-you-go billing.';
     }
     
-    if (usage) {
+    // Prioritize actual billing data over estimated cost
+    if (billing && usage) {
+      pricingNote += ` This month: ${usage.total_hours.toFixed(3)} hours processed ($${billing.total_cost_usd.toFixed(2)} actual).`;
+    } else if (billing) {
+      pricingNote += ` This month: $${billing.total_cost_usd.toFixed(2)} actual cost.`;
+    } else if (usage) {
       pricingNote += ` This month: ${usage.total_hours.toFixed(3)} hours processed (~$${usage.estimated_cost_usd.toFixed(2)} estimated).`;
     }
 
@@ -228,6 +307,7 @@ serve(async (req) => {
       })) : [{ project_id: projectId, name: 'Configured Project' }],
       balances,
       usage,
+      billing,
       summary: {
         total_projects: projects.length || 1,
         total_credits: totalCredits,
@@ -236,6 +316,7 @@ serve(async (req) => {
       errors: {
         balance_error: balanceError,
         usage_error: usageError,
+        billing_error: billingError,
       },
       pricing_note: pricingNote,
       stt_pricing: {
