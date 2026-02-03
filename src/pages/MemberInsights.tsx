@@ -73,15 +73,26 @@ const MemberInsights = () => {
       }
     };
     init();
-  }, []);
+  }, [dateRange]); // Re-fetch when date range changes
+
+  // Get period filter values (include 'manual' for backward compatibility)
+  const getPeriodFilters = (period: DateRangeOption): string[] => {
+    if (period === 'allTime') {
+      return ['allTime', 'manual']; // Treat old 'manual' entries as 'allTime'
+    }
+    return [period];
+  };
 
   // Phase 1: Fetch only lightweight metadata for the list
   const fetchInsights = async () => {
     try {
-      const result = await deduplicatedQuery('member_insights_list', async () => {
+      const periodFilters = getPeriodFilters(dateRange);
+      
+      const result = await deduplicatedQuery(`member_insights_list_${dateRange}`, async () => {
         return await supabase
           .from('member_insights')
           .select('id, analysis_period, date_range_start, date_range_end, total_calls_analyzed, created_at, status')
+          .in('analysis_period', periodFilters)
           .order('created_at', { ascending: false })
           .limit(10);
       });
@@ -121,11 +132,11 @@ const MemberInsights = () => {
         setIsAnalyzing(false);
       }
       
-      setInsights(listData);
-      
       // Phase 2: Load full detail for the first/most recent insight
       if (listData.length > 0) {
         await fetchInsightDetail(listData[0].id);
+      } else {
+        setSelectedInsight(null);
       }
     } catch (error) {
       console.error('Error fetching insights:', error);
@@ -219,7 +230,7 @@ const MemberInsights = () => {
       
       const { data, error } = await supabase.functions.invoke('analyze-member-insights', {
         body: {
-          analysis_period: 'manual',
+          analysis_period: dateRange, // Use actual date range option for filtering
           date_range_start: format(start, 'yyyy-MM-dd'),
           date_range_end: format(end, 'yyyy-MM-dd'),
           created_by: user?.id

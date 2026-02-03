@@ -7,7 +7,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Lightbulb, RefreshCw, Loader2, Download } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
+import { Lightbulb, RefreshCw, Loader2, Download, Sparkles } from 'lucide-react';
 import { toast } from 'sonner';
 import { format, subDays, startOfMonth } from 'date-fns';
 import { generateMemberInsightsPDF } from '@/utils/memberInsightsPDF';
@@ -102,14 +103,37 @@ export function BookingInsightsTab({ dateRange, onDateRangeChange }: BookingInsi
       }
     };
     init();
-  }, []);
+  }, [dateRange]); // Re-fetch when date range changes
+
+  // Get period filter values (include 'manual' for backward compatibility)
+  const getPeriodFilters = (period: DateRangeOption): string[] => {
+    if (period === 'allTime') {
+      return ['allTime', 'manual']; // Treat old 'manual' entries as 'allTime'
+    }
+    return [period];
+  };
+
+  const getPeriodLabel = (period: string): string => {
+    switch (period) {
+      case 'last7days': return 'Last 7 Days';
+      case 'last30days': return 'Last 30 Days';
+      case 'thisMonth': return 'This Month';
+      case 'last3months': return 'Last 3 Months';
+      case 'allTime': return 'All Time';
+      case 'manual': return 'All Time'; // Backward compatibility
+      default: return period;
+    }
+  };
 
   const fetchInsights = async () => {
     try {
-      const result = await deduplicatedQuery('member_insights_list', async () => {
+      const periodFilters = getPeriodFilters(dateRange);
+      
+      const result = await deduplicatedQuery(`member_insights_list_${dateRange}`, async () => {
         return await supabase
           .from('member_insights')
           .select('id, analysis_period, date_range_start, date_range_end, total_calls_analyzed, created_at, status, sentiment_distribution')
+          .in('analysis_period', periodFilters)
           .order('created_at', { ascending: false })
           .limit(10);
       });
@@ -149,6 +173,8 @@ export function BookingInsightsTab({ dateRange, onDateRangeChange }: BookingInsi
       
       if (listData.length > 0) {
         await fetchInsightDetail(listData[0].id);
+      } else {
+        setSelectedInsight(null);
       }
     } catch (error) {
       console.error('Error fetching insights:', error);
@@ -234,7 +260,7 @@ export function BookingInsightsTab({ dateRange, onDateRangeChange }: BookingInsi
       
       const { data, error } = await supabase.functions.invoke('analyze-member-insights', {
         body: {
-          analysis_period: 'manual',
+          analysis_period: dateRange, // Use actual date range option for filtering
           date_range_start: format(start, 'yyyy-MM-dd'),
           date_range_end: format(end, 'yyyy-MM-dd'),
           created_by: user?.id
@@ -340,6 +366,40 @@ export function BookingInsightsTab({ dateRange, onDateRangeChange }: BookingInsi
         )}
       </div>
 
+      {/* Analysis In-Progress Banner */}
+      {isAnalyzing && (
+        <Card className="border-primary/50 bg-primary/5">
+          <CardContent className="py-4">
+            <div className="flex items-center gap-3">
+              <Loader2 className="h-5 w-5 animate-spin text-primary" />
+              <div>
+                <p className="font-medium">Analyzing booking calls...</p>
+                <p className="text-sm text-muted-foreground">
+                  This usually takes 1-3 minutes. You can navigate away and come back.
+                </p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* No Analysis for Period Banner */}
+      {!selectedInsight && !isLoading && !isAnalyzing && (
+        <Card className="border-amber-500/50 bg-amber-500/5">
+          <CardContent className="py-4">
+            <div className="flex items-center gap-3">
+              <Sparkles className="h-5 w-5 text-amber-500" />
+              <div>
+                <p className="font-medium">No analysis for this time period</p>
+                <p className="text-sm text-muted-foreground">
+                  Click "Run Analysis" to generate insights for {getPeriodLabel(dateRange)}
+                </p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Loading Detail Indicator */}
       {isLoadingDetail && (
         <div className="flex items-center justify-center py-4">
@@ -350,6 +410,19 @@ export function BookingInsightsTab({ dateRange, onDateRangeChange }: BookingInsi
 
       {selectedInsight ? (
         <>
+          {/* Period Badge */}
+          <div className="flex items-center gap-2">
+            <Badge variant="outline" className="text-xs">
+              Showing results for: {getPeriodLabel(selectedInsight.analysis_period)}
+            </Badge>
+            <span className="text-xs text-muted-foreground">
+              ({format(new Date(selectedInsight.date_range_start), 'MMM d')} - {format(new Date(selectedInsight.date_range_end), 'MMM d, yyyy')})
+            </span>
+            <span className="text-xs text-muted-foreground">
+              • Analyzed {format(new Date(selectedInsight.created_at), 'MMM d, yyyy h:mm a')}
+            </span>
+          </div>
+
           <InsightsSummaryCards insight={selectedInsight} />
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -382,20 +455,20 @@ export function BookingInsightsTab({ dateRange, onDateRangeChange }: BookingInsi
             />
           )}
         </>
-      ) : (
+      ) : !isLoading && !isAnalyzing ? (
         <Card className="py-12">
           <CardContent className="text-center">
             <Lightbulb className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-            <h3 className="text-lg font-semibold mb-2">No Insights Yet</h3>
+            <h3 className="text-lg font-semibold mb-2">No Insights for {getPeriodLabel(dateRange)}</h3>
             <p className="text-muted-foreground mb-4">
-              Run your first analysis to discover member trends and patterns from booking calls
+              Run analysis to discover member trends and patterns from booking calls in this period
             </p>
             <Button onClick={runAnalysis} disabled={isAnalyzing}>
-              {isAnalyzing ? 'Analyzing...' : 'Run First Analysis'}
+              Run Analysis for {getPeriodLabel(dateRange)}
             </Button>
           </CardContent>
         </Card>
-      )}
+      ) : null}
     </div>
   );
 }
