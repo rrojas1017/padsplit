@@ -1,6 +1,11 @@
 import { Booking, Agent, KPIData, ChartDataPoint, LeaderboardEntry } from '@/types';
 import { startOfDay, startOfMonth, startOfWeek, subDays, addDays, format, isToday, isYesterday, parseISO, isWeekend, eachDayOfInterval } from 'date-fns';
 
+// Helper to filter out Non Booking records from actual booking calculations
+const filterActualBookings = (bookings: Booking[]): Booking[] => {
+  return bookings.filter(b => b.status !== 'Non Booking');
+};
+
 const countWeekdays = (startDate: Date, endDate: Date): number => {
   const days = eachDayOfInterval({ start: startDate, end: endDate });
   return days.filter(day => !isWeekend(day)).length;
@@ -90,8 +95,10 @@ export const calculateKPIData = (
   const prevEnd = subDays(start, 1);
   const prevStart = subDays(prevEnd, periodDays - 1);
 
-  let currentBookings = filterBookingsByDateRange(bookings, start, end);
-  let previousBookings = filterBookingsByDateRange(bookings, prevStart, prevEnd);
+  // Filter out Non Booking records from actual booking calculations
+  const actualBookings = filterActualBookings(bookings);
+  let currentBookings = filterBookingsByDateRange(actualBookings, start, end);
+  let previousBookings = filterBookingsByDateRange(actualBookings, prevStart, prevEnd);
 
   // For "today" filter, use same-time comparison based on createdAt
   const useSameTimeComparison = dateFilter === 'today';
@@ -192,12 +199,15 @@ export const calculateChartData = (
   const chartData: ChartDataPoint[] = [];
   const { start, end } = getDateRangeFromFilter(dateFilter, customDates);
   
+  // Filter out Non Booking records from chart calculations
+  const actualBookings = filterActualBookings(bookings);
+  
   // Calculate number of days to show
   const days = Math.max(1, Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1);
   
   for (let i = days - 1; i >= 0; i--) {
     const date = subDays(end, i);
-    const dayBookings = filterBookingsByDate(bookings, date);
+    const dayBookings = filterBookingsByDate(actualBookings, date);
     
     const vixicomBookings = getBookingsBySite(dayBookings, agents, 'vixicom');
     const padsplitBookings = getBookingsBySite(dayBookings, agents, 'padsplit');
@@ -222,8 +232,11 @@ export const calculateLeaderboard = (
   const { start, end } = getDateRangeFromFilter(dateFilter, customDates);
   const weekdaysInPeriod = countWeekdays(start, end);
 
+  // Filter out Non Booking records from leaderboard calculations
+  const actualBookings = filterActualBookings(bookings);
+  
   // Get bookings from the selected period
-  const recentBookings = filterBookingsByDateRange(bookings, start, end);
+  const recentBookings = filterBookingsByDateRange(actualBookings, start, end);
 
   // Group bookings by agent
   const agentBookings = new Map<string, Booking[]>();
@@ -253,9 +266,9 @@ export const calculateLeaderboard = (
     // Current period bookings count (from agentBookingsList which is already filtered)
     const currentPeriodBookings = agentBookingsList.length;
 
-    // Previous period bookings for this agent
+    // Previous period bookings for this agent (using actualBookings)
     const previousPeriodBookings = filterBookingsByDateRange(
-      bookings.filter(b => b.agentId === agent.id), 
+      actualBookings.filter(b => b.agentId === agent.id), 
       prevStart, 
       prevEnd
     ).length;
@@ -293,7 +306,9 @@ export const calculateMarketData = (
   customDates?: CustomDateRange
 ): { market: string; bookings: number }[] => {
   const { start, end } = getDateRangeFromFilter(dateFilter, customDates);
-  const filteredBookings = filterBookingsByDateRange(bookings, start, end);
+  // Filter out Non Booking records from market calculations
+  const actualBookings = filterActualBookings(bookings);
+  const filteredBookings = filterBookingsByDateRange(actualBookings, start, end);
   
   const marketCounts = new Map<string, number>();
 
@@ -334,6 +349,9 @@ export const calculateInsightsData = (
   bookings: Booking[],
   agents: Agent[]
 ): InsightsData => {
+  // Filter out Non Booking records from insights calculations
+  const actualBookings = filterActualBookings(bookings);
+  
   // Helper to get agent name from agents array
   const getAgentName = (agentId: string): string => 
     agents.find(a => a.id === agentId)?.name || 'Unknown Agent';
@@ -346,7 +364,7 @@ export const calculateInsightsData = (
   const yesterdayStart = subDays(todayStart, 1);
   
   // Get today's bookings
-  const todaysBookings = filterBookingsByDate(bookings, now);
+  const todaysBookings = filterBookingsByDate(actualBookings, now);
   
   // Filter by createdAt time for same-time comparison
   const todayByNow = todaysBookings.filter(b => {
@@ -358,7 +376,7 @@ export const calculateInsightsData = (
   }).length;
   
   // Get yesterday's bookings
-  const yesterdaysBookings = filterBookingsByDate(bookings, yesterdayStart);
+  const yesterdaysBookings = filterBookingsByDate(actualBookings, yesterdayStart);
   
   // Filter yesterday's bookings by same time
   const yesterdayByNow = yesterdaysBookings.filter(b => {
@@ -382,7 +400,7 @@ export const calculateInsightsData = (
   
   // Weekly calculations (always current week, Monday-today)
   const weekStart = startOfWeek(now, { weekStartsOn: 1 }); // Monday
-  const weekBookings = filterBookingsByDateRange(bookings, weekStart, now);
+  const weekBookings = filterBookingsByDateRange(actualBookings, weekStart, now);
   
   // Weekly Top Performer
   const agentCounts = new Map<string, { name: string; count: number }>();
@@ -410,7 +428,7 @@ export const calculateInsightsData = (
   
   // Pending move-ins this week (next 7 days from today)
   const weekEnd = addDays(now, 7);
-  const pendingMoveInsThisWeek = bookings.filter(b => {
+  const pendingMoveInsThisWeek = actualBookings.filter(b => {
     const moveInDate = b.moveInDate instanceof Date ? b.moveInDate : new Date(b.moveInDate);
     return b.status === 'Pending Move-In' && 
            moveInDate >= todayStart && 
@@ -419,7 +437,7 @@ export const calculateInsightsData = (
   
   // Conversion rate this month
   const monthStart = startOfMonth(now);
-  const monthBookings = filterBookingsByDateRange(bookings, monthStart, now);
+  const monthBookings = filterBookingsByDateRange(actualBookings, monthStart, now);
   const movedIn = monthBookings.filter(b => b.status === 'Moved In').length;
   const conversionRateThisMonth = monthBookings.length > 0 
     ? Math.round((movedIn / monthBookings.length) * 100) 
@@ -439,4 +457,15 @@ export const calculateInsightsData = (
     pendingMoveInsThisWeek,
     conversionRateThisMonth,
   };
+};
+
+// Calculate total non-booking calls for any date range
+export const calculateNonBookingCount = (
+  bookings: Booking[],
+  dateFilter: DateRangeFilter,
+  customDates?: CustomDateRange
+): number => {
+  const { start, end } = getDateRangeFromFilter(dateFilter, customDates);
+  const filtered = filterBookingsByDateRange(bookings, start, end);
+  return filtered.filter(b => b.status === 'Non Booking').length;
 };

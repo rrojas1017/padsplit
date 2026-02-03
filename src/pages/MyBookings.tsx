@@ -6,7 +6,7 @@ import { BroadcastBanner } from '@/components/broadcast/BroadcastBanner';
 import { ContactProfileHoverCard } from '@/components/reports/ContactProfileHoverCard';
 import { shouldMaskContactInfo } from '@/utils/contactPrivacy';
 import { Button } from '@/components/ui/button';
-import { Search, PlusCircle, MoreHorizontal, Clock, CheckCircle, CalendarX, XCircle, Ban, ExternalLink, Phone, UserCircle, Headphones, FileText, Loader2, RotateCcw, History } from 'lucide-react';
+import { Search, PlusCircle, MoreHorizontal, Clock, CheckCircle, CalendarX, XCircle, Ban, ExternalLink, Phone, UserCircle, Headphones, FileText, Loader2, RotateCcw, History, PhoneOff } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { format, startOfDay, endOfDay, isWithinInterval } from 'date-fns';
 import { cn } from '@/lib/utils';
@@ -76,9 +76,31 @@ export default function MyBookings() {
   const [searchQuery, setSearchQuery] = useState('');
 
   // Bookings are already filtered for the agent in the hook
+  // Filter out Non Booking records from the main list (they should view these in Call Insights/Reports)
+  const actualBookings = bookings.filter(b => b.status !== 'Non Booking');
+  
+  // Count non-bookings for the selected period (before other filters)
+  const nonBookingsForPeriod = useMemo(() => {
+    return bookings.filter(booking => {
+      if (booking.status !== 'Non Booking') return false;
+      
+      // Apply booking date range filter
+      if (bookingDateRange.from && bookingDateRange.to) {
+        const bookingDate = new Date(booking.bookingDate);
+        if (!isWithinInterval(bookingDate, { 
+          start: startOfDay(bookingDateRange.from), 
+          end: endOfDay(bookingDateRange.to) 
+        })) {
+          return false;
+        }
+      }
+      return true;
+    }).length;
+  }, [bookings, bookingDateRange]);
+  
   // Apply additional filters
   const filteredBookings = useMemo(() => {
-    return bookings.filter(booking => {
+    return actualBookings.filter(booking => {
       // Booking date range filter
       if (bookingDateRange.from && bookingDateRange.to) {
         const bookingDate = new Date(booking.bookingDate);
@@ -104,7 +126,7 @@ export default function MyBookings() {
 
       return true;
     });
-  }, [bookings, bookingDateRange, statusFilter, searchQuery]);
+  }, [actualBookings, bookingDateRange, statusFilter, searchQuery]);
 
   // Sort by booking date descending
   const sortedBookings = useMemo(() => {
@@ -245,7 +267,7 @@ export default function MyBookings() {
       <BroadcastBanner />
       
       {/* Summary Cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3 mb-6">
+      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3 mb-6">
         <div className="bg-card rounded-xl p-4 border border-border shadow-sm">
           <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Total</p>
           <p className="text-2xl font-bold text-foreground mt-1">{summaryStats.total}</p>
@@ -294,6 +316,13 @@ export default function MyBookings() {
             <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Other</p>
           </div>
           <p className="text-2xl font-bold text-muted-foreground mt-1">{summaryStats.noShowCancelled}</p>
+        </div>
+        <div className="bg-card rounded-xl p-4 border border-border shadow-sm">
+          <div className="flex items-center gap-2">
+            <PhoneOff className="w-3 h-3 text-amber-500" />
+            <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Non-Bookings</p>
+          </div>
+          <p className="text-2xl font-bold text-amber-500 mt-1">{nonBookingsForPeriod}</p>
         </div>
       </div>
 
