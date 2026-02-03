@@ -57,8 +57,13 @@ export default function Wallboard() {
   const vixicomSite = sites.find(s => s.name === 'Vixicom');
   const padsplitSite = sites.find(s => s.name === 'PadSplit Internal');
   
-  const todayBookings = bookings.filter(b => format(new Date(b.bookingDate), 'yyyy-MM-dd') === today);
-  const yesterdayBookings = bookings.filter(b => format(new Date(b.bookingDate), 'yyyy-MM-dd') === yesterday);
+  // Helper to filter actual bookings (exclude Non Booking status)
+  const filterActualBookings = (list: typeof bookings) => 
+    list.filter(b => b.status !== 'Non Booking');
+  
+  const actualBookings = filterActualBookings(bookings);
+  const todayBookings = actualBookings.filter(b => format(new Date(b.bookingDate), 'yyyy-MM-dd') === today);
+  const yesterdayBookings = actualBookings.filter(b => format(new Date(b.bookingDate), 'yyyy-MM-dd') === yesterday);
   
   // Same-time comparison: filter by createdAt time
   const currentHour = time.getHours();

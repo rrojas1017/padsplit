@@ -176,6 +176,10 @@ export default function PublicWallboard() {
   const vixicomSite = sites.find(s => s.name === 'Vixicom');
   const padsplitSite = sites.find(s => s.name === 'PadSplit Internal');
   
+  // Helper to filter actual bookings (exclude Non Booking status)
+  const filterActualBookings = (list: Booking[]) => 
+    list.filter(b => b.status !== 'Non Booking');
+  
   // Filter bookings based on site filter if set
   const filteredAgentIds = displayToken.siteFilter && displayToken.siteFilter !== 'all'
     ? agents.filter(a => a.siteId === displayToken.siteFilter).map(a => a.id)
@@ -184,10 +188,11 @@ export default function PublicWallboard() {
   const filterByAgent = (booking: Booking) => 
     !filteredAgentIds || filteredAgentIds.includes(booking.agentId);
 
-  const todayBookings = bookings.filter(b => 
+  const actualBookings = filterActualBookings(bookings);
+  const todayBookings = actualBookings.filter(b => 
     format(new Date(b.bookingDate), 'yyyy-MM-dd') === today && filterByAgent(b)
   );
-  const yesterdayBookings = bookings.filter(b => 
+  const yesterdayBookings = actualBookings.filter(b => 
     format(new Date(b.bookingDate), 'yyyy-MM-dd') === yesterday && filterByAgent(b)
   );
   

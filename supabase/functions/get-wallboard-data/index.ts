@@ -152,6 +152,7 @@ serve(async (req) => {
       .from('bookings')
       .select('*')
       .gte('booking_date', dateLimit)
+      .neq('status', 'Non Booking')
       .order('booking_date', { ascending: false })
       .limit(500);
 
