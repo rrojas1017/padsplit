@@ -1,123 +1,118 @@
 
+# Plan: Exclude Non-Booking Records from Agent Booking Stats
 
-# URL-Based Deepgram Transcription - Fix SLOW_UPLOAD Timeouts
+## Overview
+Update all booking-related calculations and displays to exclude "Non Booking" status records from actual booking counts, while adding a dedicated summary card showing the total non-booking calls for the selected period.
 
-## Problem Analysis
+## Background
+The `bookings` table stores both actual bookings (with statuses like "Pending Move-In", "Moved In", etc.) and call records that did not result in a booking (status = "Non Booking"). Currently, these non-booking records are being counted in agent performance metrics, inflating their booking numbers.
 
-Today's transcription failures for **Bryanna Strong** and **Linda East** failed with `SLOW_UPLOAD` errors from Deepgram. The root cause is the current audio processing flow:
+## Changes Required
 
-**Current Flow (Double Transfer)**
-1. Edge function downloads audio blob from Kixie CDN (~20MB WAV files)
-2. Edge function re-uploads entire blob to Deepgram API
-3. Large files cause upload timeouts in step 2
+### 1. Update Dashboard Calculations (`src/utils/dashboardCalculations.ts`)
+Add a filter to exclude "Non Booking" status from all booking-related calculations:
 
-**Proposed Flow (Direct Fetch)**
-1. Edge function validates the Kixie URL (content-type check)
-2. Edge function sends URL to Deepgram in JSON body
-3. Deepgram fetches audio directly from Kixie CDN
+- **`calculateKPIData`**: Filter out Non Booking records before counting total bookings, site bookings, and pending move-ins
+- **`calculateChartData`**: Filter out Non Booking records from daily chart data
+- **`calculateLeaderboard`**: Filter out Non Booking records from agent booking counts
+- **`calculateMarketData`**: Filter out Non Booking records from market breakdown
+- **`calculateInsightsData`**: Filter out Non Booking records from insights calculations
 
-This eliminates the upload bottleneck entirely - Deepgram's infrastructure pulls directly from Kixie's CDN.
+Create a helper function:
+```text
+const ACTUAL_BOOKING_STATUSES = ['Pending Move-In', 'Moved In', 'Member Rejected', 'No Show', 'Cancelled', 'Postponed'];
 
----
-
-## Implementation Plan
-
-### Step 1: Add URL-Based Deepgram Function
-
-Create a new `transcribeWithDeepgramUrl()` function that sends the audio URL instead of the blob:
-
-```typescript
-async function transcribeWithDeepgramUrl(
-  audioUrl: string,
-  apiKey: string
-): Promise<STTResult> {
-  const startTime = Date.now();
-
-  const response = await fetch(
-    'https://api.deepgram.com/v1/listen?model=nova-2&smart_format=true&diarize=true&language=en-US&punctuate=true',
-    {
-      method: 'POST',
-      headers: {
-        'Authorization': `Token ${apiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ url: audioUrl }),
-    }
-  );
-  // ... same response parsing logic
-}
+const filterActualBookings = (bookings: Booking[]): Booking[] => {
+  return bookings.filter(b => b.status !== 'Non Booking');
+};
 ```
 
-### Step 2: Update Audio Validation Flow
-
-Instead of downloading the full blob, perform a lightweight **HEAD request** to validate:
-- The URL is reachable
-- Content-Type is audio (not HTML/webpage)
-- Optionally check Content-Length for file size logging
-
-```typescript
-// Lightweight validation instead of full download
-const headResponse = await fetch(kixieUrl, { method: 'HEAD' });
-const contentType = headResponse.headers.get('content-type');
-const contentLength = headResponse.headers.get('content-length');
-
-if (contentType?.includes('text/html')) {
-  throw new Error('Invalid URL - webpage, not audio');
-}
+Add a new function to calculate non-booking counts for any date range:
+```text
+export const calculateNonBookingCount = (
+  bookings: Booking[],
+  dateFilter: DateRangeFilter,
+  customDates?: CustomDateRange
+): number => {
+  const { start, end } = getDateRangeFromFilter(dateFilter, customDates);
+  const filtered = filterBookingsByDateRange(bookings, start, end);
+  return filtered.filter(b => b.status === 'Non Booking').length;
+};
 ```
 
-### Step 3: Update Processing Flow
+### 2. Update Dashboard Page (`src/pages/Dashboard.tsx`)
+- Import the new `calculateNonBookingCount` function
+- Add a Non-Bookings summary card in the "Today's Insights" section showing the count for the selected period
 
-Modify `processTranscription()` to:
-1. Perform HEAD request validation
-2. Skip blob download for Deepgram provider
-3. Call new URL-based function
-4. Keep blob download as fallback for ElevenLabs (if ever needed)
+### 3. Update My Performance Page (`src/pages/MyPerformance.tsx`)
+- Filter agent's bookings to exclude "Non Booking" status in all calculations
+- Add a Non-Bookings summary card showing the agent's total non-booking calls for the period
+- Update the chart data to only show actual bookings
 
-### Step 4: Keep ElevenLabs Blob Upload Path
+### 4. Update My Bookings Page (`src/pages/MyBookings.tsx`)
+- Update the status filter options to exclude "Non Booking" from the default list (since it's a different type of record)
+- Add a new summary card showing total Non-Booking calls
+- Filter the main booking list to exclude "Non Booking" by default (they should view these in Call Insights/Reports)
+- Update `summaryStats` calculation to exclude Non Booking from totals
 
-Maintain the existing blob-upload path for ElevenLabs as a fallback. This ensures the system can switch providers if needed without code changes.
+### 5. Update Leaderboard Page (`src/pages/Leaderboard.tsx`)
+- Add a summary card showing total Non-Booking calls for all agents
+- The leaderboard will automatically be corrected once `calculateLeaderboard` is updated
 
----
+## Visual Changes
 
-## Files Changed
+### Dashboard
+Add a new insight card in the "Today's Insights" section:
+```text
++-----------------------------------+
+| Non-Booking Calls                 |
+| [amber color indicator]           |
+| X calls                           |
+| In selected period                |
++-----------------------------------+
+```
+
+### My Performance
+Add a new summary stat card:
+```text
++-----------------------------------+
+| Non-Booking Calls                 |
+| [Phone icon - amber]              |
+| X                                 |
+| vs Y previous period              |
++-----------------------------------+
+```
+
+### My Bookings
+Add a new summary card and update totals:
+```text
+Before: Total shows bookings + non-bookings mixed
+After:  Total shows only actual bookings
+        + New card: "Non-Bookings: X"
+```
+
+### Leaderboard
+Add a summary card in the stats row:
+```text
++-----------------------------------+
+| Non-Booking Calls                 |
+| [Phone icon]                      |
+| X total                           |
++-----------------------------------+
+```
+
+## Files to Modify
 
 | File | Change |
 |------|--------|
-| `supabase/functions/transcribe-call/index.ts` | Add `transcribeWithDeepgramUrl()`, update validation to use HEAD request, modify `processTranscription()` flow |
+| `src/utils/dashboardCalculations.ts` | Add non-booking filter to all calculations, add `calculateNonBookingCount` function |
+| `src/pages/Dashboard.tsx` | Add Non-Bookings summary in insights section |
+| `src/pages/MyPerformance.tsx` | Filter non-bookings from stats, add summary card |
+| `src/pages/MyBookings.tsx` | Filter non-bookings from list and stats, add summary card |
+| `src/pages/Leaderboard.tsx` | Add non-bookings summary card |
 
----
-
-## Technical Details
-
-**Deepgram URL-Based API Format:**
-```bash
-curl --request POST \
-  --header 'Authorization: Token YOUR_API_KEY' \
-  --header 'Content-Type: application/json' \
-  --data '{"url":"https://calls.kixie.com/xxx.wav"}' \
-  --url 'https://api.deepgram.com/v1/listen?model=nova-2&smart_format=true&diarize=true'
-```
-
-**Benefits:**
-- Eliminates ~20MB upload from edge function to Deepgram
-- Reduces edge function memory usage
-- Removes the primary cause of SLOW_UPLOAD timeouts
-- Faster processing since Deepgram fetches from Kixie's CDN directly
-
-**Edge Cases Handled:**
-- Invalid URLs (HTML pages) - detected via HEAD Content-Type check
-- 404/403 errors - detected via HEAD status code
-- ElevenLabs fallback - maintains existing blob upload path
-- File size logging - extracted from Content-Length header
-
----
-
-## Testing Plan
-
-After implementation:
-1. Retry the 2 failed transcriptions (Bryanna Strong, Linda East)
-2. Monitor edge function logs for successful URL-based transcription
-3. Verify no SLOW_UPLOAD errors occur
-4. Confirm cost logging still captures audio duration correctly
-
+## Impact
+- Agent booking counts will decrease to reflect only actual bookings
+- Non-booking call activity will be clearly separated and visible
+- Reports page already handles this correctly and needs no changes
+- Historical data integrity is maintained - no database changes required
