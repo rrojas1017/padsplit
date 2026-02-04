@@ -1031,8 +1031,8 @@ async function updateBookingError(supabase: any, bookingId: string, errorMessage
 }
 
 // Background transcription processing with timeout handling
-async function processTranscription(bookingId: string, kixieUrl: string) {
-  console.log(`[Background] Starting transcription for booking ${bookingId}`);
+async function processTranscription(bookingId: string, kixieUrl: string, skipTts: boolean = false) {
+  console.log(`[Background] Starting transcription for booking ${bookingId} (skipTts: ${skipTts})`);
   
   const elevenLabsApiKey = Deno.env.get('ELEVENLABS_API_KEY');
   const deepgramApiKey = Deno.env.get('DEEPGRAM_API_KEY');
@@ -1456,28 +1456,33 @@ async function processTranscription(bookingId: string, kixieUrl: string) {
     console.log(`[Background] Transcription completed successfully for booking ${bookingId}`);
 
     // ===== AUTO-GENERATE QA SCORES AND COACHING AUDIO =====
-    console.log(`[Background] Triggering automatic QA scoring and coaching generation...`);
+    console.log(`[Background] Triggering automatic QA scoring ${skipTts ? '(TTS skipped)' : 'and coaching generation'}...`);
     
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 
-    // Fire-and-forget: Generate Jeff's coaching audio (uses agent_feedback from transcription)
-    fetch(`${supabaseUrl}/functions/v1/generate-coaching-audio`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${supabaseServiceKey}`,
-      },
-      body: JSON.stringify({ bookingId }),
-    }).then(res => {
-      if (res.ok) console.log(`[Background] Jeff coaching audio triggered for ${bookingId}`);
-      else console.error(`[Background] Jeff coaching failed: ${res.status}`);
-    }).catch(err => console.error('[Background] Jeff coaching error:', err));
+    // Only generate Jeff's coaching audio if TTS is NOT skipped (Vixicom agents only)
+    if (!skipTts) {
+      // Fire-and-forget: Generate Jeff's coaching audio (uses agent_feedback from transcription)
+      fetch(`${supabaseUrl}/functions/v1/generate-coaching-audio`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${supabaseServiceKey}`,
+        },
+        body: JSON.stringify({ bookingId }),
+      }).then(res => {
+        if (res.ok) console.log(`[Background] Jeff coaching audio triggered for ${bookingId}`);
+        else console.error(`[Background] Jeff coaching failed: ${res.status}`);
+      }).catch(err => console.error('[Background] Jeff coaching error:', err));
+    } else {
+      console.log(`[Background] Skipping Jeff audio generation for ${bookingId} (non-Vixicom)`);
+    }
 
-    // QA scoring then Katty's QA coaching (sequential because Katty needs QA scores)
+    // QA scoring always runs, but Katty's audio only for Vixicom
     (async () => {
       try {
-        // Step 1: Generate QA scores
+        // Step 1: Generate QA scores (always runs)
         const qaResponse = await fetch(`${supabaseUrl}/functions/v1/generate-qa-scores`, {
           method: 'POST',
           headers: {
@@ -1490,20 +1495,24 @@ async function processTranscription(bookingId: string, kixieUrl: string) {
         if (qaResponse.ok) {
           console.log(`[Background] QA scores generated for ${bookingId}`);
           
-          // Step 2: Generate Katty's QA coaching audio (needs QA scores)
-          const kattyResponse = await fetch(`${supabaseUrl}/functions/v1/generate-qa-coaching-audio`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${supabaseServiceKey}`,
-            },
-            body: JSON.stringify({ bookingId }),
-          });
-          
-          if (kattyResponse.ok) {
-            console.log(`[Background] Katty QA coaching audio generated for ${bookingId}`);
+          // Step 2: Generate Katty's QA coaching audio only if TTS is NOT skipped
+          if (!skipTts) {
+            const kattyResponse = await fetch(`${supabaseUrl}/functions/v1/generate-qa-coaching-audio`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${supabaseServiceKey}`,
+              },
+              body: JSON.stringify({ bookingId }),
+            });
+            
+            if (kattyResponse.ok) {
+              console.log(`[Background] Katty QA coaching audio generated for ${bookingId}`);
+            } else {
+              console.error(`[Background] Katty coaching failed: ${kattyResponse.status}`);
+            }
           } else {
-            console.error(`[Background] Katty coaching failed: ${kattyResponse.status}`);
+            console.log(`[Background] Skipping Katty audio generation for ${bookingId} (non-Vixicom)`);
           }
         } else {
           console.error(`[Background] QA scoring failed: ${qaResponse.status}`);
@@ -1534,11 +1543,13 @@ serve(async (req) => {
   }
 
   try {
-    const { bookingId, kixieUrl } = await req.json();
+    const { bookingId, kixieUrl, skipTts = false } = await req.json();
     
     if (!bookingId || !kixieUrl) {
       throw new Error('Missing bookingId or kixieUrl');
     }
+    
+    console.log(`Received transcription request for booking ${bookingId} (skipTts: ${skipTts})`);
 
     // Validate required env vars before starting
     const elevenLabsApiKey = Deno.env.get('ELEVENLABS_API_KEY');
@@ -1553,10 +1564,8 @@ serve(async (req) => {
       throw new Error('LOVABLE_API_KEY not configured');
     }
 
-    console.log(`Received transcription request for booking ${bookingId}`);
-
-    // Fire-and-forget: Start background task
-    EdgeRuntime.waitUntil(processTranscription(bookingId, kixieUrl));
+    // Fire-and-forget: Start background task with skipTts flag
+    EdgeRuntime.waitUntil(processTranscription(bookingId, kixieUrl, skipTts));
 
     // Return immediately
     return new Response(
