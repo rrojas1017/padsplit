@@ -360,22 +360,73 @@ serve(async (req) => {
     switch (action) {
       case 'start':
       case 'resume': {
-        // Count total pending records
-        let countQuery = supabase
-          .from('bookings')
-          .select('id', { count: 'exact', head: true })
-          .is('transcription_status', null)
-          .not('kixie_link', 'is', null)
-          .not('kixie_link', 'eq', '');
+        // Get filtered count based on site_filter
+        let totalCount = 0;
         
-        // Note: Supabase count doesn't support joins well, so we'll estimate
-        const { count } = await countQuery;
+        if (job.site_filter === 'vixicom_only') {
+          // Count Vixicom records using the same join logic
+          const { data: vixicomAgents } = await supabase
+            .from('agents')
+            .select('id, sites!inner(name)')
+            .ilike('sites.name', '%vixicom%');
+          
+          const agentIds = (vixicomAgents || []).map((a: any) => a.id);
+          
+          if (agentIds.length > 0) {
+            const { count } = await supabase
+              .from('bookings')
+              .select('id', { count: 'exact', head: true })
+              .is('transcription_status', null)
+              .not('kixie_link', 'is', null)
+              .not('kixie_link', 'eq', '')
+              .in('agent_id', agentIds);
+            totalCount = count || 0;
+          }
+        } else if (job.site_filter === 'non_vixicom') {
+          // Count non-Vixicom records
+          const { data: vixicomAgents } = await supabase
+            .from('agents')
+            .select('id, sites!inner(name)')
+            .ilike('sites.name', '%vixicom%');
+          
+          const vixicomAgentIds = (vixicomAgents || []).map((a: any) => a.id);
+          
+          // Get total pending, then subtract Vixicom count
+          const { count: totalPending } = await supabase
+            .from('bookings')
+            .select('id', { count: 'exact', head: true })
+            .is('transcription_status', null)
+            .not('kixie_link', 'is', null)
+            .not('kixie_link', 'eq', '');
+          
+          let vixicomCount = 0;
+          if (vixicomAgentIds.length > 0) {
+            const { count } = await supabase
+              .from('bookings')
+              .select('id', { count: 'exact', head: true })
+              .is('transcription_status', null)
+              .not('kixie_link', 'is', null)
+              .not('kixie_link', 'eq', '')
+              .in('agent_id', vixicomAgentIds);
+            vixicomCount = count || 0;
+          }
+          totalCount = (totalPending || 0) - vixicomCount;
+        } else {
+          // All records
+          const { count } = await supabase
+            .from('bookings')
+            .select('id', { count: 'exact', head: true })
+            .is('transcription_status', null)
+            .not('kixie_link', 'is', null)
+            .not('kixie_link', 'eq', '');
+          totalCount = count || 0;
+        }
         
-        // Update job to running
+        // Update job to running with CORRECT count
         await updateJobProgress(supabase, jobId, {
           status: 'running',
           started_at: job.started_at || new Date().toISOString(),
-          total_records: count || 0,
+          total_records: totalCount,
           paused_at: null
         });
         
@@ -389,7 +440,7 @@ serve(async (req) => {
             success: true,
             message: action === 'start' ? 'Processing started' : 'Processing resumed',
             jobId,
-            totalRecords: count
+            totalRecords: totalCount
           }),
           { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
