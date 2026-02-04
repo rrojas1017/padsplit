@@ -84,7 +84,7 @@ export function useBulkProcessingJobs() {
       const { count: totalCount } = await supabase
         .from('bookings')
         .select('id', { count: 'exact', head: true })
-        .eq('transcription_status', 'pending')
+        .is('transcription_status', null)
         .not('kixie_link', 'is', null)
         .not('kixie_link', 'eq', '');
       
@@ -103,7 +103,7 @@ export function useBulkProcessingJobs() {
         const { count } = await supabase
           .from('bookings')
           .select('id', { count: 'exact', head: true })
-          .eq('transcription_status', 'pending')
+          .is('transcription_status', null)
           .not('kixie_link', 'is', null)
           .not('kixie_link', 'eq', '')
           .in('agent_id', vixicomAgentIds);
