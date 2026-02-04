@@ -55,12 +55,17 @@ interface ContactProfileHoverCardProps {
   children: React.ReactNode;
 }
 
-const ReadinessBadge = ({ readiness }: { readiness: 'high' | 'medium' | 'low' }) => {
+const ReadinessBadge = ({ readiness }: { readiness: 'high' | 'medium' | 'low' | undefined }) => {
   const config = {
     high: { label: 'HIGH', className: 'bg-success/20 text-success border-success/30' },
     medium: { label: 'MEDIUM', className: 'bg-warning/20 text-warning border-warning/30' },
     low: { label: 'LOW', className: 'bg-destructive/20 text-destructive border-destructive/30' },
   };
+  
+  // Guard against undefined or invalid readiness values
+  if (!readiness || !config[readiness]) {
+    return null;
+  }
   
   return (
     <Badge variant="outline" className={cn('text-[10px] font-semibold px-1.5 py-0', config[readiness].className)}>
