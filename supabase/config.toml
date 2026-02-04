@@ -98,3 +98,9 @@ verify_jwt = false
 
 [functions.backfill-markets-from-transcriptions]
 verify_jwt = false
+
+[functions.bulk-transcription-processor]
+verify_jwt = true
+
+[functions.receive-kixie-webhook]
+verify_jwt = false

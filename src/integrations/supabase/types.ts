@@ -699,6 +699,66 @@ export type Database = {
           },
         ]
       }
+      bulk_processing_jobs: {
+        Row: {
+          completed_at: string | null
+          created_at: string
+          created_by: string | null
+          current_booking_id: string | null
+          error_log: Json[] | null
+          failed_count: number
+          id: string
+          include_tts: boolean
+          job_name: string
+          pacing_seconds: number
+          paused_at: string | null
+          processed_count: number
+          site_filter: string | null
+          skipped_count: number
+          started_at: string | null
+          status: string
+          total_records: number
+        }
+        Insert: {
+          completed_at?: string | null
+          created_at?: string
+          created_by?: string | null
+          current_booking_id?: string | null
+          error_log?: Json[] | null
+          failed_count?: number
+          id?: string
+          include_tts?: boolean
+          job_name: string
+          pacing_seconds?: number
+          paused_at?: string | null
+          processed_count?: number
+          site_filter?: string | null
+          skipped_count?: number
+          started_at?: string | null
+          status?: string
+          total_records?: number
+        }
+        Update: {
+          completed_at?: string | null
+          created_at?: string
+          created_by?: string | null
+          current_booking_id?: string | null
+          error_log?: Json[] | null
+          failed_count?: number
+          id?: string
+          include_tts?: boolean
+          job_name?: string
+          pacing_seconds?: number
+          paused_at?: string | null
+          processed_count?: number
+          site_filter?: string | null
+          skipped_count?: number
+          started_at?: string | null
+          status?: string
+          total_records?: number
+        }
+        Relationships: []
+      }
       call_transcriptions: {
         Row: {
           agent_feedback: Json | null

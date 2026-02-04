@@ -11,12 +11,13 @@ import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { 
   Upload, FileText, CheckCircle, AlertTriangle, Users, Play, 
-  ArrowRight, Loader2, FileSpreadsheet, X, Trash2, Copy, Package, Phone
+  ArrowRight, Loader2, FileSpreadsheet, X, Trash2, Copy, Package, Phone, Cpu
 } from 'lucide-react';
 import { parseHubspotCSV, ParsedCallRecord, toBookingInsert, ParseResult, generateImportBatchId } from '@/utils/hubspotCallParser';
 import { AgentMappingDialog, AgentMapping } from '@/components/import/AgentMappingDialog';
 import { ImportClassificationSummary } from '@/components/import/ImportClassificationSummary';
 import { PhoneEnrichmentTab } from '@/components/import/PhoneEnrichmentTab';
+import { BulkProcessingTab } from '@/components/import/BulkProcessingTab';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -386,7 +387,7 @@ export default function HistoricalImport() {
     >
       <div className="max-w-4xl mx-auto space-y-6">
         <Tabs defaultValue="hubspot" className="space-y-6">
-          <TabsList className="grid w-full grid-cols-2">
+          <TabsList className="grid w-full grid-cols-3">
             <TabsTrigger value="hubspot" className="flex items-center gap-2">
               <Upload className="w-4 h-4" />
               HubSpot Import
@@ -394,6 +395,10 @@ export default function HistoricalImport() {
             <TabsTrigger value="phone-enrichment" className="flex items-center gap-2">
               <Phone className="w-4 h-4" />
               Phone Enrichment
+            </TabsTrigger>
+            <TabsTrigger value="bulk-processing" className="flex items-center gap-2">
+              <Cpu className="w-4 h-4" />
+              Bulk Processing
             </TabsTrigger>
           </TabsList>
 
@@ -655,6 +660,10 @@ export default function HistoricalImport() {
 
           <TabsContent value="phone-enrichment">
             <PhoneEnrichmentTab />
+          </TabsContent>
+
+          <TabsContent value="bulk-processing">
+            <BulkProcessingTab />
           </TabsContent>
         </Tabs>
       </div>
