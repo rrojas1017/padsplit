@@ -61,7 +61,7 @@ async function getPendingBookings(
         sites!inner(name)
       )
     `)
-    .eq('transcription_status', 'pending')
+    .is('transcription_status', null)
     .not('kixie_link', 'is', null)
     .not('kixie_link', 'eq', '')
     .order('booking_date', { ascending: false })
@@ -364,7 +364,7 @@ serve(async (req) => {
         let countQuery = supabase
           .from('bookings')
           .select('id', { count: 'exact', head: true })
-          .eq('transcription_status', 'pending')
+          .is('transcription_status', null)
           .not('kixie_link', 'is', null)
           .not('kixie_link', 'eq', '');
         
