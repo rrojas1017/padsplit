@@ -1,34 +1,32 @@
 
-## Fix: Site Filter Showing 0 Records
+
+## Fix: Edge Function Not Finding Pending Records
 
 ### Problem Identified
 
-The pending stats query in `useBulkProcessingJobs.ts` is filtering for:
-```typescript
-.eq('transcription_status', 'pending')
-```
+The `bulk-transcription-processor` edge function has the same filter issue that was already fixed in the frontend:
 
-But the actual pending records have `transcription_status = NULL` (5,013 records), not `'pending'`.
+| Location | Current | Should Be |
+|----------|---------|-----------|
+| Line 64 (fetch query) | `.eq('transcription_status', 'pending')` | `.is('transcription_status', null)` |
+| Line 367 (count query) | `.eq('transcription_status', 'pending')` | `.is('transcription_status', null)` |
 
-### Database State
-| transcription_status | Count |
-|---------------------|-------|
-| NULL (never processed) | 5,013 |
-| completed | 815 |
-| failed | 35 |
-| processing | 1 |
-
-### Site Distribution (Correct)
-| Site | Pending Records |
-|------|-----------------|
-| Vixicom | 394 |
-| PadSplit Internal | 4,619 |
+This explains why the logs show "No more pending bookings" immediately - the query finds zero records because it's looking for the wrong status value.
 
 ### Solution
 
-Update `src/hooks/useBulkProcessingJobs.ts` to filter for `transcription_status IS NULL` instead of `= 'pending'`:
+Update `supabase/functions/bulk-transcription-processor/index.ts`:
 
-**Lines 84-89 (Total count query):**
+**Change 1 - Line 64 (getPendingBookings function):**
+```typescript
+// Before
+.eq('transcription_status', 'pending')
+
+// After  
+.is('transcription_status', null)
+```
+
+**Change 2 - Line 367 (start/resume action):**
 ```typescript
 // Before
 .eq('transcription_status', 'pending')
@@ -37,24 +35,17 @@ Update `src/hooks/useBulkProcessingJobs.ts` to filter for `transcription_status 
 .is('transcription_status', null)
 ```
 
-**Lines 103-109 (Vixicom count query):**
-```typescript
-// Before
-.eq('transcription_status', 'pending')
+### Files to Modify
 
-// After
-.is('transcription_status', null)
-```
+| File | Lines | Change |
+|------|-------|--------|
+| `supabase/functions/bulk-transcription-processor/index.ts` | 64 | Change `.eq()` to `.is()` for null check |
+| `supabase/functions/bulk-transcription-processor/index.ts` | 367 | Change `.eq()` to `.is()` for null check |
 
-### Technical Details
+### After This Fix
 
-**File to modify:** `src/hooks/useBulkProcessingJobs.ts`
+When you create a new job and start it:
+- The count query will correctly show 394 records for Vixicom
+- The processing loop will find and process records
+- Each record will go through the full transcription pipeline
 
-**Changes:**
-1. Line 87: Change `.eq('transcription_status', 'pending')` to `.is('transcription_status', null)`
-2. Line 106: Change `.eq('transcription_status', 'pending')` to `.is('transcription_status', null)`
-
-This single fix will make the UI correctly show:
-- Vixicom Only: 394 records
-- Non-Vixicom Only: 4,619 records  
-- Total: 5,013 records
