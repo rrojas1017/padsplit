@@ -1,151 +1,262 @@
 
 
-## Add Rebooking Metrics to Main Dashboard
+## Bulk Transcription Processing Plan for 5,013 Records
 
 ### Overview
 
-Add rebooking tracking to the main dashboard KPI cards so users can see the total bookings breakdown between new bookings and rebookings at a glance.
+Process the backlog of 5,013 records with **conditional coaching audio generation**:
+- **Vixicom agents (394 records)**: Full pipeline - Transcription → Jeff Audio → QA → Katty Audio
+- **Non-Vixicom agents (4,619 records)**: Transcription + QA only - No TTS audio generation
 
-### Current vs. Proposed Layout
+This approach significantly reduces costs since ElevenLabs TTS is the most expensive component.
 
-```text
-CURRENT KPI Cards:
-┌────────────────┐ ┌────────────────┐ ┌────────────────┐ ┌────────────────┐
-│ Total Bookings │ │ Vixicom        │ │ PadSplit       │ │ Pending        │
-│     15         │ │     12         │ │      3         │ │ Move-Ins: 8    │
-└────────────────┘ └────────────────┘ └────────────────┘ └────────────────┘
+---
 
-PROPOSED KPI Cards (5 cards):
-┌────────────────┐ ┌────────────────┐ ┌────────────────┐ ┌────────────────┐ ┌────────────────┐
-│ Total Bookings │ │ Rebookings     │ │ Vixicom        │ │ PadSplit       │ │ Pending        │
-│     15         │ │      3         │ │     12         │ │      3         │ │ Move-Ins: 8    │
-│ (12 new, 3 re) │ │  20% of total  │ │                │ │                │ │                │
-└────────────────┘ └────────────────┘ └────────────────┘ └────────────────┘ └────────────────┘
-```
+### Current State
+
+| Site | Type | Pending Records | Audio Processing |
+|------|------|-----------------|------------------|
+| **Vixicom** | Outsourced | 394 | ✅ Full pipeline (Jeff + Katty) |
+| **PadSplit Internal** | Internal | 4,619 | ⚠️ Transcription + QA only |
+| **Total** | - | **5,013** | - |
+
+---
+
+### Revised Cost Estimate
+
+| Service | Vixicom (394) | Non-Vixicom (4,619) | Total |
+|---------|--------------|---------------------|-------|
+| Deepgram STT | ~$12 | ~$143 | ~$155 |
+| Lovable AI (Analysis) | ~$2 | ~$23 | ~$25 |
+| ElevenLabs TTS (Jeff) | ~$60 | $0 | ~$60 |
+| ElevenLabs TTS (Katty) | ~$40 | $0 | ~$40 |
+| **Total** | ~$114 | ~$166 | **~$280** |
+
+**Cost savings vs full pipeline: ~$900-1,100**
+
+---
 
 ### Implementation Steps
 
-#### Step 1: Update KPI Calculation to Include Rebooking Data
+#### Step 1: Create Database Table for Job Tracking
 
-**File: `src/utils/dashboardCalculations.ts`**
+New `bulk_processing_jobs` table to track processing state and allow pause/resume:
 
-Modify `calculateKPIData` to track rebookings:
+```text
+┌──────────────────────────────────────────────────────────────────┐
+│ bulk_processing_jobs                                              │
+├──────────────────────────────────────────────────────────────────┤
+│ id (uuid)                 - Primary key                          │
+│ job_name (text)           - Human-readable name                  │
+│ status (text)             - pending | running | paused | done    │
+│ total_records (int)       - Total to process                     │
+│ processed_count (int)     - Successfully processed               │
+│ failed_count (int)        - Failed records                       │
+│ skipped_count (int)       - Skipped (no audio link)             │
+│ current_booking_id (uuid) - Currently processing                 │
+│ site_filter (text)        - 'vixicom_only' | 'non_vixicom' | all │
+│ include_tts (boolean)     - Whether to generate coaching audio   │
+│ pacing_seconds (int)      - Delay between records (default: 10)  │
+│ error_log (jsonb[])       - Array of error details               │
+│ started_at (timestamp)    - When processing started              │
+│ completed_at (timestamp)  - When finished                        │
+│ created_by (uuid)         - User who started                     │
+│ created_at (timestamp)    - Job creation time                    │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+#### Step 2: Create New Edge Function
+
+New `bulk-transcription-processor` edge function with:
+
+**Key Features:**
+- **Conditional TTS generation** based on agent's site (Vixicom vs. other)
+- Configurable pacing (5-15 seconds between records)
+- Background processing with `EdgeRuntime.waitUntil()`
+- Real-time progress updates via database
+- Pause/resume support
+- Automatic retry for 402 (quota) errors
+
+**Processing Logic:**
+```text
+For each booking:
+1. Fetch booking with agent → site relationship
+2. Check if site = 'Vixicom' (outsourced)
+3. Call transcribe-call → Always runs
+4. Call generate-coaching-audio → Only if Vixicom
+5. Call generate-qa-scores → Always runs
+6. Call generate-qa-coaching-audio → Only if Vixicom
+7. Update job progress
+```
+
+#### Step 3: Modify Transcribe-Call Auto-Trigger
+
+Update `transcribe-call/index.ts` (lines 1464-1514) to check site before triggering TTS:
+
+**Current behavior:** Always triggers Jeff + Katty audio after transcription
+**New behavior:** Only trigger TTS functions if agent belongs to Vixicom site
 
 ```typescript
-// Add to current calculations (around line 100-122)
-const currentNewBookings = currentBookings.filter(b => !b.isRebooking).length;
-const currentRebookings = currentBookings.filter(b => b.isRebooking).length;
-const previousNewBookings = previousBookings.filter(b => !b.isRebooking).length;
-const previousRebookings = previousBookings.filter(b => b.isRebooking).length;
+// Lines 1458-1515 - Add site check before TTS
+const isVixicomAgent = siteId && await checkIsVixicomSite(supabase, siteId);
 
-const rebookingsChange = calculateChange(currentRebookings, previousRebookings);
+// Only generate Jeff audio for Vixicom agents
+if (isVixicomAgent) {
+  fetch(`${supabaseUrl}/functions/v1/generate-coaching-audio`, {...})
+}
 
-// Update first KPI card label to include breakdown
-// Label: "Total Bookings" 
-// Add subtitle info showing: "X new, Y rebookings"
+// QA scoring still runs for everyone
+const qaResponse = await fetch(`${supabaseUrl}/functions/v1/generate-qa-scores`, {...});
 
-// Add new rebookings KPI card
-{
-  label: 'Rebookings',
-  value: currentRebookings,
-  previousValue: previousRebookings,
-  change: rebookingsChange.change,
-  changeType: rebookingsChange.changeType,
-  comparisonLabel,
+// Only generate Katty audio for Vixicom agents
+if (qaResponse.ok && isVixicomAgent) {
+  fetch(`${supabaseUrl}/functions/v1/generate-qa-coaching-audio`, {...})
 }
 ```
 
-#### Step 2: Enhance KPIData Type for Subtitle
+#### Step 4: Add Bulk Processing UI Tab
 
-**File: `src/types/index.ts`**
+New tab in `src/pages/HistoricalImport.tsx`:
 
-Add optional subtitle field to KPIData:
+```text
+┌─────────────────────────────────────────────────────────────────┐
+│ [HubSpot Import] [Phone Enrichment] [Bulk Processing] ← NEW     │
+└─────────────────────────────────────────────────────────────────┘
 
-```typescript
-export interface KPIData {
-  label: string;
-  value: number;
-  previousValue: number;
-  change: number;
-  changeType: 'increase' | 'decrease' | 'neutral';
-  comparisonLabel?: string;
-  subtitle?: string;  // NEW: For additional context like "12 new, 3 rebookings"
-}
+┌─────────────────────────────────────────────────────────────────┐
+│ Pending Transcriptions Summary                                   │
+├─────────────────────────────────────────────────────────────────┤
+│ ┌──────────────┐  ┌──────────────┐  ┌──────────────┐            │
+│ │ Vixicom      │  │ PadSplit     │  │ Total        │            │
+│ │ 394 pending  │  │ 4,619 pending│  │ 5,013 pending│            │
+│ │ Full pipeline│  │ STT only     │  │ ~14 hours    │            │
+│ └──────────────┘  └──────────────┘  └──────────────┘            │
+└─────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────┐
+│ Start New Job                                                    │
+├─────────────────────────────────────────────────────────────────┤
+│ Wave: [Vixicom Only ▼] or [Non-Vixicom Only ▼] or [All Records] │
+│ Pacing: [10 seconds ▼]  (5-30 seconds between records)          │
+│ Include TTS Audio: [✓] Auto-detect based on site                │
+│                                                                  │
+│ Est. Time: ~1 hour (394 records)                                │
+│ Est. Cost: ~$114                                                 │
+│                                                                  │
+│ [▶ Start Processing]                                             │
+└─────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────┐
+│ Active Job: "Vixicom Wave 1"                    [Pause] [Stop]  │
+├─────────────────────────────────────────────────────────────────┤
+│ ████████████████████░░░░░░░░░░░░░░░░░░░░  45% (177/394)        │
+│ Processing: John Smith - booking abc123                         │
+│ Errors: 2 | ETA: 36 minutes                                     │
+│                                                                  │
+│ [View Error Log]                                                │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
-#### Step 3: Update KPICard Component to Show Subtitle
+---
 
-**File: `src/components/dashboard/KPICard.tsx`**
+### Files to Create/Modify
 
-Add subtitle rendering:
+| File | Action | Description |
+|------|--------|-------------|
+| **Database Migration** | Create | `bulk_processing_jobs` table |
+| `supabase/functions/bulk-transcription-processor/index.ts` | Create | New edge function for bulk processing |
+| `supabase/config.toml` | Modify | Add new function config |
+| `supabase/functions/transcribe-call/index.ts` | Modify | Add Vixicom check before TTS triggers |
+| `src/pages/HistoricalImport.tsx` | Modify | Add "Bulk Processing" tab |
+| `src/components/import/BulkProcessingTab.tsx` | Create | New UI component |
+| `src/hooks/useBulkProcessingJobs.ts` | Create | Hook for job polling |
 
-```typescript
-interface KPICardProps {
-  data: KPIData;
-  icon?: React.ReactNode;
-  delay?: number;
-}
+---
 
-// In the component, after the main value:
-{data.subtitle && (
-  <p className="text-xs text-muted-foreground mt-0.5">
-    {data.subtitle}
-  </p>
-)}
-```
+### Recommended Execution Strategy
 
-#### Step 4: Update Dashboard Grid for 5 Cards
+**Phase 1: Vixicom First (Day 1)**
+- Start with 394 Vixicom records (full pipeline)
+- Validates system stability before scaling
+- Estimated time: ~1.5 hours at 10s pacing
+- Allows agents who actively use the system to get coaching immediately
 
-**File: `src/pages/Dashboard.tsx`**
+**Phase 2: Non-Vixicom (Day 1-2)**
+- Process 4,619 PadSplit Internal records (transcription + QA only)
+- No TTS audio generation = faster processing
+- Estimated time: ~13 hours at 10s pacing
+- Can run overnight with pause capability
 
-Update the KPI grid to handle 5 cards and add a new icon:
+---
 
-```typescript
-// Add Repeat icon for rebookings
-import { CalendarDays, Users, Clock, CheckCircle2, Repeat } from 'lucide-react';
+### Error Handling
 
-const kpiIcons = [
-  <CalendarDays className="w-5 h-5" />,  // Total Bookings
-  <Repeat className="w-5 h-5" />,         // Rebookings (NEW)
-  <Users className="w-5 h-5" />,          // Vixicom
-  <Clock className="w-5 h-5" />,          // PadSplit
-  <CheckCircle2 className="w-5 h-5" />,   // Pending Move-Ins
-];
+| Error | Action | Retry? |
+|-------|--------|--------|
+| HTTP 402 (Quota/Payment) | Pause job, create admin notification | Yes, after 5 min |
+| HTTP 404 (Audio not found) | Log error, skip to next record | No |
+| HTTP 403 (Access denied) | Log error, skip to next record | No |
+| HTTP 500 (Server error) | Retry with backoff | Yes, up to 3x |
+| Timeout | Retry with backoff | Yes, up to 2x |
 
-// Update grid to use 5 columns on large screens
-<div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
-```
+---
 
 ### Technical Details
 
-#### Rebooking Calculation Logic
+#### Vixicom Site Detection
 
-Uses existing `isRebooking` boolean field on bookings:
-- **New Booking**: `isRebooking === false` or `isRebooking === undefined`
-- **Rebooking**: `isRebooking === true`
+The system will use the existing agent → site relationship:
 
-The same-time comparison logic (for "Today" filter) will apply to rebooking counts as well.
+```sql
+-- Check if agent belongs to Vixicom
+SELECT s.name ILIKE '%vixicom%' as is_vixicom
+FROM agents a
+JOIN sites s ON a.site_id = s.id
+WHERE a.id = :agent_id
+```
 
-#### Subtitle Format
+#### Bulk Processor Flow
 
-For Total Bookings card:
-- If rebookings > 0: `"X new, Y rebookings"`
-- If rebookings = 0: `"All new bookings"`
+```text
+Start Job
+    │
+    ▼
+┌─────────────────────────────┐
+│ Fetch pending bookings      │
+│ (filter by site if set)     │
+└─────────────┬───────────────┘
+              │
+              ▼
+┌─────────────────────────────┐
+│ For each booking:           │◄──────────────┐
+│ 1. Check job status         │               │
+│    (paused? stopped?)       │               │
+│ 2. Get agent's site         │               │
+│ 3. Call transcribe-call     │               │
+│ 4. If Vixicom: call TTS     │               │
+│ 5. Update progress          │               │
+│ 6. Wait pacing delay        │               │
+└─────────────┬───────────────┘               │
+              │                               │
+              ▼                               │
+    [More records?] ──Yes─────────────────────┘
+              │
+             No
+              │
+              ▼
+    Mark job 'completed'
+```
 
-### Files to Modify
+---
 
-| File | Changes |
-|------|---------|
-| `src/types/index.ts` | Add `subtitle?: string` to `KPIData` interface |
-| `src/utils/dashboardCalculations.ts` | Add rebooking calculations, add new KPI card, add subtitle to Total Bookings |
-| `src/components/dashboard/KPICard.tsx` | Render subtitle below value if present |
-| `src/pages/Dashboard.tsx` | Update grid to 5 columns, add Repeat icon |
+### Implementation Order
 
-### Expected Result
-
-| Metric | Display |
-|--------|---------|
-| Total Bookings | Shows count with subtitle "12 new, 3 rebookings" |
-| Rebookings | Dedicated card with count and period comparison |
-| Comparison | Both cards show % change vs previous period |
+1. **Create database table** - Migration for `bulk_processing_jobs`
+2. **Modify transcribe-call** - Add Vixicom site check before TTS
+3. **Create bulk processor edge function** - New function with all features
+4. **Create UI components** - BulkProcessingTab + hook
+5. **Add tab to HistoricalImport** - Wire everything together
+6. **Test with small batch** - 10 Vixicom records first
+7. **Full Vixicom processing** - 394 records
+8. **Full Non-Vixicom processing** - 4,619 records
 
