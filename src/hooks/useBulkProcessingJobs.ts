@@ -19,11 +19,12 @@ export interface BulkProcessingJob {
     error: string;
     timestamp: string;
     retryable: boolean;
-  }>;
+  }> | null;
   started_at: string | null;
   completed_at: string | null;
   paused_at: string | null;
   last_activity_at: string | null;
+  chunk_count: number;
   created_by: string | null;
   created_at: string;
 }
@@ -60,9 +61,10 @@ export function useBulkProcessingJobs() {
       // Type cast to handle the JSONB array properly
       const typedJobs = (data || []).map(job => ({
         ...job,
-        error_log: Array.isArray(job.error_log) ? job.error_log : [],
-        last_activity_at: job.last_activity_at || null
-      })) as BulkProcessingJob[];
+        error_log: Array.isArray(job.error_log) ? job.error_log as BulkProcessingJob['error_log'] : [],
+        last_activity_at: job.last_activity_at || null,
+        chunk_count: job.chunk_count || 0
+      })) as unknown as BulkProcessingJob[];
       
       setJobs(typedJobs);
       
@@ -151,7 +153,11 @@ export function useBulkProcessingJobs() {
       if (error) throw error;
       
       await fetchJobs();
-      return data as BulkProcessingJob;
+      return {
+        ...data,
+        error_log: data.error_log as BulkProcessingJob['error_log'],
+        chunk_count: data.chunk_count || 0
+      } as unknown as BulkProcessingJob;
     } catch (err) {
       console.error('Failed to create job:', err);
       toast.error('Failed to create job');
