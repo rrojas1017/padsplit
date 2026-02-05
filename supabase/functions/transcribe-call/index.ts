@@ -59,6 +59,33 @@ const DEEPSEEK_PRICING = {
   outputRate: 0.00000028,  // $0.28 per 1M tokens
 };
 
+// Fetch provider-specific prompt enhancements from database
+async function getProviderPromptEnhancements(
+  supabase: any, 
+  providerName: 'deepseek' | 'lovable_ai'
+): Promise<string> {
+  try {
+    const { data: enhancements, error } = await supabase
+      .from('llm_prompt_enhancements')
+      .select('content')
+      .eq('provider_name', providerName)
+      .eq('is_active', true)
+      .order('priority', { ascending: false });
+
+    if (error || !enhancements || enhancements.length === 0) {
+      console.log(`[LLM Enhance] No active enhancements for ${providerName}`);
+      return '';
+    }
+
+    const combinedEnhancements = enhancements.map((e: any) => e.content).join('\n\n');
+    console.log(`[LLM Enhance] Loaded ${enhancements.length} enhancements for ${providerName} (${combinedEnhancements.length} chars)`);
+    return combinedEnhancements;
+  } catch (error) {
+    console.error('[LLM Enhance] Error fetching enhancements:', error);
+    return '';
+  }
+}
+
 // Select LLM provider based on weights and fallback conditions
 async function selectLLMProvider(
   supabase: any,
@@ -1463,8 +1490,16 @@ async function processTranscription(bookingId: string, kixieUrl: string, skipTts
     let estimatedOutputTokens = 0;
 
     if (llmSelection.provider === 'deepseek') {
-      // Use DeepSeek for analysis
-      const systemPrompt = 'You are an expert at analyzing sales call transcriptions. Always respond with valid JSON only, no markdown.';
+      // Use DeepSeek for analysis with provider-specific prompt enhancements
+      let systemPrompt = 'You are an expert at analyzing sales call transcriptions. Always respond with valid JSON only, no markdown.';
+      
+      // Fetch and inject provider-specific enhancements for improved readiness detection
+      const enhancements = await getProviderPromptEnhancements(supabase, 'deepseek');
+      if (enhancements) {
+        systemPrompt = enhancements + '\n\n' + systemPrompt;
+        console.log('[Background] DeepSeek prompt enhanced with few-shot examples and scoring rules');
+      }
+      
       const deepseekResult = await callDeepSeekForAnalysis(systemPrompt, summaryPrompt);
       aiContent = deepseekResult.content;
       estimatedInputTokens = deepseekResult.inputTokens;
@@ -1485,7 +1520,8 @@ async function processTranscription(bookingId: string, kixieUrl: string, skipTts
           transcription_length: transcription.length, 
           call_duration_seconds: callDurationSeconds,
           latency_ms: deepseekResult.latencyMs,
-          fallback_reason: llmSelection.fallbackReason
+          fallback_reason: llmSelection.fallbackReason,
+          prompt_enhanced: !!enhancements
         }
       });
     } else {
