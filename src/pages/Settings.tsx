@@ -17,6 +17,7 @@ import { ScriptList } from '@/components/ai-management/ScriptList';
 import { AutoTranscriptionSettings } from '@/components/ai-management/AutoTranscriptionSettings';
 import { QARubricSettings } from '@/components/ai-management/QARubricSettings';
 import { STTComparisonPanel } from '@/components/ai-management/STTComparisonPanel';
+ import { LLMComparisonPanel } from '@/components/ai-management/LLMComparisonPanel';
 import { KattyQASettings } from '@/components/ai-management/KattyQASettings';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
@@ -425,6 +426,11 @@ export default function Settings() {
                 <STTComparisonPanel />
               </div>
 
+               {/* LLM Quality Comparison */}
+               <div className="bg-card rounded-xl border border-border p-6 shadow-card">
+                 <LLMComparisonPanel />
+               </div>
+ 
               {/* Info Box */}
               <div className="bg-primary/5 border border-primary/20 rounded-xl p-4">
                 <div className="flex gap-3">
