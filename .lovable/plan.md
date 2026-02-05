@@ -1,143 +1,229 @@
 
-# Plan: Add Call Length Threshold for AI Model Selection
+# DeepSeek Integration Plan
 
-Implement a smart model selector that uses **Gemini 2.5 Flash** for short calls (under 5 minutes) and **Gemini 2.5 Pro** for longer calls. This optimization will reduce AI analysis costs by ~60-70% on shorter calls while maintaining quality for longer, more complex conversations.
+## Overview
 
-## Summary
-
-| Aspect | Before | After |
-|--------|--------|-------|
-| Short calls (<5 min) | Gemini 2.5 Pro (~$0.04) | Gemini 2.5 Flash (~$0.01) |
-| Long calls (≥5 min) | Gemini 2.5 Pro (~$0.04) | Gemini 2.5 Pro (~$0.04) |
-| Estimated savings | - | ~40-50% on AI analysis costs |
+This plan adds DeepSeek as a new AI provider for call analysis, following the proven A/B testing pattern already established for STT providers (ElevenLabs vs Deepgram). The integration will allow side-by-side quality comparison before committing to any production changes.
 
 ---
 
-## Implementation
+## Architecture Summary
 
-### 1. Create Model Selection Helper Function
+### Current State
+- **STT Providers:** ElevenLabs (0% weight) vs Deepgram (100% weight) via `stt_provider_settings` table
+- **LLM Provider:** Lovable AI Gateway only (Gemini Flash/Pro)
+- **Cost Tracking:** `api_costs` table logs all provider usage with `service_provider` field
 
-Add a reusable function to determine the appropriate model based on call duration:
+### Target State
+- Add `deepseek` as a new LLM provider alongside `lovable_ai`
+- Create `llm_provider_settings` table (mirrors `stt_provider_settings` pattern)
+- Create `llm_quality_comparisons` table for A/B testing results
+- Build comparison edge function + UI panel (mirrors STT pattern)
 
+---
+
+## Pricing Reference (DeepSeek V3.2)
+
+| Model | Input (per 1M tokens) | Output (per 1M tokens) |
+|-------|----------------------|------------------------|
+| deepseek-chat (cache miss) | $0.27 | $1.10 |
+| deepseek-chat (cache hit) | $0.07 | $1.10 |
+
+**Comparison to Current Gemini Pricing:**
+
+| Model | Input | Output | Notes |
+|-------|-------|--------|-------|
+| Gemini 2.5 Pro | $1.25 | $10.00 | Current for 5+ min calls |
+| Gemini 2.5 Flash | $0.30 | $2.50 | Current for < 5 min calls |
+| DeepSeek Chat | $0.27 | $1.10 | ~70-90% cheaper on output |
+
+---
+
+## Implementation Steps
+
+### Phase 1: Database Setup
+
+**New Table: `llm_provider_settings`**
 ```text
-selectAnalysisModel(callDurationSeconds)
-├── If callDurationSeconds < 300 (5 min)
-│   └── Return 'google/gemini-2.5-flash'
-└── Else
-    └── Return 'google/gemini-2.5-pro'
+id              uuid (PK)
+provider_name   text (unique) - 'lovable_ai', 'deepseek'
+is_active       boolean
+weight          integer (0-100, A/B testing distribution)
+api_config      jsonb (model preferences, etc.)
+created_at      timestamptz
+updated_at      timestamptz
 ```
 
-### 2. Update transcribe-call Edge Function
-
-**File:** `supabase/functions/transcribe-call/index.ts`
-
-Modify the AI analysis step (around line 1298-1335) to:
-- Use `callDurationSeconds` (already available from STT result) to select model
-- Update the cost logging to reflect the actual model used
-- Add logging to track model selection
-
+**New Table: `llm_quality_comparisons`**
 ```text
-Before:
-  model: 'google/gemini-2.5-pro'  (hardcoded)
+id                       uuid (PK)
+booking_id               uuid (FK to bookings, nullable)
+transcription_text       text
+call_duration_seconds    integer
 
-After:
-  const analysisModel = callDurationSeconds && callDurationSeconds < 300 
-    ? 'google/gemini-2.5-flash' 
-    : 'google/gemini-2.5-pro';
-  model: analysisModel  (dynamic)
+-- Lovable AI (Gemini) results
+gemini_analysis          jsonb
+gemini_model             text
+gemini_input_tokens      integer
+gemini_output_tokens     integer
+gemini_latency_ms        integer
+gemini_estimated_cost    numeric
+
+-- DeepSeek results
+deepseek_analysis        jsonb
+deepseek_model           text
+deepseek_input_tokens    integer
+deepseek_output_tokens   integer
+deepseek_latency_ms      integer
+deepseek_estimated_cost  numeric
+
+comparison_notes         text
+created_at               timestamptz
 ```
 
-### 3. Update reanalyze-call Edge Function
-
-**File:** `supabase/functions/reanalyze-call/index.ts`
-
-Modify the `performAIAnalysisWithRetry` function (around line 350-400) to:
-- Accept `callDurationSeconds` as a parameter
-- Select model based on duration threshold
-- Update cost logging metadata
-
-The booking query already fetches `call_duration_seconds`, so this is readily available.
-
-### 4. Update Cost Logging for Accuracy
-
-Update the `logApiCost` function in both files to use correct model-aware pricing:
-
+**Seed Data:**
 ```text
-Model Pricing (per 1M tokens):
-┌─────────────────────┬──────────────┬───────────────┐
-│ Model               │ Input Rate   │ Output Rate   │
-├─────────────────────┼──────────────┼───────────────┤
-│ gemini-2.5-flash    │ $0.30        │ $2.50         │
-│ gemini-2.5-pro      │ $1.25        │ $10.00        │
-└─────────────────────┴──────────────┴───────────────┘
+INSERT: lovable_ai, weight=100, is_active=true
+INSERT: deepseek, weight=0, is_active=true
 ```
 
 ---
+
+### Phase 2: Secret Configuration
+
+**Required Secret:**
+- `DEEPSEEK_API_KEY` - Your DeepSeek API key
+
+This will be requested via the Lovable secrets system before proceeding with edge function deployment.
+
+---
+
+### Phase 3: Edge Function - compare-llm-providers
+
+**Location:** `supabase/functions/compare-llm-providers/index.ts`
+
+**Purpose:** Run the same transcription through both Gemini and DeepSeek, store results for comparison
+
+**Logic Flow:**
+1. Accept `bookingId` or raw `transcription` text
+2. Fetch transcription from database if `bookingId` provided
+3. Build the analysis prompt (reuse existing `buildDefaultPrompt` logic)
+4. Call Lovable AI Gateway (Gemini) with the prompt
+5. Call DeepSeek API directly with same prompt
+6. Parse both JSON responses
+7. Log costs to `api_costs` table for both providers
+8. Store comparison in `llm_quality_comparisons` table
+9. Return metrics for immediate display
+
+**DeepSeek API Call Pattern:**
+```text
+POST https://api.deepseek.com/chat/completions
+Headers:
+  Authorization: Bearer ${DEEPSEEK_API_KEY}
+  Content-Type: application/json
+Body:
+  model: 'deepseek-chat'
+  messages: [system, user]
+  stream: false
+```
+
+---
+
+### Phase 4: Frontend - LLMComparisonPanel Component
+
+**Location:** `src/components/ai-management/LLMComparisonPanel.tsx`
+
+**Features (mirrors STTComparisonPanel):**
+- List eligible bookings for comparison (transcribed but not LLM-compared)
+- Run comparison button per booking
+- Comparison history list with cost savings badges
+- Side-by-side analysis viewer showing:
+  - Gemini extracted fields vs DeepSeek extracted fields
+  - Latency comparison
+  - Token usage comparison
+  - Estimated cost per provider
+  - Quality notes field for manual review
+
+---
+
+### Phase 5: Provider Labels Update
+
+**File:** `src/utils/providerLabels.ts`
+
+Add DeepSeek to the provider/service label maps:
+```text
+SUPER_ADMIN_PROVIDER_LABELS:
+  deepseek: 'DeepSeek'
+
+GENERIC_PROVIDER_LABELS:
+  deepseek: 'AI Services'
+
+PROVIDER_BADGE_COLORS:
+  deepseek: 'bg-cyan-500/10 text-cyan-600 border-cyan-500/20'
+```
+
+---
+
+### Phase 6: Cost Logging Updates
+
+**Files to Update:**
+- Edge function cost helper to support `deepseek` as `service_provider`
+- DeepSeek pricing calculation: `($0.27 × input_tokens / 1M) + ($1.10 × output_tokens / 1M)`
+
+---
+
+### Phase 7: Settings Page Integration
+
+**File:** `src/pages/Settings.tsx`
+
+Add the new LLMComparisonPanel to the AI Management tab, below the existing STTComparisonPanel:
+```text
+{/* LLM Quality Comparison */}
+<div className="bg-card rounded-xl border border-border p-6 shadow-card">
+  <LLMComparisonPanel />
+</div>
+```
+
+---
+
+## Files to Create
+
+| File | Purpose |
+|------|---------|
+| `supabase/functions/compare-llm-providers/index.ts` | A/B comparison edge function |
+| `src/components/ai-management/LLMComparisonPanel.tsx` | Comparison UI component |
 
 ## Files to Modify
 
 | File | Changes |
 |------|---------|
-| `supabase/functions/transcribe-call/index.ts` | Add model selection logic based on duration, update AI call and cost logging |
-| `supabase/functions/reanalyze-call/index.ts` | Pass duration to AI function, implement model selection, update cost logging |
+| `supabase/config.toml` | Add `compare-llm-providers` function config |
+| `src/utils/providerLabels.ts` | Add DeepSeek provider labels and colors |
+| `src/pages/Settings.tsx` | Import and render LLMComparisonPanel |
+
+## Database Migrations
+
+1. Create `llm_provider_settings` table
+2. Create `llm_quality_comparisons` table  
+3. Insert seed data for providers (lovable_ai 100%, deepseek 0%)
+4. Add RLS policies for admin access
 
 ---
 
-## Technical Details
+## What This Does NOT Do (Yet)
 
-### Model Selection Function
+- Does NOT switch production analysis to DeepSeek
+- Does NOT modify `transcribe-call` or `reanalyze-call` functions
+- Does NOT change any existing processing pipelines
 
-```typescript
-function selectAnalysisModel(callDurationSeconds: number | null): string {
-  const DURATION_THRESHOLD_SECONDS = 300; // 5 minutes
-  
-  if (!callDurationSeconds || callDurationSeconds < DURATION_THRESHOLD_SECONDS) {
-    console.log(`[Model] Using Flash for ${callDurationSeconds || 0}s call (< 5 min threshold)`);
-    return 'google/gemini-2.5-flash';
-  }
-  
-  console.log(`[Model] Using Pro for ${callDurationSeconds}s call (≥ 5 min threshold)`);
-  return 'google/gemini-2.5-pro';
-}
-```
-
-### Cost Logging Update
-
-The existing `logApiCost` function already has model-aware pricing logic, but it needs to correctly handle the Flash model rates:
-
-```typescript
-if (model.includes('gemini-2.5-pro')) {
-  inputRate = 0.00000125;  // $1.25 per 1M tokens
-  outputRate = 0.00001;    // $10.00 per 1M tokens
-} else if (model.includes('gemini-2.5-flash') && !model.includes('lite')) {
-  inputRate = 0.0000003;   // $0.30 per 1M tokens
-  outputRate = 0.0000025;  // $2.50 per 1M tokens
-}
-```
+This is strictly a comparison/testing integration. Production switching would be a separate, future phase after you've reviewed comparison results and confirmed quality parity.
 
 ---
 
-## Expected Impact
+## Next Steps After Approval
 
-### Cost Savings Estimate
-
-Based on current PadSplit call distribution (estimated):
-- ~60% of calls are under 5 minutes
-- ~40% of calls are 5 minutes or longer
-
-| Metric | Before | After | Savings |
-|--------|--------|-------|---------|
-| Short call AI cost | ~$0.04 | ~$0.01 | 75% |
-| Long call AI cost | ~$0.04 | ~$0.04 | 0% |
-| **Blended average** | **$0.04** | **$0.022** | **~45%** |
-
-For the current bulk job processing ~4,600 calls:
-- Before: ~$184 in AI analysis costs
-- After: ~$101 in AI analysis costs
-- **Estimated savings: ~$83**
-
-### Quality Considerations
-
-- **Flash is highly capable** for structured extraction (summaries, member details, coaching feedback)
-- **Pro reserved for complex calls** where nuanced understanding matters (longer conversations, multiple topics, complex objections)
-- The 5-minute threshold is a reasonable starting point and can be tuned later based on quality feedback
+1. Request DEEPSEEK_API_KEY secret from you
+2. Run database migrations
+3. Create edge function
+4. Build comparison UI
+5. Deploy and test with a few sample calls
