@@ -1,131 +1,31 @@
 
+# Update compare-llm-providers Edge Function for Prompt Enhancement Injection
 
-# Improve DeepSeek Readiness Detection with Prompt Engineering
+## Overview
 
-## Problem Analysis
+Modify the `compare-llm-providers` edge function to fetch and inject provider-specific prompt enhancements from the `llm_prompt_enhancements` table before calling DeepSeek. This enables accurate A/B testing to validate whether the enhanced prompts improve DeepSeek's readiness detection alignment with Gemini.
 
-Based on the 5 LLM comparison tests, DeepSeek consistently **overestimates moveInReadiness**:
+## Current State
 
-| Member | Status | Gemini | DeepSeek | Issue |
-|--------|--------|--------|----------|-------|
-| Tiffany Andrews | Booking (issue call) | **low** | high | ❌ Major mismatch |
-| Contact Automation | Non Booking | medium | high | ❌ Mismatch |
-| (404) 595-9970 | Non Booking | medium | high | ❌ Mismatch |
-| Travis Beckett | Non Booking | low | low | ✅ Match |
+The edge function uses a static `buildAnalysisPrompt()` function that returns the same system prompt for both providers. The `llm_prompt_enhancements` table contains 3 active DeepSeek enhancements:
+- **few_shot_examples** (priority 10): 4 readiness classification examples
+- **negative_signals** (priority 8): Complaint keywords and issue patterns
+- **scoring_rubric** (priority 5): Explicit LOW/MEDIUM/HIGH scoring rules
 
-**Root Cause**: DeepSeek defaults to "high" readiness unless explicitly taught what low/medium looks like. The current prompt lacks:
-1. Few-shot examples of negative scenarios
-2. Explicit scoring rubric for readiness levels
-3. Provider-specific calibration instructions
+## Implementation
 
-## Solution: Enhanced Provider-Specific Prompting
+### Changes to `supabase/functions/compare-llm-providers/index.ts`
 
-We will create a **prompt enhancement system** that adds few-shot examples and explicit instructions specifically for DeepSeek, stored in the database for easy tuning.
+**1. Add helper function to fetch prompt enhancements:**
 
----
-
-## Implementation Details
-
-### Phase 1: Database - Add Prompt Enhancement Configuration
-
-Create a new table `llm_prompt_enhancements` to store provider-specific prompt additions:
-
-```sql
-CREATE TABLE llm_prompt_enhancements (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  provider_name text NOT NULL, -- 'deepseek' or 'lovable_ai'
-  enhancement_type text NOT NULL, -- 'few_shot_examples', 'scoring_rubric', 'negative_signals'
-  content text NOT NULL, -- The actual prompt content to inject
-  priority int DEFAULT 0, -- Higher priority = earlier in prompt
-  is_active boolean DEFAULT true,
-  created_at timestamptz DEFAULT now(),
-  updated_at timestamptz DEFAULT now()
-);
-```
-
-**Initial Data** - Add few-shot examples for DeepSeek:
-
-```sql
-INSERT INTO llm_prompt_enhancements (provider_name, enhancement_type, content, priority) VALUES
--- Few-shot examples for readiness detection
-('deepseek', 'few_shot_examples', E'
-READINESS CLASSIFICATION EXAMPLES - Study these carefully:
-
-EXAMPLE 1 - LOW READINESS (Issue/Complaint Call):
-Transcript snippet: "I booked a room and paid money but there is an issue with my service dog. I need to talk to someone about getting my money back."
-Analysis: moveInReadiness = "low" 
-Why: Member is NOT trying to book - they are complaining about an existing issue and may want a refund.
-
-EXAMPLE 2 - LOW READINESS (Just Browsing):
-Transcript snippet: "I was just calling to see what you all have available. I am not ready to move yet, maybe in a few months."
-Analysis: moveInReadiness = "low"
-Why: Member explicitly states no urgency, timeline is months away.
-
-EXAMPLE 3 - MEDIUM READINESS (Interested but Exploring):
-Transcript snippet: "I found a listing online and wanted to know more about it. What are the requirements? My budget is around $200 a week."
-Analysis: moveInReadiness = "medium"
-Why: Member shows interest, has budget, but is still gathering information, no specific timeline.
-
-EXAMPLE 4 - HIGH READINESS (Ready to Move):
-Transcript snippet: "I need to move by this weekend. I have my deposit ready and just need to find a room near downtown Atlanta."
-Analysis: moveInReadiness = "high"
-Why: Urgent timeline (this weekend), has funds ready, specific location preference.
-', 10),
-
--- Explicit scoring rubric
-('deepseek', 'scoring_rubric', E'
-MOVE-IN READINESS SCORING RULES (CRITICAL - Follow exactly):
-
-Score LOW if ANY of these are true:
-- Member is calling about an EXISTING booking issue (complaints, refunds, service dog problems)
-- Member says "just looking", "not ready yet", "few months", "next year"
-- Member is upset/frustrated about a previous interaction
-- Call is an issue resolution, not a sales inquiry
-- No timeline mentioned AND no urgency indicators
-
-Score MEDIUM if:
-- Member is actively exploring options but no immediate timeline
-- Has budget but is comparing with other options
-- Interested but needs to check with someone else
-- Wants more information before committing
-
-Score HIGH only if ALL of these are true:
-- Member has urgent need (this week, ASAP, immediate)
-- Has budget confirmed or deposit ready
-- Is the decision maker
-- Actively asking about booking process or next steps
-', 5),
-
--- Negative sentiment signals
-('deepseek', 'negative_signals', E'
-NEGATIVE CALL INDICATORS (When detected, readiness should usually be LOW or MEDIUM):
-
-COMPLAINT KEYWORDS: "issue", "problem", "refund", "money back", "cancel", "frustrated", "upset", "not what I expected"
-
-ISSUE CALL PATTERNS:
-- Member already booked/paid and is having problems
-- Discussing service animals, accessibility issues, or policy violations
-- Agent is apologizing or explaining policies defensively
-- Member wants to speak to a manager or escalate
-
-When these patterns appear, the call is NOT a sales opportunity - it is issue resolution. 
-Mark as LOW readiness regardless of other factors.
-', 8);
-```
-
-### Phase 2: Modify Edge Functions - Apply Enhancements
-
-Update `transcribe-call/index.ts` and `reanalyze-call/index.ts`:
-
-**New Helper Function:**
 ```typescript
 async function getProviderPromptEnhancements(
-  supabase: any, 
+  supabase: any,
   providerName: 'deepseek' | 'lovable_ai'
 ): Promise<string> {
   const { data: enhancements } = await supabase
     .from('llm_prompt_enhancements')
-    .select('content')
+    .select('content, enhancement_type')
     .eq('provider_name', providerName)
     .eq('is_active', true)
     .order('priority', { ascending: false });
@@ -136,63 +36,70 @@ async function getProviderPromptEnhancements(
 }
 ```
 
-**Inject Before DeepSeek Calls:**
+**2. Modify the comparison logic to use enhanced prompts for DeepSeek:**
+
 ```typescript
-// When calling DeepSeek, add provider-specific enhancements
-if (selectedProvider.provider === 'deepseek') {
-  const enhancements = await getProviderPromptEnhancements(supabase, 'deepseek');
-  systemPrompt = enhancements + '\n\n' + systemPrompt;
-}
+// Build base prompts
+const { system: baseSystem, user: userPrompt } = buildAnalysisPrompt(transcription);
+
+// Fetch DeepSeek-specific enhancements
+const deepseekEnhancements = await getProviderPromptEnhancements(supabase, 'deepseek');
+
+// Create enhanced system prompt for DeepSeek
+const deepseekSystemPrompt = deepseekEnhancements 
+  ? `${deepseekEnhancements}\n\n${baseSystem}`
+  : baseSystem;
+
+// Run both providers in parallel with different prompts
+const [geminiResult, deepseekResult] = await Promise.all([
+  callGemini(baseSystem, userPrompt),           // Gemini uses base prompt
+  callDeepSeek(deepseekSystemPrompt, userPrompt) // DeepSeek uses enhanced prompt
+]);
 ```
 
-### Phase 3: UI - Prompt Enhancement Editor
+**3. Track enhancement usage in comparison results:**
 
-Add a new section in `LLMComparisonPanel.tsx` for managing prompt enhancements:
+Add metadata to the stored comparison record:
+```typescript
+.insert({
+  // ... existing fields
+  deepseek_prompt_enhanced: !!deepseekEnhancements,
+  deepseek_enhancements_used: deepseekEnhancements ? deepseekEnhancements.substring(0, 2000) : null,
+})
+```
 
-**New UI Elements:**
-- "Prompt Tuning" accordion section
-- Table showing current enhancements for DeepSeek
-- Edit dialog for modifying enhancement content
-- Toggle to enable/disable each enhancement
-- "Test Enhancement" button to run a comparison with the modified prompt
+**4. Include enhancement status in response:**
 
----
+```typescript
+return new Response(JSON.stringify({
+  // ... existing fields
+  deepseek: {
+    // ... existing fields
+    promptEnhanced: !!deepseekEnhancements,
+  },
+}));
+```
 
-## File Changes Summary
+## Database Changes
 
-| File | Changes |
-|------|---------|
-| New migration | Create `llm_prompt_enhancements` table with initial data |
-| `supabase/functions/transcribe-call/index.ts` | Add `getProviderPromptEnhancements`, inject before DeepSeek calls |
-| `supabase/functions/reanalyze-call/index.ts` | Same enhancement injection logic |
-| `src/components/ai-management/LLMComparisonPanel.tsx` | Add Prompt Tuning UI section |
+Add columns to `llm_quality_comparisons` table to track enhancement usage:
 
----
-
-## Why This Approach Works
-
-1. **Few-shot learning** teaches DeepSeek by example - showing what LOW/MEDIUM/HIGH actually looks like in PadSplit context
-
-2. **Explicit scoring rubric** overrides DeepSeek's tendency to default to "high" by giving clear rules
-
-3. **Database-driven** allows tuning prompts without code deployments - you can add more examples as you discover edge cases
-
-4. **Provider-specific** - only DeepSeek gets the extra guidance, so Gemini's behavior is unchanged
-
----
-
-## Expected Improvement
-
-After implementing, DeepSeek should:
-- Correctly identify issue/complaint calls as LOW readiness
-- Match Gemini's readiness detection in 90%+ of cases
-- Save ~31% on LLM costs while maintaining quality parity
-
----
+```sql
+ALTER TABLE llm_quality_comparisons
+ADD COLUMN IF NOT EXISTS deepseek_prompt_enhanced boolean DEFAULT false,
+ADD COLUMN IF NOT EXISTS deepseek_enhancements_used text;
+```
 
 ## Testing Plan
 
-1. Run LLM comparison on **Tiffany Andrews** (the issue call) - verify DeepSeek now returns "low"
-2. Run comparison on **Contact Automation** - verify medium/low instead of high
-3. Run 5 additional comparisons to validate no regression on standard booking calls
+After deployment:
+1. Run comparison on Kenneth Pickett - verify `promptEnhanced: true` in response
+2. Confirm DeepSeek returns "low" or "medium" readiness (aligned with Gemini)
+3. Check `llm_quality_comparisons` table for `deepseek_prompt_enhanced = true`
 
+## File Changes Summary
+
+| File | Change |
+|------|--------|
+| `supabase/functions/compare-llm-providers/index.ts` | Add `getProviderPromptEnhancements()`, modify prompt injection logic, update response |
+| Migration | Add `deepseek_prompt_enhanced` and `deepseek_enhancements_used` columns |
