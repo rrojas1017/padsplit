@@ -293,6 +293,11 @@ export function BulkProcessingTab() {
                 ETA: {formatDuration(
                   ((activeJob.total_records - activeJob.processed_count) * activeJob.pacing_seconds) / 3600
                 )}
+                {activeJob.chunk_count > 0 && (
+                  <span className="ml-3">
+                    Chunk #{activeJob.chunk_count}
+                  </span>
+                )}
                 {activeJob.last_activity_at && (
                   <span className="ml-3">
                     Last activity: {format(new Date(activeJob.last_activity_at), 'h:mm:ss a')}

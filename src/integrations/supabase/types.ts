@@ -701,6 +701,7 @@ export type Database = {
       }
       bulk_processing_jobs: {
         Row: {
+          chunk_count: number | null
           completed_at: string | null
           created_at: string
           created_by: string | null
@@ -721,6 +722,7 @@ export type Database = {
           total_records: number
         }
         Insert: {
+          chunk_count?: number | null
           completed_at?: string | null
           created_at?: string
           created_by?: string | null
@@ -741,6 +743,7 @@ export type Database = {
           total_records?: number
         }
         Update: {
+          chunk_count?: number | null
           completed_at?: string | null
           created_at?: string
           created_by?: string | null

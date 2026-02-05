@@ -11,9 +11,13 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+// Chunked processing configuration
+const RECORDS_PER_CHUNK = 10;  // Process 10 records per function invocation
+const MAX_CHUNK_DURATION_MS = 100000;  // Safety: max 100s per chunk
+
 interface JobConfig {
   jobId: string;
-  action?: 'start' | 'pause' | 'resume' | 'stop';
+  action?: 'start' | 'pause' | 'resume' | 'stop' | 'continue';
 }
 
 interface ProcessingError {
@@ -21,6 +25,68 @@ interface ProcessingError {
   error: string;
   timestamp: string;
   retryable: boolean;
+}
+
+// Get pending count for a site filter
+async function getPendingCount(
+  supabase: any,
+  siteFilter: string | null
+): Promise<number> {
+  if (siteFilter === 'vixicom_only') {
+    const { data: vixicomAgents } = await supabase
+      .from('agents')
+      .select('id, sites!inner(name)')
+      .ilike('sites.name', '%vixicom%');
+    
+    const agentIds = (vixicomAgents || []).map((a: any) => a.id);
+    
+    if (agentIds.length > 0) {
+      const { count } = await supabase
+        .from('bookings')
+        .select('id', { count: 'exact', head: true })
+        .is('transcription_status', null)
+        .not('kixie_link', 'is', null)
+        .not('kixie_link', 'eq', '')
+        .in('agent_id', agentIds);
+      return count || 0;
+    }
+    return 0;
+  } else if (siteFilter === 'non_vixicom') {
+    const { data: vixicomAgents } = await supabase
+      .from('agents')
+      .select('id, sites!inner(name)')
+      .ilike('sites.name', '%vixicom%');
+    
+    const vixicomAgentIds = (vixicomAgents || []).map((a: any) => a.id);
+    
+    const { count: totalPending } = await supabase
+      .from('bookings')
+      .select('id', { count: 'exact', head: true })
+      .is('transcription_status', null)
+      .not('kixie_link', 'is', null)
+      .not('kixie_link', 'eq', '');
+    
+    let vixicomCount = 0;
+    if (vixicomAgentIds.length > 0) {
+      const { count } = await supabase
+        .from('bookings')
+        .select('id', { count: 'exact', head: true })
+        .is('transcription_status', null)
+        .not('kixie_link', 'is', null)
+        .not('kixie_link', 'eq', '')
+        .in('agent_id', vixicomAgentIds);
+      vixicomCount = count || 0;
+    }
+    return (totalPending || 0) - vixicomCount;
+  } else {
+    const { count } = await supabase
+      .from('bookings')
+      .select('id', { count: 'exact', head: true })
+      .is('transcription_status', null)
+      .not('kixie_link', 'is', null)
+      .not('kixie_link', 'eq', '');
+    return count || 0;
+  }
 }
 
 // Check if an agent belongs to Vixicom site
@@ -197,6 +263,9 @@ async function runProcessingLoop(
 ): Promise<void> {
   console.log(`[BulkProcessor] Starting processing loop for job ${jobId}`);
   
+  const chunkStartTime = Date.now();
+  let recordsProcessedThisChunk = 0;
+  
   try {
     // Get job config
     const { data: job, error: jobError } = await supabase
@@ -219,8 +288,25 @@ async function runProcessingLoop(
     const siteFilter = job.site_filter;
     const includeTts = job.include_tts;
     
-    // Process bookings one by one
+    // Increment chunk count at start of each chunk
+    await supabase
+      .from('bulk_processing_jobs')
+      .update({ chunk_count: (job.chunk_count || 0) + 1 })
+      .eq('id', jobId);
+    
+    // Process bookings in this chunk
     while (true) {
+      // Safety checks: stop if we've processed enough or running too long
+      if (recordsProcessedThisChunk >= RECORDS_PER_CHUNK) {
+        console.log(`[BulkProcessor] Chunk complete (${recordsProcessedThisChunk} records)`);
+        break;
+      }
+      
+      if (Date.now() - chunkStartTime > MAX_CHUNK_DURATION_MS) {
+        console.log(`[BulkProcessor] Chunk time limit reached`);
+        break;
+      }
+      
       // Check job status (for pause/stop)
       const { data: currentJob } = await supabase
         .from('bulk_processing_jobs')
@@ -316,9 +402,47 @@ async function runProcessingLoop(
         });
       }
       
+      recordsProcessedThisChunk++;
+      
       // Wait before processing next record
       console.log(`[BulkProcessor] Waiting ${pacingSeconds}s before next record...`);
       await new Promise(resolve => setTimeout(resolve, pacingSeconds * 1000));
+    }
+    
+    // After chunk completes, check if we should continue
+    const { data: jobAfterChunk } = await supabase
+      .from('bulk_processing_jobs')
+      .select('status, site_filter')
+      .eq('id', jobId)
+      .single();
+    
+    if (jobAfterChunk?.status === 'running') {
+      // Check if more records remain
+      const pendingCount = await getPendingCount(supabase, jobAfterChunk.site_filter);
+      
+      if (pendingCount > 0) {
+        // Self-retrigger: call the function again to continue
+        console.log(`[BulkProcessor] Retriggering for ${pendingCount} remaining records`);
+        
+        await fetch(`${supabaseUrl}/functions/v1/bulk-transcription-processor`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${supabaseServiceKey}`,
+          },
+          body: JSON.stringify({ 
+            jobId, 
+            action: 'continue'
+          }),
+        });
+      } else {
+        // Mark job as completed
+        console.log(`[BulkProcessor] All records processed, completing job ${jobId}`);
+        await updateJobProgress(supabase, jobId, {
+          status: 'completed',
+          completed_at: new Date().toISOString()
+        });
+      }
     }
     
   } catch (error) {
@@ -366,7 +490,6 @@ serve(async (req) => {
         let totalCount = 0;
         
         if (job.site_filter === 'vixicom_only') {
-          // Count Vixicom records using the same join logic
           const { data: vixicomAgents } = await supabase
             .from('agents')
             .select('id, sites!inner(name)')
@@ -385,7 +508,6 @@ serve(async (req) => {
             totalCount = count || 0;
           }
         } else if (job.site_filter === 'non_vixicom') {
-          // Count non-Vixicom records
           const { data: vixicomAgents } = await supabase
             .from('agents')
             .select('id, sites!inner(name)')
@@ -393,7 +515,6 @@ serve(async (req) => {
           
           const vixicomAgentIds = (vixicomAgents || []).map((a: any) => a.id);
           
-          // Get total pending, then subtract Vixicom count
           const { count: totalPending } = await supabase
             .from('bookings')
             .select('id', { count: 'exact', head: true })
@@ -414,7 +535,6 @@ serve(async (req) => {
           }
           totalCount = (totalPending || 0) - vixicomCount;
         } else {
-          // All records
           const { count } = await supabase
             .from('bookings')
             .select('id', { count: 'exact', head: true })
@@ -445,6 +565,18 @@ serve(async (req) => {
             jobId,
             totalRecords: totalCount
           }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+      
+      case 'continue': {
+        // Internal action - just start the next chunk
+        EdgeRuntime.waitUntil(
+          runProcessingLoop(supabase, jobId, supabaseUrl, supabaseServiceKey)
+        );
+        
+        return new Response(
+          JSON.stringify({ success: true, message: 'Continuing processing' }),
           { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
