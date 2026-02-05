@@ -24,12 +24,28 @@
           (outputTokens / 1_000_000) * DEEPSEEK_PRICING.output;
  }
  
- function calculateGeminiCost(inputTokens: number, outputTokens: number): number {
-   return (inputTokens / 1_000_000) * GEMINI_PRICING.input + 
-          (outputTokens / 1_000_000) * GEMINI_PRICING.output;
- }
- 
- function buildAnalysisPrompt(transcription: string): { system: string; user: string } {
+function calculateGeminiCost(inputTokens: number, outputTokens: number): number {
+  return (inputTokens / 1_000_000) * GEMINI_PRICING.input + 
+         (outputTokens / 1_000_000) * GEMINI_PRICING.output;
+}
+
+async function getProviderPromptEnhancements(
+  supabase: any,
+  providerName: 'deepseek' | 'lovable_ai'
+): Promise<string> {
+  const { data: enhancements } = await supabase
+    .from('llm_prompt_enhancements')
+    .select('content, enhancement_type')
+    .eq('provider_name', providerName)
+    .eq('is_active', true)
+    .order('priority', { ascending: false });
+
+  if (!enhancements || enhancements.length === 0) return '';
+
+  return enhancements.map((e: { content: string }) => e.content).join('\n\n');
+}
+
+function buildAnalysisPrompt(transcription: string): { system: string; user: string } {
    const systemPrompt = `You are an expert call analyst for PadSplit, a shared housing company. Your job is to analyze call transcriptions and extract structured information.
  
  You must respond with a valid JSON object containing the following fields:
@@ -241,53 +257,65 @@
        });
      }
  
-     console.log(`Starting LLM comparison for booking ${bookingId || "manual"}`);
- 
-     const { system, user: userPrompt } = buildAnalysisPrompt(transcription);
- 
-     // Run both providers in parallel
-     const [geminiResult, deepseekResult] = await Promise.all([
-       callGemini(system, userPrompt).catch(err => ({
-         analysis: { error: err.message },
-         model: "google/gemini-2.5-flash",
-         inputTokens: 0,
-         outputTokens: 0,
-         latencyMs: 0,
-       })),
-       callDeepSeek(system, userPrompt).catch(err => ({
-         analysis: { error: err.message },
-         model: "deepseek-chat",
-         inputTokens: 0,
-         outputTokens: 0,
-         latencyMs: 0,
-       })),
-     ]);
+      console.log(`Starting LLM comparison for booking ${bookingId || "manual"}`);
+
+      const { system: baseSystem, user: userPrompt } = buildAnalysisPrompt(transcription);
+
+      // Fetch DeepSeek-specific prompt enhancements
+      const deepseekEnhancements = await getProviderPromptEnhancements(supabase, 'deepseek');
+      
+      // Create enhanced system prompt for DeepSeek (prepend enhancements)
+      const deepseekSystemPrompt = deepseekEnhancements 
+        ? `${deepseekEnhancements}\n\n${baseSystem}`
+        : baseSystem;
+
+      console.log(`DeepSeek prompt enhanced: ${!!deepseekEnhancements}, enhancement length: ${deepseekEnhancements.length}`);
+
+      // Run both providers in parallel with different prompts
+      const [geminiResult, deepseekResult] = await Promise.all([
+        callGemini(baseSystem, userPrompt).catch(err => ({
+          analysis: { error: err.message },
+          model: "google/gemini-2.5-flash",
+          inputTokens: 0,
+          outputTokens: 0,
+          latencyMs: 0,
+        })),
+        callDeepSeek(deepseekSystemPrompt, userPrompt).catch(err => ({
+          analysis: { error: err.message },
+          model: "deepseek-chat",
+          inputTokens: 0,
+          outputTokens: 0,
+          latencyMs: 0,
+        })),
+      ]);
  
      const geminiCost = calculateGeminiCost(geminiResult.inputTokens, geminiResult.outputTokens);
      const deepseekCost = calculateDeepSeekCost(deepseekResult.inputTokens, deepseekResult.outputTokens);
  
-     // Store comparison result
-     const { data: comparison, error: insertError } = await supabase
-       .from("llm_quality_comparisons")
-       .insert({
-         booking_id: bookingId || null,
-         transcription_text: transcription.substring(0, 50000), // Limit size
-         call_duration_seconds: callDurationSeconds,
-         gemini_analysis: geminiResult.analysis,
-         gemini_model: geminiResult.model,
-         gemini_input_tokens: geminiResult.inputTokens,
-         gemini_output_tokens: geminiResult.outputTokens,
-         gemini_latency_ms: geminiResult.latencyMs,
-         gemini_estimated_cost: geminiCost,
-         deepseek_analysis: deepseekResult.analysis,
-         deepseek_model: deepseekResult.model,
-         deepseek_input_tokens: deepseekResult.inputTokens,
-         deepseek_output_tokens: deepseekResult.outputTokens,
-         deepseek_latency_ms: deepseekResult.latencyMs,
-         deepseek_estimated_cost: deepseekCost,
-       })
-       .select()
-       .single();
+      // Store comparison result with enhancement tracking
+      const { data: comparison, error: insertError } = await supabase
+        .from("llm_quality_comparisons")
+        .insert({
+          booking_id: bookingId || null,
+          transcription_text: transcription.substring(0, 50000), // Limit size
+          call_duration_seconds: callDurationSeconds,
+          gemini_analysis: geminiResult.analysis,
+          gemini_model: geminiResult.model,
+          gemini_input_tokens: geminiResult.inputTokens,
+          gemini_output_tokens: geminiResult.outputTokens,
+          gemini_latency_ms: geminiResult.latencyMs,
+          gemini_estimated_cost: geminiCost,
+          deepseek_analysis: deepseekResult.analysis,
+          deepseek_model: deepseekResult.model,
+          deepseek_input_tokens: deepseekResult.inputTokens,
+          deepseek_output_tokens: deepseekResult.outputTokens,
+          deepseek_latency_ms: deepseekResult.latencyMs,
+          deepseek_estimated_cost: deepseekCost,
+          deepseek_prompt_enhanced: !!deepseekEnhancements,
+          deepseek_enhancements_used: deepseekEnhancements ? deepseekEnhancements.substring(0, 2000) : null,
+        })
+        .select()
+        .single();
  
      if (insertError) {
        console.error("Failed to store comparison:", insertError);
@@ -333,14 +361,15 @@
            latencyMs: geminiResult.latencyMs,
            estimatedCost: geminiCost,
          },
-         deepseek: {
-           analysis: deepseekResult.analysis,
-           model: deepseekResult.model,
-           inputTokens: deepseekResult.inputTokens,
-           outputTokens: deepseekResult.outputTokens,
-           latencyMs: deepseekResult.latencyMs,
-           estimatedCost: deepseekCost,
-         },
+          deepseek: {
+            analysis: deepseekResult.analysis,
+            model: deepseekResult.model,
+            inputTokens: deepseekResult.inputTokens,
+            outputTokens: deepseekResult.outputTokens,
+            latencyMs: deepseekResult.latencyMs,
+            estimatedCost: deepseekCost,
+            promptEnhanced: !!deepseekEnhancements,
+          },
          costSavings: {
            absolute: geminiCost - deepseekCost,
            percentage: geminiCost > 0 ? ((geminiCost - deepseekCost) / geminiCost) * 100 : 0,
