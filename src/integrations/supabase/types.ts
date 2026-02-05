@@ -1384,11 +1384,13 @@ export type Database = {
           comparison_notes: string | null
           created_at: string
           deepseek_analysis: Json | null
+          deepseek_enhancements_used: string | null
           deepseek_estimated_cost: number | null
           deepseek_input_tokens: number | null
           deepseek_latency_ms: number | null
           deepseek_model: string | null
           deepseek_output_tokens: number | null
+          deepseek_prompt_enhanced: boolean | null
           gemini_analysis: Json | null
           gemini_estimated_cost: number | null
           gemini_input_tokens: number | null
@@ -1404,11 +1406,13 @@ export type Database = {
           comparison_notes?: string | null
           created_at?: string
           deepseek_analysis?: Json | null
+          deepseek_enhancements_used?: string | null
           deepseek_estimated_cost?: number | null
           deepseek_input_tokens?: number | null
           deepseek_latency_ms?: number | null
           deepseek_model?: string | null
           deepseek_output_tokens?: number | null
+          deepseek_prompt_enhanced?: boolean | null
           gemini_analysis?: Json | null
           gemini_estimated_cost?: number | null
           gemini_input_tokens?: number | null
@@ -1424,11 +1428,13 @@ export type Database = {
           comparison_notes?: string | null
           created_at?: string
           deepseek_analysis?: Json | null
+          deepseek_enhancements_used?: string | null
           deepseek_estimated_cost?: number | null
           deepseek_input_tokens?: number | null
           deepseek_latency_ms?: number | null
           deepseek_model?: string | null
           deepseek_output_tokens?: number | null
+          deepseek_prompt_enhanced?: boolean | null
           gemini_analysis?: Json | null
           gemini_estimated_cost?: number | null
           gemini_input_tokens?: number | null
