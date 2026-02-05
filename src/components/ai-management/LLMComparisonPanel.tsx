@@ -51,6 +51,10 @@ interface EligibleBooking {
   status: string | null;
 }
 
+interface ComparisonWithBookingStatus extends LLMComparison {
+  bookingStatus?: string | null;
+}
+
 interface LLMProviderSettings {
   id: string;
   provider_name: string;
@@ -66,8 +70,9 @@ interface ProviderStats {
 }
  
 export function LLMComparisonPanel() {
-  const [comparisons, setComparisons] = useState<LLMComparison[]>([]);
-  const [eligibleBookings, setEligibleBookings] = useState<EligibleBooking[]>([]);
+  const [comparisons, setComparisons] = useState<ComparisonWithBookingStatus[]>([]);
+  const [nonBookingCalls, setNonBookingCalls] = useState<EligibleBooking[]>([]);
+  const [otherBookings, setOtherBookings] = useState<EligibleBooking[]>([]);
   const [loading, setLoading] = useState(false);
   const [runningComparison, setRunningComparison] = useState<string | null>(null);
   const [selectedComparison, setSelectedComparison] = useState<LLMComparison | null>(null);
@@ -139,7 +144,7 @@ export function LLMComparisonPanel() {
   const fetchComparisons = async () => {
     const { data, error } = await supabase
       .from('llm_quality_comparisons')
-      .select('*')
+      .select('*, bookings(status)')
       .order('created_at', { ascending: false })
       .limit(20);
 
@@ -148,7 +153,13 @@ export function LLMComparisonPanel() {
       return;
     }
     
-    setComparisons((data || []) as LLMComparison[]);
+    // Map to include booking status
+    const comparisonsWithStatus: ComparisonWithBookingStatus[] = (data || []).map((c: any) => ({
+      ...c,
+      bookingStatus: c.bookings?.status || null
+    }));
+    
+    setComparisons(comparisonsWithStatus);
   };
 
   const fetchEligibleBookings = async () => {
@@ -160,25 +171,48 @@ export function LLMComparisonPanel() {
 
     const excludeIds = (comparedIds || []).map(c => c.booking_id).filter(Boolean);
 
-    let query = supabase
+    // Query for Non-Booking calls specifically (for readiness testing)
+    let nonBookingQuery = supabase
       .from('bookings')
       .select('id, member_name, booking_date, call_duration_seconds, status')
       .eq('transcription_status', 'completed')
+      .eq('status', 'Non Booking')
       .order('booking_date', { ascending: false })
-      .limit(20);
+      .limit(5);
 
     if (excludeIds.length > 0) {
-      query = query.not('id', 'in', `(${excludeIds.join(',')})`);
+      nonBookingQuery = nonBookingQuery.not('id', 'in', `(${excludeIds.join(',')})`);
     }
 
-    const { data, error } = await query;
+    // Query for other bookings
+    let otherQuery = supabase
+      .from('bookings')
+      .select('id, member_name, booking_date, call_duration_seconds, status')
+      .eq('transcription_status', 'completed')
+      .neq('status', 'Non Booking')
+      .order('booking_date', { ascending: false })
+      .limit(10);
 
-    if (error) {
-      console.error('Error fetching eligible bookings:', error);
-      return;
+    if (excludeIds.length > 0) {
+      otherQuery = otherQuery.not('id', 'in', `(${excludeIds.join(',')})`);
     }
 
-    setEligibleBookings((data || []) as EligibleBooking[]);
+    const [nonBookingResult, otherResult] = await Promise.all([
+      nonBookingQuery,
+      otherQuery
+    ]);
+
+    if (nonBookingResult.error) {
+      console.error('Error fetching non-booking calls:', nonBookingResult.error);
+    } else {
+      setNonBookingCalls((nonBookingResult.data || []) as EligibleBooking[]);
+    }
+
+    if (otherResult.error) {
+      console.error('Error fetching other bookings:', otherResult.error);
+    } else {
+      setOtherBookings((otherResult.data || []) as EligibleBooking[]);
+    }
   };
 
   const toggleHybridMode = async (enabled: boolean) => {
@@ -394,22 +428,79 @@ export function LLMComparisonPanel() {
         </Button>
       </div>
  
-       {/* Eligible Bookings for Comparison */}
-       {eligibleBookings.length > 0 && (
-         <Card className="p-4">
-           <h4 className="font-medium mb-3">Select a transcribed call to compare:</h4>
+       {/* Non-Booking Calls for Readiness Testing */}
+       {nonBookingCalls.length > 0 && (
+         <Card className="p-4 border-2 border-destructive/30 bg-destructive/5">
+           <div className="flex items-center gap-2 mb-3">
+             <Badge variant="destructive" className="text-xs">Non-Booking Test</Badge>
+             <h4 className="font-medium">Test DeepSeek readiness detection accuracy</h4>
+           </div>
+           <p className="text-sm text-muted-foreground mb-3">
+             Non-Booking calls are routed to Gemini by default. Use these to verify DeepSeek quality for edge cases.
+           </p>
            <div className="space-y-2 max-h-48 overflow-y-auto">
-             {eligibleBookings.slice(0, 5).map((booking) => (
+             {nonBookingCalls.map((booking) => (
+               <div 
+                 key={booking.id}
+                 className="flex items-center justify-between p-3 rounded-lg bg-destructive/10 border border-destructive/20"
+               >
+                 <div className="flex items-center gap-3">
+                   <Badge variant="destructive" className="text-xs shrink-0">
+                     Non Booking
+                   </Badge>
+                   <div>
+                     <p className="font-medium">{booking.member_name}</p>
+                     <p className="text-sm text-muted-foreground">
+                       {new Date(booking.booking_date).toLocaleDateString()} • 
+                       {formatDuration(booking.call_duration_seconds)}
+                     </p>
+                   </div>
+                 </div>
+                 <Button
+                   size="sm"
+                   variant="destructive"
+                   onClick={() => runComparison(booking.id)}
+                   disabled={runningComparison !== null}
+                 >
+                   {runningComparison === booking.id ? (
+                     <>
+                       <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                       Comparing...
+                     </>
+                   ) : (
+                     <>
+                       <FlaskConical className="w-4 h-4 mr-2" />
+                       Compare
+                     </>
+                   )}
+                 </Button>
+               </div>
+             ))}
+           </div>
+         </Card>
+       )}
+
+       {/* Other Eligible Bookings for Comparison */}
+       {otherBookings.length > 0 && (
+         <Card className="p-4">
+           <h4 className="font-medium mb-3">Other eligible calls:</h4>
+           <div className="space-y-2 max-h-48 overflow-y-auto">
+             {otherBookings.slice(0, 7).map((booking) => (
                <div 
                  key={booking.id}
                  className="flex items-center justify-between p-3 rounded-lg bg-muted/50 border border-border"
                >
-                 <div>
-                   <p className="font-medium">{booking.member_name}</p>
-                   <p className="text-sm text-muted-foreground">
-                     {new Date(booking.booking_date).toLocaleDateString()} • 
-                     {formatDuration(booking.call_duration_seconds)}
-                   </p>
+                 <div className="flex items-center gap-3">
+                   <Badge variant="secondary" className="text-xs shrink-0">
+                     {booking.status || 'Unknown'}
+                   </Badge>
+                   <div>
+                     <p className="font-medium">{booking.member_name}</p>
+                     <p className="text-sm text-muted-foreground">
+                       {new Date(booking.booking_date).toLocaleDateString()} • 
+                       {formatDuration(booking.call_duration_seconds)}
+                     </p>
+                   </div>
                  </div>
                  <Button
                    size="sm"
@@ -442,42 +533,65 @@ export function LLMComparisonPanel() {
              <h4 className="font-medium mb-3">Comparison History</h4>
              <ScrollArea className="h-[400px]">
                <div className="space-y-2">
-                 {comparisons.map((comparison) => {
-                   const geminiCost = comparison.gemini_estimated_cost || 0;
-                   const deepseekCost = comparison.deepseek_estimated_cost || 0;
-                   const savings = geminiCost > 0 
-                     ? Math.round((1 - deepseekCost / geminiCost) * 100) 
-                     : 0;
+                  {comparisons.map((comparison) => {
+                    const geminiCost = comparison.gemini_estimated_cost || 0;
+                    const deepseekCost = comparison.deepseek_estimated_cost || 0;
+                    const savings = geminiCost > 0 
+                      ? Math.round((1 - deepseekCost / geminiCost) * 100) 
+                      : 0;
+                    const isNonBooking = comparison.bookingStatus === 'Non Booking';
+                    
+                    // Extract readiness levels from analysis
+                    const geminiReadiness = comparison.gemini_analysis?.callKeyPoints?.moveInReadiness || 'N/A';
+                    const deepseekReadiness = comparison.deepseek_analysis?.callKeyPoints?.moveInReadiness || 'N/A';
+                    const readinessMismatch = geminiReadiness !== deepseekReadiness;
  
-                   return (
-                     <div
-                       key={comparison.id}
-                       onClick={() => setSelectedComparison(comparison)}
-                       className={`p-3 rounded-lg border cursor-pointer transition-colors ${
-                         selectedComparison?.id === comparison.id 
-                           ? 'border-primary bg-primary/5' 
-                           : 'border-border hover:bg-muted/50'
-                       }`}
-                     >
-                       <div className="flex items-center justify-between mb-2">
-                         <span className="text-sm font-medium">
-                           {formatDuration(comparison.call_duration_seconds)}
-                         </span>
-                         <Badge variant="secondary" className="text-xs bg-cyan-500/10 text-cyan-600 border-cyan-500/20">
-                           <TrendingDown className="w-3 h-3 mr-1" />
-                           {savings}% savings
-                         </Badge>
-                       </div>
-                       <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground">
-                         <div>Gemini: {formatCost(comparison.gemini_estimated_cost)}</div>
-                         <div>DeepSeek: {formatCost(comparison.deepseek_estimated_cost)}</div>
-                       </div>
-                       <p className="text-xs text-muted-foreground mt-1">
-                         {new Date(comparison.created_at).toLocaleString()}
-                       </p>
-                     </div>
-                   );
-                 })}
+                    return (
+                      <div
+                        key={comparison.id}
+                        onClick={() => setSelectedComparison(comparison)}
+                        className={`p-3 rounded-lg border cursor-pointer transition-colors ${
+                          selectedComparison?.id === comparison.id 
+                            ? 'border-primary bg-primary/5' 
+                            : isNonBooking 
+                              ? 'border-destructive/30 bg-destructive/5 hover:bg-destructive/10'
+                              : 'border-border hover:bg-muted/50'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between mb-2">
+                          <div className="flex items-center gap-2">
+                            {isNonBooking && (
+                              <Badge variant="destructive" className="text-xs">Non Booking</Badge>
+                            )}
+                            <span className="text-sm font-medium">
+                              {formatDuration(comparison.call_duration_seconds)}
+                            </span>
+                          </div>
+                          <Badge variant="secondary" className="text-xs bg-cyan-500/10 text-cyan-600 border-cyan-500/20">
+                            <TrendingDown className="w-3 h-3 mr-1" />
+                            {savings}% savings
+                          </Badge>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground">
+                          <div>Gemini: {formatCost(comparison.gemini_estimated_cost)}</div>
+                          <div>DeepSeek: {formatCost(comparison.deepseek_estimated_cost)}</div>
+                        </div>
+                        {/* Readiness comparison for quality check */}
+                        <div className={`mt-2 pt-2 border-t border-border/50 grid grid-cols-2 gap-2 text-xs ${readinessMismatch ? 'text-amber-600' : 'text-muted-foreground'}`}>
+                          <div>Gemini: {geminiReadiness}</div>
+                          <div>DeepSeek: {deepseekReadiness}</div>
+                        </div>
+                        {readinessMismatch && (
+                          <Badge variant="outline" className="mt-2 text-xs border-amber-500/50 text-amber-600 bg-amber-500/10">
+                            ⚠️ Readiness mismatch
+                          </Badge>
+                        )}
+                        <p className="text-xs text-muted-foreground mt-1">
+                          {new Date(comparison.created_at).toLocaleString()}
+                        </p>
+                      </div>
+                    );
+                  })}
                </div>
              </ScrollArea>
            </Card>
@@ -601,14 +715,14 @@ export function LLMComparisonPanel() {
          </div>
        )}
  
-       {comparisons.length === 0 && eligibleBookings.length === 0 && (
-         <Card className="p-8 text-center">
-           <Brain className="w-12 h-12 mx-auto mb-3 text-muted-foreground opacity-50" />
-           <p className="text-muted-foreground">
-             No comparisons yet. Process some calls with transcriptions to start comparing LLM providers.
-           </p>
-         </Card>
-       )}
+       {comparisons.length === 0 && nonBookingCalls.length === 0 && otherBookings.length === 0 && (
+          <Card className="p-8 text-center">
+            <Brain className="w-12 h-12 mx-auto mb-3 text-muted-foreground opacity-50" />
+            <p className="text-muted-foreground">
+              No comparisons yet. Process some calls with transcriptions to start comparing LLM providers.
+            </p>
+          </Card>
+        )}
      </div>
    );
  }
