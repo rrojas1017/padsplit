@@ -1,121 +1,72 @@
 
 
-## Fix: Total Records Count Should Respect Site Filter
+## Add Stall Detection & Heartbeat Tracking
 
-### Current Behavior
-- The UI shows "37 / 5,013" because the count query ignores the `site_filter` setting
-- The actual processing IS correct - only Vixicom records are being processed
-- But the total count shows ALL pending records instead of just Vixicom records
+### Problem
+The UI shows "Running" status but cannot detect when the background loop has crashed or timed out. Users have no way to know if processing has stalled.
 
-### Root Cause
-In `supabase/functions/bulk-transcription-processor/index.ts`, lines 364-372:
+### Solution: Add Last Activity Timestamp + Stall Indicator
 
-```typescript
-// Count total pending records - IGNORES SITE FILTER!
-let countQuery = supabase
-  .from('bookings')
-  .select('id', { count: 'exact', head: true })
-  .is('transcription_status', null)
-  .not('kixie_link', 'is', null)
-  .not('kixie_link', 'eq', '');
+#### 1. Database Change
+Add a `last_activity_at` column to track when the job last processed a record:
 
-// Note says: "Supabase count doesn't support joins well"
-const { count } = await countQuery;
+```sql
+ALTER TABLE bulk_processing_jobs 
+ADD COLUMN last_activity_at TIMESTAMPTZ;
 ```
 
-The comment admits the limitation, but we need to fix this for accurate progress tracking.
+#### 2. Edge Function Update (`bulk-transcription-processor/index.ts`)
 
-### Solution
-
-Apply the same site filter logic to the count query. Since Supabase count with joins is tricky, we'll use a different approach - count the actual filtered records.
-
-**File to modify:** `supabase/functions/bulk-transcription-processor/index.ts`
-
-**Changes at lines 361-380:**
+Update `updateJobProgress` calls to include timestamp:
 
 ```typescript
-case 'start':
-case 'resume': {
-  // Get filtered count based on site_filter
-  let totalCount = 0;
-  
-  if (job.site_filter === 'vixicom_only') {
-    // Count Vixicom records using the same join logic
-    const { data: vixicomAgents } = await supabase
-      .from('agents')
-      .select('id, sites!inner(name)')
-      .ilike('sites.name', '%vixicom%');
-    
-    const agentIds = (vixicomAgents || []).map((a: any) => a.id);
-    
-    if (agentIds.length > 0) {
-      const { count } = await supabase
-        .from('bookings')
-        .select('id', { count: 'exact', head: true })
-        .is('transcription_status', null)
-        .not('kixie_link', 'is', null)
-        .not('kixie_link', 'eq', '')
-        .in('agent_id', agentIds);
-      totalCount = count || 0;
-    }
-  } else if (job.site_filter === 'non_vixicom') {
-    // Count non-Vixicom records
-    const { data: vixicomAgents } = await supabase
-      .from('agents')
-      .select('id, sites!inner(name)')
-      .ilike('sites.name', '%vixicom%');
-    
-    const vixicomAgentIds = (vixicomAgents || []).map((a: any) => a.id);
-    
-    // Get total pending, then subtract Vixicom count
-    const { count: totalPending } = await supabase
-      .from('bookings')
-      .select('id', { count: 'exact', head: true })
-      .is('transcription_status', null)
-      .not('kixie_link', 'is', null)
-      .not('kixie_link', 'eq', '');
-    
-    let vixicomCount = 0;
-    if (vixicomAgentIds.length > 0) {
-      const { count } = await supabase
-        .from('bookings')
-        .select('id', { count: 'exact', head: true })
-        .is('transcription_status', null)
-        .not('kixie_link', 'is', null)
-        .not('kixie_link', 'eq', '')
-        .in('agent_id', vixicomAgentIds);
-      vixicomCount = count || 0;
-    }
-    totalCount = (totalPending || 0) - vixicomCount;
-  } else {
-    // All records
-    const { count } = await supabase
-      .from('bookings')
-      .select('id', { count: 'exact', head: true })
-      .is('transcription_status', null)
-      .not('kixie_link', 'is', null)
-      .not('kixie_link', 'eq', '');
-    totalCount = count || 0;
-  }
-  
-  // Update job to running with CORRECT count
-  await updateJobProgress(supabase, jobId, {
-    status: 'running',
-    started_at: job.started_at || new Date().toISOString(),
-    total_records: totalCount,
-    paused_at: null
-  });
-  
-  // ... rest stays the same
-}
+// After each record is processed
+await updateJobProgress(supabase, jobId, {
+  processed_count: (progressJob?.processed_count || 0) + 1,
+  last_activity_at: new Date().toISOString()  // Add this
+});
 ```
 
-### What This Fixes
-- Vixicom-only jobs will show "37 / 394" instead of "37 / 5,013"
-- Non-Vixicom jobs will show correct "X / 4,619"
-- All jobs will show "X / 5,013"
-- ETA will be accurate (currently showing 13.8 hours when it should be ~1 hour for 394 records)
+#### 3. UI Update (`BulkProcessingTab.tsx`)
 
-### Current Job Status
-Your "Vix wave 3" job IS processing correctly - it's only touching Vixicom records. The display is just wrong. After this fix, new jobs will show accurate totals.
+Add stall detection logic:
+
+```typescript
+// Check if job appears stalled (no activity for 2+ minutes when running)
+const isStalled = activeJob?.status === 'running' && 
+  activeJob?.last_activity_at && 
+  (Date.now() - new Date(activeJob.last_activity_at).getTime()) > 120000;
+```
+
+Display stall warning:
+
+```tsx
+{isStalled && (
+  <div className="flex items-center gap-2 p-3 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
+    <AlertTriangle className="w-4 h-4 text-yellow-500" />
+    <span className="text-sm text-yellow-500">
+      No activity for {Math.round((Date.now() - new Date(activeJob.last_activity_at).getTime()) / 60000)} minutes
+    </span>
+    <Button size="sm" variant="outline" onClick={() => startJob(activeJob.id, 'resume')}>
+      Resume
+    </Button>
+  </div>
+)}
+```
+
+#### 4. Hook Update (`useBulkProcessingJobs.ts`)
+
+Add `last_activity_at` to the interface and type.
+
+### What This Provides
+- **Real-time heartbeat:** Each processed record updates the timestamp
+- **Visual stall warning:** Yellow banner appears if no activity for 2+ minutes
+- **One-click recovery:** Resume button directly in the warning banner
+- **Accurate monitoring:** Know exactly when the last record was processed
+
+### Files to Modify
+1. Database migration (new column)
+2. `supabase/functions/bulk-transcription-processor/index.ts`
+3. `src/components/import/BulkProcessingTab.tsx`
+4. `src/hooks/useBulkProcessingJobs.ts`
 
