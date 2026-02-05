@@ -710,6 +710,7 @@ export type Database = {
           id: string
           include_tts: boolean
           job_name: string
+          last_activity_at: string | null
           pacing_seconds: number
           paused_at: string | null
           processed_count: number
@@ -729,6 +730,7 @@ export type Database = {
           id?: string
           include_tts?: boolean
           job_name: string
+          last_activity_at?: string | null
           pacing_seconds?: number
           paused_at?: string | null
           processed_count?: number
@@ -748,6 +750,7 @@ export type Database = {
           id?: string
           include_tts?: boolean
           job_name?: string
+          last_activity_at?: string | null
           pacing_seconds?: number
           paused_at?: string | null
           processed_count?: number

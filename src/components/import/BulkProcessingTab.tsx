@@ -13,6 +13,7 @@ import {
   Play, Pause, Square, RefreshCw, AlertTriangle, CheckCircle, 
   Clock, Loader2, ChevronDown, Building2, Users, Mic
 } from 'lucide-react';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 import { useBulkProcessingJobs, BulkProcessingJob } from '@/hooks/useBulkProcessingJobs';
 import { format } from 'date-fns';
 
@@ -37,6 +38,26 @@ export function BulkProcessingTab() {
   const [pacingSeconds, setPacingSeconds] = useState(10);
   const [isCreating, setIsCreating] = useState(false);
   const [showErrorLog, setShowErrorLog] = useState(false);
+
+  // Stall detection: check if job has no activity for 2+ minutes while showing as running
+  const getStallInfo = () => {
+    if (!activeJob || activeJob.status !== 'running') return null;
+    
+    const lastActivity = activeJob.last_activity_at;
+    if (!lastActivity) return null;
+    
+    const lastActivityTime = new Date(lastActivity).getTime();
+    const now = Date.now();
+    const minutesSinceActivity = Math.round((now - lastActivityTime) / 60000);
+    
+    // Consider stalled if no activity for 2+ minutes
+    if (minutesSinceActivity >= 2) {
+      return { isStalled: true, minutesSinceActivity };
+    }
+    return null;
+  };
+  
+  const stallInfo = getStallInfo();
 
   // Calculate estimates based on selection
   const getEstimates = () => {
@@ -272,7 +293,33 @@ export function BulkProcessingTab() {
                 ETA: {formatDuration(
                   ((activeJob.total_records - activeJob.processed_count) * activeJob.pacing_seconds) / 3600
                 )}
+                {activeJob.last_activity_at && (
+                  <span className="ml-3">
+                    Last activity: {format(new Date(activeJob.last_activity_at), 'h:mm:ss a')}
+                  </span>
+                )}
               </div>
+            )}
+            
+            {/* Stall Warning */}
+            {stallInfo && (
+              <Alert className="border-yellow-500/50 bg-yellow-500/10">
+                <AlertTriangle className="h-4 w-4 text-yellow-500" />
+                <AlertDescription className="flex items-center justify-between">
+                  <span className="text-yellow-600 dark:text-yellow-400">
+                    No activity for {stallInfo.minutesSinceActivity} minute{stallInfo.minutesSinceActivity > 1 ? 's' : ''} — processing may have stalled
+                  </span>
+                  <Button 
+                    size="sm" 
+                    variant="outline" 
+                    className="ml-3 border-yellow-500 text-yellow-600 hover:bg-yellow-500/20"
+                    onClick={() => startJob(activeJob.id, 'resume')}
+                  >
+                    <RefreshCw className="w-3 h-3 mr-1" />
+                    Resume
+                  </Button>
+                </AlertDescription>
+              </Alert>
             )}
             
             {/* Error Log */}
