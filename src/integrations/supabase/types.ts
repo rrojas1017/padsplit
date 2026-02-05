@@ -1314,6 +1314,39 @@ export type Database = {
           },
         ]
       }
+      llm_prompt_enhancements: {
+        Row: {
+          content: string
+          created_at: string | null
+          enhancement_type: string
+          id: string
+          is_active: boolean | null
+          priority: number | null
+          provider_name: string
+          updated_at: string | null
+        }
+        Insert: {
+          content: string
+          created_at?: string | null
+          enhancement_type: string
+          id?: string
+          is_active?: boolean | null
+          priority?: number | null
+          provider_name: string
+          updated_at?: string | null
+        }
+        Update: {
+          content?: string
+          created_at?: string | null
+          enhancement_type?: string
+          id?: string
+          is_active?: boolean | null
+          priority?: number | null
+          provider_name?: string
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
       llm_provider_settings: {
         Row: {
           api_config: Json | null

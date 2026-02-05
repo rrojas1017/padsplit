@@ -6,6 +6,9 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { 
@@ -19,7 +22,10 @@ import {
   Zap,
   Brain,
   Settings2,
-  Shield
+  Shield,
+  Wand2,
+  Edit3,
+  Check
 } from 'lucide-react';
 
 interface LLMComparison {
@@ -67,6 +73,17 @@ interface ProviderStats {
   deepseek_count: number;
   gemini_count: number;
   total: number;
+}
+
+interface PromptEnhancement {
+  id: string;
+  provider_name: string;
+  enhancement_type: string;
+  content: string;
+  priority: number;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
 }
  
 export function LLMComparisonPanel() {
