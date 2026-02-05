@@ -1311,6 +1311,107 @@ export type Database = {
           },
         ]
       }
+      llm_provider_settings: {
+        Row: {
+          api_config: Json | null
+          created_at: string
+          id: string
+          is_active: boolean
+          provider_name: string
+          updated_at: string
+          weight: number
+        }
+        Insert: {
+          api_config?: Json | null
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          provider_name: string
+          updated_at?: string
+          weight?: number
+        }
+        Update: {
+          api_config?: Json | null
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          provider_name?: string
+          updated_at?: string
+          weight?: number
+        }
+        Relationships: []
+      }
+      llm_quality_comparisons: {
+        Row: {
+          booking_id: string | null
+          call_duration_seconds: number | null
+          comparison_notes: string | null
+          created_at: string
+          deepseek_analysis: Json | null
+          deepseek_estimated_cost: number | null
+          deepseek_input_tokens: number | null
+          deepseek_latency_ms: number | null
+          deepseek_model: string | null
+          deepseek_output_tokens: number | null
+          gemini_analysis: Json | null
+          gemini_estimated_cost: number | null
+          gemini_input_tokens: number | null
+          gemini_latency_ms: number | null
+          gemini_model: string | null
+          gemini_output_tokens: number | null
+          id: string
+          transcription_text: string
+        }
+        Insert: {
+          booking_id?: string | null
+          call_duration_seconds?: number | null
+          comparison_notes?: string | null
+          created_at?: string
+          deepseek_analysis?: Json | null
+          deepseek_estimated_cost?: number | null
+          deepseek_input_tokens?: number | null
+          deepseek_latency_ms?: number | null
+          deepseek_model?: string | null
+          deepseek_output_tokens?: number | null
+          gemini_analysis?: Json | null
+          gemini_estimated_cost?: number | null
+          gemini_input_tokens?: number | null
+          gemini_latency_ms?: number | null
+          gemini_model?: string | null
+          gemini_output_tokens?: number | null
+          id?: string
+          transcription_text: string
+        }
+        Update: {
+          booking_id?: string | null
+          call_duration_seconds?: number | null
+          comparison_notes?: string | null
+          created_at?: string
+          deepseek_analysis?: Json | null
+          deepseek_estimated_cost?: number | null
+          deepseek_input_tokens?: number | null
+          deepseek_latency_ms?: number | null
+          deepseek_model?: string | null
+          deepseek_output_tokens?: number | null
+          gemini_analysis?: Json | null
+          gemini_estimated_cost?: number | null
+          gemini_input_tokens?: number | null
+          gemini_latency_ms?: number | null
+          gemini_model?: string | null
+          gemini_output_tokens?: number | null
+          id?: string
+          transcription_text?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "llm_quality_comparisons_booking_id_fkey"
+            columns: ["booking_id"]
+            isOneToOne: false
+            referencedRelation: "bookings"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       member_insights: {
         Row: {
           ai_recommendations: Json | null

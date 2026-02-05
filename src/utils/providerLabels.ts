@@ -6,6 +6,7 @@ export const SUPER_ADMIN_PROVIDER_LABELS: Record<string, string> = {
   deepgram: 'Deepgram',
   lovable_ai: 'Lovable AI (Gemini)',
   google_tts: 'Google Cloud TTS',
+   deepseek: 'DeepSeek',
 };
 
 export const GENERIC_PROVIDER_LABELS: Record<string, string> = {
@@ -13,6 +14,7 @@ export const GENERIC_PROVIDER_LABELS: Record<string, string> = {
   deepgram: 'Voice Services',
   lovable_ai: 'AI Services',
   google_tts: 'Voice Services',
+   deepseek: 'AI Services',
 };
 
 export function getProviderLabel(provider: string, isSuperAdmin: boolean): string {
@@ -29,6 +31,7 @@ export const SUPER_ADMIN_SERVICE_LABELS: Record<string, string> = {
   ai_qa_scoring: 'AI QA Scoring (Gemini)',
   ai_member_insights: 'AI Member Insights (Gemini)',
   ai_reanalysis: 'AI Re-Analysis (Gemini)',
+   ai_llm_comparison: 'LLM Comparison Test',
 };
 
 export const GENERIC_SERVICE_LABELS: Record<string, string> = {
@@ -40,6 +43,7 @@ export const GENERIC_SERVICE_LABELS: Record<string, string> = {
   ai_qa_scoring: 'AI QA Scoring',
   ai_member_insights: 'AI Member Insights',
   ai_reanalysis: 'AI Re-Analysis',
+   ai_llm_comparison: 'LLM Comparison Test',
 };
 
 export function getServiceTypeLabel(serviceType: string, isSuperAdmin: boolean): string {
@@ -54,6 +58,7 @@ export const PROVIDER_BADGE_COLORS: Record<string, string> = {
   lovable_ai: 'bg-blue-500/10 text-blue-600 border-blue-500/20',
   voice_services: 'bg-purple-500/10 text-purple-600 border-purple-500/20',
   ai_services: 'bg-blue-500/10 text-blue-600 border-blue-500/20',
+   deepseek: 'bg-cyan-500/10 text-cyan-600 border-cyan-500/20',
 };
 
 export function getProviderBadgeColor(provider: string): string {
