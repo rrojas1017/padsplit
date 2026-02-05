@@ -424,6 +424,7 @@ export type Database = {
           coaching_quiz_passed_at: string | null
           created_at: string | null
           id: string
+          llm_provider: string | null
           qa_coaching_audio_generated_at: string | null
           qa_coaching_audio_listened_at: string | null
           qa_coaching_audio_url: string | null
@@ -448,6 +449,7 @@ export type Database = {
           coaching_quiz_passed_at?: string | null
           created_at?: string | null
           id?: string
+          llm_provider?: string | null
           qa_coaching_audio_generated_at?: string | null
           qa_coaching_audio_listened_at?: string | null
           qa_coaching_audio_url?: string | null
@@ -472,6 +474,7 @@ export type Database = {
           coaching_quiz_passed_at?: string | null
           created_at?: string | null
           id?: string
+          llm_provider?: string | null
           qa_coaching_audio_generated_at?: string | null
           qa_coaching_audio_listened_at?: string | null
           qa_coaching_audio_url?: string | null

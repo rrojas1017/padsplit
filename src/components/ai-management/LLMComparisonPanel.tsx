@@ -1,107 +1,262 @@
- import { useState, useEffect } from 'react';
- import { Button } from '@/components/ui/button';
- import { Card } from '@/components/ui/card';
- import { Badge } from '@/components/ui/badge';
- import { ScrollArea } from '@/components/ui/scroll-area';
- import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
- import { supabase } from '@/integrations/supabase/client';
- import { toast } from 'sonner';
- import { 
-   FlaskConical, 
-   Loader2, 
-   RefreshCw, 
-   Clock, 
-   DollarSign,
-   TrendingDown,
-   Trash2,
-   Zap,
-   Brain
- } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Switch } from '@/components/ui/switch';
+import { Label } from '@/components/ui/label';
+import { supabase } from '@/integrations/supabase/client';
+import { toast } from 'sonner';
+import { 
+  FlaskConical, 
+  Loader2, 
+  RefreshCw, 
+  Clock, 
+  DollarSign,
+  TrendingDown,
+  Trash2,
+  Zap,
+  Brain,
+  Settings2,
+  Shield
+} from 'lucide-react';
+
+interface LLMComparison {
+  id: string;
+  booking_id: string | null;
+  transcription_text: string;
+  call_duration_seconds: number | null;
+  gemini_analysis: any;
+  gemini_model: string | null;
+  gemini_input_tokens: number | null;
+  gemini_output_tokens: number | null;
+  gemini_latency_ms: number | null;
+  gemini_estimated_cost: number | null;
+  deepseek_analysis: any;
+  deepseek_model: string | null;
+  deepseek_input_tokens: number | null;
+  deepseek_output_tokens: number | null;
+  deepseek_latency_ms: number | null;
+  deepseek_estimated_cost: number | null;
+  comparison_notes: string | null;
+  created_at: string;
+}
+
+interface EligibleBooking {
+  id: string;
+  member_name: string;
+  booking_date: string;
+  call_duration_seconds: number | null;
+  status: string | null;
+}
+
+interface LLMProviderSettings {
+  id: string;
+  provider_name: string;
+  weight: number;
+  is_active: boolean;
+  api_config: any;
+}
+
+interface ProviderStats {
+  deepseek_count: number;
+  gemini_count: number;
+  total: number;
+}
  
- interface LLMComparison {
-   id: string;
-   booking_id: string | null;
-   transcription_text: string;
-   call_duration_seconds: number | null;
-   gemini_analysis: any;
-   gemini_model: string | null;
-   gemini_input_tokens: number | null;
-   gemini_output_tokens: number | null;
-   gemini_latency_ms: number | null;
-   gemini_estimated_cost: number | null;
-   deepseek_analysis: any;
-   deepseek_model: string | null;
-   deepseek_input_tokens: number | null;
-   deepseek_output_tokens: number | null;
-   deepseek_latency_ms: number | null;
-   deepseek_estimated_cost: number | null;
-   comparison_notes: string | null;
-   created_at: string;
- }
- 
- interface EligibleBooking {
-   id: string;
-   member_name: string;
-   booking_date: string;
-   call_duration_seconds: number | null;
- }
- 
- export function LLMComparisonPanel() {
-   const [comparisons, setComparisons] = useState<LLMComparison[]>([]);
-   const [eligibleBookings, setEligibleBookings] = useState<EligibleBooking[]>([]);
-   const [loading, setLoading] = useState(false);
-   const [runningComparison, setRunningComparison] = useState<string | null>(null);
-   const [selectedComparison, setSelectedComparison] = useState<LLMComparison | null>(null);
- 
-   useEffect(() => {
-     fetchComparisons();
-     fetchEligibleBookings();
-   }, []);
- 
-   const fetchComparisons = async () => {
-     const { data, error } = await supabase
-       .from('llm_quality_comparisons')
-       .select('*')
-       .order('created_at', { ascending: false })
-       .limit(20);
- 
-     if (error) {
-       console.error('Error fetching LLM comparisons:', error);
-       return;
-     }
-     
-     setComparisons((data || []) as LLMComparison[]);
-   };
- 
-   const fetchEligibleBookings = async () => {
-     // Find bookings with completed transcription that haven't been LLM-compared yet
-     const { data: comparedIds } = await supabase
-       .from('llm_quality_comparisons')
-       .select('booking_id')
-       .not('booking_id', 'is', null);
- 
-     const excludeIds = (comparedIds || []).map(c => c.booking_id).filter(Boolean);
- 
-     let query = supabase
-       .from('bookings')
-       .select('id, member_name, booking_date, call_duration_seconds')
-       .eq('transcription_status', 'completed')
-       .order('booking_date', { ascending: false })
-       .limit(20);
- 
-     if (excludeIds.length > 0) {
-       query = query.not('id', 'in', `(${excludeIds.join(',')})`);
-     }
- 
-     const { data, error } = await query;
- 
-     if (error) {
-       console.error('Error fetching eligible bookings:', error);
-       return;
-     }
- 
-     setEligibleBookings((data || []) as EligibleBooking[]);
-   };
+export function LLMComparisonPanel() {
+  const [comparisons, setComparisons] = useState<LLMComparison[]>([]);
+  const [eligibleBookings, setEligibleBookings] = useState<EligibleBooking[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [runningComparison, setRunningComparison] = useState<string | null>(null);
+  const [selectedComparison, setSelectedComparison] = useState<LLMComparison | null>(null);
+  
+  // Hybrid mode state
+  const [providerSettings, setProviderSettings] = useState<LLMProviderSettings[]>([]);
+  const [hybridModeEnabled, setHybridModeEnabled] = useState(false);
+  const [nonBookingFallback, setNonBookingFallback] = useState(true);
+  const [updatingSettings, setUpdatingSettings] = useState(false);
+  const [providerStats, setProviderStats] = useState<ProviderStats>({ deepseek_count: 0, gemini_count: 0, total: 0 });
+
+  useEffect(() => {
+    fetchComparisons();
+    fetchEligibleBookings();
+    fetchProviderSettings();
+    fetchProviderStats();
+  }, []);
+
+  const fetchProviderSettings = async () => {
+    const { data, error } = await supabase
+      .from('llm_provider_settings')
+      .select('*')
+      .eq('is_active', true);
+
+    if (error) {
+      console.error('Error fetching LLM provider settings:', error);
+      return;
+    }
+
+    setProviderSettings(data || []);
+    
+    // Check if hybrid mode is enabled (DeepSeek has 100% weight AND has fallback conditions)
+    const deepseekSettings = data?.find(s => s.provider_name === 'deepseek');
+    const geminiSettings = data?.find(s => s.provider_name === 'lovable_ai');
+    
+    // Hybrid mode = DeepSeek has 100% weight but has fallback conditions
+    const deepseekWeight = deepseekSettings?.weight || 0;
+    const geminiWeight = geminiSettings?.weight || 0;
+    const fallbackConditions = (deepseekSettings?.api_config as any)?.use_gemini_fallback_for || [];
+    
+    setHybridModeEnabled(deepseekWeight === 100 && geminiWeight === 0 && fallbackConditions.length > 0);
+    setNonBookingFallback(fallbackConditions.includes('non_booking'));
+  };
+
+  const fetchProviderStats = async () => {
+    // Get counts of transcriptions by LLM provider from last 30 days
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+    const { data, error } = await supabase
+      .from('booking_transcriptions')
+      .select('llm_provider')
+      .gte('created_at', thirtyDaysAgo.toISOString());
+
+    if (error) {
+      console.error('Error fetching provider stats:', error);
+      return;
+    }
+
+    const stats = {
+      deepseek_count: data?.filter(t => t.llm_provider === 'deepseek').length || 0,
+      gemini_count: data?.filter(t => t.llm_provider === 'lovable_ai' || !t.llm_provider).length || 0,
+      total: data?.length || 0
+    };
+    
+    setProviderStats(stats);
+  };
+
+  const fetchComparisons = async () => {
+    const { data, error } = await supabase
+      .from('llm_quality_comparisons')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(20);
+
+    if (error) {
+      console.error('Error fetching LLM comparisons:', error);
+      return;
+    }
+    
+    setComparisons((data || []) as LLMComparison[]);
+  };
+
+  const fetchEligibleBookings = async () => {
+    // Find bookings with completed transcription that haven't been LLM-compared yet
+    const { data: comparedIds } = await supabase
+      .from('llm_quality_comparisons')
+      .select('booking_id')
+      .not('booking_id', 'is', null);
+
+    const excludeIds = (comparedIds || []).map(c => c.booking_id).filter(Boolean);
+
+    let query = supabase
+      .from('bookings')
+      .select('id, member_name, booking_date, call_duration_seconds, status')
+      .eq('transcription_status', 'completed')
+      .order('booking_date', { ascending: false })
+      .limit(20);
+
+    if (excludeIds.length > 0) {
+      query = query.not('id', 'in', `(${excludeIds.join(',')})`);
+    }
+
+    const { data, error } = await query;
+
+    if (error) {
+      console.error('Error fetching eligible bookings:', error);
+      return;
+    }
+
+    setEligibleBookings((data || []) as EligibleBooking[]);
+  };
+
+  const toggleHybridMode = async (enabled: boolean) => {
+    setUpdatingSettings(true);
+    
+    try {
+      if (enabled) {
+        // Enable hybrid mode: Set DeepSeek to 100%, Gemini to 0%, add fallback conditions
+        await supabase
+          .from('llm_provider_settings')
+          .update({ weight: 100, api_config: { 
+            model: 'deepseek-chat',
+            use_gemini_fallback_for: ['non_booking', 'negative_sentiment'],
+            enable_two_pass_sentiment: true
+          }})
+          .eq('provider_name', 'deepseek');
+        
+        await supabase
+          .from('llm_provider_settings')
+          .update({ weight: 0 })
+          .eq('provider_name', 'lovable_ai');
+          
+        toast.success('Hybrid mode enabled - DeepSeek default with Gemini fallback for edge cases');
+      } else {
+        // Disable hybrid mode: Set Gemini back to 100%, DeepSeek to 0%
+        await supabase
+          .from('llm_provider_settings')
+          .update({ weight: 0, api_config: { model: 'deepseek-chat' }})
+          .eq('provider_name', 'deepseek');
+        
+        await supabase
+          .from('llm_provider_settings')
+          .update({ weight: 100 })
+          .eq('provider_name', 'lovable_ai');
+          
+        toast.success('Hybrid mode disabled - Using Gemini only');
+      }
+      
+      setHybridModeEnabled(enabled);
+      fetchProviderSettings();
+    } catch (error) {
+      console.error('Error updating hybrid mode:', error);
+      toast.error('Failed to update hybrid mode settings');
+    } finally {
+      setUpdatingSettings(false);
+    }
+  };
+
+  const toggleNonBookingFallback = async (enabled: boolean) => {
+    setUpdatingSettings(true);
+    
+    try {
+      const deepseekSettings = providerSettings.find(s => s.provider_name === 'deepseek');
+      const currentConfig = (deepseekSettings?.api_config as any) || {};
+      const currentFallbacks = currentConfig.use_gemini_fallback_for || [];
+      
+      let newFallbacks: string[];
+      if (enabled) {
+        newFallbacks = [...new Set([...currentFallbacks, 'non_booking'])];
+      } else {
+        newFallbacks = currentFallbacks.filter((f: string) => f !== 'non_booking');
+      }
+      
+      await supabase
+        .from('llm_provider_settings')
+        .update({ api_config: { ...currentConfig, use_gemini_fallback_for: newFallbacks }})
+        .eq('provider_name', 'deepseek');
+      
+      setNonBookingFallback(enabled);
+      toast.success(`Non-booking fallback ${enabled ? 'enabled' : 'disabled'}`);
+      fetchProviderSettings();
+    } catch (error) {
+      console.error('Error updating fallback setting:', error);
+      toast.error('Failed to update fallback settings');
+    } finally {
+      setUpdatingSettings(false);
+    }
+  };
  
    const runComparison = async (bookingId: string) => {
      setRunningComparison(bookingId);
@@ -167,23 +322,77 @@
    };
  
    return (
-     <div className="space-y-6">
-       {/* Header */}
-       <div className="flex items-center justify-between">
-         <div className="flex items-center gap-3">
-           <Brain className="w-5 h-5 text-accent" />
-           <div>
-             <h3 className="text-lg font-semibold text-foreground">LLM Quality Comparison</h3>
-             <p className="text-sm text-muted-foreground">
-               Compare Gemini vs DeepSeek analysis quality and cost side-by-side
-             </p>
-           </div>
-         </div>
-         <Button variant="outline" size="sm" onClick={() => { fetchComparisons(); fetchEligibleBookings(); }}>
-           <RefreshCw className="w-4 h-4 mr-2" />
-           Refresh
-         </Button>
-       </div>
+    <div className="space-y-6">
+      {/* Hybrid Mode Settings Card */}
+      <Card className="p-4 border-2 border-accent/20">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-3">
+            <Settings2 className="w-5 h-5 text-accent" />
+            <div>
+              <h3 className="font-semibold text-foreground">Hybrid LLM Mode</h3>
+              <p className="text-sm text-muted-foreground">
+                DeepSeek default (~41% savings) with Gemini fallback for edge cases
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <Switch 
+              checked={hybridModeEnabled} 
+              onCheckedChange={toggleHybridMode}
+              disabled={updatingSettings}
+            />
+            <Label className="text-sm">{hybridModeEnabled ? 'Enabled' : 'Disabled'}</Label>
+          </div>
+        </div>
+        
+        {hybridModeEnabled && (
+          <div className="space-y-3 pt-3 border-t border-border">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Shield className="w-4 h-4 text-muted-foreground" />
+                <span className="text-sm">Use Gemini for Non-Booking calls</span>
+              </div>
+              <Switch 
+                checked={nonBookingFallback} 
+                onCheckedChange={toggleNonBookingFallback}
+                disabled={updatingSettings}
+              />
+            </div>
+            
+            <div className="grid grid-cols-3 gap-2 text-center text-xs">
+              <div className="p-2 rounded bg-muted/50">
+                <div className="font-semibold text-foreground">{providerStats.deepseek_count}</div>
+                <div className="text-muted-foreground">DeepSeek</div>
+              </div>
+              <div className="p-2 rounded bg-muted/50">
+                <div className="font-semibold text-foreground">{providerStats.gemini_count}</div>
+                <div className="text-muted-foreground">Gemini</div>
+              </div>
+              <div className="p-2 rounded bg-muted/50">
+                <div className="font-semibold text-foreground">{providerStats.total}</div>
+                <div className="text-muted-foreground">Total (30d)</div>
+              </div>
+            </div>
+          </div>
+        )}
+      </Card>
+
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <Brain className="w-5 h-5 text-accent" />
+          <div>
+            <h3 className="text-lg font-semibold text-foreground">LLM Quality Comparison</h3>
+            <p className="text-sm text-muted-foreground">
+              Compare Gemini vs DeepSeek analysis quality and cost side-by-side
+            </p>
+          </div>
+        </div>
+        <Button variant="outline" size="sm" onClick={() => { fetchComparisons(); fetchEligibleBookings(); fetchProviderStats(); }}>
+          <RefreshCw className="w-4 h-4 mr-2" />
+          Refresh
+        </Button>
+      </div>
  
        {/* Eligible Bookings for Comparison */}
        {eligibleBookings.length > 0 && (

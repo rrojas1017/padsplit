@@ -44,9 +44,145 @@ const STT_PRICING: Record<STTProviderName, number> = {
   deepgram: 0.0043,   // Deepgram Nova-2
 };
 
+// LLM Provider types for hybrid selection
+type LLMProviderName = 'lovable_ai' | 'deepseek';
+
+interface LLMProviderSelection {
+  provider: LLMProviderName;
+  model: string;
+  fallbackReason?: string;
+}
+
+// DeepSeek pricing: $0.14/1M input, $0.28/1M output (cache miss)
+const DEEPSEEK_PRICING = {
+  inputRate: 0.00000014,   // $0.14 per 1M tokens
+  outputRate: 0.00000028,  // $0.28 per 1M tokens
+};
+
+// Select LLM provider based on weights and fallback conditions
+async function selectLLMProvider(
+  supabase: any,
+  bookingStatus: string | null,
+  callDurationSeconds: number | null
+): Promise<LLMProviderSelection> {
+  try {
+    // Fetch LLM provider settings
+    const { data: settings, error } = await supabase
+      .from('llm_provider_settings')
+      .select('provider_name, weight, api_config')
+      .eq('is_active', true);
+
+    if (error) {
+      console.log('[LLM A/B] Error fetching settings, defaulting to Gemini:', error);
+      return { provider: 'lovable_ai', model: selectAnalysisModel(callDurationSeconds) };
+    }
+
+    const deepseekSettings = settings?.find((s: any) => s.provider_name === 'deepseek');
+    const geminiSettings = settings?.find((s: any) => s.provider_name === 'lovable_ai');
+
+    const deepseekWeight = deepseekSettings?.weight || 0;
+    const geminiWeight = geminiSettings?.weight || 100;
+
+    // Check fallback conditions from DeepSeek's api_config
+    const fallbackConditions: string[] = deepseekSettings?.api_config?.use_gemini_fallback_for || [];
+    const isNonBooking = bookingStatus === 'Non Booking';
+
+    // If DeepSeek has 100% weight but this is a non-booking call, use Gemini fallback
+    if (isNonBooking && fallbackConditions.includes('non_booking') && deepseekWeight > 0) {
+      console.log('[LLM A/B] Non-booking call detected, falling back to Gemini for quality');
+      return {
+        provider: 'lovable_ai',
+        model: selectAnalysisModel(callDurationSeconds),
+        fallbackReason: 'non_booking'
+      };
+    }
+
+    // Weight-based selection
+    const totalWeight = deepseekWeight + geminiWeight;
+    if (totalWeight === 0 || deepseekWeight === 0) {
+      console.log('[LLM A/B] DeepSeek weight is 0, using Gemini');
+      return { provider: 'lovable_ai', model: selectAnalysisModel(callDurationSeconds) };
+    }
+
+    if (geminiWeight === 0) {
+      console.log('[LLM A/B] Gemini weight is 0, using DeepSeek');
+      return { provider: 'deepseek', model: 'deepseek-chat' };
+    }
+
+    // Random selection based on weights
+    const random = Math.random() * totalWeight;
+    if (random < deepseekWeight) {
+      console.log(`[LLM A/B] Selected DeepSeek (weight: ${deepseekWeight}/${totalWeight})`);
+      return { provider: 'deepseek', model: 'deepseek-chat' };
+    }
+
+    console.log(`[LLM A/B] Selected Gemini (weight: ${geminiWeight}/${totalWeight})`);
+    return { provider: 'lovable_ai', model: selectAnalysisModel(callDurationSeconds) };
+  } catch (error) {
+    console.error('[LLM A/B] Error selecting provider:', error);
+    return { provider: 'lovable_ai', model: selectAnalysisModel(callDurationSeconds) };
+  }
+}
+
+// Call DeepSeek API for analysis
+async function callDeepSeekForAnalysis(
+  systemPrompt: string,
+  userPrompt: string
+): Promise<{
+  content: string;
+  model: string;
+  inputTokens: number;
+  outputTokens: number;
+  latencyMs: number;
+}> {
+  const DEEPSEEK_API_KEY = Deno.env.get('DEEPSEEK_API_KEY');
+  if (!DEEPSEEK_API_KEY) throw new Error('DEEPSEEK_API_KEY not configured');
+
+  const startTime = Date.now();
+  
+  const response = await fetch('https://api.deepseek.com/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${DEEPSEEK_API_KEY}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: 'deepseek-chat',
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userPrompt },
+      ],
+      response_format: { type: 'json_object' },
+      stream: false,
+    }),
+  });
+
+  const latencyMs = Date.now() - startTime;
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`DeepSeek API error: ${response.status} - ${errorText}`);
+  }
+
+  const result = await response.json();
+  const content = result.choices?.[0]?.message?.content || '';
+  const inputTokens = result.usage?.prompt_tokens || Math.ceil(userPrompt.length / 4);
+  const outputTokens = result.usage?.completion_tokens || Math.ceil(content.length / 4);
+
+  console.log(`[DeepSeek] Response received: ${inputTokens} input, ${outputTokens} output, ${latencyMs}ms`);
+
+  return {
+    content,
+    model: result.model || 'deepseek-chat',
+    inputTokens,
+    outputTokens,
+    latencyMs,
+  };
+}
+
 // Cost logging helper function
 async function logApiCost(supabase: any, params: {
-  service_provider: 'elevenlabs' | 'deepgram' | 'lovable_ai';
+  service_provider: 'elevenlabs' | 'deepgram' | 'lovable_ai' | 'deepseek';
   service_type: string;
   edge_function: string;
   booking_id?: string;
@@ -76,6 +212,11 @@ async function logApiCost(supabase: any, params: {
       if (params.audio_duration_seconds) {
         cost = (params.audio_duration_seconds / 60) * STT_PRICING.deepgram;
       }
+    } else if (params.service_provider === 'deepseek') {
+      // DeepSeek: $0.14 per 1M input, $0.28 per 1M output
+      const inputCost = (params.input_tokens || 0) * DEEPSEEK_PRICING.inputRate;
+      const outputCost = (params.output_tokens || 0) * DEEPSEEK_PRICING.outputRate;
+      cost = inputCost + outputCost;
     } else if (params.service_provider === 'lovable_ai') {
       // Model-aware pricing for Lovable AI
       const model = params.metadata?.model || 'google/gemini-2.5-flash';
@@ -1313,47 +1454,87 @@ async function processTranscription(bookingId: string, kixieUrl: string, skipTts
     console.log('[Background] Generating AI summary and agent feedback...');
     const summaryPrompt = buildDynamicPrompt(transcription, config, isNonBooking);
     
-    // Select model based on call duration (Flash for short calls, Pro for longer)
-    const analysisModel = selectAnalysisModel(callDurationSeconds);
+    // Hybrid LLM selection: choose provider based on weights and fallback conditions
+    const llmSelection = await selectLLMProvider(supabase, bookingStatus, callDurationSeconds);
+    console.log(`[Background] Using LLM provider: ${llmSelection.provider} (model: ${llmSelection.model}${llmSelection.fallbackReason ? `, fallback: ${llmSelection.fallbackReason}` : ''})`);
 
-    const aiResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${lovableApiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: analysisModel,
-        messages: [
-          { role: 'user', content: summaryPrompt }
-        ],
-      }),
-    });
+    let aiContent = '';
+    let estimatedInputTokens = 0;
+    let estimatedOutputTokens = 0;
 
-    if (!aiResponse.ok) {
-      const errorText = await aiResponse.text();
-      console.error('[Background] Lovable AI error:', errorText);
-      throw new Error(`AI summary error: ${aiResponse.status}`);
+    if (llmSelection.provider === 'deepseek') {
+      // Use DeepSeek for analysis
+      const systemPrompt = 'You are an expert at analyzing sales call transcriptions. Always respond with valid JSON only, no markdown.';
+      const deepseekResult = await callDeepSeekForAnalysis(systemPrompt, summaryPrompt);
+      aiContent = deepseekResult.content;
+      estimatedInputTokens = deepseekResult.inputTokens;
+      estimatedOutputTokens = deepseekResult.outputTokens;
+
+      // Log DeepSeek cost
+      logApiCost(supabase, {
+        service_provider: 'deepseek',
+        service_type: 'ai_analysis',
+        edge_function: 'transcribe-call',
+        booking_id: bookingId,
+        agent_id: agentId || undefined,
+        site_id: siteId || undefined,
+        input_tokens: estimatedInputTokens,
+        output_tokens: estimatedOutputTokens,
+        metadata: { 
+          model: deepseekResult.model, 
+          transcription_length: transcription.length, 
+          call_duration_seconds: callDurationSeconds,
+          latency_ms: deepseekResult.latencyMs,
+          fallback_reason: llmSelection.fallbackReason
+        }
+      });
+    } else {
+      // Use Gemini (Lovable AI) for analysis
+      const aiResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${lovableApiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: llmSelection.model,
+          messages: [
+            { role: 'user', content: summaryPrompt }
+          ],
+        }),
+      });
+
+      if (!aiResponse.ok) {
+        const errorText = await aiResponse.text();
+        console.error('[Background] Lovable AI error:', errorText);
+        throw new Error(`AI summary error: ${aiResponse.status}`);
+      }
+
+      const aiResult = await aiResponse.json();
+      aiContent = aiResult.choices?.[0]?.message?.content || '';
+      estimatedInputTokens = Math.ceil(summaryPrompt.length / 4);
+      estimatedOutputTokens = Math.ceil(aiContent.length / 4);
+
+      // Log Lovable AI cost
+      logApiCost(supabase, {
+        service_provider: 'lovable_ai',
+        service_type: 'ai_analysis',
+        edge_function: 'transcribe-call',
+        booking_id: bookingId,
+        agent_id: agentId || undefined,
+        site_id: siteId || undefined,
+        input_tokens: estimatedInputTokens,
+        output_tokens: estimatedOutputTokens,
+        metadata: { 
+          model: llmSelection.model, 
+          transcription_length: transcription.length, 
+          call_duration_seconds: callDurationSeconds,
+          fallback_reason: llmSelection.fallbackReason
+        }
+      });
     }
 
-    const aiResult = await aiResponse.json();
-    const aiContent = aiResult.choices?.[0]?.message?.content || '';
     console.log('[Background] AI response received');
-
-    // Log Lovable AI cost (estimate tokens from content length)
-    const estimatedInputTokens = Math.ceil(summaryPrompt.length / 4);
-    const estimatedOutputTokens = Math.ceil(aiContent.length / 4);
-    logApiCost(supabase, {
-      service_provider: 'lovable_ai',
-      service_type: 'ai_analysis',
-      edge_function: 'transcribe-call',
-      booking_id: bookingId,
-      agent_id: agentId || undefined,
-      site_id: siteId || undefined,
-      input_tokens: estimatedInputTokens,
-      output_tokens: estimatedOutputTokens,
-      metadata: { model: analysisModel, transcription_length: transcription.length, call_duration_seconds: callDurationSeconds }
-    });
 
     // Parse the JSON response
     let keyPoints;
@@ -1435,6 +1616,7 @@ async function processTranscription(bookingId: string, kixieUrl: string, skipTts
         stt_latency_ms: sttLatencyMs,
         stt_word_count: sttWordCount,
         stt_confidence_score: sttConfidenceScore,
+        llm_provider: llmSelection.provider,
         updated_at: new Date().toISOString(),
       }, {
         onConflict: 'booking_id'
