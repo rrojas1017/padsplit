@@ -7,22 +7,53 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+const BATCH_SIZE = 500;
+
+async function fetchBookingsInBatches(supabase: any, start: string, end: string): Promise<any[]> {
+  const allBookings: any[] = [];
+  let offset = 0;
+  let hasMore = true;
+
+  console.log(`[Pagination] Starting batch fetch for Non Booking records from ${start} to ${end}`);
+
+  while (hasMore) {
+    const { data, error } = await supabase
+      .from('bookings')
+      .select(`id, market_city, market_state, call_duration_seconds, agents (name), booking_transcriptions (call_key_points)`)
+      .eq('status', 'Non Booking')
+      .eq('transcription_status', 'completed')
+      .gte('booking_date', start)
+      .lte('booking_date', end)
+      .range(offset, offset + BATCH_SIZE - 1);
+
+    if (error) throw new Error(`Batch fetch error at offset ${offset}: ${error.message}`);
+    
+    if (!data || data.length === 0) {
+      hasMore = false;
+      console.log(`[Pagination] No more records at offset ${offset}`);
+    } else {
+      allBookings.push(...data);
+      console.log(`[Pagination] Fetched batch ${Math.floor(offset / BATCH_SIZE) + 1}: ${data.length} records (total: ${allBookings.length})`);
+      offset += BATCH_SIZE;
+      hasMore = data.length === BATCH_SIZE;
+    }
+  }
+
+  console.log(`[Pagination] Complete: ${allBookings.length} total records fetched in ${Math.ceil(allBookings.length / BATCH_SIZE)} batches`);
+  return allBookings;
+}
+
 async function processAnalysis(url: string, key: string, apiKey: string, id: string, period: string, start: string, end: string) {
   const supabase = createClient(url, key);
   
   try {
-    const { data: raw, error } = await supabase
-      .from('bookings')
-      .select(`id, market_city, market_state, call_duration_seconds, agents (name), booking_transcriptions (call_key_points)`)
-      .eq('status', 'Non Booking').eq('transcription_status', 'completed')
-      .gte('booking_date', start).lte('booking_date', end);
-
-    if (error) throw new Error(error.message);
-
-    const bookings = (raw || []).filter((b: any) => {
+    const raw = await fetchBookingsInBatches(supabase, start, end);
+    const bookings = raw.filter((b: any) => {
       const t = Array.isArray(b.booking_transcriptions) ? b.booking_transcriptions[0] : b.booking_transcriptions;
       return t?.call_key_points;
     });
+
+    console.log(`[Analysis] ${bookings.length} of ${raw.length} records have call_key_points for analysis`);
 
     if (bookings.length === 0) {
       await supabase.from('non_booking_insights').update({ status: 'failed', error_message: 'No transcribed calls found' }).eq('id', id);
