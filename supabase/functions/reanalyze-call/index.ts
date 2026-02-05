@@ -46,9 +46,145 @@ function selectAnalysisModel(callDurationSeconds: number | null): string {
   return 'google/gemini-2.5-pro';
 }
 
+// LLM Provider types for hybrid selection
+type LLMProviderName = 'lovable_ai' | 'deepseek';
+
+interface LLMProviderSelection {
+  provider: LLMProviderName;
+  model: string;
+  fallbackReason?: string;
+}
+
+// DeepSeek pricing: $0.14/1M input, $0.28/1M output (cache miss)
+const DEEPSEEK_PRICING = {
+  inputRate: 0.00000014,   // $0.14 per 1M tokens
+  outputRate: 0.00000028,  // $0.28 per 1M tokens
+};
+
+// Select LLM provider based on weights and fallback conditions
+async function selectLLMProvider(
+  supabase: any,
+  bookingStatus: string | null,
+  callDurationSeconds: number | null
+): Promise<LLMProviderSelection> {
+  try {
+    // Fetch LLM provider settings
+    const { data: settings, error } = await supabase
+      .from('llm_provider_settings')
+      .select('provider_name, weight, api_config')
+      .eq('is_active', true);
+
+    if (error) {
+      console.log('[LLM A/B] Error fetching settings, defaulting to Gemini:', error);
+      return { provider: 'lovable_ai', model: selectAnalysisModel(callDurationSeconds) };
+    }
+
+    const deepseekSettings = settings?.find((s: any) => s.provider_name === 'deepseek');
+    const geminiSettings = settings?.find((s: any) => s.provider_name === 'lovable_ai');
+
+    const deepseekWeight = deepseekSettings?.weight || 0;
+    const geminiWeight = geminiSettings?.weight || 100;
+
+    // Check fallback conditions from DeepSeek's api_config
+    const fallbackConditions: string[] = deepseekSettings?.api_config?.use_gemini_fallback_for || [];
+    const isNonBooking = bookingStatus === 'Non Booking';
+
+    // If DeepSeek has weight but this is a non-booking call, use Gemini fallback
+    if (isNonBooking && fallbackConditions.includes('non_booking') && deepseekWeight > 0) {
+      console.log('[LLM A/B] Non-booking call detected, falling back to Gemini for quality');
+      return {
+        provider: 'lovable_ai',
+        model: selectAnalysisModel(callDurationSeconds),
+        fallbackReason: 'non_booking'
+      };
+    }
+
+    // Weight-based selection
+    const totalWeight = deepseekWeight + geminiWeight;
+    if (totalWeight === 0 || deepseekWeight === 0) {
+      console.log('[LLM A/B] DeepSeek weight is 0, using Gemini');
+      return { provider: 'lovable_ai', model: selectAnalysisModel(callDurationSeconds) };
+    }
+
+    if (geminiWeight === 0) {
+      console.log('[LLM A/B] Gemini weight is 0, using DeepSeek');
+      return { provider: 'deepseek', model: 'deepseek-chat' };
+    }
+
+    // Random selection based on weights
+    const random = Math.random() * totalWeight;
+    if (random < deepseekWeight) {
+      console.log(`[LLM A/B] Selected DeepSeek (weight: ${deepseekWeight}/${totalWeight})`);
+      return { provider: 'deepseek', model: 'deepseek-chat' };
+    }
+
+    console.log(`[LLM A/B] Selected Gemini (weight: ${geminiWeight}/${totalWeight})`);
+    return { provider: 'lovable_ai', model: selectAnalysisModel(callDurationSeconds) };
+  } catch (error) {
+    console.error('[LLM A/B] Error selecting provider:', error);
+    return { provider: 'lovable_ai', model: selectAnalysisModel(callDurationSeconds) };
+  }
+}
+
+// Call DeepSeek API for analysis
+async function callDeepSeekForAnalysis(
+  systemPrompt: string,
+  userPrompt: string
+): Promise<{
+  content: string;
+  model: string;
+  inputTokens: number;
+  outputTokens: number;
+  latencyMs: number;
+}> {
+  const DEEPSEEK_API_KEY = Deno.env.get('DEEPSEEK_API_KEY');
+  if (!DEEPSEEK_API_KEY) throw new Error('DEEPSEEK_API_KEY not configured');
+
+  const startTime = Date.now();
+  
+  const response = await fetch('https://api.deepseek.com/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${DEEPSEEK_API_KEY}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: 'deepseek-chat',
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userPrompt },
+      ],
+      response_format: { type: 'json_object' },
+      stream: false,
+    }),
+  });
+
+  const latencyMs = Date.now() - startTime;
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`DeepSeek API error: ${response.status} - ${errorText}`);
+  }
+
+  const result = await response.json();
+  const content = result.choices?.[0]?.message?.content || '';
+  const inputTokens = result.usage?.prompt_tokens || Math.ceil(userPrompt.length / 4);
+  const outputTokens = result.usage?.completion_tokens || Math.ceil(content.length / 4);
+
+  console.log(`[DeepSeek] Response received: ${inputTokens} input, ${outputTokens} output, ${latencyMs}ms`);
+
+  return {
+    content,
+    model: result.model || 'deepseek-chat',
+    inputTokens,
+    outputTokens,
+    latencyMs,
+  };
+}
+
 // Cost logging helper
 async function logApiCost(supabase: any, params: {
-  service_provider: 'elevenlabs' | 'lovable_ai';
+  service_provider: 'elevenlabs' | 'lovable_ai' | 'deepseek';
   service_type: string;
   edge_function: string;
   booking_id?: string;
@@ -69,6 +205,11 @@ async function logApiCost(supabase: any, params: {
       if (params.character_count) {
         cost += params.character_count * 0.0003;
       }
+    } else if (params.service_provider === 'deepseek') {
+      // DeepSeek: $0.14 per 1M input, $0.28 per 1M output
+      const inputCost = (params.input_tokens || 0) * DEEPSEEK_PRICING.inputRate;
+      const outputCost = (params.output_tokens || 0) * DEEPSEEK_PRICING.outputRate;
+      cost = inputCost + outputCost;
     } else if (params.service_provider === 'lovable_ai') {
       // Model-aware pricing for Lovable AI
       const model = params.metadata?.model || 'google/gemini-2.5-flash';
@@ -359,7 +500,7 @@ SCORING GUIDE (1-10):
 IMPORTANT: Even for very short calls, provide meaningful analysis. A 1-minute call checking availability still has extractable insights (member's location interest, timing, urgency level).`;
 }
 
-// Retry logic for AI calls
+// Retry logic for AI calls with hybrid LLM selection
 async function callAIWithRetry(
   supabase: any,
   lovableApiKey: string, 
@@ -369,12 +510,14 @@ async function callAIWithRetry(
   agentId: string | null,
   siteId: string | null,
   maxRetries = 2,
-  callDurationSeconds: number | null = null
-): Promise<{ keyPoints: any; agentFeedback: any; summary: string }> {
+  callDurationSeconds: number | null = null,
+  bookingStatus: string | null = null
+): Promise<{ keyPoints: any; agentFeedback: any; summary: string; llmProvider: LLMProviderName }> {
   let lastError: Error | null = null;
   
-  // Select model based on call duration (Flash for short calls, Pro for longer)
-  const analysisModel = selectAnalysisModel(callDurationSeconds);
+  // Hybrid LLM selection: choose provider based on weights and fallback conditions
+  const llmSelection = await selectLLMProvider(supabase, bookingStatus, callDurationSeconds);
+  console.log(`[ReAnalyze] Using LLM provider: ${llmSelection.provider} (model: ${llmSelection.model}${llmSelection.fallbackReason ? `, fallback: ${llmSelection.fallbackReason}` : ''})`);
   
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
@@ -382,43 +525,83 @@ async function callAIWithRetry(
       
       const prompt = buildDynamicAnalysisPrompt(transcription, config);
       
-      const aiResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${lovableApiKey}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          model: analysisModel,
-          messages: [
-            { role: 'user', content: prompt }
-          ],
-        }),
-      });
+      let aiContent = '';
+      let inputTokens = 0;
+      let outputTokens = 0;
 
-      if (!aiResponse.ok) {
-        const errorText = await aiResponse.text();
-        throw new Error(`AI API error: ${aiResponse.status} - ${errorText}`);
-      }
+      if (llmSelection.provider === 'deepseek') {
+        // Use DeepSeek for analysis
+        const systemPrompt = 'You are an expert at analyzing sales call transcriptions. Always respond with valid JSON only, no markdown.';
+        const deepseekResult = await callDeepSeekForAnalysis(systemPrompt, prompt);
+        aiContent = deepseekResult.content;
+        inputTokens = deepseekResult.inputTokens;
+        outputTokens = deepseekResult.outputTokens;
 
-      const aiResult = await aiResponse.json();
-      const aiContent = aiResult.choices?.[0]?.message?.content || '';
-      
-      // Log AI cost on successful call
-      if (attempt === 0 || attempt === maxRetries) {
-        const inputTokens = Math.ceil(prompt.length / 4);
-        const outputTokens = Math.ceil(aiContent.length / 4);
-        logApiCost(supabase, {
-          service_provider: 'lovable_ai',
-          service_type: 'ai_reanalysis',
-          edge_function: 'reanalyze-call',
-          booking_id: bookingId,
-      agent_id: agentId || undefined,
-      site_id: siteId || undefined,
-          input_tokens: inputTokens,
-          output_tokens: outputTokens,
-          metadata: { model: analysisModel, attempt: attempt + 1, call_duration_seconds: callDurationSeconds }
+        // Log DeepSeek cost
+        if (attempt === 0 || attempt === maxRetries) {
+          logApiCost(supabase, {
+            service_provider: 'deepseek',
+            service_type: 'ai_reanalysis',
+            edge_function: 'reanalyze-call',
+            booking_id: bookingId,
+            agent_id: agentId || undefined,
+            site_id: siteId || undefined,
+            input_tokens: inputTokens,
+            output_tokens: outputTokens,
+            metadata: { 
+              model: deepseekResult.model, 
+              attempt: attempt + 1, 
+              call_duration_seconds: callDurationSeconds,
+              latency_ms: deepseekResult.latencyMs,
+              fallback_reason: llmSelection.fallbackReason
+            }
+          });
+        }
+      } else {
+        // Use Gemini (Lovable AI) for analysis
+        const aiResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${lovableApiKey}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            model: llmSelection.model,
+            messages: [
+              { role: 'user', content: prompt }
+            ],
+          }),
         });
+
+        if (!aiResponse.ok) {
+          const errorText = await aiResponse.text();
+          throw new Error(`AI API error: ${aiResponse.status} - ${errorText}`);
+        }
+
+        const aiResult = await aiResponse.json();
+        aiContent = aiResult.choices?.[0]?.message?.content || '';
+        inputTokens = Math.ceil(prompt.length / 4);
+        outputTokens = Math.ceil(aiContent.length / 4);
+        
+        // Log Lovable AI cost
+        if (attempt === 0 || attempt === maxRetries) {
+          logApiCost(supabase, {
+            service_provider: 'lovable_ai',
+            service_type: 'ai_reanalysis',
+            edge_function: 'reanalyze-call',
+            booking_id: bookingId,
+            agent_id: agentId || undefined,
+            site_id: siteId || undefined,
+            input_tokens: inputTokens,
+            output_tokens: outputTokens,
+            metadata: { 
+              model: llmSelection.model, 
+              attempt: attempt + 1, 
+              call_duration_seconds: callDurationSeconds,
+              fallback_reason: llmSelection.fallbackReason
+            }
+          });
+        }
       }
       
       // Clean and parse JSON
@@ -467,10 +650,11 @@ async function callAIWithRetry(
         summaryLength: summary.length,
         concerns: keyPoints.memberConcerns.length,
         preferences: keyPoints.memberPreferences.length,
-        hasAgentFeedback: !!agentFeedback
+        hasAgentFeedback: !!agentFeedback,
+        llmProvider: llmSelection.provider
       });
       
-      return { keyPoints, agentFeedback, summary };
+      return { keyPoints, agentFeedback, summary, llmProvider: llmSelection.provider };
       
     } catch (error) {
       console.error(`[ReAnalyze] Attempt ${attempt + 1} failed:`, error);
@@ -512,7 +696,7 @@ serve(async (req) => {
     // Fetch the existing booking status, call_type_id, and agent info
     const { data: booking, error: fetchError } = await supabase
       .from('bookings')
-      .select('id, transcription_status, call_duration_seconds, call_type_id, agent_id, agents(site_id)')
+      .select('id, transcription_status, call_duration_seconds, call_type_id, agent_id, status, agents(site_id)')
       .eq('id', bookingId)
       .single();
 
@@ -526,6 +710,7 @@ serve(async (req) => {
 
     const agentId = booking.agent_id || null;
     const siteId = (booking.agents as any)?.site_id || null;
+    const bookingStatus = booking.status || null;
 
     // Fetch transcription from booking_transcriptions table
     const { data: transcriptionData, error: transcriptionError } = await supabase
@@ -538,13 +723,13 @@ serve(async (req) => {
       throw new Error('No transcription found. Please transcribe the call first.');
     }
 
-    console.log(`[ReAnalyze] Found transcription (${transcriptionData.call_transcription.length} chars, ${booking.call_duration_seconds}s duration)`);
+    console.log(`[ReAnalyze] Found transcription (${transcriptionData.call_transcription.length} chars, ${booking.call_duration_seconds}s duration, status: ${bookingStatus})`);
 
     // Fetch call type configuration if available
     const config = await fetchCallTypeConfig(supabase, booking.call_type_id);
 
-    // Re-analyze with dynamic prompt and retry logic
-    const { keyPoints, agentFeedback, summary } = await callAIWithRetry(
+    // Re-analyze with dynamic prompt, retry logic, and hybrid LLM selection
+    const { keyPoints, agentFeedback, summary, llmProvider } = await callAIWithRetry(
       supabase,
       lovableApiKey,
       transcriptionData.call_transcription,
@@ -553,17 +738,19 @@ serve(async (req) => {
       agentId,
       siteId,
       2, // maxRetries
-      booking.call_duration_seconds // Pass duration for model selection
+      booking.call_duration_seconds, // Pass duration for model selection
+      bookingStatus // Pass status for LLM fallback logic
     );
 
-    // Update booking_transcriptions with new analysis
-    console.log('[ReAnalyze] Updating booking_transcriptions with new analysis...');
+    // Update booking_transcriptions with new analysis and LLM provider
+    console.log(`[ReAnalyze] Updating booking_transcriptions with new analysis (provider: ${llmProvider})...`);
     const { error: updateError } = await supabase
       .from('booking_transcriptions')
       .update({
         call_summary: summary,
         call_key_points: keyPoints,
         agent_feedback: agentFeedback,
+        llm_provider: llmProvider,
         updated_at: new Date().toISOString(),
       })
       .eq('booking_id', bookingId);
