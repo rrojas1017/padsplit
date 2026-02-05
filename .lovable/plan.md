@@ -1,171 +1,143 @@
 
-## Prevent Bulk Processing Stalls with Auto-Resume Architecture
+# Plan: Add Call Length Threshold for AI Model Selection
 
-### Problem Analysis
-The current bulk processor uses `EdgeRuntime.waitUntil()` which has a maximum wall-clock time limit (~150 seconds). When processing 4,600+ records at 10-second pacing, the background loop inevitably times out after processing only 10-15 records per invocation.
+Implement a smart model selector that uses **Gemini 2.5 Flash** for short calls (under 5 minutes) and **Gemini 2.5 Pro** for longer calls. This optimization will reduce AI analysis costs by ~60-70% on shorter calls while maintaining quality for longer, more complex conversations.
 
-### Solution: Self-Retriggering Chunked Processing
+## Summary
 
-Instead of running one long loop that times out, we implement a **chunk-and-retrigger** pattern where:
-1. The function processes a small batch (e.g., 10 records)
-2. At the end, it calls itself to continue processing
-3. This creates a chain of short-lived function calls that can run indefinitely
+| Aspect | Before | After |
+|--------|--------|-------|
+| Short calls (<5 min) | Gemini 2.5 Pro (~$0.04) | Gemini 2.5 Flash (~$0.01) |
+| Long calls (≥5 min) | Gemini 2.5 Pro (~$0.04) | Gemini 2.5 Pro (~$0.04) |
+| Estimated savings | - | ~40-50% on AI analysis costs |
+
+---
+
+## Implementation
+
+### 1. Create Model Selection Helper Function
+
+Add a reusable function to determine the appropriate model based on call duration:
 
 ```text
-┌─────────────────────────────────────────────────────────────────┐
-│                    Current Architecture                          │
-│  ┌──────────┐                                                    │
-│  │  Start   │──▶ Process 1 ──▶ Process 2 ──▶ ... ──▶ TIMEOUT!  │
-│  └──────────┘     (10s wait)    (10s wait)      (after ~90s)    │
-└─────────────────────────────────────────────────────────────────┘
-
-┌─────────────────────────────────────────────────────────────────┐
-│                    New Architecture                              │
-│  ┌──────────┐    ┌──────────┐    ┌──────────┐    ┌──────────┐  │
-│  │ Chunk 1  │──▶ │ Chunk 2  │──▶ │ Chunk 3  │──▶ │ Chunk N  │  │
-│  │ (10 recs)│    │ (10 recs)│    │ (10 recs)│    │ Complete │  │
-│  └──────────┘    └──────────┘    └──────────┘    └──────────┘  │
-│       │               │               │               │         │
-│       └── self-call ──┘── self-call ──┘── self-call ──┘        │
-└─────────────────────────────────────────────────────────────────┘
+selectAnalysisModel(callDurationSeconds)
+├── If callDurationSeconds < 300 (5 min)
+│   └── Return 'google/gemini-2.5-flash'
+└── Else
+    └── Return 'google/gemini-2.5-pro'
 ```
 
-### Technical Changes
+### 2. Update transcribe-call Edge Function
 
-#### 1. Modify Edge Function (`bulk-transcription-processor/index.ts`)
+**File:** `supabase/functions/transcribe-call/index.ts`
 
-**New processing strategy:**
+Modify the AI analysis step (around line 1298-1335) to:
+- Use `callDurationSeconds` (already available from STT result) to select model
+- Update the cost logging to reflect the actual model used
+- Add logging to track model selection
+
+```text
+Before:
+  model: 'google/gemini-2.5-pro'  (hardcoded)
+
+After:
+  const analysisModel = callDurationSeconds && callDurationSeconds < 300 
+    ? 'google/gemini-2.5-flash' 
+    : 'google/gemini-2.5-pro';
+  model: analysisModel  (dynamic)
+```
+
+### 3. Update reanalyze-call Edge Function
+
+**File:** `supabase/functions/reanalyze-call/index.ts`
+
+Modify the `performAIAnalysisWithRetry` function (around line 350-400) to:
+- Accept `callDurationSeconds` as a parameter
+- Select model based on duration threshold
+- Update cost logging metadata
+
+The booking query already fetches `call_duration_seconds`, so this is readily available.
+
+### 4. Update Cost Logging for Accuracy
+
+Update the `logApiCost` function in both files to use correct model-aware pricing:
+
+```text
+Model Pricing (per 1M tokens):
+┌─────────────────────┬──────────────┬───────────────┐
+│ Model               │ Input Rate   │ Output Rate   │
+├─────────────────────┼──────────────┼───────────────┤
+│ gemini-2.5-flash    │ $0.30        │ $2.50         │
+│ gemini-2.5-pro      │ $1.25        │ $10.00        │
+└─────────────────────┴──────────────┴───────────────┘
+```
+
+---
+
+## Files to Modify
+
+| File | Changes |
+|------|---------|
+| `supabase/functions/transcribe-call/index.ts` | Add model selection logic based on duration, update AI call and cost logging |
+| `supabase/functions/reanalyze-call/index.ts` | Pass duration to AI function, implement model selection, update cost logging |
+
+---
+
+## Technical Details
+
+### Model Selection Function
 
 ```typescript
-// Configuration
-const RECORDS_PER_CHUNK = 10;  // Process 10 records per function invocation
-const MAX_CHUNK_DURATION_MS = 100000;  // Safety: max 100s per chunk
-
-async function runProcessingLoop(
-  supabase: any,
-  jobId: string,
-  supabaseUrl: string,
-  supabaseServiceKey: string
-): Promise<void> {
-  const startTime = Date.now();
-  let recordsProcessedThisChunk = 0;
+function selectAnalysisModel(callDurationSeconds: number | null): string {
+  const DURATION_THRESHOLD_SECONDS = 300; // 5 minutes
   
-  while (true) {
-    // Safety checks: stop if we've processed enough or running too long
-    if (recordsProcessedThisChunk >= RECORDS_PER_CHUNK) {
-      console.log(`[BulkProcessor] Chunk complete (${recordsProcessedThisChunk} records)`);
-      break;
-    }
-    
-    if (Date.now() - startTime > MAX_CHUNK_DURATION_MS) {
-      console.log(`[BulkProcessor] Chunk time limit reached`);
-      break;
-    }
-    
-    // ... existing status check and record processing ...
-    
-    recordsProcessedThisChunk++;
+  if (!callDurationSeconds || callDurationSeconds < DURATION_THRESHOLD_SECONDS) {
+    console.log(`[Model] Using Flash for ${callDurationSeconds || 0}s call (< 5 min threshold)`);
+    return 'google/gemini-2.5-flash';
   }
   
-  // Check if job should continue
-  const { data: currentJob } = await supabase
-    .from('bulk_processing_jobs')
-    .select('status')
-    .eq('id', jobId)
-    .single();
-  
-  if (currentJob?.status === 'running') {
-    // Check if more records remain
-    const pendingCount = await getPendingCount(supabase, job.site_filter);
-    
-    if (pendingCount > 0) {
-      // Self-retrigger: call the function again to continue
-      console.log(`[BulkProcessor] Retriggering for ${pendingCount} remaining records`);
-      
-      await fetch(`${supabaseUrl}/functions/v1/bulk-transcription-processor`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${supabaseServiceKey}`,
-        },
-        body: JSON.stringify({ 
-          jobId, 
-          action: 'continue'  // New action for internal retrigger
-        }),
-      });
-    } else {
-      // Mark job as completed
-      await updateJobProgress(supabase, jobId, {
-        status: 'completed',
-        completed_at: new Date().toISOString()
-      });
-    }
-  }
+  console.log(`[Model] Using Pro for ${callDurationSeconds}s call (≥ 5 min threshold)`);
+  return 'google/gemini-2.5-pro';
 }
 ```
 
-**New 'continue' action handler:**
+### Cost Logging Update
+
+The existing `logApiCost` function already has model-aware pricing logic, but it needs to correctly handle the Flash model rates:
 
 ```typescript
-case 'continue': {
-  // Internal action - just start the next chunk
-  EdgeRuntime.waitUntil(
-    runProcessingLoop(supabase, jobId, supabaseUrl, supabaseServiceKey)
-  );
-  
-  return new Response(
-    JSON.stringify({ success: true, message: 'Continuing processing' }),
-    { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-  );
+if (model.includes('gemini-2.5-pro')) {
+  inputRate = 0.00000125;  // $1.25 per 1M tokens
+  outputRate = 0.00001;    // $10.00 per 1M tokens
+} else if (model.includes('gemini-2.5-flash') && !model.includes('lite')) {
+  inputRate = 0.0000003;   // $0.30 per 1M tokens
+  outputRate = 0.0000025;  // $2.50 per 1M tokens
 }
 ```
 
-#### 2. Add Chunk Tracking to Database
+---
 
-Add a column to track chunk progress for monitoring:
+## Expected Impact
 
-```sql
-ALTER TABLE bulk_processing_jobs 
-ADD COLUMN chunk_count INTEGER DEFAULT 0;
-```
+### Cost Savings Estimate
 
-Update the function to increment this counter each chunk, providing visibility into how many "restarts" have occurred.
+Based on current PadSplit call distribution (estimated):
+- ~60% of calls are under 5 minutes
+- ~40% of calls are 5 minutes or longer
 
-#### 3. UI Enhancement (Optional)
+| Metric | Before | After | Savings |
+|--------|--------|-------|---------|
+| Short call AI cost | ~$0.04 | ~$0.01 | 75% |
+| Long call AI cost | ~$0.04 | ~$0.04 | 0% |
+| **Blended average** | **$0.04** | **$0.022** | **~45%** |
 
-Show chunk count in the job details for transparency:
+For the current bulk job processing ~4,600 calls:
+- Before: ~$184 in AI analysis costs
+- After: ~$101 in AI analysis costs
+- **Estimated savings: ~$83**
 
-```typescript
-// In BulkProcessingTab.tsx
-{activeJob.chunk_count > 0 && (
-  <span className="text-xs text-muted-foreground">
-    Chunk #{activeJob.chunk_count}
-  </span>
-)}
-```
+### Quality Considerations
 
-### Why This Works
-
-1. **No timeouts**: Each chunk runs for ~100 seconds max (well under limits)
-2. **Automatic recovery**: If a chunk fails, the stall detection triggers a resume which starts a new chunk
-3. **Efficient**: Minimal overhead from the self-call (~50ms)
-4. **Reliable**: Uses database state as the source of truth; any chunk can pick up where the last left off
-5. **Observable**: Heartbeat updates every record, chunk count shows progress
-
-### Processing Math for 4,600 Records
-
-| Metric | Value |
-|--------|-------|
-| Records per chunk | 10 |
-| Pacing between records | 10 seconds |
-| Chunk duration | ~100 seconds |
-| Total chunks needed | 460 |
-| Total processing time | ~12.8 hours |
-| Function invocations | ~460 |
-
-### Files to Modify
-
-1. **Database migration**: Add `chunk_count` column
-2. **`supabase/functions/bulk-transcription-processor/index.ts`**: Implement chunked processing with self-retrigger
-3. **`src/hooks/useBulkProcessingJobs.ts`**: Add `chunk_count` to interface
-4. **`src/components/import/BulkProcessingTab.tsx`**: Display chunk count (optional)
+- **Flash is highly capable** for structured extraction (summaries, member details, coaching feedback)
+- **Pro reserved for complex calls** where nuanced understanding matters (longer conversations, multiple topics, complex objections)
+- The 5-minute threshold is a reasonable starting point and can be tuned later based on quality feedback
