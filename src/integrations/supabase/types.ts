@@ -1314,6 +1314,47 @@ export type Database = {
           },
         ]
       }
+      failed_downstream_calls: {
+        Row: {
+          attempt_count: number | null
+          booking_id: string | null
+          created_at: string | null
+          error_message: string | null
+          function_name: string
+          id: string
+          resolved_at: string | null
+          status_code: number | null
+        }
+        Insert: {
+          attempt_count?: number | null
+          booking_id?: string | null
+          created_at?: string | null
+          error_message?: string | null
+          function_name: string
+          id?: string
+          resolved_at?: string | null
+          status_code?: number | null
+        }
+        Update: {
+          attempt_count?: number | null
+          booking_id?: string | null
+          created_at?: string | null
+          error_message?: string | null
+          function_name?: string
+          id?: string
+          resolved_at?: string | null
+          status_code?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "failed_downstream_calls_booking_id_fkey"
+            columns: ["booking_id"]
+            isOneToOne: false
+            referencedRelation: "bookings"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       llm_prompt_enhancements: {
         Row: {
           content: string
