@@ -276,11 +276,13 @@ async function runProcessingLoop(
       
       if (result.success) {
         await updateJobProgress(supabase, jobId, {
-          processed_count: (progressJob?.processed_count || 0) + 1
+          processed_count: (progressJob?.processed_count || 0) + 1,
+          last_activity_at: new Date().toISOString()
         });
       } else if (result.skipped) {
         await updateJobProgress(supabase, jobId, {
-          skipped_count: (progressJob?.skipped_count || 0) + 1
+          skipped_count: (progressJob?.skipped_count || 0) + 1,
+          last_activity_at: new Date().toISOString()
         });
         await addJobError(supabase, jobId, {
           bookingId: booking.id,
@@ -427,7 +429,8 @@ serve(async (req) => {
           status: 'running',
           started_at: job.started_at || new Date().toISOString(),
           total_records: totalCount,
-          paused_at: null
+          paused_at: null,
+          last_activity_at: new Date().toISOString()
         });
         
         // Start background processing

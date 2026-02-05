@@ -23,6 +23,7 @@ export interface BulkProcessingJob {
   started_at: string | null;
   completed_at: string | null;
   paused_at: string | null;
+  last_activity_at: string | null;
   created_by: string | null;
   created_at: string;
 }
@@ -59,7 +60,8 @@ export function useBulkProcessingJobs() {
       // Type cast to handle the JSONB array properly
       const typedJobs = (data || []).map(job => ({
         ...job,
-        error_log: Array.isArray(job.error_log) ? job.error_log : []
+        error_log: Array.isArray(job.error_log) ? job.error_log : [],
+        last_activity_at: job.last_activity_at || null
       })) as BulkProcessingJob[];
       
       setJobs(typedJobs);
