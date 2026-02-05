@@ -32,6 +32,20 @@ interface CallTypeConfig {
   } | null;
 }
 
+// Model selection threshold (5 minutes = 300 seconds)
+const ANALYSIS_MODEL_THRESHOLD_SECONDS = 300;
+
+// Select AI model based on call duration for cost optimization
+function selectAnalysisModel(callDurationSeconds: number | null): string {
+  if (!callDurationSeconds || callDurationSeconds < ANALYSIS_MODEL_THRESHOLD_SECONDS) {
+    console.log(`[Model] Using Flash for ${callDurationSeconds || 0}s call (< 5 min threshold)`);
+    return 'google/gemini-2.5-flash';
+  }
+  
+  console.log(`[Model] Using Pro for ${callDurationSeconds}s call (≥ 5 min threshold)`);
+  return 'google/gemini-2.5-pro';
+}
+
 // Cost logging helper
 async function logApiCost(supabase: any, params: {
   service_provider: 'elevenlabs' | 'lovable_ai';
@@ -58,17 +72,21 @@ async function logApiCost(supabase: any, params: {
     } else if (params.service_provider === 'lovable_ai') {
       // Model-aware pricing for Lovable AI
       const model = params.metadata?.model || 'google/gemini-2.5-flash';
-      let inputRate = 0.0001;  // Flash default: ~$0.0001 per 1K input
-      let outputRate = 0.0003; // Flash default: ~$0.0003 per 1K output
+      let inputRate = 0.0000003;  // Flash: $0.30 per 1M tokens
+      let outputRate = 0.0000025; // Flash: $2.50 per 1M tokens
       
       if (model.includes('gemini-2.5-pro')) {
-        // Gemini Pro: ~$0.00125 per 1K input, ~$0.005 per 1K output
-        inputRate = 0.00125;
-        outputRate = 0.005;
+        // Gemini Pro: $1.25 per 1M input, $10.00 per 1M output
+        inputRate = 0.00000125;
+        outputRate = 0.00001;
+      } else if (model.includes('gemini-2.5-flash-lite')) {
+        // Flash-lite: $0.075 per 1M input, $0.30 per 1M output
+        inputRate = 0.000000075;
+        outputRate = 0.0000003;
       }
       
-      const inputCost = ((params.input_tokens || 0) / 1000) * inputRate;
-      const outputCost = ((params.output_tokens || 0) / 1000) * outputRate;
+      const inputCost = (params.input_tokens || 0) * inputRate;
+      const outputCost = (params.output_tokens || 0) * outputRate;
       cost = inputCost + outputCost;
     }
 
@@ -350,9 +368,13 @@ async function callAIWithRetry(
   bookingId: string,
   agentId: string | null,
   siteId: string | null,
-  maxRetries = 2
+  maxRetries = 2,
+  callDurationSeconds: number | null = null
 ): Promise<{ keyPoints: any; agentFeedback: any; summary: string }> {
   let lastError: Error | null = null;
+  
+  // Select model based on call duration (Flash for short calls, Pro for longer)
+  const analysisModel = selectAnalysisModel(callDurationSeconds);
   
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
@@ -367,7 +389,7 @@ async function callAIWithRetry(
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          model: 'google/gemini-2.5-pro',
+          model: analysisModel,
           messages: [
             { role: 'user', content: prompt }
           ],
@@ -395,7 +417,7 @@ async function callAIWithRetry(
       site_id: siteId || undefined,
           input_tokens: inputTokens,
           output_tokens: outputTokens,
-          metadata: { model: 'google/gemini-2.5-pro', attempt: attempt + 1 }
+          metadata: { model: analysisModel, attempt: attempt + 1, call_duration_seconds: callDurationSeconds }
         });
       }
       
@@ -529,7 +551,9 @@ serve(async (req) => {
       config,
       bookingId,
       agentId,
-      siteId
+      siteId,
+      2, // maxRetries
+      booking.call_duration_seconds // Pass duration for model selection
     );
 
     // Update booking_transcriptions with new analysis

@@ -15,6 +15,20 @@ const corsHeaders = {
 // STT Provider types
 type STTProviderName = 'elevenlabs' | 'deepgram';
 
+// Model selection threshold (5 minutes = 300 seconds)
+const ANALYSIS_MODEL_THRESHOLD_SECONDS = 300;
+
+// Select AI model based on call duration for cost optimization
+function selectAnalysisModel(callDurationSeconds: number | null): string {
+  if (!callDurationSeconds || callDurationSeconds < ANALYSIS_MODEL_THRESHOLD_SECONDS) {
+    console.log(`[Model] Using Flash for ${callDurationSeconds || 0}s call (< 5 min threshold)`);
+    return 'google/gemini-2.5-flash';
+  }
+  
+  console.log(`[Model] Using Pro for ${callDurationSeconds}s call (≥ 5 min threshold)`);
+  return 'google/gemini-2.5-pro';
+}
+
 interface STTResult {
   transcription: string;
   words: Array<{ text: string; start: number; end: number; speaker_id?: string }>;
@@ -65,17 +79,21 @@ async function logApiCost(supabase: any, params: {
     } else if (params.service_provider === 'lovable_ai') {
       // Model-aware pricing for Lovable AI
       const model = params.metadata?.model || 'google/gemini-2.5-flash';
-      let inputRate = 0.0001;  // Flash default: ~$0.0001 per 1K input
-      let outputRate = 0.0003; // Flash default: ~$0.0003 per 1K output
+      let inputRate = 0.0000003;  // Flash: $0.30 per 1M tokens = $0.0003 per 1K tokens
+      let outputRate = 0.0000025; // Flash: $2.50 per 1M tokens = $0.0025 per 1K tokens
       
       if (model.includes('gemini-2.5-pro')) {
-        // Gemini Pro: ~$0.00125 per 1K input, ~$0.005 per 1K output
-        inputRate = 0.00125;
-        outputRate = 0.005;
+        // Gemini Pro: $1.25 per 1M tokens input, $10.00 per 1M tokens output
+        inputRate = 0.00000125;
+        outputRate = 0.00001;
+      } else if (model.includes('gemini-2.5-flash-lite')) {
+        // Flash-lite: $0.075 per 1M input, $0.30 per 1M output
+        inputRate = 0.000000075;
+        outputRate = 0.0000003;
       }
       
-      const inputCost = ((params.input_tokens || 0) / 1000) * inputRate;
-      const outputCost = ((params.output_tokens || 0) / 1000) * outputRate;
+      const inputCost = (params.input_tokens || 0) * inputRate;
+      const outputCost = (params.output_tokens || 0) * outputRate;
       cost = inputCost + outputCost;
     }
 
@@ -1294,6 +1312,9 @@ async function processTranscription(bookingId: string, kixieUrl: string, skipTts
     // Step 3: Generate summary, key points, and agent feedback with dynamic prompt
     console.log('[Background] Generating AI summary and agent feedback...');
     const summaryPrompt = buildDynamicPrompt(transcription, config, isNonBooking);
+    
+    // Select model based on call duration (Flash for short calls, Pro for longer)
+    const analysisModel = selectAnalysisModel(callDurationSeconds);
 
     const aiResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
       method: 'POST',
@@ -1302,7 +1323,7 @@ async function processTranscription(bookingId: string, kixieUrl: string, skipTts
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'google/gemini-2.5-pro',
+        model: analysisModel,
         messages: [
           { role: 'user', content: summaryPrompt }
         ],
@@ -1331,7 +1352,7 @@ async function processTranscription(bookingId: string, kixieUrl: string, skipTts
       site_id: siteId || undefined,
       input_tokens: estimatedInputTokens,
       output_tokens: estimatedOutputTokens,
-      metadata: { model: 'google/gemini-2.5-pro', transcription_length: transcription.length }
+      metadata: { model: analysisModel, transcription_length: transcription.length, call_duration_seconds: callDurationSeconds }
     });
 
     // Parse the JSON response
