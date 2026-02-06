@@ -64,7 +64,8 @@ export function useCoachingData(options: UseCoachingDataOptions = {}) {
               transcription_status
             )
           `)
-          .not('agent_feedback', 'is', null);
+          .not('agent_feedback', 'is', null)
+          .order('coaching_audio_generated_at', { ascending: false, nullsFirst: false });
 
         const { data, error } = await query;
 
