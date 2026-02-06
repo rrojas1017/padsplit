@@ -38,6 +38,71 @@ interface STTResult {
   wordCount: number;
 }
 
+// Validate if a transcription contains a real two-way conversation
+// Returns false for voicemails, failed connections, or one-sided recordings
+function validateConversation(params: {
+  durationSeconds: number | null;
+  transcription: string;
+  summary: string;
+}): boolean {
+  const { durationSeconds, transcription, summary } = params;
+  const lowerTranscription = transcription.toLowerCase();
+  const lowerSummary = summary.toLowerCase();
+  
+  // Voicemail indicators in transcription
+  const voicemailIndicators = [
+    'forwarded to voicemail',
+    'leave your message',
+    'leave a message',
+    'not available',
+    'at the tone',
+    'please record your message',
+    'mailbox is full',
+    'record your message at the tone',
+    'the person you are calling',
+    'is not available right now',
+    'after the beep',
+    'voice mailbox'
+  ];
+  
+  // AI detected no real conversation
+  const noConversationIndicators = [
+    'no actual conversation',
+    'voicemail recording',
+    'no discussion',
+    'no conversation took place',
+    'no contact was made',
+    'voicemail greeting',
+    'failed to connect',
+    'no meaningful dialogue',
+    'no two-way conversation',
+    'one-sided recording',
+    'automated voicemail'
+  ];
+  
+  // Short calls (<30s) with voicemail keywords are almost certainly voicemails
+  if (durationSeconds && durationSeconds < 30) {
+    if (voicemailIndicators.some(indicator => lowerTranscription.includes(indicator))) {
+      console.log('[Validation] Short call with voicemail indicator detected');
+      return false;
+    }
+  }
+  
+  // Check if AI summary indicates no real conversation
+  if (noConversationIndicators.some(indicator => lowerSummary.includes(indicator))) {
+    console.log('[Validation] AI summary indicates no real conversation');
+    return false;
+  }
+  
+  // Also check transcription for these indicators (sometimes in longer recordings)
+  if (noConversationIndicators.some(indicator => lowerTranscription.includes(indicator))) {
+    console.log('[Validation] Transcription indicates no real conversation');
+    return false;
+  }
+  
+  return true;
+}
+
 // Provider pricing constants (per minute)
 const STT_PRICING: Record<STTProviderName, number> = {
   elevenlabs: 0.034,  // ElevenLabs Pro Plan
@@ -1621,6 +1686,18 @@ async function processTranscription(bookingId: string, kixieUrl: string, skipTts
       summary = keyPoints.summary;
     }
 
+    // ===== CONVERSATION VALIDITY CHECK =====
+    // Detect voicemails, failed connections, and calls without real conversations
+    const hasValidConversation = validateConversation({
+      durationSeconds: callDurationSeconds,
+      transcription: transcription,
+      summary: summary,
+    });
+    
+    if (!hasValidConversation) {
+      console.log(`[Background] ⚠️ No valid conversation detected for ${bookingId} - likely voicemail/failed connection`);
+    }
+
     // Step 4: Update the booking status and insert transcription data to separate table
     console.log('[Background] Updating booking status and inserting transcription data...');
     
@@ -1631,6 +1708,7 @@ async function processTranscription(bookingId: string, kixieUrl: string, skipTts
         transcription_status: 'completed',
         transcribed_at: new Date().toISOString(),
         call_duration_seconds: callDurationSeconds,
+        has_valid_conversation: hasValidConversation,
       })
       .eq('id', bookingId);
 

@@ -519,6 +519,7 @@ export type Database = {
           email_verification_status: string | null
           email_verified: boolean | null
           email_verified_at: string | null
+          has_valid_conversation: boolean | null
           hubspot_link: string | null
           id: string
           import_batch_id: string | null
@@ -560,6 +561,7 @@ export type Database = {
           email_verification_status?: string | null
           email_verified?: boolean | null
           email_verified_at?: string | null
+          has_valid_conversation?: boolean | null
           hubspot_link?: string | null
           id?: string
           import_batch_id?: string | null
@@ -601,6 +603,7 @@ export type Database = {
           email_verification_status?: string | null
           email_verified?: boolean | null
           email_verified_at?: string | null
+          has_valid_conversation?: boolean | null
           hubspot_link?: string | null
           id?: string
           import_batch_id?: string | null
