@@ -1358,6 +1358,51 @@ export type Database = {
           },
         ]
       }
+      ip_allowlists: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          description: string | null
+          id: string
+          ip_address: string
+          is_active: boolean
+          site_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          id?: string
+          ip_address: string
+          is_active?: boolean
+          site_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          id?: string
+          ip_address?: string
+          is_active?: boolean
+          site_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ip_allowlists_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ip_allowlists_site_id_fkey"
+            columns: ["site_id"]
+            isOneToOne: false
+            referencedRelation: "sites"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       llm_prompt_enhancements: {
         Row: {
           content: string

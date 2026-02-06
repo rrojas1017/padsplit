@@ -7,7 +7,7 @@ import { Switch } from '@/components/ui/switch';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useAuth } from '@/contexts/AuthContext';
-import { Database, Bell, Moon, Sun, Upload, Key, FileText, Download, Brain, Phone, BookOpen, Shield, ScrollText, Zap, Volume2, Loader2, ClipboardCheck, RefreshCw, AlertTriangle, FlaskConical } from 'lucide-react';
+import { Database, Bell, Moon, Sun, Upload, Key, FileText, Download, Brain, Phone, BookOpen, Shield, ScrollText, Zap, Volume2, Loader2, ClipboardCheck, RefreshCw, AlertTriangle, FlaskConical, Lock } from 'lucide-react';
 import { generateRoleDocumentationPDF } from '@/utils/roleDocumentation';
 import { generateQADocumentationPDF } from '@/utils/qaDocumentation';
 import { CallTypeList } from '@/components/ai-management/CallTypeList';
@@ -17,8 +17,9 @@ import { ScriptList } from '@/components/ai-management/ScriptList';
 import { AutoTranscriptionSettings } from '@/components/ai-management/AutoTranscriptionSettings';
 import { QARubricSettings } from '@/components/ai-management/QARubricSettings';
 import { STTComparisonPanel } from '@/components/ai-management/STTComparisonPanel';
- import { LLMComparisonPanel } from '@/components/ai-management/LLMComparisonPanel';
+import { LLMComparisonPanel } from '@/components/ai-management/LLMComparisonPanel';
 import { KattyQASettings } from '@/components/ai-management/KattyQASettings';
+import { IPAllowlistManager } from '@/components/security/IPAllowlistManager';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { useState, useEffect } from 'react';
@@ -126,7 +127,7 @@ export default function Settings() {
     >
       <div className="max-w-4xl">
         <Tabs defaultValue="general" className="space-y-6">
-          <TabsList className="grid w-full grid-cols-2 lg:grid-cols-5 h-auto gap-1">
+          <TabsList className="grid w-full grid-cols-2 lg:grid-cols-6 h-auto gap-1">
             <TabsTrigger value="general" className="gap-2">
               <Sun className="w-4 h-4" />
               <span className="hidden sm:inline">General</span>
@@ -143,6 +144,12 @@ export default function Settings() {
               <TabsTrigger value="ai" className="gap-2">
                 <Brain className="w-4 h-4" />
                 <span className="hidden sm:inline">AI Management</span>
+              </TabsTrigger>
+            )}
+            {canAccessAIManagement && (
+              <TabsTrigger value="security" className="gap-2">
+                <Lock className="w-4 h-4" />
+                <span className="hidden sm:inline">Security</span>
               </TabsTrigger>
             )}
             <TabsTrigger value="docs" className="gap-2">
@@ -443,6 +450,22 @@ export default function Settings() {
                     </p>
                   </div>
                 </div>
+              </div>
+            </TabsContent>
+          )}
+
+          {/* Security Tab - Only for Admin/Super Admin */}
+          {canAccessAIManagement && (
+            <TabsContent value="security" className="space-y-6">
+              <div className="bg-card rounded-xl border border-border p-6 shadow-card">
+                <div className="flex items-center gap-3 mb-6">
+                  <Lock className="w-5 h-5 text-accent" />
+                  <div>
+                    <h3 className="text-lg font-semibold text-foreground">IP Login Restrictions</h3>
+                    <p className="text-sm text-muted-foreground">Restrict agent login to approved IP addresses only</p>
+                  </div>
+                </div>
+                <IPAllowlistManager />
               </div>
             </TabsContent>
           )}
