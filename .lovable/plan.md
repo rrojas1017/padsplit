@@ -1,50 +1,48 @@
 
+## Problem
+The existing `batch-retry-transcriptions` job is currently generating ElevenLabs TTS audio (coaching and QA coaching) for all processed records, which is wasting money. The user wants to disable TTS audio generation for this batch job.
 
-# Add Bulk Processing UI to Settings Page
+## Root Cause Analysis
+The `batch-retry-transcriptions` function correctly passes `skipTts=true` to the `transcribe-call` function for imported and non-Vixicom records (lines 137 and 316). The `transcribe-call` function properly honors this flag:
+- **Line 1858**: `if (!skipTts)` guards Jeff's coaching audio generation
+- **Line 1877**: `if (!skipTts)` guards Katty's QA coaching audio generation
 
-## Problem Identified
-The `BulkProcessingTab` component (a complete, functional UI for managing bulk transcription jobs with 10-second pacing) exists in the codebase but was **never added to the Settings page**. This is why you only see "Data Import" on the Data tab - the Bulk Processing section is missing.
+**However**, the user is saying the *entire existing batch* should NOT use audio. This means we need to change the logic so that `batch-retry-transcriptions` passes `skipTts=true` for ALL records, regardless of import status or site.
 
 ## Solution
-Import and add the `BulkProcessingTab` component to the Settings page, either:
-1. **Option A**: Add it to the existing Data tab (below Data Import)
-2. **Option B**: Create a dedicated sub-section in the Data tab
-
-## Technical Details
-
-### File to Modify
-`src/pages/Settings.tsx`
+Modify `supabase/functions/batch-retry-transcriptions/index.ts` to ALWAYS pass `skipTts=true` when calling `transcribe-call`, effectively disabling all ElevenLabs TTS audio generation for this batch job.
 
 ### Changes Required
-1. **Add import** at the top of the file:
-   ```typescript
-   import { BulkProcessingTab } from '@/components/import/BulkProcessingTab';
-   ```
 
-2. **Add component to Data tab** (around line 237, after the Data Import card closes):
-   ```tsx
-   {/* Bulk Transcription Processing */}
-   {canAccessAIManagement && <BulkProcessingTab />}
-   ```
+**File**: `supabase/functions/batch-retry-transcriptions/index.ts`
 
-   This ensures only admins/super_admins can see the bulk processing controls.
+**Change 1** - Line 137 (specific bookings path):
+Replace:
+```typescript
+const skipTts = isImported || !isVixicom;
+```
+With:
+```typescript
+const skipTts = true; // Batch-retry jobs do NOT generate coaching audio
+```
 
-## What You'll See After This Change
-Once implemented, the Data tab will show:
-1. **Data Import** section (existing - Google Sheets URL, Upload CSV)
-2. **Bulk Processing** section (NEW - with pending stats cards, job creation form, and active job monitoring)
+**Change 2** - Line 316 (failed bookings path):
+Replace:
+```typescript
+const skipTts = isImported || !isVixicom;
+```
+With:
+```typescript
+const skipTts = true; // Batch-retry jobs do NOT generate coaching audio
+```
 
-The Bulk Processing UI includes:
-- Pending transcription counts (Vixicom vs PadSplit vs Total)
-- Create new job form with:
-  - Job name
-  - Site filter (Vixicom Only, Non-Vixicom, All)
-  - Pacing slider (5-30 seconds, default 10s)
-  - TTS toggle
-  - Cost/time estimates
-- Active job monitoring with progress, ETA, stall detection
-- Job history
+This ensures that when `batch-retry-transcriptions` triggers the `transcribe-call` function, it unconditionally skips ElevenLabs TTS generation (both Jeff's coaching audio and Katty's QA coaching audio), saving ~73% of current batch processing costs.
 
-## Estimated Implementation Time
-~2 minutes - just adding an import and one component line
+## Impact
+- **Cost Savings**: Eliminates TTS costs (~$4-5/hour at current rates) for this batch job
+- **Functionality**: Records still get STT transcription and AI analysis (summaries, key points, scores) - only coaching audio is skipped
+- **Duration**: Batch processing may complete slightly faster since TTS calls are eliminated
+- **Scope**: Only affects THIS batch job - future manual booking transcriptions will still generate coaching audio for Vixicom records
 
+## Estimated Time
+~1 minute - changing 2 lines in one file
