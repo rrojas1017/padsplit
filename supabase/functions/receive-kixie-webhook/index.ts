@@ -99,24 +99,29 @@ serve(async (req) => {
       );
     }
 
-    // Match agent by email
+    // Match agent by email and get site info for TTS logic
     let agentId: string | null = null;
+    let siteName: string | null = null;
+    
     if (payload.agent_email) {
-      const { data: agent } = await supabase
-        .from('agents')
+      const { data: profile } = await supabase
+        .from('profiles')
         .select('id')
-        .eq('user_id', (
-          await supabase
-            .from('profiles')
-            .select('id')
-            .eq('email', payload.agent_email.toLowerCase())
-            .maybeSingle()
-        ).data?.id)
+        .eq('email', payload.agent_email.toLowerCase())
         .maybeSingle();
       
-      if (agent) {
-        agentId = agent.id;
-        console.log(`[Kixie Webhook] Matched agent: ${agentId}`);
+      if (profile) {
+        const { data: agent } = await supabase
+          .from('agents')
+          .select('id, sites(name)')
+          .eq('user_id', profile.id)
+          .maybeSingle();
+        
+        if (agent) {
+          agentId = agent.id;
+          siteName = (agent as unknown as { id: string; sites: { name: string } | null }).sites?.name || null;
+          console.log(`[Kixie Webhook] Matched agent: ${agentId}, site: ${siteName}`);
+        }
       }
     }
 
@@ -124,13 +129,14 @@ serve(async (req) => {
     if (!agentId && payload.agent_name) {
       const { data: agent } = await supabase
         .from('agents')
-        .select('id')
+        .select('id, sites(name)')
         .ilike('name', payload.agent_name)
         .maybeSingle();
       
       if (agent) {
         agentId = agent.id;
-        console.log(`[Kixie Webhook] Matched agent by name: ${agentId}`);
+        siteName = (agent as unknown as { id: string; sites: { name: string } | null }).sites?.name || null;
+        console.log(`[Kixie Webhook] Matched agent by name: ${agentId}, site: ${siteName}`);
       }
     }
 
@@ -186,7 +192,11 @@ serve(async (req) => {
       && durationSeconds >= (settings.min_duration_seconds || 30);
 
     if (shouldTranscribe) {
-      console.log(`[Kixie Webhook] Triggering transcription for call ${newCall.id}`);
+      // Determine skipTts: only Vixicom agents get TTS for live webhook calls
+      const isVixicom = siteName?.toLowerCase().includes('vixicom') || false;
+      const skipTts = !isVixicom;
+      
+      console.log(`[Kixie Webhook] Triggering transcription for call ${newCall.id} (skipTts: ${skipTts}, site: ${siteName})`);
       
       // Trigger transcription (fire-and-forget)
       fetch(`${supabaseUrl}/functions/v1/transcribe-call`, {
@@ -198,6 +208,7 @@ serve(async (req) => {
         body: JSON.stringify({
           callId: newCall.id,
           kixieUrl: payload.recordingurl,
+          skipTts,
         }),
       }).then(res => {
         if (res.ok) {
