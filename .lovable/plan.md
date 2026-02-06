@@ -1,58 +1,70 @@
 
-## Problem Analysis
+## Plan: Process 367 Unprocessed Non-Booking Calls (March-December 2025)
 
-The `batch-retry-transcriptions` function has a critical logic gap:
-- **Line 195** filters for `transcription_status IN ['failed', 'pending']`, which excludes bookings with `NULL` status
-- Bookings created **before the auto-trigger was deployed** have `NULL` status and are never caught by the retry logic
-- This creates a growing backlog of unprocessed records from earlier dates
+### Problem Context
+- **367 non-booking calls** from March-December 2025 have `transcription_status = NULL` but valid `kixie_link` URLs
+- These records were imported on January 29, 2026, before the auto-trigger implementation
+- The earlier batch-retry logic fix now catches these records, but they need to be queued for processing
+- **Current metrics**: 2,889 transcribed + 367 unprocessed = 3,257 total non-bookings
 
-## Solution
+### Solution: Use Batch Retry Function with Date Range Filter
 
-### Part 1: Fix batch-retry-transcriptions Edge Function
-**Change line 195** to also include `NULL` status bookings:
+The `batch-retry-transcriptions` edge function is designed to handle exactly this scenario. It:
+- Supports filtering by date range (`dateFrom` and `dateTo`)
+- Processes records with `NULL`, `failed`, or `pending` transcription status
+- Automatically checks for existing transcription records to avoid duplicates
+- Uses 30-second pacing to avoid rate limiting
+- Returns immediately with a response, processing in the background via `EdgeRuntime.waitUntil()`
 
-```typescript
-// Current (WRONG - misses NULL records):
-.in('transcription_status', ['failed', 'pending'])
+### Processing Strategy
 
-// Fixed (CORRECT - includes all unprocessed):
-.or('transcription_status.is.null,transcription_status.in.(failed,pending)', { referencedTable: 'bookings' })
+**Call the batch-retry-transcriptions function with:**
+```json
+{
+  "dateFrom": "2025-03-01",
+  "dateTo": "2025-12-31",
+  "limit": 367,
+  "dryRun": false
+}
 ```
 
-**Alternative cleaner approach:**
-```typescript
-// Instead of .in(), use filtering logic:
-.or('transcription_status.is.null')
-.or('transcription_status.eq.failed')
-.or('transcription_status.eq.pending')
-```
+**Expected Behavior:**
+1. Function queries for bookings matching the date range with `NULL`/`failed`/`pending` status
+2. Filters to only those WITHOUT existing transcription records
+3. Returns immediately with queued count
+4. Processes in background: 367 records × 30 seconds per record = **~183 minutes (~3 hours)**
+5. Each record progresses through: Transcription → Jeff (coaching) → QA → Katty (QA coaching)
 
-Or use raw `.filter()` with OR conditions. The Supabase JS client supports this with `.or()` syntax.
+**Pacing Considerations:**
+- 30-second intervals prevent rate limiting on:
+  - Kixie audio fetch
+  - Deepgram transcription
+  - OpenAI analysis
+  - ElevenLabs TTS (coaching audio)
+- 3-hour timeline is acceptable for historical backlog processing
 
-### Part 2: Verify Processing Completion
+### Monitoring
 
-After fixing, I'll wait ~9-10 minutes and then verify:
-1. Query the database for remaining `NULL` status bookings in February 2026
-2. Check `transcription_status` for the 18 manually-queued bookings (from your earlier manual trigger)
-3. Confirm all have either:
-   - Status = `'completed'` (success)
-   - Status = `'failed'` with error message (failed but logged)
-   - Status = `'pending'` (still processing)
+After queuing, the system will:
+1. Update `transcription_status` from `NULL` → `pending` → `completed`/`failed`
+2. Generate `booking_transcriptions` records upon success
+3. Log errors in `transcription_error_message` if failures occur
+4. Update Communication Insights automatically as records complete
 
-### Expected Outcome
+### Verification Steps
 
-**Before Fix:**
-- 18 records stuck at `NULL` status (invisible to auto-retry)
-- Batch function would report "no failed bookings found" on future runs
-
-**After Fix:**
-- All 18 `NULL` status bookings get caught on the next retry scan
-- Future bookings created before auto-trigger is enabled won't slip through the cracks
-- Batch-retry becomes a true catch-all for all unprocessed transcriptions
+After processing completes (~3 hours):
+1. Query remaining `NULL` status records in date range (should be 0)
+2. Verify all 367 records have either `completed` or `failed` status
+3. Confirm Communication Insights metrics update: 2,889 → 3,256 transcribed (367 - 1 for the expired link)
+4. Check non-booking analysis includes the full dataset
 
 ### Files to Modify
+None - this is a functional operation using the existing `batch-retry-transcriptions` edge function that was just fixed.
 
-| File | Change |
-|------|--------|
-| `supabase/functions/batch-retry-transcriptions/index.ts` | Update line 195 to include `NULL` status in query filter |
+### Risk Assessment
+- **Low Risk**: The function is proven and used successfully for February backlog (23 records)
+- **Error Handling**: Expired/unavailable audio links will be marked `failed` with error messages
+- **No Data Loss**: Existing completed transcriptions are not affected
+- **Idempotent**: Safe to re-run if needed
 
