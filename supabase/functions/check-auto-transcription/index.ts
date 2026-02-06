@@ -28,7 +28,7 @@ serve(async (req) => {
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    // Fetch booking with agent info
+    // Fetch booking with agent info and site name for TTS logic
     const { data: booking, error: bookingError } = await supabase
       .from('bookings')
       .select(`
@@ -37,7 +37,8 @@ serve(async (req) => {
         transcription_status,
         agent_id,
         call_type_id,
-        agents(id, site_id)
+        import_batch_id,
+        agents(id, site_id, sites(name))
       `)
       .eq('id', bookingId)
       .maybeSingle();
@@ -57,7 +58,8 @@ serve(async (req) => {
       transcription_status: string | null;
       agent_id: string;
       call_type_id: string | null;
-      agents: { id: string; site_id: string } | null;
+      import_batch_id: string | null;
+      agents: { id: string; site_id: string; sites: { name: string } | null } | null;
     };
 
     // Check if booking has kixie_link and hasn't been transcribed
@@ -153,8 +155,13 @@ serve(async (req) => {
       );
     }
 
-    // Trigger transcription
-    console.log(`[check-auto-transcription] Triggering transcription for booking ${bookingId}`);
+    // Determine skipTts: imported records skip TTS, manual Vixicom records get TTS
+    const siteName = bookingData.agents?.sites?.name || '';
+    const isVixicom = siteName.toLowerCase().includes('vixicom');
+    const isImported = !!bookingData.import_batch_id;
+    const skipTts = isImported || !isVixicom;
+    
+    console.log(`[check-auto-transcription] Triggering transcription for booking ${bookingId} (skipTts: ${skipTts}, imported: ${isImported}, site: ${siteName})`);
     
     const transcribeResponse = await fetch(`${supabaseUrl}/functions/v1/transcribe-call`, {
       method: 'POST',
@@ -165,6 +172,7 @@ serve(async (req) => {
       body: JSON.stringify({
         bookingId: bookingData.id,
         kixieUrl: bookingData.kixie_link,
+        skipTts,
       }),
     });
 

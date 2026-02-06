@@ -18,6 +18,8 @@ interface IncompleteBooking {
   qa_scores: unknown;
   coaching_audio_url: string | null;
   qa_coaching_audio_url: string | null;
+  import_batch_id?: string | null;
+  site_name?: string | null;
 }
 
 interface ProcessingStep {
@@ -66,18 +68,18 @@ serve(async (req) => {
     }
 
     // If specific booking IDs provided with includeUntranscribed, check if they need transcription
-    let untranscribedBookings: Array<{ booking_id: string; kixie_link: string }> = [];
+    let untranscribedBookings: Array<{ booking_id: string; kixie_link: string; import_batch_id?: string | null; site_name?: string | null }> = [];
     
     if (bookingIds.length > 0 && includeUntranscribed) {
       // Check if these bookings exist but have no transcription record
       const { data: bookings, error: bookingsError } = await supabase
         .from('bookings')
-        .select('id, kixie_link, transcription_status')
+        .select('id, kixie_link, transcription_status, import_batch_id, agents(sites(name))')
         .in('id', bookingIds)
         .not('kixie_link', 'is', null);
       
       if (!bookingsError && bookings) {
-        for (const booking of bookings) {
+        for (const booking of bookings as Array<{ id: string; kixie_link: string; transcription_status: string | null; import_batch_id: string | null; agents: { sites: { name: string } | null } | null }>) {
           // Check if transcription record exists
           const { data: existing } = await supabase
             .from('booking_transcriptions')
@@ -86,20 +88,23 @@ serve(async (req) => {
             .single();
           
           if (!existing && booking.kixie_link) {
+            const siteName = booking.agents?.sites?.name || '';
             untranscribedBookings.push({ 
               booking_id: booking.id, 
-              kixie_link: booking.kixie_link 
+              kixie_link: booking.kixie_link,
+              import_batch_id: booking.import_batch_id,
+              site_name: siteName
             });
-            console.log(`[FIX-INCOMPLETE] Found untranscribed booking: ${booking.id}`);
+            console.log(`[FIX-INCOMPLETE] Found untranscribed booking: ${booking.id} (imported: ${!!booking.import_batch_id}, site: ${siteName})`);
           }
         }
       }
     }
 
-    // Query for bookings with transcriptions
+    // Query for bookings with transcriptions - join to get import_batch_id and site info
     let query = supabase
       .from('booking_transcriptions')
-      .select('booking_id, call_transcription, agent_feedback, qa_scores, coaching_audio_url, qa_coaching_audio_url');
+      .select('booking_id, call_transcription, agent_feedback, qa_scores, coaching_audio_url, qa_coaching_audio_url, bookings(import_batch_id, agents(sites(name)))');
 
     if (bookingIds.length > 0) {
       query = query.in('booking_id', bookingIds);
@@ -128,6 +133,8 @@ serve(async (req) => {
       missingSteps: string[];
       details: ProcessingStep[];
       kixie_link?: string;
+      import_batch_id?: string | null;
+      site_name?: string | null;
     }> = [];
 
     // Add untranscribed bookings first (they need full pipeline)
@@ -142,14 +149,16 @@ serve(async (req) => {
           { name: 'qa_scores', missing: true, dependency: 'transcription' },
           { name: 'katty_audio', missing: true, dependency: 'qa_scores' },
         ],
-        kixie_link: ub.kixie_link
+        kixie_link: ub.kixie_link,
+        import_batch_id: ub.import_batch_id,
+        site_name: ub.site_name
       });
       console.log(`[FIX-INCOMPLETE] Untranscribed booking ${ub.booking_id} needs full pipeline`);
     }
 
     // Analyze existing transcriptions for missing steps
     if (transcriptions) {
-      for (const t of transcriptions as IncompleteBooking[]) {
+      for (const t of transcriptions as Array<IncompleteBooking & { bookings?: { import_batch_id: string | null; agents: { sites: { name: string } | null } | null } | null }>) {
         const steps: ProcessingStep[] = [
           { 
             name: 'transcription', 
@@ -180,12 +189,15 @@ serve(async (req) => {
         const missingSteps = steps.filter(s => s.missing).map(s => s.name);
         
         if (missingSteps.length > 0) {
+          const siteName = t.bookings?.agents?.sites?.name || '';
           incompleteBookings.push({
             booking_id: t.booking_id,
             missingSteps,
-            details: steps
+            details: steps,
+            import_batch_id: t.bookings?.import_batch_id,
+            site_name: siteName
           });
-          console.log(`[FIX-INCOMPLETE] Booking ${t.booking_id} missing: ${missingSteps.join(', ')}`);
+          console.log(`[FIX-INCOMPLETE] Booking ${t.booking_id} missing: ${missingSteps.join(', ')} (imported: ${!!t.bookings?.import_batch_id}, site: ${siteName})`);
         }
       }
     }
@@ -238,14 +250,20 @@ serve(async (req) => {
 
           // Step 0: If missing transcription, trigger transcribe-call
           if (needsTranscription) {
-            console.log(`[FIX-INCOMPLETE] Step 0: Triggering transcription for kixie_link: ${booking.kixie_link}`);
+            // Determine skipTts: imported records skip TTS, only manual Vixicom records get TTS
+            const siteName = booking.site_name || '';
+            const isVixicom = siteName.toLowerCase().includes('vixicom');
+            const isImported = !!booking.import_batch_id;
+            const skipTts = isImported || !isVixicom;
+            
+            console.log(`[FIX-INCOMPLETE] Step 0: Triggering transcription for kixie_link: ${booking.kixie_link} (skipTts: ${skipTts}, imported: ${isImported}, site: ${siteName})`);
             const response = await fetch(`${SUPABASE_URL}/functions/v1/transcribe-call`, {
               method: 'POST',
               headers: {
                 'Authorization': `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
                 'Content-Type': 'application/json',
               },
-              body: JSON.stringify({ bookingId: booking.booking_id, kixieUrl: booking.kixie_link }),
+              body: JSON.stringify({ bookingId: booking.booking_id, kixieUrl: booking.kixie_link, skipTts }),
             });
 
             if (!response.ok) {
