@@ -313,6 +313,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // Set session immediately
       setSession(data.session);
 
+      // Validate IP restriction for agents
+      try {
+        const { data: ipCheckData, error: ipError } = await supabase.functions.invoke('validate-login-ip');
+        
+        if (ipError) {
+          console.warn('IP validation check failed:', ipError);
+          // Continue with login if IP check fails (fail-open for reliability)
+        } else if (ipCheckData?.blocked) {
+          // IP blocked - sign out immediately and return error
+          console.warn('Login blocked: IP not allowed', ipCheckData);
+          await supabase.auth.signOut();
+          return { 
+            success: false, 
+            error: ipCheckData.message || 'Login not allowed from this location. Please contact your supervisor.' 
+          };
+        }
+      } catch (ipCheckError) {
+        console.warn('IP validation error (non-blocking):', ipCheckError);
+        // Continue with login if IP check throws (fail-open for reliability)
+      }
+
       // Fetch user data with improved retry logic
       const success = await fetchUserData(data.user);
       

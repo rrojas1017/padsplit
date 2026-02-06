@@ -104,6 +104,9 @@ verify_jwt = true
 
 [functions.receive-kixie-webhook]
 verify_jwt = false
- 
- [functions.compare-llm-providers]
- verify_jwt = true
+
+[functions.compare-llm-providers]
+verify_jwt = true
+
+[functions.validate-login-ip]
+verify_jwt = false
