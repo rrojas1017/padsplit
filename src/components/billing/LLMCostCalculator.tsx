@@ -208,6 +208,32 @@ const LLMCostCalculator = () => {
     };
   }, [config, volume, intakeMethod]);
 
+  const renderLegend = (props: any) => {
+    const { payload } = props;
+    const total = calculations.breakdown.reduce((sum, item) => sum + item.value, 0);
+    
+    return (
+      <div className="flex flex-wrap justify-center gap-x-4 gap-y-1 mt-2 text-xs">
+        {payload.map((entry: any, index: number) => {
+          const item = calculations.breakdown.find(b => b.name === entry.value);
+          const percent = total > 0 ? ((item?.value || 0) / total * 100) : 0;
+          return (
+            <div key={`legend-${index}`} className="flex items-center gap-1">
+              <span 
+                className="w-3 h-3 rounded-sm flex-shrink-0" 
+                style={{ backgroundColor: entry.color }} 
+              />
+              <span>{entry.value}</span>
+              <span className="text-muted-foreground">
+                {formatCurrency(item?.value || 0)} ({percent.toFixed(0)}%)
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    );
+  };
+
   return (
     <Card>
       <CardHeader>
@@ -448,14 +474,14 @@ const LLMCostCalculator = () => {
                     cx="50%"
                     cy="50%"
                     outerRadius={80}
-                    label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                    labelLine={false}
                   >
                     {calculations.breakdown.map((entry, index) => (
                       <Cell key={`cell-${index}`} fill={entry.color} />
                     ))}
                   </Pie>
                   <Tooltip formatter={(value: number) => formatCurrency(value)} />
-                  <Legend />
+                  <Legend content={renderLegend} />
                 </PieChart>
               </ResponsiveContainer>
             </div>
