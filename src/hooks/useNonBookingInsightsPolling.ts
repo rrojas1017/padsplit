@@ -5,14 +5,17 @@ import { toast } from 'sonner';
 interface UseNonBookingInsightsPollingProps {
   onComplete: () => void;
   pollingInterval?: number;
+  maxPollingDurationMs?: number;
 }
 
 export const useNonBookingInsightsPolling = ({ 
   onComplete, 
-  pollingInterval = 10000 
+  pollingInterval = 10000,
+  maxPollingDurationMs = 5 * 60 * 1000 // 5 minutes default
 }: UseNonBookingInsightsPollingProps) => {
   const pollingRef = useRef<NodeJS.Timeout | null>(null);
   const activeInsightIdRef = useRef<string | null>(null);
+  const pollingStartTimeRef = useRef<number | null>(null);
 
   const stopPolling = useCallback(() => {
     if (pollingRef.current) {
@@ -20,6 +23,7 @@ export const useNonBookingInsightsPolling = ({
       pollingRef.current = null;
     }
     activeInsightIdRef.current = null;
+    pollingStartTimeRef.current = null;
   }, []);
 
   const startPolling = useCallback((insightId: string) => {
@@ -27,11 +31,22 @@ export const useNonBookingInsightsPolling = ({
     stopPolling();
     
     activeInsightIdRef.current = insightId;
+    pollingStartTimeRef.current = Date.now();
     console.log(`[NonBookingPolling] Started polling for insight: ${insightId}`);
 
     pollingRef.current = setInterval(async () => {
       if (!activeInsightIdRef.current) {
         stopPolling();
+        return;
+      }
+
+      // Check if polling has exceeded max duration
+      const pollingDuration = Date.now() - (pollingStartTimeRef.current || Date.now());
+      if (pollingDuration > maxPollingDurationMs) {
+        console.warn(`[NonBookingPolling] Polling timeout after ${pollingDuration}ms`);
+        stopPolling();
+        toast.error('Analysis is taking longer than expected. Please check back later or try again.');
+        onComplete();
         return;
       }
 
@@ -62,14 +77,14 @@ export const useNonBookingInsightsPolling = ({
         console.error('[NonBookingPolling] Error:', error);
       }
     }, pollingInterval);
-  }, [onComplete, pollingInterval, stopPolling]);
+  }, [onComplete, pollingInterval, maxPollingDurationMs, stopPolling]);
 
   // Check for any in-progress analyses on mount
   const checkExistingAnalysis = useCallback(async () => {
     try {
       const { data, error } = await supabase
         .from('non_booking_insights')
-        .select('id, status')
+        .select('id, status, created_at')
         .eq('status', 'processing')
         .order('created_at', { ascending: false })
         .limit(1)
@@ -81,6 +96,23 @@ export const useNonBookingInsightsPolling = ({
       }
 
       if (data) {
+        // Check if the existing analysis is older than maxPollingDurationMs
+        const createdAt = new Date(data.created_at).getTime();
+        const age = Date.now() - createdAt;
+        
+        if (age > maxPollingDurationMs) {
+          console.warn(`[NonBookingPolling] Found stale processing record (${age}ms old), marking as failed`);
+          // Mark stale record as failed
+          await supabase
+            .from('non_booking_insights')
+            .update({ 
+              status: 'failed', 
+              error_message: 'Analysis timed out - please try again' 
+            })
+            .eq('id', data.id);
+          return null;
+        }
+
         console.log(`[NonBookingPolling] Found existing processing analysis: ${data.id}`);
         startPolling(data.id);
         return data.id;
@@ -91,7 +123,7 @@ export const useNonBookingInsightsPolling = ({
       console.error('[NonBookingPolling] Error:', error);
       return null;
     }
-  }, [startPolling]);
+  }, [startPolling, maxPollingDurationMs]);
 
   // Cleanup on unmount
   useEffect(() => {
