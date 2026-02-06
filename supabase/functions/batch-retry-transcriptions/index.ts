@@ -192,7 +192,7 @@ serve(async (req) => {
         transcription_error_message
       `)
       .not('kixie_link', 'is', null)
-      .in('transcription_status', ['failed', 'pending'])
+      .or('transcription_status.is.null,transcription_status.in.(failed,pending)')
       .order('booking_date', { ascending: false })
       .limit(limit);
 
