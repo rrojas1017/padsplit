@@ -134,7 +134,7 @@ serve(async (req) => {
             const isImported = !!booking.import_batch_id;
             const siteName = booking.agents?.sites?.name || '';
             const isVixicom = siteName.toLowerCase().includes('vixicom');
-            const skipTts = isImported || !isVixicom;
+            const skipTts = true; // Batch-retry jobs do NOT generate coaching audio
             
             console.log(`[BATCH-RETRY] Booking ${booking.id}: isImported=${isImported}, site="${siteName}", skipTts=${skipTts}`);
 
@@ -313,7 +313,7 @@ serve(async (req) => {
           const isImported = !!booking.import_batch_id;
           const siteName = booking.agents?.sites?.name || '';
           const isVixicom = siteName.toLowerCase().includes('vixicom');
-          const skipTts = isImported || !isVixicom;
+          const skipTts = true; // Batch-retry jobs do NOT generate coaching audio
           
           console.log(`[BATCH-RETRY] Booking ${booking.id}: isImported=${isImported}, site="${siteName}", skipTts=${skipTts}`);
 
