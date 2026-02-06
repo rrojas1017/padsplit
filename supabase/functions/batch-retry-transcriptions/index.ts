@@ -18,6 +18,12 @@ interface FailedBooking {
   booking_date: string;
   transcription_status: string | null;
   transcription_error_message: string | null;
+  import_batch_id: string | null;
+  agents?: {
+    id: string;
+    name: string;
+    sites?: { name: string } | null;
+  } | null;
 }
 
 serve(async (req) => {
@@ -60,10 +66,13 @@ serve(async (req) => {
     if (specificBookingIds && specificBookingIds.length > 0) {
       console.log(`[BATCH-RETRY] Processing ${specificBookingIds.length} specific booking IDs`);
       
-      // Fetch the bookings
+      // Fetch the bookings with site info for TTS decision
       const { data: targetBookings, error: fetchError } = await supabase
         .from('bookings')
-        .select('id, kixie_link, member_name, booking_date')
+        .select(`
+          id, kixie_link, member_name, booking_date, import_batch_id,
+          agents!inner(id, name, sites(name))
+        `)
         .in('id', specificBookingIds)
         .not('kixie_link', 'is', null);
 
@@ -121,6 +130,14 @@ serve(async (req) => {
               })
               .eq('id', booking.id);
 
+            // Determine if TTS should be skipped (imported records or non-Vixicom sites)
+            const isImported = !!booking.import_batch_id;
+            const siteName = booking.agents?.sites?.name || '';
+            const isVixicom = siteName.toLowerCase().includes('vixicom');
+            const skipTts = isImported || !isVixicom;
+            
+            console.log(`[BATCH-RETRY] Booking ${booking.id}: isImported=${isImported}, site="${siteName}", skipTts=${skipTts}`);
+
             // Trigger transcription
             const response = await fetch(`${SUPABASE_URL}/functions/v1/transcribe-call`, {
               method: 'POST',
@@ -130,7 +147,8 @@ serve(async (req) => {
               },
               body: JSON.stringify({ 
                 bookingId: booking.id, 
-                kixieUrl: booking.kixie_link 
+                kixieUrl: booking.kixie_link,
+                skipTts
               }),
             });
 
@@ -189,7 +207,9 @@ serve(async (req) => {
         member_name,
         booking_date,
         transcription_status,
-        transcription_error_message
+        transcription_error_message,
+        import_batch_id,
+        agents!inner(id, name, sites(name))
       `)
       .not('kixie_link', 'is', null)
       .or('transcription_status.is.null,transcription_status.in.(failed,pending)')
@@ -289,6 +309,14 @@ serve(async (req) => {
             })
             .eq('id', booking.id);
 
+          // Determine if TTS should be skipped (imported records or non-Vixicom sites)
+          const isImported = !!booking.import_batch_id;
+          const siteName = booking.agents?.sites?.name || '';
+          const isVixicom = siteName.toLowerCase().includes('vixicom');
+          const skipTts = isImported || !isVixicom;
+          
+          console.log(`[BATCH-RETRY] Booking ${booking.id}: isImported=${isImported}, site="${siteName}", skipTts=${skipTts}`);
+
           // Trigger transcription
           const response = await fetch(`${SUPABASE_URL}/functions/v1/transcribe-call`, {
             method: 'POST',
@@ -298,7 +326,8 @@ serve(async (req) => {
             },
             body: JSON.stringify({ 
               bookingId: booking.id, 
-              kixieUrl: booking.kixie_link 
+              kixieUrl: booking.kixie_link,
+              skipTts
             }),
           });
 
