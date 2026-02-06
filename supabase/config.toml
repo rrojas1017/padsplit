@@ -22,7 +22,7 @@ verify_jwt = true
 verify_jwt = true
 
 [functions.check-auto-transcription]
-verify_jwt = true
+verify_jwt = false
 
 [functions.analyze-member-insights]
 verify_jwt = true
