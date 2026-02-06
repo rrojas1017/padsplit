@@ -42,6 +42,7 @@ import {
 import { Plus, Pencil, Trash2, Globe, Building, Loader2, CheckCircle2, XCircle } from 'lucide-react';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
+import { LoginHistoryPanel } from './LoginHistoryPanel';
 
 interface IPAllowlistEntry {
   id: string;
@@ -517,6 +518,19 @@ export function IPAllowlistManager() {
           </div>
         </div>
       ))}
+
+      {/* Login History Panel */}
+      <LoginHistoryPanel 
+        entries={entries.map(e => ({ ip_address: e.ip_address, is_active: e.is_active }))}
+        sites={sites}
+        onQuickAdd={(ip, siteId, description) => {
+          setFormIpAddress(ip);
+          setFormSiteId(siteId || 'global');
+          setFormDescription(description);
+          setFormIsActive(true);
+          setIsDialogOpen(true);
+        }}
+      />
 
       {/* Delete confirmation dialog */}
       <AlertDialog open={!!deleteEntryId} onOpenChange={() => setDeleteEntryId(null)}>

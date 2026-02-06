@@ -128,11 +128,28 @@ Deno.serve(async (req) => {
     
     const userRole = roleData?.role || 'agent';
     
-    // Non-agents are always allowed
+    // Extract client IP early for logging
+    const clientIp = extractClientIp(req);
+    
+    // Non-agents are always allowed but still log their IP
     if (userRole !== 'agent') {
       console.log(`User ${userId} is ${userRole}, IP restriction bypassed`);
+      
+      // Log non-agent login with IP
+      await supabaseAdmin
+        .from('access_logs')
+        .insert({
+          user_id: userId,
+          action: 'login_ip_allowed',
+          ip_address: clientIp,
+          resource: JSON.stringify({
+            role: userRole,
+            reason: 'non_agent_bypass'
+          }),
+        });
+      
       return new Response(
-        JSON.stringify({ blocked: false, role: userRole, message: 'IP restriction not applicable' }),
+        JSON.stringify({ blocked: false, role: userRole, clientIp, message: 'IP restriction not applicable' }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
@@ -172,14 +189,27 @@ Deno.serve(async (req) => {
     // If no IPs configured, allow login (prevents lockout)
     if (!allowedIps || allowedIps.length === 0) {
       console.log(`No IP allowlist configured for site ${siteId}, allowing login`);
+      
+      // Log successful login when no restrictions configured
+      await supabaseAdmin
+        .from('access_logs')
+        .insert({
+          user_id: userId,
+          action: 'login_ip_allowed',
+          ip_address: clientIp,
+          resource: JSON.stringify({
+            role: userRole,
+            site_id: siteId,
+            reason: 'no_restrictions_configured'
+          }),
+        });
+      
       return new Response(
-        JSON.stringify({ blocked: false, message: 'No IP restrictions configured' }),
+        JSON.stringify({ blocked: false, clientIp, message: 'No IP restrictions configured' }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
     
-    // Extract client IP
-    const clientIp = extractClientIp(req);
     console.log(`Checking IP ${clientIp} for user ${userId} (site: ${siteId})`);
     
     // Check if client IP matches any allowed IP/CIDR
@@ -196,6 +226,22 @@ Deno.serve(async (req) => {
     
     if (isAllowed) {
       console.log(`IP ${clientIp} allowed via entry: ${matchedEntry?.description || matchedEntry?.ip_address}`);
+      
+      // Log successful agent login with IP
+      await supabaseAdmin
+        .from('access_logs')
+        .insert({
+          user_id: userId,
+          action: 'login_ip_allowed',
+          ip_address: clientIp,
+          resource: JSON.stringify({
+            role: userRole,
+            site_id: siteId,
+            matched_rule: matchedEntry?.description || matchedEntry?.ip_address,
+            reason: 'ip_in_allowlist'
+          }),
+        });
+      
       return new Response(
         JSON.stringify({ 
           blocked: false, 
