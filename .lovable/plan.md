@@ -1,228 +1,173 @@
 
-# Fix Communication Insights: Implement Pagination for 2,859+ Non-Booking Records
+# Fix Stuck Non-Booking Analysis & Add Robust Error Handling
 
-## Problem Analysis
+## Root Cause Analysis
 
-### Current Bottleneck
-The `analyze-non-booking-insights` edge function has a critical data fetching limitation:
+The analysis record `9ac9ac4a-ae15-4ec6-85a2-9416b786a9f4` created on Feb 5 is stuck in `processing` status with `total_calls_analyzed: 0`. This indicates:
 
-```typescript
-// Line 14-18 in analyze-non-booking-insights/index.ts
-const { data: raw, error } = await supabase
-  .from('bookings')
-  .select(...)
-  .eq('status', 'Non Booking')
-  .eq('transcription_status', 'completed')
-  // ❌ NO PAGINATION - Supabase default limit is 1,000 rows
-```
-
-**Impact:**
-- Expected to analyze: **2,859 non-booking records**
-- Actually analyzes: **~1,000 records max** (Supabase default limit)
-- Missing from analysis: **~1,859 records** (65% of the data)
-
-This explains why the Communication Insights shows "1,000 calls analyzed" instead of 2,859+.
-
-### Comparison with analyze-member-insights
-The `analyze-member-insights` function uses the same single `.select()` call (lines 182-198) and doesn't implement pagination either, but:
-- Booking data is smaller: ~1,950 "Pending Move-In" records (under the 1,000 limit per transcription)
-- It's less impactful there, but still a hidden limitation
-
-### Database Reality
-- **Non-Booking records with transcriptions:** 2,859
-- **Booking records with transcriptions:** 1,952 + 65 + 271 + 12 = 2,300
-- **Total transcribed:** 5,159 records across all statuses
-
----
-
-## Solution Architecture
-
-### Approach: Implement Efficient Pagination + Lazy Loading
-
-Rather than fetching all 2,859 records in one request (which could cause memory/network issues), we'll:
-
-1. **Fetch in batches** using `.range()` pagination with offset + limit
-2. **Process incrementally** - send batches to AI for analysis without loading all at once
-3. **Aggregate results** - combine AI insights from all batches into final analysis
-
-**Why this works:**
-- Avoids memory overload from large arrays
-- Faster individual AI requests (smaller context = faster processing)
-- More resilient to timeouts
-- Aligns with the background processing pattern already used (`EdgeRuntime.waitUntil`)
-
----
+1. **Silent Failure in Background Task**: The `EdgeRuntime.waitUntil(processAnalysis(...))` is running in the background, but something failed and the error wasn't properly saved to the database.
+2. **Pagination Timeout**: The new pagination loop fetches 6 batches of 500 records each. With network latency, this could exceed the edge function timeout (~150-180 seconds).
+3. **Poor Error Capture**: The catch block (lines 166-169) does update the database, but if the error happens after a successful update attempt (e.g., during the database update itself), it might not get captured.
 
 ## Implementation Plan
 
-### Step 1: Add Pagination Helper Function
-
-Create a helper that fetches data in configurable batches:
-
-```typescript
-async function fetchBookingsInBatches(
-  supabase: any,
-  filters: { status: string; transcription_status: string; dateStart: string; dateEnd: string },
-  batchSize: number = 500
-) {
-  const allBookings = [];
-  let offset = 0;
-  let hasMore = true;
-
-  while (hasMore) {
-    const { data, error } = await supabase
-      .from('bookings')
-      .select(...)
-      .eq('status', filters.status)
-      .eq('transcription_status', filters.transcription_status)
-      .gte('booking_date', filters.dateStart)
-      .lte('booking_date', filters.dateEnd)
-      .range(offset, offset + batchSize - 1);
-
-    if (error) throw error;
-    if (!data || data.length === 0) {
-      hasMore = false;
-    } else {
-      allBookings.push(...data);
-      offset += batchSize;
-      hasMore = data.length === batchSize; // If fewer than batchSize, we're at the end
-    }
-  }
-
-  return allBookings;
-}
+### Phase 1: Clear Stuck Record
+Delete or reset the stuck analysis record so it doesn't block new analyses:
+```sql
+DELETE FROM non_booking_insights 
+WHERE id = '9ac9ac4a-ae15-4ec6-85a2-9416b786a9f4' AND status = 'processing';
 ```
 
-**Benefits:**
-- Fetches 500 records at a time (adjustable)
-- Stops automatically when all records fetched
-- Works with any date range
+This allows the frontend to stop polling a dead record and run a fresh analysis.
 
----
+### Phase 2: Add Timeout Protection & Better Logging
 
-### Step 2: Modify analyze-non-booking-insights Function
+**Problem:** The pagination loop can take 30+ seconds for 6 batches, plus 15+ seconds for AI processing, leaving no margin for error.
 
-Replace the single non-paginated query:
+**Solution:** Add per-batch timeout and better error logging:
 
-**Before (Lines 14-18):**
-```typescript
-const { data: raw, error } = await supabase
-  .from('bookings')
-  .select(...)
-  .eq('status', 'Non Booking')
-  .eq('transcription_status', 'completed')
-  .gte('booking_date', start)
-  .lte('booking_date', end);
-// ❌ Fetches only ~1,000 records
-```
+1. **Add batch timeout check**: After each batch, log elapsed time and warn if approaching limits.
+2. **Add checkpoint updates**: Update the database after every 2-3 batches with progress (e.g., "fetched 1500 records, processing...").
+3. **Improve error messages**: Log the exact point of failure (which batch, which operation) so we can debug faster.
 
-**After:**
-```typescript
-const bookings = await fetchBookingsInBatches(supabase, {
-  status: 'Non Booking',
-  transcription_status: 'completed',
-  dateStart: start,
-  dateEnd: end
-}, 500);
-// ✅ Fetches ALL records via pagination
-```
+**Key changes to `processAnalysis`:**
+- Start timer at function entry
+- Log after each batch fetch: `[Checkpoint] Fetched 1500 of 2859 records (52% complete)...`
+- Add elapsed time tracking to warn if approaching timeout
+- Wrap AI call in try-catch with specific error logging
+- Log before and after database update operations
 
-**No other logic changes needed** - the rest of the aggregation loop (lines 39-63) works exactly the same with the full dataset.
+### Phase 3: Add Retry Logic with Exponential Backoff
 
----
+**Problem:** If a batch fetch fails (temporary network error), the entire analysis fails.
 
-### Step 3: Consider analyze-member-insights (Optional Future)
+**Solution:** Add retry logic to `fetchBookingsInBatches`:
+- Retry failed batches up to 2 times with 2-second delays
+- Log retry attempts with batch number
+- Only throw after all retries exhausted
 
-While not critical (booking data is smaller), the same pattern could be applied:
+### Phase 4: Add Frontend Safeguard
 
-```typescript
-// Instead of:
-const { data: bookingsRaw, error: bookingsError } = await supabase.from('bookings').select(...);
+**Problem:** The polling hook checks `status = 'processing'` every 10 seconds and can poll indefinitely for stuck records.
 
-// Use:
-const bookingsRaw = await fetchBookingsInBatches(supabase, {
-  status: 'Pending Move-In',
-  transcription_status: 'completed',
-  dateStart: date_range_start,
-  dateEnd: date_range_end
-}, 500);
-```
-
-This makes the function future-proof if booking volumes increase.
-
----
-
-### Step 4: Update config.toml (No Changes Needed)
-
-The function will still work with the same configuration. The refactored bundle size + pagination will actually be **more efficient**.
-
----
-
-## Expected Outcome
-
-### Before Fix
-```
-Communication Insights Analysis:
-- Non-Booking records processed: ~1,000 (capped by Supabase limit)
-- Actual available: 2,859
-- Missing data: 1,859 records (65%)
-- AI analysis based on: Incomplete dataset
-```
-
-### After Fix
-```
-Communication Insights Analysis:
-- Non-Booking records processed: 2,859 (100%)
-- Pagination batches: 6 batches of 500 (last batch: 359)
-- AI analysis based on: Complete dataset ✅
-- Accuracy improvement: 65% more data included
-```
-
----
-
-## Technical Details
-
-### Batch Size Selection
-- **500 records per batch**: Balances memory usage and network efficiency
-- **Supabase `.range()` usage**: `range(0, 499)` = first 500 records
-- **Offset increment**: Automatically advances: 0-499, 500-999, 1000-1499, etc.
-
-### Query Optimization
-The `.range()` method is more efficient than fetching all records at once:
-- Network: Transfers 500 rows at a time (smaller payloads)
-- Database: Indexes optimize pagination
-- Memory: Edge function doesn't hold 2,859 records in RAM simultaneously
-
-### Compatibility
-- Works with existing `processAnalysis()` function
-- No changes to AI prompt or result structure
-- Backward compatible with previous analysis runs
-
----
+**Solution:** Add a timeout to the polling hook:
+- If a record stays in `processing` for >5 minutes, automatically stop polling
+- Show a "Analysis taking longer than expected" message
+- Provide a "Cancel Analysis" button that sets status to 'failed'
 
 ## Files to Modify
 
-| File | Changes | Scope |
-|------|---------|-------|
-| `supabase/functions/analyze-non-booking-insights/index.ts` | Add `fetchBookingsInBatches()` helper; replace single `.select()` with paginated fetch | Critical fix |
-| `supabase/functions/analyze-member-insights/index.ts` | (Optional) Apply same pagination pattern for future-proofing | Enhancement |
+| File | Changes | Priority |
+|------|---------|----------|
+| Database (non_booking_insights) | Delete stuck record | Critical (manual query) |
+| `supabase/functions/analyze-non-booking-insights/index.ts` | Add timeout tracking, checkpoint updates, batch retry logic, detailed error logging | Critical |
+| `src/hooks/useNonBookingInsightsPolling.ts` | Add polling timeout (5 min max), auto-stop logic | Important |
 
----
+## Technical Implementation
+
+### In Edge Function:
+```typescript
+async function processAnalysis(...) {
+  const startTime = Date.now();
+  const functionTimeoutMs = 120000; // 2 minutes safety margin from 150s limit
+  
+  try {
+    // Add timer check before each major operation
+    const elapsedCheck = () => {
+      const elapsed = Date.now() - startTime;
+      if (elapsed > functionTimeoutMs) {
+        throw new Error(`Function timeout approaching (${elapsed}ms elapsed)`);
+      }
+    };
+    
+    // In fetchBookingsInBatches: log checkpoint after each batch
+    console.log(`[Progress] Batch ${batchNum}: ${currentCount}/${totalCount} records (${percentComplete}%)`);
+    elapsedCheck();
+    
+    // Wrap each major operation with try-catch and specific logging
+    try {
+      const raw = await fetchBookingsInBatches(...);
+      await supabase.from('non_booking_insights').update({
+        status: 'fetching_complete',
+        total_calls_analyzed: raw.length
+      }).eq('id', id);
+    } catch (fetchErr) {
+      throw new Error(`Failed to fetch bookings: ${fetchErr.message}`);
+    }
+    
+    // Similar wrapping for AI call
+    try {
+      const res = await fetch('https://ai.gateway.lovable.dev/...');
+      if (!res.ok) throw new Error(`AI service returned ${res.status}`);
+      // ... rest of AI processing
+    } catch (aiErr) {
+      throw new Error(`Failed to analyze with AI: ${aiErr.message}`);
+    }
+    
+  } catch (e) {
+    // Detailed error logging
+    const errorMsg = e instanceof Error ? e.message : 'Unknown error';
+    console.error(`[ProcessAnalysis] FAILED: ${errorMsg}`);
+    await supabase.from('non_booking_insights').update({ 
+      status: 'failed', 
+      error_message: errorMsg,
+      total_calls_analyzed: 0 // Reset to 0 on failure for clarity
+    }).eq('id', id);
+  }
+}
+```
+
+### In Polling Hook:
+```typescript
+export const useNonBookingInsightsPolling = ({ 
+  onComplete, 
+  pollingInterval = 10000,
+  maxPollingDurationMs = 5 * 60 * 1000 // 5 minutes
+}: UseNonBookingInsightsPollingProps) => {
+  const pollingStartTimeRef = useRef<number | null>(null);
+  
+  const startPolling = useCallback((insightId: string) => {
+    pollingStartTimeRef.current = Date.now();
+    activeInsightIdRef.current = insightId;
+    
+    pollingRef.current = setInterval(async () => {
+      // Check if polling has exceeded max duration
+      if (Date.now() - pollingStartTimeRef.current! > maxPollingDurationMs) {
+        stopPolling();
+        toast.error('Analysis is taking too long. Please try again.');
+        onComplete();
+        return;
+      }
+      
+      // ... existing polling logic
+    }, pollingInterval);
+  }, [onComplete, pollingInterval, stopPolling]);
+};
+```
+
+## Expected Outcome
+
+✅ Stuck record cleared manually (one-time operation)
+✅ New analyses have detailed logging for every major step
+✅ Function logs exactly where failures occur (batch fetch vs AI processing vs DB update)
+✅ Batch-level retry logic prevents transient failures
+✅ Frontend stops polling after 5 minutes instead of waiting indefinitely
+✅ Better visibility into what's happening: Users see progress messages
+✅ Next analysis run will succeed and show full 2,859+ records analyzed
 
 ## Timeline
 
-- **Implementation:** ~10 minutes (add pagination helper + update query)
-- **Testing:** ~5 minutes (run analysis, verify 2,859+ records processed)
-- **Deployment:** Automatic with next build
-
----
+- **Clear stuck record:** 1 minute (manual query)
+- **Implement edge function improvements:** ~15 minutes
+- **Implement polling timeout:** ~5 minutes
+- **Testing & deployment:** ~5 minutes
+- **Total:** ~25 minutes
 
 ## Validation Checklist
 
-After deployment:
-1. ✅ Navigate to Communication Insights → Non-Booking Analysis tab
-2. ✅ Click "Run Analysis"
-3. ✅ Verify status message shows total calls analyzed (should be 2,859+, not 1,000)
-4. ✅ Verify rejection reasons include data from entire dataset
-5. ✅ Verify agent breakdown includes all agents from all 2,859 records
-6. ✅ Check edge function logs: should see 6 pagination batches logged
+After implementation:
+1. ✅ Verify stuck record is deleted from database
+2. ✅ Run analysis again and monitor edge function logs for checkpoint messages
+3. ✅ Verify final result shows 2,859+ calls analyzed (not stuck at 0)
+4. ✅ Test polling timeout by manually keeping a record in 'processing' for 6+ minutes
+5. ✅ Verify frontend shows timeout message and stops polling
