@@ -117,6 +117,8 @@ export interface Booking {
   emailVerified?: boolean | null;
   emailVerifiedAt?: Date | null;
   emailVerificationStatus?: 'valid' | 'invalid' | 'disposable' | 'catch_all' | 'unknown' | null;
+  // Conversation validity flag - detects voicemails/failed connections
+  hasValidConversation?: boolean | null;
 }
 
 export interface DailyMetrics {

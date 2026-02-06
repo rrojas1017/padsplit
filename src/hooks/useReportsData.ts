@@ -29,6 +29,7 @@ export interface ReportsFilters {
   communicationMethod: string;
   agentId: string;
   rebookingFilter: 'all' | 'new' | 'rebooking';
+  conversationFilter: 'all' | 'valid' | 'no_conversation'; // Conversation validity filter
   searchQuery: string;
 }
 
@@ -186,6 +187,7 @@ export function useReportsData(
           email_verified,
           email_verified_at,
           email_verification_status,
+          has_valid_conversation,
           booking_transcriptions (
             call_transcription,
             call_summary,
@@ -262,6 +264,13 @@ export function useReportsData(
         query = query.eq('is_rebooking', true);
       }
 
+      // Apply conversation validity filter
+      if (filters.conversationFilter === 'valid') {
+        query = query.or('has_valid_conversation.is.null,has_valid_conversation.eq.true');
+      } else if (filters.conversationFilter === 'no_conversation') {
+        query = query.eq('has_valid_conversation', false);
+      }
+
       // Apply search filter (member name, market city, market state)
       if (filters.searchQuery) {
         const searchTerm = `%${filters.searchQuery}%`;
@@ -318,6 +327,7 @@ export function useReportsData(
           emailVerified: row.email_verified,
           emailVerifiedAt: row.email_verified_at ? new Date(row.email_verified_at) : undefined,
           emailVerificationStatus: row.email_verification_status as Booking['emailVerificationStatus'],
+          hasValidConversation: row.has_valid_conversation,
         };
       });
 

@@ -36,6 +36,7 @@ import {
 } from '@/components/ui/select';
 import { DateRangePicker } from '@/components/dashboard/DateRangePicker';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from '@/components/ui/tooltip';
 
 type Site = {
   id: string;
@@ -79,6 +80,12 @@ const rebookingFilterOptions = [
   { label: 'Rebookings Only', value: 'rebooking' },
 ];
 
+const conversationFilterOptions = [
+  { label: 'All Conversations', value: 'all' },
+  { label: 'Valid Conversations', value: 'valid' },
+  { label: 'No Conversation (Flagged)', value: 'no_conversation' },
+];
+
 export default function Reports() {
   usePageTracking('view_reports');
   const { updateBooking } = useBookings();
@@ -113,6 +120,7 @@ export default function Reports() {
   const [methodFilter, setMethodFilter] = useState('all');
   const [agentFilter, setAgentFilter] = useState('all');
   const [rebookingFilter, setRebookingFilter] = useState<'all' | 'new' | 'rebooking'>('all');
+  const [conversationFilter, setConversationFilter] = useState<'all' | 'valid' | 'no_conversation'>('all');
   const [searchQuery, setSearchQuery] = useState('');
 
   // Sorting (primary only for server-side)
@@ -134,8 +142,9 @@ export default function Reports() {
     communicationMethod: methodFilter,
     agentId: agentFilter,
     rebookingFilter,
+    conversationFilter,
     searchQuery,
-  }), [recordDateRange, moveInDateRange, importBatchFilter, siteFilter, statusFilter, typeFilter, methodFilter, agentFilter, rebookingFilter, searchQuery]);
+  }), [recordDateRange, moveInDateRange, importBatchFilter, siteFilter, statusFilter, typeFilter, methodFilter, agentFilter, rebookingFilter, conversationFilter, searchQuery]);
 
   const pagination: ReportsPagination = useMemo(() => ({
     page: currentPage,
@@ -168,6 +177,7 @@ export default function Reports() {
     setMethodFilter('all');
     setAgentFilter('all');
     setRebookingFilter('all');
+    setConversationFilter('all');
     setSearchQuery('');
     setCurrentPage(1);
   };
@@ -178,7 +188,8 @@ export default function Reports() {
     importBatchFilter !== 'all' ||
     siteFilter !== 'all' || statusFilter !== 'all' || 
     typeFilter !== 'all' || methodFilter !== 'all' || 
-    agentFilter !== 'all' || rebookingFilter !== 'all' || searchQuery !== '';
+    agentFilter !== 'all' || rebookingFilter !== 'all' || 
+    conversationFilter !== 'all' || searchQuery !== '';
 
   const handleSort = (column: SortColumn) => {
     if (sortColumn === column) {
@@ -190,10 +201,10 @@ export default function Reports() {
     setCurrentPage(1); // Reset to first page on sort change
   };
 
-  // Reset to page 1 when filters change
+  // Reset to page 1 when filters change  
   useEffect(() => {
     setCurrentPage(1);
-  }, [recordDateRange, moveInDateRange, importBatchFilter, siteFilter, statusFilter, typeFilter, methodFilter, agentFilter, searchQuery, rebookingFilter]);
+  }, [recordDateRange, moveInDateRange, importBatchFilter, siteFilter, statusFilter, typeFilter, methodFilter, agentFilter, searchQuery, rebookingFilter, conversationFilter]);
 
   // Fetch sites from Supabase
   useEffect(() => {
@@ -640,6 +651,31 @@ export default function Reports() {
             ))}
           </DropdownMenuContent>
         </DropdownMenu>
+
+        {/* Conversation Validity Filter */}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant={conversationFilter === 'no_conversation' ? 'destructive' : 'outline'} className="gap-2">
+              <AlertTriangle className="w-4 h-4" />
+              {conversationFilterOptions.find(c => c.value === conversationFilter)?.label}
+              <ChevronDown className="w-4 h-4" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="w-56">
+            {conversationFilterOptions.map((option) => (
+              <DropdownMenuItem
+                key={option.value}
+                onClick={() => setConversationFilter(option.value as 'all' | 'valid' | 'no_conversation')}
+                className={conversationFilter === option.value ? 'bg-accent/20' : ''}
+              >
+                {option.value === 'no_conversation' && (
+                  <AlertTriangle className="w-4 h-4 mr-2 text-amber-500" />
+                )}
+                {option.label}
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
 
       {/* Filters Row 2 */}
@@ -692,6 +728,7 @@ export default function Reports() {
       </div>
 
       {/* Data Table */}
+      <TooltipProvider>
       <div className="bg-card rounded-xl border border-border shadow-card overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full">
@@ -753,6 +790,19 @@ export default function Reports() {
                         emailVerified={booking.emailVerified}
                       >
                         <div className="flex items-center gap-2 cursor-default">
+                          {booking.hasValidConversation === false && (
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <AlertTriangle className="h-4 w-4 text-amber-500 flex-shrink-0" />
+                              </TooltipTrigger>
+                              <TooltipContent side="right" className="max-w-xs">
+                                <p className="font-medium">No Real Conversation</p>
+                                <p className="text-xs text-muted-foreground mt-1">
+                                  This call was a voicemail or failed connection - no actual conversation took place.
+                                </p>
+                              </TooltipContent>
+                            </Tooltip>
+                          )}
                           <span className="hover:text-primary transition-colors">{booking.memberName}</span>
                           {booking.isRebooking && (
                             <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-medium bg-primary/10 text-primary">
@@ -1049,6 +1099,7 @@ export default function Reports() {
           </div>
         </div>
       </div>
+      </TooltipProvider>
 
       {/* Transcription Modal - uses realtime subscription for updates */}
       {selectedBooking && (
