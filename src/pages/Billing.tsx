@@ -7,7 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { DateRangeFilter, DateFilterValue, CustomDateRange } from '@/components/dashboard/DateRangeFilter';
 import { Skeleton } from '@/components/ui/skeleton';
-import { FileText, Users, BarChart3 } from 'lucide-react';
+import { FileText, Users, BarChart3, Activity } from 'lucide-react';
 import CostOverviewCards from '@/components/billing/CostOverviewCards';
 import CostBreakdownCharts from '@/components/billing/CostBreakdownCharts';
 import FunctionCostsTable from '@/components/billing/FunctionCostsTable';
@@ -16,6 +16,8 @@ import ClientManagement from '@/components/billing/ClientManagement';
 import InvoiceGenerator from '@/components/billing/InvoiceGenerator';
 import InvoiceHistory from '@/components/billing/InvoiceHistory';
 import { AdminNotifications } from '@/components/billing/AdminNotifications';
+import RealtimeCostDashboard from '@/components/billing/RealtimeCostDashboard';
+import LLMCostCalculator from '@/components/billing/LLMCostCalculator';
 
 const Billing = () => {
   const { hasRole, isLoading: authLoading } = useAuth();
@@ -114,10 +116,14 @@ const Billing = () => {
 
         {/* Main Tabs */}
         <Tabs defaultValue="costs" className="space-y-6">
-          <TabsList className="grid w-full max-w-md grid-cols-3">
+          <TabsList className="grid w-full max-w-lg grid-cols-4">
             <TabsTrigger value="costs" className="flex items-center gap-2">
               <BarChart3 className="h-4 w-4" />
               Costs
+            </TabsTrigger>
+            <TabsTrigger value="live-monitor" className="flex items-center gap-2">
+              <Activity className="h-4 w-4" />
+              Live Monitor
             </TabsTrigger>
             <TabsTrigger value="invoices" className="flex items-center gap-2">
               <FileText className="h-4 w-4" />
@@ -145,6 +151,12 @@ const Billing = () => {
 
             {/* Function Costs Table */}
             <FunctionCostsTable summary={summary} />
+          </TabsContent>
+
+          {/* Live Monitor Tab */}
+          <TabsContent value="live-monitor" className="space-y-6">
+            <RealtimeCostDashboard />
+            <LLMCostCalculator />
           </TabsContent>
 
           {/* Invoices Tab */}

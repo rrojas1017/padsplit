@@ -96,6 +96,7 @@ export const PROVIDER_LABELS: Record<string, string> = {
   elevenlabs: 'ElevenLabs',
   deepgram: 'Deepgram',
   lovable_ai: 'Lovable AI',
+  deepseek: 'DeepSeek',
 };
 
 export const FUNCTION_LABELS: Record<string, string> = {
@@ -110,3 +111,33 @@ export const FUNCTION_LABELS: Record<string, string> = {
   'batch-generate-qa-coaching': 'Batch Katty Audio',
   'batch-regenerate-coaching': 'Batch Coaching',
 };
+
+// Calculator pricing constants based on actual API costs data
+export const CALCULATOR_PRICING = {
+  stt: {
+    deepgram: 0.0043,      // per minute
+    elevenlabs: 0.034,     // per minute
+  },
+  llm: {
+    deepseek: 0.0007,      // avg per call
+    gemini_flash: 0.009,   // avg per call
+    gemini_pro: 0.04,      // for complex calls
+  },
+  polish: 0.0006,          // per call (flash-lite)
+  tts: {
+    jeff_coaching: 0.18,   // avg per call
+    katty_qa: 0.16,        // avg per call
+  },
+  qa_scoring: 0.0001,      // per call
+  speaker_id: 0.00007,     // per call
+};
+
+// Helper to format duration
+export function formatDuration(minutes: number): string {
+  if (minutes < 60) {
+    return `${minutes} min`;
+  }
+  const hours = Math.floor(minutes / 60);
+  const mins = minutes % 60;
+  return mins > 0 ? `${hours}h ${mins}m` : `${hours}h`;
+}
