@@ -1,6 +1,7 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Lightbulb, Target, Users, PhoneOff, Sparkles } from 'lucide-react';
+import { Progress } from '@/components/ui/progress';
+import { Lightbulb, Target, PhoneOff, Sparkles, TrendingUp } from 'lucide-react';
 
 interface Recommendation {
   recommendation: string;
@@ -27,11 +28,21 @@ const getPriorityColor = (priority: string) => {
   return 'bg-secondary text-secondary-foreground';
 };
 
+const getFrequencyColor = (frequency: number) => {
+  if (frequency >= 25) return 'bg-destructive';
+  if (frequency >= 15) return 'bg-amber-500';
+  if (frequency >= 5) return 'bg-primary';
+  return 'bg-muted-foreground';
+};
+
 export function NonBookingRecommendationsPanel({ 
   recommendations = [], 
   recoveryPatterns = [] 
 }: NonBookingRecommendationsPanelProps) {
   const hasData = recommendations.length > 0 || recoveryPatterns.length > 0;
+
+  // Sort patterns by frequency descending
+  const sortedPatterns = [...recoveryPatterns].sort((a, b) => b.frequency - a.frequency);
 
   if (!hasData) {
     return (
@@ -126,7 +137,7 @@ export function NonBookingRecommendationsPanel({
         </CardContent>
       </Card>
 
-      {/* Recovery Patterns */}
+      {/* Recovery Patterns with Visual Progress Bars */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
@@ -136,21 +147,44 @@ export function NonBookingRecommendationsPanel({
         </CardHeader>
         <CardContent>
           <div className="space-y-4">
-            {recoveryPatterns.map((pattern, idx) => (
+            {sortedPatterns.map((pattern, idx) => (
               <div 
                 key={idx}
-                className="p-3 rounded-lg bg-muted/50 border"
+                className="p-3 rounded-lg bg-muted/50 border space-y-2"
               >
-                <p className="text-sm font-medium">{pattern.pattern}</p>
-                {pattern.frequency > 0 && (
-                  <Badge variant="secondary" className="mt-2 text-xs">
-                    {pattern.frequency}% of non-bookers
+                {/* Category name and percentage */}
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-sm font-medium flex-1 line-clamp-2">{pattern.pattern}</p>
+                  <Badge 
+                    variant="secondary" 
+                    className={`text-xs flex-shrink-0 ${pattern.frequency >= 20 ? 'bg-destructive/10 text-destructive' : ''}`}
+                  >
+                    {pattern.frequency}%
                   </Badge>
+                </div>
+                
+                {/* Visual progress bar */}
+                {pattern.frequency > 0 && (
+                  <div className="relative">
+                    <Progress 
+                      value={pattern.frequency} 
+                      className="h-2"
+                    />
+                    <div 
+                      className={`absolute inset-0 h-2 rounded-full ${getFrequencyColor(pattern.frequency)}`}
+                      style={{ width: `${Math.min(pattern.frequency, 100)}%` }}
+                    />
+                  </div>
                 )}
+                
+                {/* Suggestion */}
                 {pattern.suggestion && (
-                  <p className="text-xs text-muted-foreground mt-2">
-                    <span className="font-medium">Suggestion:</span> {pattern.suggestion}
-                  </p>
+                  <div className="flex items-start gap-1.5 pt-1">
+                    <TrendingUp className="h-3 w-3 text-primary mt-0.5 flex-shrink-0" />
+                    <p className="text-xs text-muted-foreground leading-relaxed">
+                      {pattern.suggestion}
+                    </p>
+                  </div>
                 )}
               </div>
             ))}
