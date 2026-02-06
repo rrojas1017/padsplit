@@ -1,107 +1,165 @@
 
-## Plan: Standardize Transcription Pipeline with Consistent TTS Logic
+# IP Login Restriction for Agents
 
-### Problem Summary
-Three edge functions that trigger transcriptions are **NOT** passing the `skipTts` flag, causing ElevenLabs coaching audio to be generated for ALL records instead of only manually created Vixicom bookings.
+## Overview
+Implement an IP allowlist feature that restricts agent login to approved office IP addresses only. Administrators can configure allowed IP addresses per site, and agents attempting to login from non-approved IPs will be blocked.
 
-### Entry Points Analysis
+## Current System Analysis
+- **4 user roles**: `super_admin`, `admin`, `supervisor`, `agent`
+- **2 sites**: Vixicom (outsourced) and PadSplit Internal
+- **Authentication**: Supabase Auth with edge functions for privileged operations
+- **Existing IP tracking**: `access_logs` table already has an `ip_address` column
 
-| Function | Purpose | Current Status |
-|----------|---------|----------------|
-| `bulk-transcription-processor` | Bulk job processing | ✅ Has skipTts logic |
-| `batch-retry-transcriptions` | Retry failed transcriptions | ✅ Just fixed |
-| `transcribe-call` | Core transcription engine | ✅ Handles skipTts correctly |
-| `check-auto-transcription` | Database trigger handler | ❌ Missing skipTts |
-| `fix-incomplete-bookings` | Recovery/pipeline fixer | ❌ Missing skipTts |
-| `receive-kixie-webhook` | Kixie call webhook | ❌ Missing skipTts |
+## Solution Architecture
 
-### Business Rules (Your Requirements)
-1. **ALL records** (manual + uploaded) get the same transcription + QA pipeline
-2. **ONLY manual records** should use ElevenLabs TTS for coaching audio
-3. **Detection**: A record is "uploaded" if it has an `import_batch_id` value
-
-### Solution
-
-#### File 1: `check-auto-transcription/index.ts`
-Update to:
-1. Fetch `import_batch_id` from the booking
-2. Pass `skipTts: true` when `import_batch_id` is not null
-
-```typescript
-// Add to booking select query:
-import_batch_id
-
-// Add before calling transcribe-call:
-const skipTts = !!bookingData.import_batch_id;
-
-// Pass in request body:
-body: JSON.stringify({
-  bookingId: bookingData.id,
-  kixieUrl: bookingData.kixie_link,
-  skipTts
-})
+```text
++-------------------+       +----------------------+       +------------------+
+|   Login Page      |  -->  |  validate-login-ip   |  -->  |  ip_allowlists   |
+|   (client)        |       |  (edge function)     |       |  (database)      |
++-------------------+       +----------------------+       +------------------+
+        |                           |
+        |                           v
+        |                   +------------------+
+        |                   | Check if:        |
+        |                   | 1. User is agent |
+        |                   | 2. IP is allowed |
+        +------------------>| 3. Block/Allow   |
+                            +------------------+
 ```
 
-#### File 2: `fix-incomplete-bookings/index.ts`
-Update to:
-1. Fetch `import_batch_id` in the booking query
-2. Pass `skipTts: true` when `import_batch_id` is not null
+## Business Rules
+1. **Agents only**: IP restrictions apply ONLY to agent role
+2. **Super Admin/Admin/Supervisor**: Can login from anywhere (no restrictions)
+3. **Site-based allowlists**: Each site can have its own set of allowed IPs
+4. **Global allowlist**: Optional fallback for IPs that should work for all sites
+5. **Graceful bypass**: If no IP allowlist is configured for a site, agents can login (prevents lockout)
+
+---
+
+## Technical Implementation
+
+### 1. Database Schema
+
+**New table: `ip_allowlists`**
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `id` | uuid | Primary key |
+| `site_id` | uuid | FK to sites (nullable for global IPs) |
+| `ip_address` | text | Single IP or CIDR range (e.g., "192.168.1.0/24") |
+| `description` | text | Label like "Main Office", "Remote Office" |
+| `is_active` | boolean | Enable/disable without deleting |
+| `created_by` | uuid | Who added this IP |
+| `created_at` | timestamp | When added |
+
+**RLS Policies**:
+- `SELECT`: super_admin, admin (all), supervisor (own site only)
+- `INSERT/UPDATE/DELETE`: super_admin, admin only
+
+### 2. Edge Function: `validate-login-ip`
+
+Called AFTER successful Supabase auth but BEFORE granting access.
 
 ```typescript
-// Add to booking/query:
-import_batch_id
-
-// Add before calling transcribe-call:
-const skipTts = !!booking.import_batch_id;
-
-// Pass in request body:
-body: JSON.stringify({ 
-  bookingId: booking.booking_id, 
-  kixieUrl: booking.kixie_link,
-  skipTts
-})
+// Pseudocode flow:
+1. Extract client IP from request headers
+2. Get user's role from user_roles table
+3. If role is NOT 'agent' → ALLOW (return success)
+4. Get user's site_id from profiles
+5. Query ip_allowlists for:
+   - Entries matching site_id, OR
+   - Global entries (site_id IS NULL)
+6. If no allowlist entries exist for site → ALLOW (no restrictions configured)
+7. Check if client IP matches any allowed IP/CIDR
+8. If match → ALLOW; else → BLOCK with clear error message
 ```
 
-#### File 3: `receive-kixie-webhook/index.ts`
-This function handles **real-time Kixie calls**, not imported records. These are always manually triggered calls, so:
-- `skipTts: false` is correct (TTS should run for live calls)
-- However, we should still respect site-based logic (Vixicom only)
+### 3. Client-Side Integration (AuthContext)
 
-For consistency, update to:
-1. Check if the agent belongs to a Vixicom site
-2. Pass `skipTts: true` if not Vixicom
+Modify the login flow:
 
 ```typescript
-// Add site check logic:
-const siteName = /* fetch from agent */;
-const isVixicom = siteName?.toLowerCase().includes('vixicom');
-const skipTts = !isVixicom;
+// In login() function:
+const { data, error } = await supabase.auth.signInWithPassword({ email, password });
 
-// Pass in request body:
-body: JSON.stringify({
-  callId: newCall.id,
-  kixieUrl: payload.recordingurl,
-  skipTts
-})
+if (data.user) {
+  // Validate IP restriction for agents
+  const ipCheck = await supabase.functions.invoke('validate-login-ip');
+  
+  if (ipCheck.data?.blocked) {
+    // Sign out immediately and show error
+    await supabase.auth.signOut();
+    return { 
+      success: false, 
+      error: 'Login not allowed from this location. Please contact your supervisor.' 
+    };
+  }
+}
 ```
 
-### Files to Modify
+### 4. Admin UI - Settings Page
 
-| File | Changes |
-|------|---------|
-| `supabase/functions/check-auto-transcription/index.ts` | Add import_batch_id to query, pass skipTts |
-| `supabase/functions/fix-incomplete-bookings/index.ts` | Add import_batch_id to query, pass skipTts |
-| `supabase/functions/receive-kixie-webhook/index.ts` | Add site check, pass skipTts based on Vixicom |
+Add "Security" tab to Settings page (super_admin/admin only):
 
-### Result After Changes
-- **Uploaded records**: Transcription ✅, QA Scores ✅, Jeff Audio ❌, Katty Audio ❌
-- **Manual Vixicom records**: Transcription ✅, QA Scores ✅, Jeff Audio ✅, Katty Audio ✅
-- **Manual non-Vixicom records**: Transcription ✅, QA Scores ✅, Jeff Audio ❌, Katty Audio ❌
+**Features**:
+- View all configured IP allowlists grouped by site
+- Add new IP addresses with description
+- Edit/Delete existing entries
+- Toggle active/inactive status
+- Support for CIDR notation with validation
+- "Test IP" button to verify if an IP would be allowed
 
-### Technical Details
+### 5. Audit Logging
 
-The `transcribe-call` function already handles the `skipTts` flag correctly (lines 1857-1888):
-- If `skipTts = false`: Generates Jeff audio → QA scores → Katty audio
-- If `skipTts = true`: Skips Jeff audio → QA scores → Skips Katty audio
+Log blocked login attempts to `access_logs`:
+- `action`: "blocked_login_ip"
+- `ip_address`: The rejected IP
+- `resource`: Site name or user email
 
-All we need to do is ensure every entry point passes the correct flag based on whether the record was imported (`import_batch_id IS NOT NULL`).
+---
+
+## Files to Create/Modify
+
+| File | Action | Description |
+|------|--------|-------------|
+| `supabase/migrations/xxx_create_ip_allowlists.sql` | Create | New table + RLS |
+| `supabase/functions/validate-login-ip/index.ts` | Create | IP validation logic |
+| `src/contexts/AuthContext.tsx` | Modify | Add IP check to login flow |
+| `src/pages/Settings.tsx` | Modify | Add Security tab |
+| `src/components/security/IPAllowlistManager.tsx` | Create | UI for managing IPs |
+| `supabase/config.toml` | Modify | Register new function |
+
+---
+
+## User Experience
+
+**For Agents**:
+- If logging in from office: Normal login experience
+- If logging in from home: 
+  - "Login not allowed from this location. Please contact your supervisor."
+  - Login is immediately revoked
+
+**For Admins**:
+- New "Security" tab in Settings
+- Easy-to-use table for managing allowed IPs
+- Clear feedback on what IPs are configured per site
+
+---
+
+## Edge Cases Handled
+
+1. **No IPs configured**: Agents can login (avoids lockout scenario)
+2. **VPN users**: Admins can add VPN exit IP to allowlist
+3. **Multiple offices**: Support for multiple IPs per site
+4. **CIDR ranges**: Support for subnet notation (e.g., 10.0.0.0/8)
+5. **IPv6**: Support for IPv6 addresses
+6. **Proxy/Load Balancer**: Edge function checks `x-forwarded-for` header
+
+---
+
+## Security Considerations
+
+- IP validation happens server-side in edge function (cannot be bypassed)
+- Even if someone gets credentials, they can't login from unauthorized locations
+- All blocked attempts are logged for security auditing
+- Admins can quickly add/remove IPs in emergencies
