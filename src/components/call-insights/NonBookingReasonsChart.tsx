@@ -36,6 +36,23 @@ const truncateText = (text: string, maxLength: number = 55): string => {
   return text.substring(0, maxLength).trim() + '...';
 };
 
+// Custom tooltip with proper text wrapping
+const CustomTooltip = ({ active, payload }: any) => {
+  if (!active || !payload?.length) return null;
+  
+  const data = payload[0].payload;
+  return (
+    <div className="bg-popover border border-border rounded-lg shadow-lg p-3 max-w-[280px] z-50">
+      <p className="text-sm font-medium text-foreground whitespace-normal break-words mb-1">
+        {data.fullReason}
+      </p>
+      <p className="text-xs text-muted-foreground">
+        Frequency: {data.value}% ({data.count} calls)
+      </p>
+    </div>
+  );
+};
+
 export function NonBookingReasonsChart({ 
   reasons = [], 
   onRunAnalysis,
@@ -101,23 +118,8 @@ export function NonBookingReasonsChart({
                     stroke="hsl(var(--muted-foreground))"
                   />
                   <Tooltip 
-                    formatter={(value: number, name: string, props: any) => [
-                      `${value}% (${props.payload.count} calls)`,
-                      'Frequency'
-                    ]}
-                    labelFormatter={(label: string, payload: any) => {
-                      if (payload && payload[0]) {
-                        return payload[0].payload.fullReason;
-                      }
-                      return label;
-                    }}
-                    contentStyle={{
-                      backgroundColor: 'hsl(var(--card))',
-                      border: '1px solid hsl(var(--border))',
-                      borderRadius: '8px',
-                      maxWidth: '300px',
-                    }}
-                    wrapperStyle={{ zIndex: 50 }}
+                    content={<CustomTooltip />}
+                    cursor={{ fill: 'hsl(var(--muted)/0.3)' }}
                   />
                   <Bar 
                     dataKey="value" 
