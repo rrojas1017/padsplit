@@ -12,6 +12,53 @@ const FUNCTION_TIMEOUT_MS = 120000; // 2 minutes safety margin from 150s limit
 const MAX_RETRIES = 2;
 const RETRY_DELAY_MS = 2000;
 
+// Semantic categories for objection grouping
+const OBJECTION_CATEGORIES: Record<string, string[]> = {
+  'Timing/Not Ready': ['today', 'now', 'ready', 'wait', 'later', 'timing', 'not yet', 'right now', 'not ready', 'soon', 'tomorrow', 'next week', 'next month', 'eventually', 'not today'],
+  'Financial Constraints': ['fund', 'money', 'pay', 'afford', 'card', 'price', 'check', 'budget', 'cost', 'credit', 'income', 'deposit', 'fee', 'expensive', 'cheap', 'paycheck', 'financial'],
+  'Still Exploring Options': ['found', 'looking', 'search', 'option', 'different', 'compare', 'other place', 'alternative', 'considering', 'shopping', 'browsing', 'checking out'],
+  'Property/Viewing Issues': ['view', 'see', 'visit', 'tour', 'property', 'room', 'house', 'space', 'pictures', 'photos', 'walk-through', 'inspect'],
+  'Availability/Contact': ['call', 'talk', 'speak', 'busy', 'contact', 'reach', 'available', 'schedule', 'time', 'appointment', 'callback'],
+  'Privacy/Shared Living': ['share', 'roommate', 'private', 'alone', 'privacy', 'shared', 'cohabitation', 'stranger', 'living with'],
+  'Application/Approval': ['denied', 'application', 'approved', 'verify', 'background', 'screening', 'rejected', 'qualification', 'criteria', 'eligible'],
+  'Location/Distance': ['far', 'location', 'commute', 'distance', 'near', 'close', 'area', 'neighborhood', 'zone', 'transit', 'transportation'],
+  'Move-in Timeline': ['move-in', 'date', 'deadline', 'move out', 'lease', 'notice', 'current', 'existing', 'end date'],
+  'Personal/Life Circumstances': ['family', 'job', 'work', 'situation', 'personal', 'circumstances', 'life', 'change', 'uncertainty', 'decision'],
+};
+
+function categorizeObjection(text: string): string {
+  const lower = text.toLowerCase();
+  for (const [category, keywords] of Object.entries(OBJECTION_CATEGORIES)) {
+    if (keywords.some(kw => lower.includes(kw))) return category;
+  }
+  return 'Other/Miscellaneous';
+}
+
+function aggregateObjections(objections: string[], total: number): { grouped: Record<string, { count: number; percentage: number; examples: string[] }>; formattedBreakdown: string } {
+  const grouped: Record<string, { count: number; percentage: number; examples: string[] }> = {};
+  
+  for (const obj of objections) {
+    const cat = categorizeObjection(obj);
+    if (!grouped[cat]) grouped[cat] = { count: 0, percentage: 0, examples: [] };
+    grouped[cat].count++;
+    if (grouped[cat].examples.length < 3) grouped[cat].examples.push(obj);
+  }
+  
+  // Calculate percentages and sort by count
+  for (const cat of Object.keys(grouped)) {
+    grouped[cat].percentage = Math.round((grouped[cat].count / total) * 100);
+  }
+  
+  const sorted = Object.entries(grouped).sort((a, b) => b[1].count - a[1].count);
+  
+  const formattedBreakdown = sorted
+    .map(([cat, data]) => 
+      `${cat}: ${data.count} calls (${data.percentage}%)\n  Examples: ${data.examples.slice(0, 2).join('; ')}`
+    ).join('\n');
+  
+  return { grouped: Object.fromEntries(sorted), formattedBreakdown };
+}
+
 async function sleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
@@ -159,10 +206,15 @@ async function processAnalysis(url: string, key: string, apiKey: string, id: str
       throw new Error(`Function timeout approaching before AI call (${elapsedBeforeAI}ms elapsed)`);
     }
 
-    // Phase 3: AI Analysis
-    console.log(`[ProcessAnalysis] Phase 3: Sending to AI for analysis...`);
+    // Phase 3: AI Analysis with pre-aggregated objections
+    console.log(`[ProcessAnalysis] Phase 3: Pre-aggregating objections and sending to AI...`);
     const total = bookings.length;
     const pct = (n: number) => Math.round((n / total) * 100);
+    
+    // Pre-aggregate objections into semantic categories
+    const { grouped: objectionGroups, formattedBreakdown } = aggregateObjections(objections, total);
+    console.log(`[ProcessAnalysis] Grouped ${objections.length} objections into ${Object.keys(objectionGroups).length} categories`);
+    
     const top = (arr: string[]) => {
       const c: Record<string, number> = {};
       arr.forEach(i => c[i] = (c[i] || 0) + 1);
@@ -178,7 +230,29 @@ async function processAnalysis(url: string, key: string, apiKey: string, id: str
       marketBkdn[m] = { non_booking_count: d.count, top_objection: top(d.objections), top_concern: top(d.concerns) };
     }
 
-    const prompt = `Analyze ${total} Non-Booking calls. Concerns: ${concerns.slice(0, 40).join('; ')}. Objections: ${objections.slice(0, 40).join('; ')}. Sentiment: +${sentiment.positive} =${sentiment.neutral} -${sentiment.negative}. Return JSON: {"rejection_reasons":[{"reason":"","percentage":0,"count":0}],"missed_opportunities":[{"pattern":"","count":0,"recovery_suggestion":"","urgency":"high"}],"objection_patterns":[{"objection":"","frequency":0,"suggested_response":""}],"recovery_recommendations":[{"recommendation":"","priority":"high","category":"Process"}],"agent_insights":{${Object.keys(agents).map(n => `"${n}":{"improvement_area":""}`).join(',')}},"market_insights":{${Object.keys(markets).map(m => `"${m}":{"suggested_focus":""}`).join(',')}}}`;
+    // Updated prompt with pre-aggregated objection categories
+    const prompt = `Analyze ${total} Non-Booking calls with pre-grouped objection data.
+
+OBJECTION BREAKDOWN (pre-aggregated by server):
+${formattedBreakdown}
+
+ADDITIONAL CONTEXT:
+- Concerns mentioned: ${concerns.slice(0, 20).join('; ')}
+- Sentiment distribution: Positive ${sentiment.positive}, Neutral ${sentiment.neutral}, Negative ${sentiment.negative}
+
+INSTRUCTIONS:
+For the objection_patterns array, use the EXACT counts and percentages from the pre-aggregated breakdown above. 
+Each category should become one objection pattern entry with an actionable suggested_response.
+
+Return JSON:
+{
+  "rejection_reasons": [{"reason": "", "percentage": 0, "count": 0}],
+  "missed_opportunities": [{"pattern": "", "count": 0, "recovery_suggestion": "", "urgency": "high"}],
+  "objection_patterns": [{"objection": "Category Name from breakdown", "frequency": <percentage from breakdown>, "suggested_response": "specific actionable response"}],
+  "recovery_recommendations": [{"recommendation": "", "priority": "high", "category": "Process"}],
+  "agent_insights": {${Object.keys(agents).map(n => `"${n}":{"improvement_area":""}`).join(',')}},
+  "market_insights": {${Object.keys(markets).map(m => `"${m}":{"suggested_focus":""}`).join(',')}}
+}`;
 
     let aiResponse: any;
     try {
@@ -212,6 +286,16 @@ async function processAnalysis(url: string, key: string, apiKey: string, id: str
     } catch { 
       console.warn(`[ProcessAnalysis] Failed to parse AI response, using empty object`);
       parsed = {}; 
+    }
+
+    // If AI didn't return proper objection_patterns, create them from pre-aggregated data
+    if (!parsed.objection_patterns || parsed.objection_patterns.length === 0) {
+      console.log(`[ProcessAnalysis] AI missing objection_patterns, generating from pre-aggregated data`);
+      parsed.objection_patterns = Object.entries(objectionGroups).map(([category, data]) => ({
+        objection: category,
+        frequency: data.percentage,
+        suggested_response: `Address ${category.toLowerCase()} concerns with targeted follow-up strategies.`
+      }));
     }
 
     // Merge AI insights with pre-computed factual data
