@@ -20,6 +20,7 @@ import { STTComparisonPanel } from '@/components/ai-management/STTComparisonPane
 import { LLMComparisonPanel } from '@/components/ai-management/LLMComparisonPanel';
 import { KattyQASettings } from '@/components/ai-management/KattyQASettings';
 import { IPAllowlistManager } from '@/components/security/IPAllowlistManager';
+import { BulkProcessingTab } from '@/components/import/BulkProcessingTab';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { useState, useEffect } from 'react';
@@ -235,6 +236,9 @@ export default function Settings() {
                 </div>
               </div>
             </div>
+
+            {/* Bulk Transcription Processing */}
+            {canAccessAIManagement && <BulkProcessingTab />}
           </TabsContent>
 
           {/* API Integrations Tab */}
