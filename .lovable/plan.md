@@ -1,97 +1,107 @@
 
+## Plan: Standardize Transcription Pipeline with Consistent TTS Logic
 
-## Plan: Fix ElevenLabs TTS Generation for Uploaded Records
+### Problem Summary
+Three edge functions that trigger transcriptions are **NOT** passing the `skipTts` flag, causing ElevenLabs coaching audio to be generated for ALL records instead of only manually created Vixicom bookings.
 
-### Problem Identified
+### Entry Points Analysis
 
-The `batch-retry-transcriptions` edge function is **NOT passing the `skipTts` flag** when calling `transcribe-call`. This causes ElevenLabs coaching audio (Jeff & Katty) to be generated for ALL records, including the 5,128 imported/uploaded records that should only receive transcription and QA scoring.
+| Function | Purpose | Current Status |
+|----------|---------|----------------|
+| `bulk-transcription-processor` | Bulk job processing | ✅ Has skipTts logic |
+| `batch-retry-transcriptions` | Retry failed transcriptions | ✅ Just fixed |
+| `transcribe-call` | Core transcription engine | ✅ Handles skipTts correctly |
+| `check-auto-transcription` | Database trigger handler | ❌ Missing skipTts |
+| `fix-incomplete-bookings` | Recovery/pipeline fixer | ❌ Missing skipTts |
+| `receive-kixie-webhook` | Kixie call webhook | ❌ Missing skipTts |
 
-**Current behavior:**
-```typescript
-// batch-retry-transcriptions/index.ts (lines 131-134 and 299-302)
-body: JSON.stringify({ 
-  bookingId: booking.id, 
-  kixieUrl: booking.kixie_link 
-  // ❌ MISSING: skipTts flag!
-}),
-```
-
-**Expected behavior (per bulk-transcription-processor):**
-```typescript
-// bulk-transcription-processor/index.ts (lines 218-223)
-body: JSON.stringify({ 
-  bookingId, 
-  kixieUrl,
-  skipTts: !includeTts || !isVixicom  // ✅ TTS only for Vixicom agents
-}),
-```
-
-### Impact Assessment
-
-- **367 records currently processing** → Generating unnecessary TTS audio
-- Each record triggers 2 ElevenLabs TTS calls:
-  - Jeff coaching audio (~$0.15 per 1000 characters)
-  - Katty QA coaching audio (~$0.15 per 1000 characters)
-- **Estimated unnecessary cost**: ~$50-100 for this batch alone
+### Business Rules (Your Requirements)
+1. **ALL records** (manual + uploaded) get the same transcription + QA pipeline
+2. **ONLY manual records** should use ElevenLabs TTS for coaching audio
+3. **Detection**: A record is "uploaded" if it has an `import_batch_id` value
 
 ### Solution
 
-Update `batch-retry-transcriptions` to:
-1. Fetch agent site information for each booking
-2. Pass `skipTts: true` for any booking that:
-   - Has an `import_batch_id` (was uploaded/imported)
-   - OR is not from a Vixicom site
+#### File 1: `check-auto-transcription/index.ts`
+Update to:
+1. Fetch `import_batch_id` from the booking
+2. Pass `skipTts: true` when `import_batch_id` is not null
 
-### Technical Implementation
+```typescript
+// Add to booking select query:
+import_batch_id
 
-**File to modify:** `supabase/functions/batch-retry-transcriptions/index.ts`
+// Add before calling transcribe-call:
+const skipTts = !!bookingData.import_batch_id;
 
-**Changes required:**
+// Pass in request body:
+body: JSON.stringify({
+  bookingId: bookingData.id,
+  kixieUrl: bookingData.kixie_link,
+  skipTts
+})
+```
 
-1. **Update query to include site information** (for Vixicom check):
-   ```typescript
-   // Change from:
-   .select('id, kixie_link, member_name, booking_date, transcription_status, transcription_error_message')
-   
-   // To:
-   .select(`
-     id, kixie_link, member_name, booking_date, transcription_status, transcription_error_message,
-     import_batch_id,
-     agents!inner(id, name, sites(name))
-   `)
-   ```
+#### File 2: `fix-incomplete-bookings/index.ts`
+Update to:
+1. Fetch `import_batch_id` in the booking query
+2. Pass `skipTts: true` when `import_batch_id` is not null
 
-2. **Pass skipTts flag based on import status and site** (two locations):
-   ```typescript
-   // Determine if TTS should be skipped
-   const isImported = !!booking.import_batch_id;
-   const siteName = booking.agents?.sites?.name || '';
-   const isVixicom = siteName.toLowerCase().includes('vixicom');
-   const skipTts = isImported || !isVixicom;
-   
-   body: JSON.stringify({ 
-     bookingId: booking.id, 
-     kixieUrl: booking.kixie_link,
-     skipTts
-   }),
-   ```
+```typescript
+// Add to booking/query:
+import_batch_id
 
-### Immediate Action for Currently Processing Records
+// Add before calling transcribe-call:
+const skipTts = !!booking.import_batch_id;
 
-Since 367 records are already being processed, some may have already triggered TTS generation. Once the fix is deployed:
-- Future batch-retry runs will correctly skip TTS for imported records
-- Records that already completed will have coaching audio generated (cannot be undone without deleting the audio files)
+// Pass in request body:
+body: JSON.stringify({ 
+  bookingId: booking.booking_id, 
+  kixieUrl: booking.kixie_link,
+  skipTts
+})
+```
+
+#### File 3: `receive-kixie-webhook/index.ts`
+This function handles **real-time Kixie calls**, not imported records. These are always manually triggered calls, so:
+- `skipTts: false` is correct (TTS should run for live calls)
+- However, we should still respect site-based logic (Vixicom only)
+
+For consistency, update to:
+1. Check if the agent belongs to a Vixicom site
+2. Pass `skipTts: true` if not Vixicom
+
+```typescript
+// Add site check logic:
+const siteName = /* fetch from agent */;
+const isVixicom = siteName?.toLowerCase().includes('vixicom');
+const skipTts = !isVixicom;
+
+// Pass in request body:
+body: JSON.stringify({
+  callId: newCall.id,
+  kixieUrl: payload.recordingurl,
+  skipTts
+})
+```
 
 ### Files to Modify
 
-| File | Change |
-|------|--------|
-| `supabase/functions/batch-retry-transcriptions/index.ts` | Add site query and skipTts logic |
+| File | Changes |
+|------|---------|
+| `supabase/functions/check-auto-transcription/index.ts` | Add import_batch_id to query, pass skipTts |
+| `supabase/functions/fix-incomplete-bookings/index.ts` | Add import_batch_id to query, pass skipTts |
+| `supabase/functions/receive-kixie-webhook/index.ts` | Add site check, pass skipTts based on Vixicom |
 
-### Verification
+### Result After Changes
+- **Uploaded records**: Transcription ✅, QA Scores ✅, Jeff Audio ❌, Katty Audio ❌
+- **Manual Vixicom records**: Transcription ✅, QA Scores ✅, Jeff Audio ✅, Katty Audio ✅
+- **Manual non-Vixicom records**: Transcription ✅, QA Scores ✅, Jeff Audio ❌, Katty Audio ❌
 
-After deployment, verify:
-1. Batch-retry correctly logs `skipTts: true` for imported records
-2. New transcriptions for imported records don't have `coaching_audio_url` or `qa_coaching_audio_url` populated
-3. Manual bookings from Vixicom still generate coaching audio as expected
+### Technical Details
 
+The `transcribe-call` function already handles the `skipTts` flag correctly (lines 1857-1888):
+- If `skipTts = false`: Generates Jeff audio → QA scores → Katty audio
+- If `skipTts = true`: Skips Jeff audio → QA scores → Skips Katty audio
+
+All we need to do is ensure every entry point passes the correct flag based on whether the record was imported (`import_batch_id IS NOT NULL`).
