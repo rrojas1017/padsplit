@@ -10,7 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Lightbulb, RefreshCw, Loader2, Download } from 'lucide-react';
 import { toast } from 'sonner';
-import { format, subDays, startOfMonth } from 'date-fns';
+import { format, subMonths, startOfMonth, endOfMonth, startOfWeek, endOfDay } from 'date-fns';
 import { generateMemberInsightsPDF } from '@/utils/memberInsightsPDF';
 import InsightsSummaryCards from '@/components/member-insights/InsightsSummaryCards';
 import PainPointsPanel from '@/components/member-insights/PainPointsPanel';
@@ -41,7 +41,7 @@ interface MemberInsight {
   status?: 'processing' | 'completed' | 'failed';
 }
 
-type DateRangeOption = 'last7days' | 'last30days' | 'thisMonth' | 'last3months' | 'allTime';
+type DateRangeOption = 'thisWeek' | 'lastMonth' | 'thisMonth' | 'last3months' | 'allTime';
 
 const MemberInsights = () => {
   usePageTracking('view_member_insights');
@@ -51,7 +51,7 @@ const MemberInsights = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [isLoadingDetail, setIsLoadingDetail] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [dateRange, setDateRange] = useState<DateRangeOption>('last30days');
+  const [dateRange, setDateRange] = useState<DateRangeOption>('thisMonth');
   const [dbSlowMode, setDbSlowMode] = useState(false);
 
   // Get period filter values (include 'manual' for backward compatibility)
@@ -206,18 +206,22 @@ const MemberInsights = () => {
   const getDateRange = (option: DateRangeOption) => {
     const today = new Date();
     switch (option) {
-      case 'last7days':
-        return { start: subDays(today, 7), end: today };
-      case 'last30days':
-        return { start: subDays(today, 30), end: today };
+      case 'thisWeek':
+        // Start of week (Monday) through today
+        return { start: startOfWeek(today, { weekStartsOn: 1 }), end: endOfDay(today) };
+      case 'lastMonth':
+        // Full previous calendar month (closed interval)
+        const lastMonthDate = subMonths(today, 1);
+        return { start: startOfMonth(lastMonthDate), end: endOfMonth(lastMonthDate) };
       case 'thisMonth':
-        return { start: startOfMonth(today), end: today };
+        return { start: startOfMonth(today), end: endOfDay(today) };
       case 'last3months':
-        return { start: subDays(today, 90), end: today };
+        // 3 calendar months back
+        return { start: subMonths(today, 3), end: endOfDay(today) };
       case 'allTime':
-        return { start: new Date('2024-01-01'), end: today };
+        return { start: new Date('2024-01-01'), end: endOfDay(today) };
       default:
-        return { start: subDays(today, 30), end: today };
+        return { start: startOfMonth(today), end: endOfDay(today) };
     }
   };
 
@@ -290,8 +294,8 @@ const MemberInsights = () => {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="last7days">Last 7 Days</SelectItem>
-                <SelectItem value="last30days">Last 30 Days</SelectItem>
+                <SelectItem value="thisWeek">This Week</SelectItem>
+                <SelectItem value="lastMonth">Last Month</SelectItem>
                 <SelectItem value="thisMonth">This Month</SelectItem>
                 <SelectItem value="last3months">Last 3 Months</SelectItem>
                 <SelectItem value="allTime">All Time</SelectItem>

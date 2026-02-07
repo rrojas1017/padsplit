@@ -30,13 +30,13 @@ export interface Call {
   created_at: string;
 }
 
-type DateRangeOption = 'last7days' | 'last30days' | 'thisMonth' | 'last3months' | 'allTime';
+type DateRangeOption = 'thisWeek' | 'lastMonth' | 'thisMonth' | 'last3months' | 'allTime';
 
 export default function CallInsights() {
   const [searchParams, setSearchParams] = useSearchParams();
   const initialTab = searchParams.get('tab') === 'bookings' ? 'bookings' : 'non-bookings';
   const [activeTab, setActiveTab] = useState(initialTab);
-  const [dateRange, setDateRange] = useState<DateRangeOption>('last30days');
+  const [dateRange, setDateRange] = useState<DateRangeOption>('thisMonth');
 
   // Sync tab with URL
   useEffect(() => {

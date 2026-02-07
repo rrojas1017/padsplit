@@ -14,10 +14,10 @@ import { NonBookingTrendChart } from '@/components/call-insights/NonBookingTrend
 import { useNonBookingInsightsPolling } from '@/hooks/useNonBookingInsightsPolling';
 import { Badge } from '@/components/ui/badge';
 import { Lightbulb, RefreshCw, Download, Loader2, Phone, Clock, Sparkles } from 'lucide-react';
-import { subDays, startOfDay, format } from 'date-fns';
+import { subMonths, startOfMonth, endOfMonth, startOfWeek, endOfDay, format } from 'date-fns';
 import { toast } from 'sonner';
 
-type DateRangeOption = 'last7days' | 'last30days' | 'thisMonth' | 'last3months' | 'allTime';
+type DateRangeOption = 'thisWeek' | 'lastMonth' | 'thisMonth' | 'last3months' | 'allTime';
 
 interface NonBookingAnalysisTabProps {
   dateRange: DateRangeOption;
@@ -53,34 +53,51 @@ export function NonBookingAnalysisTab({ dateRange, onDateRangeChange }: NonBooki
   const [selectedInsightId, setSelectedInsightId] = useState<string | null>(null);
   const queryClient = useQueryClient();
 
-  const getDateRangeDays = (option: DateRangeOption): number | null => {
-    switch (option) {
-      case 'last7days': return 7;
-      case 'last30days': return 30;
-      case 'thisMonth': return 30;
-      case 'last3months': return 90;
-      case 'allTime': return null;
-      default: return 30;
-    }
-  };
-
   const getPeriodLabel = (period: string): string => {
     switch (period) {
-      case 'last7days': return 'Last 7 Days';
-      case 'last30days': return 'Last 30 Days';
+      case 'thisWeek': return 'This Week';
+      case 'lastMonth': return 'Last Month';
       case 'thisMonth': return 'This Month';
       case 'last3months': return 'Last 3 Months';
       case 'allTime': return 'All Time';
+      case 'last7days': return 'Last 7 Days'; // Legacy support
+      case 'last30days': return 'Last 30 Days'; // Legacy support
       default: return period;
     }
   };
 
   const getDateRangeParams = (option: DateRangeOption) => {
-    const days = getDateRangeDays(option);
-    const endDate = new Date();
-    const startDate = days !== null 
-      ? startOfDay(subDays(new Date(), days))
-      : new Date('2020-01-01');
+    const today = new Date();
+    let startDate: Date;
+    let endDate: Date;
+    
+    switch (option) {
+      case 'thisWeek':
+        startDate = startOfWeek(today, { weekStartsOn: 1 });
+        endDate = endOfDay(today);
+        break;
+      case 'lastMonth':
+        const lastMonthDate = subMonths(today, 1);
+        startDate = startOfMonth(lastMonthDate);
+        endDate = endOfMonth(lastMonthDate);
+        break;
+      case 'thisMonth':
+        startDate = startOfMonth(today);
+        endDate = endOfDay(today);
+        break;
+      case 'last3months':
+        startDate = subMonths(today, 3);
+        endDate = endOfDay(today);
+        break;
+      case 'allTime':
+        startDate = new Date('2024-01-01');
+        endDate = endOfDay(today);
+        break;
+      default:
+        startDate = startOfMonth(today);
+        endDate = endOfDay(today);
+    }
+    
     return {
       start: format(startDate, 'yyyy-MM-dd'),
       end: format(endDate, 'yyyy-MM-dd'),
@@ -88,14 +105,18 @@ export function NonBookingAnalysisTab({ dateRange, onDateRangeChange }: NonBooki
     };
   };
 
+  // Helper for server-side stats query
+  const getStatsStartDate = (option: DateRangeOption): string | null => {
+    const params = getDateRangeParams(option);
+    if (option === 'allTime') return null;
+    return params.start;
+  };
+
   // Fetch stats using server-side aggregation
   const { data: stats, isLoading: statsLoading } = useQuery({
     queryKey: ['non-booking-stats', dateRange],
     queryFn: async (): Promise<NonBookingStats> => {
-      const days = getDateRangeDays(dateRange);
-      const startDate = days !== null 
-        ? startOfDay(subDays(new Date(), days)).toISOString().split('T')[0]
-        : null;
+      const startDate = getStatsStartDate(dateRange);
       
       const { data, error } = await supabase.rpc('get_non_booking_stats', {
         start_date: startDate
@@ -268,8 +289,8 @@ export function NonBookingAnalysisTab({ dateRange, onDateRangeChange }: NonBooki
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="last7days">Last 7 Days</SelectItem>
-              <SelectItem value="last30days">Last 30 Days</SelectItem>
+              <SelectItem value="thisWeek">This Week</SelectItem>
+              <SelectItem value="lastMonth">Last Month</SelectItem>
               <SelectItem value="thisMonth">This Month</SelectItem>
               <SelectItem value="last3months">Last 3 Months</SelectItem>
               <SelectItem value="allTime">All Time</SelectItem>
