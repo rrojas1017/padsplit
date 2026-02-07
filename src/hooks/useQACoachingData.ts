@@ -76,7 +76,7 @@ export function useQACoachingData(options: UseQACoachingDataOptions = {}) {
           query = query.not('qa_scores', 'is', null);
         }
 
-        const { data, error } = await query.order('id', { ascending: false });
+        const { data, error } = await query.order('created_at', { ascending: false });
 
         if (error) {
           console.error('Error fetching QA coaching data:', error);
