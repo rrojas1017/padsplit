@@ -1,74 +1,69 @@
 
-# Fix: QA Dashboard Not Showing Today's QA Scores
+# Fix: QA Dashboard Not Showing Today's Data - Corrected Order Column
 
 ## Problem Summary
-The QA Dashboard shows empty results for "Today" even though QA scores exist in the database. This is the same root cause as the Coaching Hub issue.
+The QA Dashboard shows only 1 record for "today" instead of 21, even after the previous fix was applied.
 
-## Root Cause
-Two data hooks have ordering problems:
+## Root Cause (Updated)
+The previous fix ordered by `id` (UUID), but **Supabase UUIDs are random, not sequential**. Ordering by UUID gives unpredictable results - the records with IDs starting with `ff` happen to be from older booking dates.
 
-| Hook | Current Behavior | Issue |
-|------|------------------|-------|
-| `useQAData.ts` | No `.order()` clause | Returns oldest 1000 records by default |
-| `useQACoachingData.ts` | Orders by `booking_id` (UUID) | UUIDs are random, not chronological |
+**Evidence:**
+| ID (sorted DESC) | created_at | booking_date |
+|------------------|------------|--------------|
+| `ffe79c83...` | 2026-02-05 | 2025-09-02 |
+| `ffe2df2c...` | 2026-02-05 | 2025-03-04 |
+| `ffcd194f...` | 2026-02-06 | 2025-03-21 |
 
-With 5,700+ records in `booking_transcriptions` and Supabase's 1000-row limit, today's data gets excluded.
+When ordering by `created_at DESC` instead:
+| ID | created_at | booking_date |
+|----|------------|--------------|
+| `6443a806...` | 2026-02-06 23:48 | **2026-02-06** |
+| `9d7329d1...` | 2026-02-06 23:22 | **2026-02-06** |
+| `02822f81...` | 2026-02-06 22:37 | **2026-02-06** |
 
 ## Solution
-Add proper date-based ordering to both hooks so the most recent records are fetched first.
+Change from ordering by `id` to ordering by `created_at` in both hooks.
 
 ## Files to Modify
 
 ### 1. `src/hooks/useQAData.ts`
 
-Add `.order()` after the existing query filters:
+**Line 101 - Change order column:**
 
-**Current code (lines 94-100):**
 ```typescript
-        if (!includeUnscored) {
-          query = query.not('qa_scores', 'is', null);
-        }
+// Current (incorrect):
+query = query.order('id', { ascending: false });
 
-        const { data: transcriptions, error } = await query;
-```
-
-**Updated code:**
-```typescript
-        if (!includeUnscored) {
-          query = query.not('qa_scores', 'is', null);
-        }
-
-        // Order by most recent first to ensure today's data is included within the 1000-row limit
-        query = query.order('id', { ascending: false });
-
-        const { data: transcriptions, error } = await query;
+// Fixed:
+query = query.order('created_at', { ascending: false });
 ```
 
 ---
 
 ### 2. `src/hooks/useQACoachingData.ts`
 
-Change the order column from `booking_id` (random UUID) to `id` (sequential):
+**Line 79 - Change order column:**
 
-**Current code (line 79):**
 ```typescript
-        const { data, error } = await query.order('booking_id', { ascending: false });
+// Current (incorrect):
+const { data, error } = await query.order('id', { ascending: false });
+
+// Fixed:
+const { data, error } = await query.order('created_at', { ascending: false });
 ```
 
-**Updated code:**
-```typescript
-        const { data, error } = await query.order('id', { ascending: false });
-```
+## Why This Works
 
-## Technical Notes
+| Column | Type | Chronological? |
+|--------|------|----------------|
+| `id` | UUID | ❌ Random |
+| `booking_id` | UUID | ❌ Random |
+| `created_at` | timestamp | ✅ Sequential |
 
-- **Why `id` instead of a timestamp?** - The `booking_transcriptions.id` is a UUID that's generated sequentially at insert time, so ordering by `id DESC` effectively gives us the most recently inserted records first
-- **Alternative:** Could use `qa_coaching_audio_generated_at` but it may be null for unscored records, whereas `id` always exists
-- **No breaking changes** - This only affects fetch order, not filtering or display logic
+The `created_at` timestamp is set when the transcription record is inserted, making it the reliable chronological marker.
 
 ## Expected Result
-After these changes:
-- Today's QA scores will appear when filtering by "Today"
-- Katty's QA coaching engagement stats will include today's data
-- Agent rankings will reflect current performance
-- Category breakdown will show today's scores
+After this fix:
+- Today's 21 QA records (booking_date = 2026-02-06) will appear first in the fetched data
+- The "Today" filter will show all 21 records
+- Agent rankings and category breakdown will reflect today's data
