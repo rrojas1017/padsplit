@@ -1,74 +1,74 @@
 
-
-# Fix: Coaching Hub Not Showing Today's Jeff/Katty Recordings
+# Fix: QA Dashboard Not Showing Today's QA Scores
 
 ## Problem Summary
-The Coaching Hub shows "No Coaching Data Yet" when filtering by "Today" even though:
-1. The transcription pipeline **is working correctly** - manual recordings are being processed automatically (transcription -> Jeff -> QA -> Katty)
-2. Today's data **exists in the database** - 21 records have `agent_feedback` and `coaching_audio_url` populated
+The QA Dashboard shows empty results for "Today" even though QA scores exist in the database. This is the same root cause as the Coaching Hub issue.
 
 ## Root Cause
-The `useCoachingData` hook fetches from `booking_transcriptions` **without ordering by date**. With 5,792+ total records and Supabase's default 1000-row limit, the API returns the **oldest 1000 records** (from late 2025), not today's records.
+Two data hooks have ordering problems:
 
-When the Coaching Hub filters by "Today", it finds 0 matches because the 1000 returned records are all from December 2025 through January 2026.
+| Hook | Current Behavior | Issue |
+|------|------------------|-------|
+| `useQAData.ts` | No `.order()` clause | Returns oldest 1000 records by default |
+| `useQACoachingData.ts` | Orders by `booking_id` (UUID) | UUIDs are random, not chronological |
+
+With 5,700+ records in `booking_transcriptions` and Supabase's 1000-row limit, today's data gets excluded.
 
 ## Solution
-Add `.order()` clause to fetch the **most recent** coaching records first.
+Add proper date-based ordering to both hooks so the most recent records are fetched first.
 
-## File Changes
+## Files to Modify
 
-### `src/hooks/useCoachingData.ts`
+### 1. `src/hooks/useQAData.ts`
 
-**Lines 48-69** - Add ordering to the Supabase query:
+Add `.order()` after the existing query filters:
 
+**Current code (lines 94-100):**
 ```typescript
-// Current (problematic):
-let query = supabase
-  .from('booking_transcriptions')
-  .select(`...`)
-  .not('agent_feedback', 'is', null);
+        if (!includeUnscored) {
+          query = query.not('qa_scores', 'is', null);
+        }
 
-// Fixed:
-let query = supabase
-  .from('booking_transcriptions')
-  .select(`
-    booking_id,
-    agent_feedback,
-    coaching_audio_url,
-    coaching_audio_generated_at,
-    coaching_audio_listened_at,
-    bookings!inner (
-      id,
-      booking_date,
-      agent_id,
-      member_name,
-      market_city,
-      market_state,
-      transcription_status
-    )
-  `)
-  .not('agent_feedback', 'is', null)
-  .order('coaching_audio_generated_at', { ascending: false, nullsFirst: false });
+        const { data: transcriptions, error } = await query;
 ```
 
-## Why This Works
+**Updated code:**
+```typescript
+        if (!includeUnscored) {
+          query = query.not('qa_scores', 'is', null);
+        }
 
-| Before | After |
-|--------|-------|
-| Returns oldest 1000 records | Returns newest 1000 records |
-| Today's 21 records excluded | Today's records included first |
-| Filter shows "0 calls" | Filter shows today's coaching |
+        // Order by most recent first to ensure today's data is included within the 1000-row limit
+        query = query.order('id', { ascending: false });
+
+        const { data: transcriptions, error } = await query;
+```
+
+---
+
+### 2. `src/hooks/useQACoachingData.ts`
+
+Change the order column from `booking_id` (random UUID) to `id` (sequential):
+
+**Current code (line 79):**
+```typescript
+        const { data, error } = await query.order('booking_id', { ascending: false });
+```
+
+**Updated code:**
+```typescript
+        const { data, error } = await query.order('id', { ascending: false });
+```
 
 ## Technical Notes
 
-- **Why `coaching_audio_generated_at`?** - Supabase PostgREST doesn't support ordering by nested relation columns (`bookings.booking_date`), so we use a timestamp on the primary table
-- **`nullsFirst: false`** - Records without audio (still processing) appear at the end
-- **No impact on historical views** - Scrolling/pagination still works; we just prioritize recent data in the initial fetch
+- **Why `id` instead of a timestamp?** - The `booking_transcriptions.id` is a UUID that's generated sequentially at insert time, so ordering by `id DESC` effectively gives us the most recently inserted records first
+- **Alternative:** Could use `qa_coaching_audio_generated_at` but it may be null for unscored records, whereas `id` always exists
+- **No breaking changes** - This only affects fetch order, not filtering or display logic
 
 ## Expected Result
-After this change:
-- Today's Jeff coaching sessions will appear when filtering by "Today"
-- Today's Katty QA coaching will also appear (same query pattern)
-- Agent Performance table will populate with current scores
-- No breaking changes to historical data viewing
-
+After these changes:
+- Today's QA scores will appear when filtering by "Today"
+- Katty's QA coaching engagement stats will include today's data
+- Agent rankings will reflect current performance
+- Category breakdown will show today's scores
