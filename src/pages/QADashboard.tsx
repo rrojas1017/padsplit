@@ -55,39 +55,37 @@ export default function QADashboard() {
     
     const now = new Date();
     let startDate: Date;
+    let endDate = endOfDay(now);
     
     if (dateRange === 'custom' && customDates) {
       startDate = startOfDay(customDates.from);
-      const endDate = endOfDay(customDates.to);
-      return filtered.filter(b => {
-        const bookingDate = new Date(b.bookingDate + 'T00:00:00');
-        return isWithinInterval(bookingDate, { start: startDate, end: endDate });
-      });
-    }
-    
-    switch (dateRange) {
-      case 'today':
-        startDate = startOfDay(now);
-        break;
-      case 'yesterday':
-        startDate = startOfDay(subDays(now, 1));
-        break;
-      case '7d':
-        startDate = startOfDay(subDays(now, 6));
-        break;
-      case '30d':
-        startDate = startOfDay(subDays(now, 29));
-        break;
-      case 'month':
-        startDate = startOfMonth(now);
-        break;
-      default:
-        startDate = new Date(0);
+      endDate = endOfDay(customDates.to);
+    } else {
+      switch (dateRange) {
+        case 'today':
+          startDate = startOfDay(now);
+          break;
+        case 'yesterday':
+          startDate = startOfDay(subDays(now, 1));
+          endDate = endOfDay(subDays(now, 1));
+          break;
+        case '7d':
+          startDate = startOfDay(subDays(now, 6));
+          break;
+        case '30d':
+          startDate = startOfDay(subDays(now, 29));
+          break;
+        case 'month':
+          startDate = startOfMonth(now);
+          break;
+        default:
+          startDate = new Date(0);
+      }
     }
 
     return filtered.filter(b => {
       const bookingDate = new Date(b.bookingDate + 'T00:00:00');
-      return isWithinInterval(bookingDate, { start: startDate, end: endOfDay(now) });
+      return isWithinInterval(bookingDate, { start: startDate, end: endDate });
     });
   }, [qaBookings, dateRange, selectedAgent, customDates]);
 
