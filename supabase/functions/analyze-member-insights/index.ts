@@ -1,4 +1,4 @@
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -159,6 +159,102 @@ function calculateTrendDeltas(
   return { painPointsWithTrends, emergingIssues };
 }
 
+// Constants for batch pagination
+const BATCH_SIZE = 500;
+const FUNCTION_TIMEOUT_MS = 120000; // 2 minutes safety margin from 150s limit
+const MAX_RETRIES = 2;
+const RETRY_DELAY_MS = 2000;
+
+// Sleep helper for retry delays
+async function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+// Fetch bookings in batches to bypass Supabase 1,000 row limit
+async function fetchBookingsInBatches(
+  supabase: any,
+  start: string,
+  end: string,
+  startTime: number
+): Promise<any[]> {
+  const allBookings: any[] = [];
+  let offset = 0;
+  let hasMore = true;
+  let batchNum = 0;
+
+  console.log(`[Pagination] Starting batch fetch for Booking records from ${start} to ${end}`);
+
+  while (hasMore) {
+    batchNum++;
+    let retries = 0;
+    let batchData: any[] | null = null;
+    let lastError: Error | null = null;
+
+    // Retry logic for each batch
+    while (retries <= MAX_RETRIES && batchData === null) {
+      try {
+        // Check timeout before each batch
+        const elapsed = Date.now() - startTime;
+        if (elapsed > FUNCTION_TIMEOUT_MS) {
+          throw new Error(`Function timeout approaching (${elapsed}ms elapsed, limit ${FUNCTION_TIMEOUT_MS}ms)`);
+        }
+
+        const { data, error } = await supabase
+          .from('bookings')
+          .select(`
+            id, 
+            member_name, 
+            market_city, 
+            market_state,
+            booking_date,
+            call_duration_seconds,
+            booking_transcriptions (
+              call_key_points
+            )
+          `)
+          .eq('transcription_status', 'completed')
+          .neq('status', 'Non Booking')
+          .gte('booking_date', start)
+          .lte('booking_date', end)
+          .range(offset, offset + BATCH_SIZE - 1);
+
+        if (error) {
+          throw new Error(`Database error: ${error.message}`);
+        }
+
+        batchData = data || [];
+      } catch (err) {
+        lastError = err instanceof Error ? err : new Error(String(err));
+        retries++;
+
+        if (retries <= MAX_RETRIES) {
+          console.warn(`[Pagination] Batch ${batchNum} failed (attempt ${retries}/${MAX_RETRIES + 1}): ${lastError.message}. Retrying in ${RETRY_DELAY_MS}ms...`);
+          await sleep(RETRY_DELAY_MS * retries); // Exponential backoff
+        }
+      }
+    }
+
+    // If all retries exhausted, throw
+    if (batchData === null) {
+      throw new Error(`Batch ${batchNum} failed after ${MAX_RETRIES + 1} attempts: ${lastError?.message}`);
+    }
+
+    if (batchData.length === 0) {
+      hasMore = false;
+      console.log(`[Pagination] No more records at offset ${offset}`);
+    } else {
+      allBookings.push(...batchData);
+      const elapsed = Date.now() - startTime;
+      console.log(`[Pagination] Batch ${batchNum}: Fetched ${batchData.length} records (total: ${allBookings.length}, elapsed: ${elapsed}ms)`);
+      offset += BATCH_SIZE;
+      hasMore = batchData.length === BATCH_SIZE;
+    }
+  }
+
+  console.log(`[Pagination] Complete: ${allBookings.length} total records fetched in ${batchNum} batches`);
+  return allBookings;
+}
+
 // Background processing function
 async function processAnalysis(
   supabaseUrl: string,
@@ -170,6 +266,7 @@ async function processAnalysis(
   date_range_end: string
 ) {
   const supabase = createClient(supabaseUrl, supabaseServiceKey);
+  const startTime = Date.now();
   
   try {
     console.log(`[Background] Starting analysis for insight ${insightId}`);
@@ -177,30 +274,9 @@ async function processAnalysis(
     // Fetch previous analysis for trend comparison
     const previousAnalysis = await fetchPreviousAnalysis(supabase, analysis_period, date_range_end);
     
-    // Fetch all bookings with completed transcriptions in date range
-    // Fetch only actual bookings with completed transcriptions (exclude Non Booking call activity)
-    const { data: bookingsRaw, error: bookingsError } = await supabase
-      .from('bookings')
-      .select(`
-        id, 
-        member_name, 
-        market_city, 
-        market_state,
-        booking_date,
-        call_duration_seconds,
-        booking_transcriptions (
-          call_key_points
-        )
-      `)
-      .eq('transcription_status', 'completed')
-      .neq('status', 'Non Booking')
-      .gte('booking_date', date_range_start)
-      .lte('booking_date', date_range_end);
-
-    if (bookingsError) {
-      console.error('[Background] Error fetching bookings:', bookingsError);
-      throw new Error(`Failed to fetch bookings: ${bookingsError.message}`);
-    }
+    // Phase 1: Fetch all bookings with pagination to bypass 1,000 row limit
+    console.log(`[Background] Phase 1: Fetching bookings with batch pagination...`);
+    const bookingsRaw = await fetchBookingsInBatches(supabase, date_range_start, date_range_end, startTime);
 
     console.log(`[Background] Raw bookings fetched: ${bookingsRaw?.length || 0}`);
 
@@ -212,7 +288,7 @@ async function processAnalysis(
       return transcription?.call_key_points;
     }) as BookingWithTranscription[];
 
-    console.log(`[Background] Filtered bookings with call_key_points: ${bookings.length}`);
+    console.log(`[Background] Phase 1 complete: ${bookings.length} of ${bookingsRaw.length} records have call_key_points for analysis`);
 
     if (bookings.length === 0) {
       console.log('[Background] No transcribed bookings found in date range');
