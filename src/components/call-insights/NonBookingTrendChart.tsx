@@ -4,9 +4,9 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend } from 'recharts';
 import { TrendingUp, Sparkles } from 'lucide-react';
-import { format, subDays, startOfDay, eachDayOfInterval, eachWeekOfInterval, startOfWeek } from 'date-fns';
+import { format, subMonths, startOfMonth, endOfMonth, startOfWeek, endOfDay, eachDayOfInterval, eachWeekOfInterval, startOfWeek as startOfWeekUtil } from 'date-fns';
 
-type DateRangeOption = 'last7days' | 'last30days' | 'thisMonth' | 'last3months' | 'allTime';
+type DateRangeOption = 'thisWeek' | 'lastMonth' | 'thisMonth' | 'last3months' | 'allTime';
 
 interface NonBookingTrendChartProps {
   dateRange: DateRangeOption;
@@ -16,17 +16,47 @@ export function NonBookingTrendChart({ dateRange }: NonBookingTrendChartProps) {
   const { data: trendData, isLoading } = useQuery({
     queryKey: ['non-booking-trends', dateRange],
     queryFn: async () => {
-      const days = dateRange === 'last7days' ? 7 : 
-                   dateRange === 'last30days' ? 30 :
-                   dateRange === 'thisMonth' ? 30 :
-                   dateRange === 'last3months' ? 90 : 180;
+      const today = new Date();
+      let startDate: Date;
+      let endDate: Date = today;
+      let useWeekly = false;
       
-      const startDate = startOfDay(subDays(new Date(), days));
-      const useWeekly = days > 30;
+      switch (dateRange) {
+        case 'thisWeek':
+          startDate = startOfWeek(today, { weekStartsOn: 1 });
+          endDate = today;
+          useWeekly = false;
+          break;
+        case 'lastMonth':
+          const lastMonthDate = subMonths(today, 1);
+          startDate = startOfMonth(lastMonthDate);
+          endDate = endOfMonth(lastMonthDate);
+          useWeekly = false;
+          break;
+        case 'thisMonth':
+          startDate = startOfMonth(today);
+          endDate = today;
+          useWeekly = false;
+          break;
+        case 'last3months':
+          startDate = subMonths(today, 3);
+          endDate = today;
+          useWeekly = true;
+          break;
+        case 'allTime':
+          startDate = new Date('2024-01-01');
+          endDate = today;
+          useWeekly = true;
+          break;
+        default:
+          startDate = startOfMonth(today);
+          endDate = today;
+          useWeekly = false;
+      }
       
       // Use server-side aggregation to avoid 1000 row limit
       const { data, error } = await supabase.rpc('get_non_booking_trends', {
-        start_date: startDate.toISOString().split('T')[0],
+        start_date: format(startDate, 'yyyy-MM-dd'),
         group_by_week: useWeekly
       });
 
@@ -46,7 +76,7 @@ export function NonBookingTrendChart({ dateRange }: NonBookingTrendChartProps) {
 
       if (useWeekly) {
         const weeks = eachWeekOfInterval(
-          { start: startDate, end: new Date() },
+          { start: startDate, end: endDate },
           { weekStartsOn: 1 }
         );
 
@@ -61,7 +91,7 @@ export function NonBookingTrendChart({ dateRange }: NonBookingTrendChartProps) {
           };
         });
       } else {
-        const allDays = eachDayOfInterval({ start: startDate, end: new Date() });
+        const allDays = eachDayOfInterval({ start: startDate, end: endDate });
 
         return allDays.map(day => {
           const key = format(day, 'yyyy-MM-dd');

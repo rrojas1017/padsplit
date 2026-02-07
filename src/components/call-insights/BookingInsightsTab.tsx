@@ -10,7 +10,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
 import { Lightbulb, RefreshCw, Loader2, Download, Sparkles, AlertTriangle } from 'lucide-react';
 import { toast } from 'sonner';
-import { format, subDays, startOfMonth } from 'date-fns';
+import { format, subMonths, startOfMonth, endOfMonth, startOfWeek, endOfDay } from 'date-fns';
 import { generateMemberInsightsPDF } from '@/utils/memberInsightsPDF';
 import InsightsSummaryCards from '@/components/member-insights/InsightsSummaryCards';
 import PainPointsPanel from '@/components/member-insights/PainPointsPanel';
@@ -72,7 +72,7 @@ interface MemberInsight {
   source_booking_ids?: Record<string, string[]>;
 }
 
-type DateRangeOption = 'last7days' | 'last30days' | 'thisMonth' | 'last3months' | 'allTime';
+type DateRangeOption = 'thisWeek' | 'lastMonth' | 'thisMonth' | 'last3months' | 'allTime';
 
 interface BookingInsightsTabProps {
   dateRange: DateRangeOption;
@@ -178,12 +178,14 @@ export function BookingInsightsTab({ dateRange, onDateRangeChange }: BookingInsi
 
   const getPeriodLabel = (period: string): string => {
     switch (period) {
-      case 'last7days': return 'Last 7 Days';
-      case 'last30days': return 'Last 30 Days';
+      case 'thisWeek': return 'This Week';
+      case 'lastMonth': return 'Last Month';
       case 'thisMonth': return 'This Month';
       case 'last3months': return 'Last 3 Months';
       case 'allTime': return 'All Time';
       case 'manual': return 'All Time'; // Backward compatibility
+      case 'last7days': return 'Last 7 Days'; // Legacy support
+      case 'last30days': return 'Last 30 Days'; // Legacy support
       default: return period;
     }
   };
@@ -242,18 +244,22 @@ export function BookingInsightsTab({ dateRange, onDateRangeChange }: BookingInsi
   const getDateRange = (option: DateRangeOption) => {
     const today = new Date();
     switch (option) {
-      case 'last7days':
-        return { start: subDays(today, 7), end: today };
-      case 'last30days':
-        return { start: subDays(today, 30), end: today };
+      case 'thisWeek':
+        // Start of week (Monday) through today
+        return { start: startOfWeek(today, { weekStartsOn: 1 }), end: endOfDay(today) };
+      case 'lastMonth':
+        // Full previous calendar month (closed interval)
+        const lastMonthDate = subMonths(today, 1);
+        return { start: startOfMonth(lastMonthDate), end: endOfMonth(lastMonthDate) };
       case 'thisMonth':
-        return { start: startOfMonth(today), end: today };
+        return { start: startOfMonth(today), end: endOfDay(today) };
       case 'last3months':
-        return { start: subDays(today, 90), end: today };
+        // 3 calendar months back
+        return { start: subMonths(today, 3), end: endOfDay(today) };
       case 'allTime':
-        return { start: new Date('2024-01-01'), end: today };
+        return { start: new Date('2024-01-01'), end: endOfDay(today) };
       default:
-        return { start: subDays(today, 30), end: today };
+        return { start: startOfMonth(today), end: endOfDay(today) };
     }
   };
 
@@ -318,8 +324,8 @@ export function BookingInsightsTab({ dateRange, onDateRangeChange }: BookingInsi
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="last7days">Last 7 Days</SelectItem>
-              <SelectItem value="last30days">Last 30 Days</SelectItem>
+              <SelectItem value="thisWeek">This Week</SelectItem>
+              <SelectItem value="lastMonth">Last Month</SelectItem>
               <SelectItem value="thisMonth">This Month</SelectItem>
               <SelectItem value="last3months">Last 3 Months</SelectItem>
               <SelectItem value="allTime">All Time</SelectItem>
