@@ -98,7 +98,7 @@ export function useQAData(options: UseQADataOptions = {}) {
         }
 
         // Order by most recent first to ensure today's data is included within the 1000-row limit
-        query = query.order('id', { ascending: false });
+        query = query.order('created_at', { ascending: false });
 
         const { data: transcriptions, error } = await query;
 
