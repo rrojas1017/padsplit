@@ -1,69 +1,97 @@
 
-# Fix: QA Dashboard Not Showing Today's Data - Corrected Order Column
 
-## Problem Summary
-The QA Dashboard shows only 1 record for "today" instead of 21, even after the previous fix was applied.
+# Fix: QA Dashboard "Yesterday" Filter Shows Wrong Count
 
-## Root Cause (Updated)
-The previous fix ordered by `id` (UUID), but **Supabase UUIDs are random, not sequential**. Ordering by UUID gives unpredictable results - the records with IDs starting with `ff` happen to be from older booking dates.
+## Problem
+The QA Dashboard shows **48 Scored Calls** when filtering by "Yesterday", but there are only **22 records** for yesterday and **26 for the day before**.
 
-**Evidence:**
-| ID (sorted DESC) | created_at | booking_date |
-|------------------|------------|--------------|
-| `ffe79c83...` | 2026-02-05 | 2025-09-02 |
-| `ffe2df2c...` | 2026-02-05 | 2025-03-04 |
-| `ffcd194f...` | 2026-02-06 | 2025-03-21 |
+The screenshot shows the filter is set to "Yesterday", but the Scored Calls count includes records from **yesterday through today** instead of just yesterday.
 
-When ordering by `created_at DESC` instead:
-| ID | created_at | booking_date |
-|----|------------|--------------|
-| `6443a806...` | 2026-02-06 23:48 | **2026-02-06** |
-| `9d7329d1...` | 2026-02-06 23:22 | **2026-02-06** |
-| `02822f81...` | 2026-02-06 22:37 | **2026-02-06** |
+## Root Cause
+The `filteredBookings` filter (for QA stats) has a bug where the "yesterday" case doesn't set a proper end date.
+
+**Current code (lines 68-91):**
+```typescript
+case 'yesterday':
+  startDate = startOfDay(subDays(now, 1));  // Feb 5
+  break;
+// ... later ...
+return filtered.filter(b => {
+  return isWithinInterval(bookingDate, { start: startDate, end: endOfDay(now) }); // ❌ Feb 6
+});
+```
+
+This means "Yesterday" actually returns records from **yesterday through today** (48 = 26 + 22).
+
+Meanwhile, the `filteredCoachingBookings` filter correctly handles this:
+```typescript
+case 'yesterday':
+  startDate = startOfDay(subDays(now, 1));
+  endDate = endOfDay(subDays(now, 1));  // ✅ Correct!
+  break;
+```
 
 ## Solution
-Change from ordering by `id` to ordering by `created_at` in both hooks.
+Refactor `filteredBookings` to match the pattern used in `filteredCoachingBookings` - define a separate `endDate` variable that is set correctly for each filter type.
 
-## Files to Modify
+## File Changes
 
-### 1. `src/hooks/useQAData.ts`
+### `src/pages/QADashboard.tsx`
 
-**Line 101 - Change order column:**
-
-```typescript
-// Current (incorrect):
-query = query.order('id', { ascending: false });
-
-// Fixed:
-query = query.order('created_at', { ascending: false });
-```
-
----
-
-### 2. `src/hooks/useQACoachingData.ts`
-
-**Line 79 - Change order column:**
+**Lines 46-92** - Replace the filteredBookings useMemo with proper end date handling:
 
 ```typescript
-// Current (incorrect):
-const { data, error } = await query.order('id', { ascending: false });
+// Filter by date range and agent
+const filteredBookings = useMemo(() => {
+  let filtered = qaBookings;
+  
+  if (selectedAgent !== 'all') {
+    filtered = filtered.filter(b => b.agentId === selectedAgent);
+  }
+  
+  if (dateRange === 'all') return filtered;
+  
+  const now = new Date();
+  let startDate: Date;
+  let endDate = endOfDay(now);  // Default to end of today
+  
+  if (dateRange === 'custom' && customDates) {
+    startDate = startOfDay(customDates.from);
+    endDate = endOfDay(customDates.to);
+  } else {
+    switch (dateRange) {
+      case 'today':
+        startDate = startOfDay(now);
+        break;
+      case 'yesterday':
+        startDate = startOfDay(subDays(now, 1));
+        endDate = endOfDay(subDays(now, 1));  // ✅ FIX: End at yesterday EOD
+        break;
+      case '7d':
+        startDate = startOfDay(subDays(now, 6));
+        break;
+      case '30d':
+        startDate = startOfDay(subDays(now, 29));
+        break;
+      case 'month':
+        startDate = startOfMonth(now);
+        break;
+      default:
+        startDate = new Date(0);
+    }
+  }
 
-// Fixed:
-const { data, error } = await query.order('created_at', { ascending: false });
+  return filtered.filter(b => {
+    const bookingDate = new Date(b.bookingDate + 'T00:00:00');
+    return isWithinInterval(bookingDate, { start: startDate, end: endDate });  // ✅ Use endDate variable
+  });
+}, [qaBookings, dateRange, selectedAgent, customDates]);
 ```
-
-## Why This Works
-
-| Column | Type | Chronological? |
-|--------|------|----------------|
-| `id` | UUID | ❌ Random |
-| `booking_id` | UUID | ❌ Random |
-| `created_at` | timestamp | ✅ Sequential |
-
-The `created_at` timestamp is set when the transcription record is inserted, making it the reliable chronological marker.
 
 ## Expected Result
 After this fix:
-- Today's 21 QA records (booking_date = 2026-02-06) will appear first in the fetched data
-- The "Today" filter will show all 21 records
-- Agent rankings and category breakdown will reflect today's data
+- **Yesterday filter** → Shows only yesterday's 22 records (not 48)
+- **Today filter** → Shows only today's records
+- **7d, 30d, Month, All** → Continue working as expected
+- Both QA stats and Katty's coaching stats will use consistent date filtering
+
