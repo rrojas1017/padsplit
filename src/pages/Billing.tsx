@@ -3,11 +3,11 @@ import { Navigate } from 'react-router-dom';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { useAuth } from '@/contexts/AuthContext';
 import { useBillingData, DateRangeType } from '@/hooks/useBillingData';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Card, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { DateRangeFilter, DateFilterValue, CustomDateRange } from '@/components/dashboard/DateRangeFilter';
 import { Skeleton } from '@/components/ui/skeleton';
-import { FileText, Users, BarChart3, Activity } from 'lucide-react';
+import { FileText, Users, BarChart3, Activity, Settings } from 'lucide-react';
 import CostOverviewCards from '@/components/billing/CostOverviewCards';
 import CostBreakdownCharts from '@/components/billing/CostBreakdownCharts';
 import FunctionCostsTable from '@/components/billing/FunctionCostsTable';
@@ -18,6 +18,7 @@ import InvoiceHistory from '@/components/billing/InvoiceHistory';
 import { AdminNotifications } from '@/components/billing/AdminNotifications';
 import RealtimeCostDashboard from '@/components/billing/RealtimeCostDashboard';
 import LLMCostCalculator from '@/components/billing/LLMCostCalculator';
+import SOWPricingConfig from '@/components/billing/SOWPricingConfig';
 
 const Billing = () => {
   const { hasRole, isLoading: authLoading } = useAuth();
@@ -29,12 +30,11 @@ const Billing = () => {
     setCustomDates(range === 'custom' && dates ? dates : undefined);
   };
 
-  // Map DateFilterValue to DateRangeType for useBillingData hook
   const getBillingDateRange = (): DateRangeType => {
     if (dateFilter === 'custom') return 'custom';
     if (dateFilter === 'today') return 'today';
     if (dateFilter === 'yesterday') return 'yesterday';
-    if (dateFilter === '7d') return 'last30Days'; // Map 7d to last30Days as closest match
+    if (dateFilter === '7d') return 'last30Days';
     if (dateFilter === '30d') return 'last30Days';
     if (dateFilter === 'month') return 'thisMonth';
     if (dateFilter === 'all') return 'allTime';
@@ -45,6 +45,7 @@ const Billing = () => {
     costs, 
     clients, 
     invoices, 
+    sowPricing,
     summary, 
     isLoading, 
     error,
@@ -54,13 +55,14 @@ const Billing = () => {
     updateClient,
     createInvoice,
     updateInvoiceStatus,
+    updateSOWPricing,
+    fetchInvoiceLineItems,
   } = useBillingData(
     getBillingDateRange(), 
     customDates?.from, 
     customDates?.to
   );
 
-  // Redirect non-super_admins
   if (!authLoading && !hasRole(['super_admin'])) {
     return <Navigate to="/dashboard" replace />;
   }
@@ -102,7 +104,7 @@ const Billing = () => {
           <div>
             <h1 className="text-3xl font-bold tracking-tight">Cost & Billing</h1>
             <p className="text-muted-foreground">
-              Track API costs and generate client invoices
+              Track API costs, generate SOW-based invoices, and manage client billing
             </p>
           </div>
           
@@ -116,7 +118,7 @@ const Billing = () => {
 
         {/* Main Tabs */}
         <Tabs defaultValue="costs" className="space-y-6">
-          <TabsList className="grid w-full max-w-lg grid-cols-4">
+          <TabsList className="grid w-full max-w-2xl grid-cols-5">
             <TabsTrigger value="costs" className="flex items-center gap-2">
               <BarChart3 className="h-4 w-4" />
               Costs
@@ -133,23 +135,20 @@ const Billing = () => {
               <Users className="h-4 w-4" />
               Clients
             </TabsTrigger>
+            <TabsTrigger value="sow-pricing" className="flex items-center gap-2">
+              <Settings className="h-4 w-4" />
+              SOW Pricing
+            </TabsTrigger>
           </TabsList>
 
           {/* Costs Tab */}
           <TabsContent value="costs" className="space-y-6">
-            {/* Admin Notifications */}
             <AdminNotifications />
-
-            {/* Overview Cards */}
-            <CostOverviewCards summary={summary} costs={costs} dateRange={dateFilter} />
-
-            {/* Charts Row */}
+            <CostOverviewCards summary={summary} costs={costs} dateRange={dateFilter} sowPricing={sowPricing} />
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               <CostBreakdownCharts summary={summary} />
               <CostTrendChart data={summary.dailyTrend} />
             </div>
-
-            {/* Function Costs Table */}
             <FunctionCostsTable summary={summary} />
           </TabsContent>
 
@@ -165,13 +164,22 @@ const Billing = () => {
               <InvoiceGenerator 
                 clients={clients} 
                 costs={costs}
+                sowPricing={sowPricing}
                 onGenerate={createInvoice}
                 dateRange={dateFilter}
+                voiceRecordCount={summary.voiceRecordCount}
+                textRecordCount={summary.textRecordCount}
+                voiceCoachingCount={summary.voiceCoachingCount}
+                emailDeliveryCount={summary.emailDeliveryCount}
+                smsDeliveryCount={summary.smsDeliveryCount}
+                telephonyMinutes={summary.telephonyMinutes}
+                totalInternalCost={summary.totalCost}
               />
               <InvoiceHistory 
                 invoices={invoices} 
                 clients={clients}
                 onUpdateStatus={updateInvoiceStatus}
+                onFetchLineItems={fetchInvoiceLineItems}
               />
             </div>
           </TabsContent>
@@ -182,6 +190,14 @@ const Billing = () => {
               clients={clients} 
               onCreate={createClient}
               onUpdate={updateClient}
+            />
+          </TabsContent>
+
+          {/* SOW Pricing Tab */}
+          <TabsContent value="sow-pricing" className="space-y-6">
+            <SOWPricingConfig 
+              pricing={sowPricing}
+              onUpdate={updateSOWPricing}
             />
           </TabsContent>
         </Tabs>

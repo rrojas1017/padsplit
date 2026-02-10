@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { startOfDay, endOfDay, startOfWeek, endOfWeek, startOfMonth, endOfMonth, subDays } from 'date-fns';
+import { SOWPricingConfig } from '@/utils/billingCalculations';
 
 export interface ApiCost {
   id: string;
@@ -29,6 +30,20 @@ export interface Client {
   is_active: boolean;
   created_at: string;
   updated_at: string;
+  payment_terms_days: number;
+  enabled_services: string[];
+}
+
+export interface InvoiceLineItem {
+  id: string;
+  invoice_id: string;
+  service_category: string;
+  description: string;
+  quantity: number;
+  unit_rate: number;
+  subtotal: number;
+  is_optional: boolean;
+  sort_order: number;
 }
 
 export interface BillingInvoice {
@@ -44,6 +59,10 @@ export interface BillingInvoice {
   notes: string | null;
   created_by: string | null;
   created_at: string;
+  invoice_number: string | null;
+  payment_terms: string | null;
+  due_date: string | null;
+  line_items?: InvoiceLineItem[];
   client?: Client;
 }
 
@@ -58,11 +77,17 @@ export interface CostSummary {
   byFunction: Record<string, { count: number; cost: number }>;
   byAgent: Record<string, { name: string; cost: number; count: number }>;
   dailyTrend: Array<{ date: string; cost: number; count: number }>;
-  // Per-unit billing metrics
   uniqueBookingsProcessed: number;
   totalTalkTimeSeconds: number;
   costPerBooking: number;
   costPerMinute: number;
+  // SOW billing metrics
+  voiceRecordCount: number;
+  textRecordCount: number;
+  voiceCoachingCount: number;
+  emailDeliveryCount: number;
+  smsDeliveryCount: number;
+  telephonyMinutes: number;
 }
 
 export function useBillingData(dateRange: DateRangeType = 'thisMonth', customStart?: Date, customEnd?: Date) {
@@ -70,6 +95,7 @@ export function useBillingData(dateRange: DateRangeType = 'thisMonth', customSta
   const [costs, setCosts] = useState<ApiCost[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
   const [invoices, setInvoices] = useState<BillingInvoice[]>([]);
+  const [sowPricing, setSowPricing] = useState<SOWPricingConfig[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -114,7 +140,7 @@ export function useBillingData(dateRange: DateRangeType = 'thisMonth', customSta
       const startDate = start.toISOString().split('T')[0];
       const endDate = end.toISOString().split('T')[0];
 
-      // Step 1: Get booking IDs within the date range (by booking_date)
+      // Get booking IDs within the date range
       const { data: bookingsData, error: bookingsError } = await supabase
         .from('bookings')
         .select('id')
@@ -125,7 +151,7 @@ export function useBillingData(dateRange: DateRangeType = 'thisMonth', customSta
 
       const bookingIds = bookingsData?.map(b => b.id) || [];
 
-      // Step 2: Fetch costs for those specific bookings
+      // Fetch costs for those specific bookings
       let costsData: any[] = [];
       if (bookingIds.length > 0) {
         const { data, error: costsError } = await supabase
@@ -139,26 +165,24 @@ export function useBillingData(dateRange: DateRangeType = 'thisMonth', customSta
         costsData = data || [];
       }
 
-      // Fetch clients
-      const { data: clientsData, error: clientsError } = await supabase
-        .from('clients')
-        .select('*')
-        .order('name');
+      // Fetch clients, invoices, SOW pricing, and communications in parallel
+      const [clientsRes, invoicesRes, sowRes, commsRes] = await Promise.all([
+        supabase.from('clients').select('*').order('name'),
+        supabase.from('billing_invoices').select('*').order('created_at', { ascending: false }).limit(100),
+        supabase.from('sow_pricing_config').select('*').order('service_category'),
+        supabase.from('contact_communications').select('communication_type')
+          .gte('sent_at', start.toISOString())
+          .lte('sent_at', end.toISOString()),
+      ]);
 
-      if (clientsError) throw clientsError;
-
-      // Fetch invoices
-      const { data: invoicesData, error: invoicesError } = await supabase
-        .from('billing_invoices')
-        .select('*')
-        .order('created_at', { ascending: false })
-        .limit(100);
-
-      if (invoicesError) throw invoicesError;
+      if (clientsRes.error) throw clientsRes.error;
+      if (invoicesRes.error) throw invoicesRes.error;
+      if (sowRes.error) throw sowRes.error;
 
       setCosts((costsData || []) as ApiCost[]);
-      setClients((clientsData || []) as Client[]);
-      setInvoices((invoicesData || []) as BillingInvoice[]);
+      setClients((clientsRes.data || []) as Client[]);
+      setInvoices((invoicesRes.data || []) as BillingInvoice[]);
+      setSowPricing((sowRes.data || []) as SOWPricingConfig[]);
     } catch (err) {
       console.error('Error fetching billing data:', err);
       setError(err instanceof Error ? err.message : 'Failed to fetch billing data');
@@ -171,7 +195,18 @@ export function useBillingData(dateRange: DateRangeType = 'thisMonth', customSta
     fetchData();
   }, [fetchData]);
 
-  // Calculate per-unit metrics
+  // Classify records for SOW billing
+  const voiceRecordIds = new Set(
+    costs.filter(c => c.service_type === 'stt_transcription' && c.booking_id).map(c => c.booking_id)
+  );
+  const voiceCoachingIds = new Set(
+    costs.filter(c => ['tts_coaching', 'tts_qa_coaching'].includes(c.service_type) && c.booking_id).map(c => c.booking_id)
+  );
+  // Text records = bookings processed that DON'T have STT
+  const allProcessedBookingIds = new Set(costs.filter(c => c.booking_id).map(c => c.booking_id));
+  const textRecordCount = [...allProcessedBookingIds].filter(id => !voiceRecordIds.has(id)).length;
+
+  // Per-unit metrics
   const uniqueBookingIds = new Set(costs.filter(c => c.booking_id).map(c => c.booking_id));
   const uniqueBookingsProcessed = uniqueBookingIds.size;
   const totalTalkTimeSeconds = costs.reduce((sum, c) => sum + (c.audio_duration_seconds || 0), 0);
@@ -179,7 +214,6 @@ export function useBillingData(dateRange: DateRangeType = 'thisMonth', customSta
   const costPerBooking = uniqueBookingsProcessed > 0 ? totalCost / uniqueBookingsProcessed : 0;
   const costPerMinute = totalTalkTimeSeconds > 0 ? totalCost / (totalTalkTimeSeconds / 60) : 0;
 
-  // Calculate summary statistics
   const summary: CostSummary = {
     totalCost,
     byProvider: {},
@@ -191,6 +225,12 @@ export function useBillingData(dateRange: DateRangeType = 'thisMonth', customSta
     totalTalkTimeSeconds,
     costPerBooking,
     costPerMinute,
+    voiceRecordCount: voiceRecordIds.size,
+    textRecordCount,
+    voiceCoachingCount: voiceCoachingIds.size,
+    emailDeliveryCount: 0,
+    smsDeliveryCount: 0,
+    telephonyMinutes: 0,
   };
 
   // Group by provider
@@ -233,7 +273,7 @@ export function useBillingData(dateRange: DateRangeType = 'thisMonth', customSta
   const createClient = async (client: Omit<Client, 'id' | 'created_at' | 'updated_at'>) => {
     const { data, error } = await supabase
       .from('clients')
-      .insert({ ...client, created_by: user?.id })
+      .insert({ ...client, created_by: user?.id } as any)
       .select()
       .single();
     
@@ -245,7 +285,7 @@ export function useBillingData(dateRange: DateRangeType = 'thisMonth', customSta
   const updateClient = async (id: string, updates: Partial<Client>) => {
     const { error } = await supabase
       .from('clients')
-      .update({ ...updates, updated_at: new Date().toISOString() })
+      .update({ ...updates, updated_at: new Date().toISOString() } as any)
       .eq('id', id);
     
     if (error) throw error;
@@ -262,14 +302,36 @@ export function useBillingData(dateRange: DateRangeType = 'thisMonth', customSta
     total_usd: number;
     cost_breakdown: Record<string, any>;
     notes?: string;
+    payment_terms?: string;
+    line_items?: Array<{
+      service_category: string;
+      description: string;
+      quantity: number;
+      unit_rate: number;
+      subtotal: number;
+      is_optional: boolean;
+      sort_order: number;
+    }>;
   }) => {
+    const { line_items, ...invoiceData } = invoice;
+    
     const { data, error } = await supabase
       .from('billing_invoices')
-      .insert({ ...invoice, created_by: user?.id })
+      .insert({ ...invoiceData, created_by: user?.id, payment_terms: invoice.payment_terms || 'Net 30' } as any)
       .select()
       .single();
     
     if (error) throw error;
+
+    // Insert line items if provided
+    if (line_items && line_items.length > 0 && data) {
+      const { error: lineError } = await supabase
+        .from('invoice_line_items')
+        .insert(line_items.map(li => ({ ...li, invoice_id: (data as any).id })));
+      
+      if (lineError) throw lineError;
+    }
+
     await fetchData();
     return data;
   };
@@ -284,10 +346,34 @@ export function useBillingData(dateRange: DateRangeType = 'thisMonth', customSta
     await fetchData();
   };
 
+  // SOW pricing management
+  const updateSOWPricing = async (id: string, updates: Partial<SOWPricingConfig>) => {
+    const { error } = await supabase
+      .from('sow_pricing_config')
+      .update(updates as any)
+      .eq('id', id);
+    
+    if (error) throw error;
+    await fetchData();
+  };
+
+  // Fetch line items for an invoice
+  const fetchInvoiceLineItems = async (invoiceId: string): Promise<InvoiceLineItem[]> => {
+    const { data, error } = await supabase
+      .from('invoice_line_items')
+      .select('*')
+      .eq('invoice_id', invoiceId)
+      .order('sort_order');
+    
+    if (error) throw error;
+    return (data || []) as InvoiceLineItem[];
+  };
+
   return {
     costs,
     clients,
     invoices,
+    sowPricing,
     summary,
     isLoading,
     error,
@@ -297,5 +383,7 @@ export function useBillingData(dateRange: DateRangeType = 'thisMonth', customSta
     updateClient,
     createInvoice,
     updateInvoiceStatus,
+    updateSOWPricing,
+    fetchInvoiceLineItems,
   };
 }

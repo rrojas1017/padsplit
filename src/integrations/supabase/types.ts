@@ -309,9 +309,12 @@ export type Database = {
           cost_breakdown: Json | null
           created_at: string | null
           created_by: string | null
+          due_date: string | null
           id: string
+          invoice_number: string | null
           markup_usd: number
           notes: string | null
+          payment_terms: string | null
           period_end: string
           period_start: string
           raw_cost_usd: number
@@ -323,9 +326,12 @@ export type Database = {
           cost_breakdown?: Json | null
           created_at?: string | null
           created_by?: string | null
+          due_date?: string | null
           id?: string
+          invoice_number?: string | null
           markup_usd?: number
           notes?: string | null
+          payment_terms?: string | null
           period_end: string
           period_start: string
           raw_cost_usd?: number
@@ -337,9 +343,12 @@ export type Database = {
           cost_breakdown?: Json | null
           created_at?: string | null
           created_by?: string | null
+          due_date?: string | null
           id?: string
+          invoice_number?: string | null
           markup_usd?: number
           notes?: string | null
+          payment_terms?: string | null
           period_end?: string
           period_start?: string
           raw_cost_usd?: number
@@ -1033,10 +1042,12 @@ export type Database = {
           contact_email: string | null
           created_at: string | null
           created_by: string | null
+          enabled_services: Json | null
           id: string
           is_active: boolean | null
           markup_percentage: number
           name: string
+          payment_terms_days: number
           updated_at: string | null
         }
         Insert: {
@@ -1044,10 +1055,12 @@ export type Database = {
           contact_email?: string | null
           created_at?: string | null
           created_by?: string | null
+          enabled_services?: Json | null
           id?: string
           is_active?: boolean | null
           markup_percentage?: number
           name: string
+          payment_terms_days?: number
           updated_at?: string | null
         }
         Update: {
@@ -1055,10 +1068,12 @@ export type Database = {
           contact_email?: string | null
           created_at?: string | null
           created_by?: string | null
+          enabled_services?: Json | null
           id?: string
           is_active?: boolean | null
           markup_percentage?: number
           name?: string
+          payment_terms_days?: number
           updated_at?: string | null
         }
         Relationships: []
@@ -1354,6 +1369,53 @@ export type Database = {
             columns: ["booking_id"]
             isOneToOne: false
             referencedRelation: "bookings"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      invoice_line_items: {
+        Row: {
+          created_at: string
+          description: string
+          id: string
+          invoice_id: string
+          is_optional: boolean
+          quantity: number
+          service_category: string
+          sort_order: number
+          subtotal: number
+          unit_rate: number
+        }
+        Insert: {
+          created_at?: string
+          description: string
+          id?: string
+          invoice_id: string
+          is_optional?: boolean
+          quantity?: number
+          service_category: string
+          sort_order?: number
+          subtotal?: number
+          unit_rate?: number
+        }
+        Update: {
+          created_at?: string
+          description?: string
+          id?: string
+          invoice_id?: string
+          is_optional?: boolean
+          quantity?: number
+          service_category?: string
+          sort_order?: number
+          subtotal?: number
+          unit_rate?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "invoice_line_items_invoice_id_fkey"
+            columns: ["invoice_id"]
+            isOneToOne: false
+            referencedRelation: "billing_invoices"
             referencedColumns: ["id"]
           },
         ]
@@ -1945,6 +2007,48 @@ export type Database = {
         }
         Relationships: []
       }
+      sow_pricing_config: {
+        Row: {
+          base_rate: number
+          created_at: string
+          description: string
+          id: string
+          is_active: boolean
+          is_optional: boolean
+          service_category: string
+          unit: string
+          updated_at: string
+          volume_tier_1_rate: number | null
+          volume_tier_1_threshold: number | null
+        }
+        Insert: {
+          base_rate: number
+          created_at?: string
+          description: string
+          id?: string
+          is_active?: boolean
+          is_optional?: boolean
+          service_category: string
+          unit?: string
+          updated_at?: string
+          volume_tier_1_rate?: number | null
+          volume_tier_1_threshold?: number | null
+        }
+        Update: {
+          base_rate?: number
+          created_at?: string
+          description?: string
+          id?: string
+          is_active?: boolean
+          is_optional?: boolean
+          service_category?: string
+          unit?: string
+          updated_at?: string
+          volume_tier_1_rate?: number | null
+          volume_tier_1_threshold?: number | null
+        }
+        Relationships: []
+      }
       stt_provider_settings: {
         Row: {
           api_config: Json | null
@@ -2227,6 +2331,7 @@ export type Database = {
     }
     Functions: {
       can_view_booking: { Args: { booking_agent_id: string }; Returns: boolean }
+      generate_invoice_number: { Args: never; Returns: string }
       get_agent_user_ids_for_site: {
         Args: { _site_id: string }
         Returns: string[]
