@@ -7,9 +7,13 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Plus, Edit2, Building2 } from 'lucide-react';
 import { Client } from '@/hooks/useBillingData';
+import { SOW_CATEGORY_LABELS } from '@/utils/billingCalculations';
 import { toast } from 'sonner';
+
+const ALL_SERVICES = Object.keys(SOW_CATEGORY_LABELS);
 
 interface ClientManagementProps {
   clients: Client[];
@@ -26,8 +30,10 @@ const ClientManagement = ({ clients, onCreate, onUpdate }: ClientManagementProps
     name: '',
     contact_email: '',
     billing_period: 'monthly' as 'daily' | 'weekly' | 'monthly',
-    markup_percentage: 25,
+    markup_percentage: 0,
     is_active: true,
+    payment_terms_days: 30,
+    enabled_services: ['voice_processing', 'text_processing'] as string[],
   });
 
   const resetForm = () => {
@@ -35,8 +41,10 @@ const ClientManagement = ({ clients, onCreate, onUpdate }: ClientManagementProps
       name: '',
       contact_email: '',
       billing_period: 'monthly',
-      markup_percentage: 25,
+      markup_percentage: 0,
       is_active: true,
+      payment_terms_days: 30,
+      enabled_services: ['voice_processing', 'text_processing'],
     });
     setEditingClient(null);
   };
@@ -49,8 +57,19 @@ const ClientManagement = ({ clients, onCreate, onUpdate }: ClientManagementProps
       billing_period: client.billing_period,
       markup_percentage: client.markup_percentage,
       is_active: client.is_active,
+      payment_terms_days: client.payment_terms_days || 30,
+      enabled_services: (client.enabled_services as string[]) || ['voice_processing', 'text_processing'],
     });
     setIsDialogOpen(true);
+  };
+
+  const toggleService = (service: string) => {
+    setFormData(prev => ({
+      ...prev,
+      enabled_services: prev.enabled_services.includes(service)
+        ? prev.enabled_services.filter(s => s !== service)
+        : [...prev.enabled_services, service],
+    }));
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -83,7 +102,7 @@ const ClientManagement = ({ clients, onCreate, onUpdate }: ClientManagementProps
             Client Management
           </CardTitle>
           <CardDescription>
-            Manage billing clients and their markup settings
+            Manage billing clients and their SOW service configuration
           </CardDescription>
         </div>
         <Dialog open={isDialogOpen} onOpenChange={(open) => {
@@ -96,7 +115,7 @@ const ClientManagement = ({ clients, onCreate, onUpdate }: ClientManagementProps
               Add Client
             </Button>
           </DialogTrigger>
-          <DialogContent>
+          <DialogContent className="max-w-lg">
             <DialogHeader>
               <DialogTitle>
                 {editingClient ? 'Edit Client' : 'Add New Client'}
@@ -127,7 +146,7 @@ const ClientManagement = ({ clients, onCreate, onUpdate }: ClientManagementProps
 
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label htmlFor="billing_period">Billing Period</Label>
+                  <Label>Billing Period</Label>
                   <Select
                     value={formData.billing_period}
                     onValueChange={(v) => setFormData({ ...formData, billing_period: v as any })}
@@ -144,16 +163,38 @@ const ClientManagement = ({ clients, onCreate, onUpdate }: ClientManagementProps
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="markup">Markup %</Label>
-                  <Input
-                    id="markup"
-                    type="number"
-                    min="0"
-                    max="100"
-                    step="0.5"
-                    value={formData.markup_percentage}
-                    onChange={(e) => setFormData({ ...formData, markup_percentage: parseFloat(e.target.value) })}
-                  />
+                  <Label>Payment Terms</Label>
+                  <Select
+                    value={String(formData.payment_terms_days)}
+                    onValueChange={(v) => setFormData({ ...formData, payment_terms_days: parseInt(v) })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="15">Net 15</SelectItem>
+                      <SelectItem value="30">Net 30</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              {/* Enabled Services */}
+              <div className="space-y-2">
+                <Label>Enabled Services</Label>
+                <div className="grid grid-cols-1 gap-2 max-h-48 overflow-y-auto border rounded-md p-3">
+                  {ALL_SERVICES.map(service => (
+                    <div key={service} className="flex items-center gap-2">
+                      <Checkbox
+                        id={`service-${service}`}
+                        checked={formData.enabled_services.includes(service)}
+                        onCheckedChange={() => toggleService(service)}
+                      />
+                      <Label htmlFor={`service-${service}`} className="text-sm font-normal cursor-pointer">
+                        {SOW_CATEGORY_LABELS[service]}
+                      </Label>
+                    </div>
+                  ))}
                 </div>
               </div>
 
@@ -176,8 +217,8 @@ const ClientManagement = ({ clients, onCreate, onUpdate }: ClientManagementProps
               <TableRow>
                 <TableHead>Client Name</TableHead>
                 <TableHead>Contact Email</TableHead>
-                <TableHead>Billing Period</TableHead>
-                <TableHead className="text-right">Markup</TableHead>
+                <TableHead>Payment Terms</TableHead>
+                <TableHead>Services</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
               </TableRow>
@@ -187,8 +228,12 @@ const ClientManagement = ({ clients, onCreate, onUpdate }: ClientManagementProps
                 <TableRow key={client.id}>
                   <TableCell className="font-medium">{client.name}</TableCell>
                   <TableCell>{client.contact_email || '—'}</TableCell>
-                  <TableCell className="capitalize">{client.billing_period}</TableCell>
-                  <TableCell className="text-right">{client.markup_percentage}%</TableCell>
+                  <TableCell>Net {client.payment_terms_days || 30}</TableCell>
+                  <TableCell>
+                    <span className="text-sm text-muted-foreground">
+                      {((client.enabled_services as string[]) || []).length} active
+                    </span>
+                  </TableCell>
                   <TableCell>
                     <Badge variant={client.is_active ? 'default' : 'secondary'}>
                       {client.is_active ? 'Active' : 'Inactive'}

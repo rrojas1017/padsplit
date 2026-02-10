@@ -1,65 +1,69 @@
 import React from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { DollarSign, Clock, FileCheck, Timer } from 'lucide-react';
+import { DollarSign, TrendingUp, FileCheck, Mic } from 'lucide-react';
 import { formatCurrency } from '@/utils/billingCalculations';
 import { CostSummary, ApiCost } from '@/hooks/useBillingData';
+import { SOWPricingConfig, getApplicableRate } from '@/utils/billingCalculations';
 import { DateFilterValue } from '@/components/dashboard/DateRangeFilter';
 
 interface CostOverviewCardsProps {
   summary: CostSummary;
   costs: ApiCost[];
   dateRange: DateFilterValue;
+  sowPricing: SOWPricingConfig[];
 }
 
-const formatDuration = (seconds: number): string => {
-  if (seconds < 60) return `${seconds}s`;
-  const minutes = Math.floor(seconds / 60);
-  const remainingSeconds = seconds % 60;
-  if (minutes < 60) return `${minutes}m ${remainingSeconds}s`;
-  const hours = Math.floor(minutes / 60);
-  const remainingMinutes = minutes % 60;
-  return `${hours}h ${remainingMinutes}m`;
-};
+const CostOverviewCards = ({ summary, costs, dateRange, sowPricing }: CostOverviewCardsProps) => {
+  // Calculate billable revenue from SOW pricing
+  const totalVolume = summary.voiceRecordCount + summary.textRecordCount;
+  
+  const getRate = (category: string) => {
+    const config = sowPricing.find(p => p.service_category === category);
+    if (!config) return 0;
+    return getApplicableRate(config, totalVolume);
+  };
 
-const CostOverviewCards = ({ summary, costs, dateRange }: CostOverviewCardsProps) => {
+  const billableRevenue = 
+    summary.voiceRecordCount * getRate('voice_processing') +
+    summary.textRecordCount * getRate('text_processing') +
+    summary.voiceCoachingCount * getRate('voice_coaching') +
+    summary.emailDeliveryCount * getRate('email_delivery') +
+    summary.smsDeliveryCount * getRate('sms_delivery') +
+    summary.telephonyMinutes * getRate('telephony');
+
+  const margin = billableRevenue - summary.totalCost;
+  const marginPercent = billableRevenue > 0 ? (margin / billableRevenue) * 100 : 0;
+
   const cards = [
     {
-      title: 'Total Raw Cost',
-      value: formatCurrency(summary.totalCost),
-      subtitle: `${costs.length} API calls`,
+      title: 'Billable Revenue',
+      value: formatCurrency(billableRevenue),
+      subtitle: `${summary.voiceRecordCount + summary.textRecordCount} records processed`,
       icon: DollarSign,
       color: 'text-primary',
       bgColor: 'bg-primary/10',
     },
     {
-      title: 'Bookings Processed',
-      value: summary.uniqueBookingsProcessed.toString(),
-      subtitle: summary.uniqueBookingsProcessed > 0 
-        ? `${formatCurrency(summary.costPerBooking)}/booking`
-        : 'No bookings yet',
+      title: 'Internal Cost',
+      value: formatCurrency(summary.totalCost),
+      subtitle: `${costs.length} API calls`,
       icon: FileCheck,
-      color: 'text-emerald-500',
-      bgColor: 'bg-emerald-500/10',
-    },
-    {
-      title: 'Talk Time Processed',
-      value: formatDuration(summary.totalTalkTimeSeconds),
-      subtitle: summary.totalTalkTimeSeconds > 0 
-        ? `${formatCurrency(summary.costPerMinute)}/min`
-        : 'No audio processed',
-      icon: Timer,
       color: 'text-amber-500',
       bgColor: 'bg-amber-500/10',
     },
     {
-      title: 'Cost Per Booking',
-      value: summary.uniqueBookingsProcessed > 0 
-        ? formatCurrency(summary.costPerBooking) 
-        : '—',
-      subtitle: summary.uniqueBookingsProcessed > 0 
-        ? 'Avg across all services'
-        : 'Process bookings to see',
-      icon: Clock,
+      title: 'Margin',
+      value: formatCurrency(margin),
+      subtitle: `${marginPercent.toFixed(1)}% margin`,
+      icon: TrendingUp,
+      color: margin >= 0 ? 'text-emerald-500' : 'text-destructive',
+      bgColor: margin >= 0 ? 'bg-emerald-500/10' : 'bg-destructive/10',
+    },
+    {
+      title: 'Records Breakdown',
+      value: `${summary.voiceRecordCount + summary.textRecordCount}`,
+      subtitle: `${summary.voiceRecordCount} voice · ${summary.textRecordCount} text`,
+      icon: Mic,
       color: 'text-purple-500',
       bgColor: 'bg-purple-500/10',
     },
