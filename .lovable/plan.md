@@ -1,133 +1,137 @@
 
-# Plan: Reset Stuck Processing Record and Retry Failed Transcriptions
 
-## Current Status Assessment
+# SOW-Based Billing & Invoicing System
 
-### Stuck Processing Record
-- **Booking ID**: `175e06db-cf21-4e4e-8453-552e5a851db5`
-- **Member**: Jose Ortiz
-- **Date**: 2026-01-28
-- **Status**: `processing` (stuck)
-- **Kixie Link**: Valid
-- **Error Message**: None (indicates it's silently stuck in the processing state)
-
-### Failed Transcriptions
-- **Count**: 30 records with `transcription_status = 'failed'`
-- **Error Patterns**:
-  - **18 records**: "Access denied to audio file (403). The recording link may have expired"
-  - **5 records**: "Unexpected end of JSON input"
-  - **4 records**: "AI summary error: 402" (payment/quota issues)
-  - **2 records**: "Processing timeout - the audio file may be too large"
-  - **1 record**: "AI summary error: 500"
+## Overview
+Rebuild the billing and invoicing UI to align with the Appendify x PadSplit Statement of Work (SOW). The current system uses raw API costs with markup percentages. The new system needs to bill based on **fixed per-record/per-unit SOW pricing** across multiple service categories, with volume discount tiers, optional add-on services, and professional invoice generation.
 
 ---
 
-## Recovery Strategy
+## What Changes
 
-### Phase 1: Reset Stuck Record
-The stuck record is likely hung in the database with `transcription_status = 'processing'` but no active job. We'll:
+### 1. New Database Table: `sow_pricing_config`
+Stores the SOW pricing tiers so rates can be adjusted without code changes.
 
-1. **Reset status to `pending`**: Clear the stuck state
-2. **Clear error message**: Prepare for fresh attempt
-3. **Trigger retry**: Send to `batch-retry-transcriptions` edge function to re-process
+| Column | Purpose |
+|--------|---------|
+| `service_category` | voice_processing, text_processing, data_appending, email_delivery, sms_delivery, chat_delivery, telephony, voice_coaching |
+| `base_rate` | e.g., $0.15, $0.04, $0.55 |
+| `volume_tier_1_threshold` | Records/month threshold for discount |
+| `volume_tier_1_rate` | Discounted rate (e.g., $0.12, $0.025) |
+| `unit` | per_record, per_segment, per_email, per_minute, per_interaction |
+| `is_optional` | Whether this is an add-on service |
 
-**SQL Operation**:
-```sql
-UPDATE bookings 
-SET transcription_status = 'pending', transcription_error_message = null
-WHERE id = '175e06db-cf21-4e4e-8453-552e5a851db5';
-```
+### 2. New Database Table: `invoice_line_items`
+Each invoice gets itemized line items instead of a single lump cost.
 
-### Phase 2: Retry Failed Transcriptions
-The 30 failed records fall into two categories:
+| Column | Purpose |
+|--------|---------|
+| `invoice_id` | FK to billing_invoices |
+| `service_category` | Maps to SOW section (voice_processing, text_processing, etc.) |
+| `description` | Human-readable label |
+| `quantity` | Number of records/messages/minutes |
+| `unit_rate` | Price per unit applied |
+| `subtotal` | quantity x unit_rate |
+| `is_optional` | Flag for optional services |
 
-#### A. Expired Links (18 records - likely unrecoverable)
-- Error: "Access denied to audio file (403)"
-- **Action**: Mark these as `permanent_failure` or review with PadSplit to confirm links are indeed expired
-- **Note**: These cannot be retried without fresh Kixie links
+### 3. Update `billing_invoices` Table
+Add columns:
+- `invoice_number` (auto-incrementing display number like `INV-2026-001`)
+- `payment_terms` (Net 15 / Net 30)
+- `due_date` (calculated from created_at + payment_terms)
 
-#### B. Transient Failures (12 records - retryable)
-- **4 records**: "AI summary error: 402" (quota/billing - likely temporary)
-- **5 records**: "Unexpected end of JSON input" (parsing errors - may succeed on retry)
-- **2 records**: "Processing timeout" (temporary service overload)
-- **1 record**: "AI summary error: 500" (server error - likely temporary)
-
-**Action**: Use `batch-retry-transcriptions` edge function to retry these 30 records. The function will:
-- Reset status to `pending`
-- Re-trigger the transcription pipeline
-- Process with 30-second pacing (to avoid rate limits)
-- Skip TTS for batch operations (cost efficiency)
-- Each record takes ~1 min processing + 30s wait = ~31s per record
-- **Total time**: 30 records × 31s ≈ **15 minutes**
-
----
-
-## Implementation Approach
-
-### Step 1: Update Stuck Record (Direct SQL Update)
-Reset the stuck processing record via database migration to clear the lock.
-
-### Step 2: Trigger Batch Retry (Edge Function)
-Call the `batch-retry-transcriptions` edge function with:
-```json
-{
-  "dryRun": false,
-  "limit": 50,
-  "specificBookingIds": null
-}
-```
-
-This will:
-- Scan for all bookings with `transcription_status IN ('failed', 'pending', null)` and valid `kixie_link`
-- Identify the 30 failed + 1 newly reset stuck record
-- Reset each to `pending`
-- Trigger transcription with `skipTts = true` (batch cost optimization)
-- Process in background with 30-second pacing
+### 4. Update `clients` Table
+Remove `markup_percentage` dependency. Add:
+- `payment_terms_days` (15 or 30)
+- `volume_tier` (standard / tier_1) -- or auto-calculated
+- `enabled_services` (jsonb array of opted-in service categories)
 
 ---
 
-## Expected Outcomes
+## UI Components to Build/Rebuild
 
-### Success Criteria
-- ✅ Stuck record (Jose Ortiz) transitions from `processing` → `pending` → `completed`
-- ✅ 30 failed records attempt retry and succeed or surface persistent errors
-- ✅ Pipeline completes in ~15-20 minutes (background task)
+### A. Invoice Generator (Complete Rebuild)
+Replace the current raw-cost-based generator with a SOW-aligned version:
 
-### Result Breakdown
-- **Best case**: All 31 records complete successfully
-- **Realistic**: 
-  - ~8-12 records with expired links remain `failed` (403 errors unrecoverable)
-  - ~19-23 records succeed (transient errors resolved)
-- **Action for expired**: Contact PadSplit to provide fresh Kixie links for failed 403 records
+- **Record Classification**: Auto-count records by source type (voice vs. text) from `api_costs` + `bookings` data for the selected period
+- **Service Line Items**: Auto-populate line items based on the SOW categories:
+  - Voice-Based Records: count x $0.15
+  - Text-Based Records: count x $0.04
+  - Voice Coaching: count x $0.55 (if enabled)
+  - Data Appending: count x $0.30 (if enabled)
+  - Email Delivery: count x $0.01
+  - SMS Delivery: count x $0.05
+  - Chat Delivery: count x $0.02
+  - Telephony: minutes x $0.012
+- **Volume Discount Auto-Apply**: If monthly volume exceeds tier thresholds, automatically apply discounted rates
+- **Invoice Preview**: Professional layout showing all line items, subtotals per category, and grand total
+- **Notes & Payment Terms**: Net 15/30 selector, custom notes field
+
+### B. Invoice PDF Export
+Generate a professional PDF invoice using jsPDF (already installed) with:
+- Appendify branding/logo
+- Invoice number, date, due date
+- Client details
+- Itemized line items table with quantities, unit rates, subtotals
+- Category subtotals (Core Processing, Optional Services, Communication, Telephony)
+- Grand total
+- Payment terms and "No hidden fees" transparency note
+- Footer referencing the SOW
+
+### C. Invoice History (Enhanced)
+- Show invoice number (INV-2026-001)
+- Show due date and overdue status
+- Add PDF download button per invoice
+- Filter by status (draft/sent/paid/overdue)
+- Show itemized breakdown on expand
+
+### D. Client Management (Enhanced)
+- Replace markup % with payment terms (Net 15/30)
+- Add enabled services toggles (which optional services the client has opted into)
+- Show volume tier status
+
+### E. SOW Pricing Configuration Tab
+New admin tab in billing to view/edit the SOW pricing table:
+- Table showing all service categories with current base rates and volume discount rates
+- Edit capability for super_admin to adjust rates
+- "SOW Terms" reference card showing the key commercial terms (no platform fees, no seat fees, usage-based only)
+
+### F. Cost Overview Cards (Updated)
+Replace raw-cost focused cards with SOW-revenue focused cards:
+- **Billable Revenue** (what we charge the client per SOW rates)
+- **Internal Cost** (our actual API costs)
+- **Margin** (revenue minus cost)
+- **Records Processed** (voice + text breakdown)
 
 ---
 
-## Risks & Mitigation
+## Technical Details
 
-| Risk | Impact | Mitigation |
-|------|--------|-----------|
-| Expired Kixie links (403) | Unrecoverable | Mark as permanent failures; request fresh links from PadSplit |
-| Rate limiting on retry | Partial failure | 30-second pacing between requests (already built in) |
-| AI quota exhaustion (402) | Possible | If quota errors persist, wait or upgrade ElevenLabs plan |
-| Stuck record stays pending | Wasted effort | If no progress after 5 min, manual investigation via logs required |
+### Database Migrations
+1. Create `sow_pricing_config` table with RLS (super_admin only)
+2. Create `invoice_line_items` table with RLS (super_admin only)
+3. Add `invoice_number`, `payment_terms`, `due_date` columns to `billing_invoices`
+4. Add `payment_terms_days`, `enabled_services` columns to `clients`
+5. Create a DB function to auto-generate invoice numbers
 
----
+### Record Classification Logic
+To determine voice vs. text records for billing:
+- Voice-Based: Records in `api_costs` with `service_type = 'stt_transcription'` (has audio processing)
+- Text-Based: Records processed without STT (chat/email/SMS analysis only)
+- Voice Coaching: Records with `service_type IN ('tts_coaching', 'tts_qa_coaching')`
+- Communication counts: Query `contact_communications` table filtered by type and period
 
-## Files to Modify
+### Files Modified
+- `src/pages/Billing.tsx` -- Add SOW Pricing tab, restructure tabs
+- `src/hooks/useBillingData.ts` -- Add SOW pricing fetch, line item generation, invoice number support
+- `src/components/billing/InvoiceGenerator.tsx` -- Complete rebuild for SOW line items
+- `src/components/billing/InvoiceHistory.tsx` -- Add PDF download, invoice numbers, due dates
+- `src/components/billing/ClientManagement.tsx` -- Replace markup with payment terms and enabled services
+- `src/components/billing/CostOverviewCards.tsx` -- Revenue vs. cost vs. margin cards
+- `src/utils/billingCalculations.ts` -- Add SOW pricing constants and calculation helpers
 
-### Database
-- Create a migration to reset the stuck record status
-
-### No Code Changes Needed
-- The `batch-retry-transcriptions` edge function is already built and handles all retry logic
-- We'll invoke it via a direct HTTP call post-migration
-
----
-
-## Next Steps After Implementation
-
-1. **Monitor backend logs**: Check `supabase--edge-function-logs` for `batch-retry-transcriptions` progress
-2. **Verify completion**: Query `bookings` for transcription_status changes after 20 minutes
-3. **Generate summary**: Count successful vs. failed retries and categorize failures
-4. **Report to PadSplit**: Provide final count of completed records and list of unrecoverable 403 failures
+### New Files
+- `src/components/billing/SOWPricingConfig.tsx` -- Pricing configuration table
+- `src/components/billing/InvoicePDFGenerator.tsx` -- PDF generation using jsPDF
+- `src/components/billing/InvoiceLineItemsTable.tsx` -- Reusable line items display
 
