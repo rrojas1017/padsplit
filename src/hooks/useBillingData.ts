@@ -358,6 +358,56 @@ export function useBillingData(dateRange: DateRangeType = 'thisMonth', customSta
   };
 
   // Fetch line items for an invoice
+  // Fetch period-specific counts for invoice generator
+  const fetchPeriodCounts = async (startDate: string, endDate: string) => {
+    const { data: periodBookings, error: bErr } = await supabase
+      .from('bookings')
+      .select('id')
+      .gte('booking_date', startDate)
+      .lte('booking_date', endDate);
+
+    if (bErr) throw bErr;
+    const periodBookingIds = (periodBookings || []).map(b => b.id);
+
+    let periodCosts: any[] = [];
+    if (periodBookingIds.length > 0) {
+      const { data, error: cErr } = await supabase
+        .from('api_costs')
+        .select('booking_id, service_type, estimated_cost_usd, audio_duration_seconds')
+        .in('booking_id', periodBookingIds)
+        .limit(5000);
+      if (cErr) throw cErr;
+      periodCosts = data || [];
+    }
+
+    const voiceIds = new Set(periodCosts.filter(c => c.service_type === 'stt_transcription' && c.booking_id).map(c => c.booking_id));
+    const coachingIds = new Set(periodCosts.filter(c => ['tts_coaching', 'tts_qa_coaching'].includes(c.service_type) && c.booking_id).map(c => c.booking_id));
+    const allIds = new Set(periodCosts.filter(c => c.booking_id).map(c => c.booking_id));
+    const textCount = [...allIds].filter(id => !voiceIds.has(id)).length;
+    const telephonyMins = periodCosts.reduce((sum, c) => sum + (c.audio_duration_seconds || 0), 0) / 60;
+    const internalCost = periodCosts.reduce((sum, c) => sum + Number(c.estimated_cost_usd || 0), 0);
+
+    const { data: commsData } = await supabase
+      .from('contact_communications')
+      .select('communication_type')
+      .gte('sent_at', `${startDate}T00:00:00`)
+      .lte('sent_at', `${endDate}T23:59:59`);
+
+    const comms = commsData || [];
+    const emailCount = comms.filter(c => c.communication_type === 'email').length;
+    const smsCount = comms.filter(c => c.communication_type === 'sms').length;
+
+    return {
+      voiceRecordCount: voiceIds.size,
+      textRecordCount: textCount,
+      voiceCoachingCount: coachingIds.size,
+      emailDeliveryCount: emailCount,
+      smsDeliveryCount: smsCount,
+      telephonyMinutes: telephonyMins,
+      totalInternalCost: internalCost,
+    };
+  };
+
   const fetchInvoiceLineItems = async (invoiceId: string): Promise<InvoiceLineItem[]> => {
     const { data, error } = await supabase
       .from('invoice_line_items')
@@ -385,5 +435,6 @@ export function useBillingData(dateRange: DateRangeType = 'thisMonth', customSta
     updateInvoiceStatus,
     updateSOWPricing,
     fetchInvoiceLineItems,
+    fetchPeriodCounts,
   };
 }

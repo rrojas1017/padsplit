@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -9,17 +9,26 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Separator } from '@/components/ui/separator';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
-import { FileText, CalendarIcon } from 'lucide-react';
+import { Skeleton } from '@/components/ui/skeleton';
+import { FileText, CalendarIcon, Loader2 } from 'lucide-react';
 import { format, startOfMonth, endOfMonth } from 'date-fns';
-import { Client, ApiCost } from '@/hooks/useBillingData';
+import { Client } from '@/hooks/useBillingData';
 import { formatCurrency, SOW_CATEGORY_LABELS, SOW_UNIT_LABELS, SOWPricingConfig, SOWLineItem, getApplicableRate } from '@/utils/billingCalculations';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
-import { DateFilterValue } from '@/components/dashboard/DateRangeFilter';
+
+interface PeriodCounts {
+  voiceRecordCount: number;
+  textRecordCount: number;
+  voiceCoachingCount: number;
+  emailDeliveryCount: number;
+  smsDeliveryCount: number;
+  telephonyMinutes: number;
+  totalInternalCost: number;
+}
 
 interface InvoiceGeneratorProps {
   clients: Client[];
-  costs: ApiCost[];
   sowPricing: SOWPricingConfig[];
   onGenerate: (invoice: {
     client_id: string;
@@ -33,51 +42,59 @@ interface InvoiceGeneratorProps {
     payment_terms?: string;
     line_items?: SOWLineItem[];
   }) => Promise<any>;
-  dateRange: DateFilterValue;
-  voiceRecordCount: number;
-  textRecordCount: number;
-  voiceCoachingCount: number;
-  emailDeliveryCount: number;
-  smsDeliveryCount: number;
-  telephonyMinutes: number;
-  totalInternalCost: number;
+  fetchPeriodCounts: (startDate: string, endDate: string) => Promise<PeriodCounts>;
 }
 
 const InvoiceGenerator = ({
   clients,
-  costs,
   sowPricing,
   onGenerate,
-  dateRange,
-  voiceRecordCount,
-  textRecordCount,
-  voiceCoachingCount,
-  emailDeliveryCount,
-  smsDeliveryCount,
-  telephonyMinutes,
-  totalInternalCost,
+  fetchPeriodCounts,
 }: InvoiceGeneratorProps) => {
   const [selectedClientId, setSelectedClientId] = useState<string>('');
   const [periodStart, setPeriodStart] = useState<Date>(startOfMonth(new Date()));
   const [periodEnd, setPeriodEnd] = useState<Date>(endOfMonth(new Date()));
   const [notes, setNotes] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
+  const [isLoadingCounts, setIsLoadingCounts] = useState(false);
+  const [periodData, setPeriodData] = useState<PeriodCounts | null>(null);
 
   const selectedClient = clients.find(c => c.id === selectedClientId);
   const enabledServices = (selectedClient?.enabled_services as string[]) || [];
 
-  // Build line items based on SOW pricing and record counts
+  // Fetch counts whenever period dates change
+  const loadPeriodData = useCallback(async () => {
+    setIsLoadingCounts(true);
+    try {
+      const startStr = format(periodStart, 'yyyy-MM-dd');
+      const endStr = format(periodEnd, 'yyyy-MM-dd');
+      const data = await fetchPeriodCounts(startStr, endStr);
+      setPeriodData(data);
+    } catch (err) {
+      console.error('Failed to fetch period counts:', err);
+      setPeriodData(null);
+    } finally {
+      setIsLoadingCounts(false);
+    }
+  }, [periodStart, periodEnd, fetchPeriodCounts]);
+
+  useEffect(() => {
+    loadPeriodData();
+  }, [loadPeriodData]);
+
+  // Build line items based on SOW pricing and fetched period counts
   const lineItems = useMemo((): SOWLineItem[] => {
+    if (!periodData) return [];
     const items: SOWLineItem[] = [];
-    const totalMonthlyVolume = voiceRecordCount + textRecordCount;
+    const totalMonthlyVolume = periodData.voiceRecordCount + periodData.textRecordCount;
 
     const quantityMap: Record<string, number> = {
-      voice_processing: voiceRecordCount,
-      text_processing: textRecordCount,
-      voice_coaching: voiceCoachingCount,
-      email_delivery: emailDeliveryCount,
-      sms_delivery: smsDeliveryCount,
-      telephony: telephonyMinutes,
+      voice_processing: periodData.voiceRecordCount,
+      text_processing: periodData.textRecordCount,
+      voice_coaching: periodData.voiceCoachingCount,
+      email_delivery: periodData.emailDeliveryCount,
+      sms_delivery: periodData.smsDeliveryCount,
+      telephony: periodData.telephonyMinutes,
       data_appending: 0,
       chat_delivery: 0,
     };
@@ -101,9 +118,10 @@ const InvoiceGenerator = ({
       });
 
     return items;
-  }, [sowPricing, enabledServices, voiceRecordCount, textRecordCount, voiceCoachingCount, emailDeliveryCount, smsDeliveryCount, telephonyMinutes]);
+  }, [sowPricing, enabledServices, periodData]);
 
   const grandTotal = lineItems.reduce((sum, li) => sum + li.subtotal, 0);
+  const totalInternalCost = periodData?.totalInternalCost || 0;
   const margin = grandTotal - totalInternalCost;
 
   const handleGenerate = async () => {
@@ -130,9 +148,9 @@ const InvoiceGenerator = ({
             unitRate: li.unit_rate,
             subtotal: li.subtotal,
           })),
-          voiceRecords: voiceRecordCount,
-          textRecords: textRecordCount,
-          voiceCoaching: voiceCoachingCount,
+          voiceRecords: periodData?.voiceRecordCount || 0,
+          textRecords: periodData?.textRecordCount || 0,
+          voiceCoaching: periodData?.voiceCoachingCount || 0,
           internalCost: totalInternalCost,
         },
         notes: notes || undefined,
@@ -224,9 +242,18 @@ const InvoiceGenerator = ({
 
         {/* Invoice Preview - Line Items */}
         <div className="bg-muted/50 rounded-lg p-4 space-y-3">
-          <h4 className="font-medium">Invoice Preview</h4>
+          <h4 className="font-medium flex items-center gap-2">
+            Invoice Preview
+            {isLoadingCounts && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
+          </h4>
 
-          {lineItems.length > 0 ? (
+          {isLoadingCounts ? (
+            <div className="space-y-2">
+              <Skeleton className="h-8 w-full" />
+              <Skeleton className="h-8 w-full" />
+              <Skeleton className="h-8 w-3/4" />
+            </div>
+          ) : lineItems.length > 0 ? (
             <Table>
               <TableHeader>
                 <TableRow>
@@ -300,7 +327,7 @@ const InvoiceGenerator = ({
 
         <Button
           onClick={handleGenerate}
-          disabled={!selectedClientId || isGenerating || lineItems.length === 0}
+          disabled={!selectedClientId || isGenerating || lineItems.length === 0 || isLoadingCounts}
           className="w-full"
         >
           {isGenerating ? 'Generating...' : 'Generate Invoice'}
