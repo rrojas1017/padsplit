@@ -57,6 +57,7 @@ const Billing = () => {
     updateInvoiceStatus,
     updateSOWPricing,
     fetchInvoiceLineItems,
+    fetchPeriodCounts,
   } = useBillingData(
     getBillingDateRange(), 
     customDates?.from, 
@@ -163,17 +164,9 @@ const Billing = () => {
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               <InvoiceGenerator 
                 clients={clients} 
-                costs={costs}
                 sowPricing={sowPricing}
                 onGenerate={createInvoice}
-                dateRange={dateFilter}
-                voiceRecordCount={summary.voiceRecordCount}
-                textRecordCount={summary.textRecordCount}
-                voiceCoachingCount={summary.voiceCoachingCount}
-                emailDeliveryCount={summary.emailDeliveryCount}
-                smsDeliveryCount={summary.smsDeliveryCount}
-                telephonyMinutes={summary.telephonyMinutes}
-                totalInternalCost={summary.totalCost}
+                fetchPeriodCounts={fetchPeriodCounts}
               />
               <InvoiceHistory 
                 invoices={invoices} 
