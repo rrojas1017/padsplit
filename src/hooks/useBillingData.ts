@@ -362,13 +362,16 @@ export function useBillingData(dateRange: DateRangeType = 'thisMonth', customSta
   const fetchPeriodCounts = async (startDate: string, endDate: string) => {
     const { data: periodBookings, error: bErr } = await supabase
       .from('bookings')
-      .select('id')
+      .select('id, import_batch_id')
       .gte('booking_date', startDate)
       .lte('booking_date', endDate);
 
     if (bErr) throw bErr;
     const periodBookingIds = (periodBookings || []).map(b => b.id);
-
+    // Platform-originated bookings only (no import_batch_id) — used for telephony billing
+    const platformBookingIds = new Set(
+      (periodBookings || []).filter(b => !b.import_batch_id).map(b => b.id)
+    );
     let periodCosts: any[] = [];
     if (periodBookingIds.length > 0) {
       const { data, error: cErr } = await supabase
@@ -384,7 +387,10 @@ export function useBillingData(dateRange: DateRangeType = 'thisMonth', customSta
     const coachingIds = new Set(periodCosts.filter(c => ['tts_coaching', 'tts_qa_coaching'].includes(c.service_type) && c.booking_id).map(c => c.booking_id));
     const allIds = new Set(periodCosts.filter(c => c.booking_id).map(c => c.booking_id));
     const textCount = [...allIds].filter(id => !voiceIds.has(id)).length;
-    const telephonyMins = periodCosts.reduce((sum, c) => sum + (c.audio_duration_seconds || 0), 0) / 60;
+    // Only bill telephony for platform-originated calls (not imported/uploaded)
+    const telephonyMins = periodCosts
+      .filter(c => c.booking_id && platformBookingIds.has(c.booking_id))
+      .reduce((sum, c) => sum + (c.audio_duration_seconds || 0), 0) / 60;
     const internalCost = periodCosts.reduce((sum, c) => sum + Number(c.estimated_cost_usd || 0), 0);
 
     const { data: commsData } = await supabase
