@@ -1,5 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
+import { validatePassword, getPasswordErrorMessage } from '@/utils/passwordValidation';
+import { PasswordStrengthIndicator } from '@/components/PasswordStrengthIndicator';
 import { usePageTracking } from '@/hooks/usePageTracking';
 import { Button } from '@/components/ui/button';
 import { Plus, MoreVertical, Shield, ShieldCheck, User, Crown, Loader2, Link, Pencil, Trash2, ChevronDown, ChevronUp, Mail, MessageSquare, Mic } from 'lucide-react';
@@ -277,11 +279,23 @@ export default function UserManagement() {
     setLinkedAgentId('');
   };
 
+  const newUserPasswordStrength = useMemo(() => validatePassword(newUserPassword), [newUserPassword]);
+  const [hasTypedNewPassword, setHasTypedNewPassword] = useState(false);
+
   const handleCreateUser = async () => {
     if (!newUserName || !newUserEmail || !newUserPassword || !newUserRole) {
       toast({
         title: 'Validation Error',
         description: 'Please fill in all required fields',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    if (!newUserPasswordStrength.isValid) {
+      toast({
+        title: 'Password Too Weak',
+        description: getPasswordErrorMessage(newUserPasswordStrength.requirements),
         variant: 'destructive',
       });
       return;
@@ -335,6 +349,7 @@ export default function UserManagement() {
       setNewUserRole('');
       setNewUserSiteId('');
       setLinkedAgentId('');
+      setHasTypedNewPassword(false);
       setIsDialogOpen(false);
 
       fetchUsers();
@@ -983,8 +998,17 @@ export default function UserManagement() {
                 id="password"
                 type="password"
                 value={newUserPassword}
-                onChange={(e) => setNewUserPassword(e.target.value)}
+                onChange={(e) => {
+                  setNewUserPassword(e.target.value);
+                  if (!hasTypedNewPassword && e.target.value.length > 0) {
+                    setHasTypedNewPassword(true);
+                  }
+                }}
                 placeholder="Enter password"
+              />
+              <PasswordStrengthIndicator 
+                result={newUserPasswordStrength} 
+                show={hasTypedNewPassword} 
               />
             </div>
             <div className="grid gap-2">
