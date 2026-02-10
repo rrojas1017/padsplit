@@ -1,69 +1,34 @@
 
 
-# Rebuild Invoice PDF to Match SOW Template
+# Fix: Negative Margin Due to Missing Enabled Services
 
-## Overview
-Replace the current simple 1-page PDF generator with a professional 5-page invoice matching the uploaded Appendify template exactly. The new PDF includes branded headers, an Invoice Summary paragraph, a numbered Service Charges table, Payment Instructions with ACH/Check details, and a full Appendix A with per-category reconciliation tables and a certification block.
+## Problem
+The invoice shows $47.67 internal cost but only $15.30 billable, resulting in a -$32.37 loss. This happens because PadSplit's `enabled_services` only includes `["voice_processing", "text_processing"]`, so the other SOW categories that were actually performed (Voice Coaching at $0.55/record, Telephony at $0.012/min, etc.) are excluded from the invoice.
 
----
+The $0.15/record voice processing rate alone can't cover the full pipeline cost (~$0.47/record when TTS coaching is involved). The SOW is designed so that Voice Coaching ($0.55/record) covers the expensive TTS audio generation — but it's not being billed because it's not in `enabled_services`.
 
-## Page Structure (matching the .docx)
+## Fix
 
-### Page 1 -- Invoice Header + Service Charges
-- "CONFIDENTIAL" watermark top-right
-- "INVOICE" title with Appendify, LLC branding
-- Left column: Invoice Number, Billing Period, Payment Terms, Email, Phone
-- Right column: Invoice Date, Due Date
-- "BILL TO" section: PadSplit, Inc. with address and contact
-- Invoice Summary paragraph (the SOW transparency statement)
-- **Service Charges table** with numbered rows:
-  1. AI Processing - Voice-Based Records
-  2. AI Processing - Text-Based Records
-  3. Data Appending and Enrichment
-  4. Communication Delivery - SMS
-  5. Communication Delivery - Email
-  6. Telephony Usage
-  7. Voice Feedback, QA, and Sales Coaching
-- Columns: #, Service Description, Billing Basis, Qty, Unit Price, Total
-- Footer: "Appendify, LLC | Invoice | Page X"
+### 1. Update PadSplit's enabled services in the database
+Add all applicable services to the client's `enabled_services` array:
+- `voice_processing` (already enabled)
+- `text_processing` (already enabled)
+- `voice_coaching` -- this is the big one at $0.55/record covering TTS costs
+- `telephony` -- $0.012/min for call minutes
+- `email_delivery` -- $0.01/email
+- `sms_delivery` -- $0.05/segment
 
-### Page 2 -- Totals + Payment Instructions
-- Subtotal, Taxes (if applicable), Total Amount Due
-- Payment Instructions section:
-  - ACH / Wire Transfer details (bank, routing, account, reference)
-  - Check payable info and mailing address
-- Note: "Please include the invoice number on all payments"
+This is a simple database UPDATE on the `clients` table.
 
-### Pages 3-4 -- Appendix A: Billing Reconciliation
-- Per-category reconciliation tables (7 categories), each showing:
-  - Total records received/initiated
-  - Records successfully processed and billed
-  - Records failed or excluded (not billed)
-  - Volume tier / unit rate applied
-  - Subtotal
-- Categories: Voice, Text, Data Appending, SMS, Email, Telephony, Voice Coaching
+### 2. Make Client Management UI easier to configure
+The Client Management component already has service toggle controls. No code changes needed -- just the data fix.
 
-### Page 5 -- Billing Controls and Certification
-- Billing Controls bullet points (only successful records billed, volume discounts auto-applied, etc.)
-- Certification block with signature lines (Name, Date, Title)
-- "End of Document"
+## Expected Result After Fix
+For the same Feb 1-9 period with 102 voice records:
+- Voice Processing: 102 x $0.15 = $15.30
+- Voice Coaching: 102 x $0.55 = $56.10
+- Telephony: (total minutes) x $0.012
+- **New total: ~$71+ vs $47.67 internal cost = positive margin**
 
----
-
-## Technical Details
-
-### Files Modified
-- `src/components/billing/InvoicePDFGenerator.tsx` -- Complete rewrite to produce the 5-page format
-
-### Data Requirements
-The existing `generateInvoicePDF(invoice, client, lineItems)` signature stays the same. All needed data (quantities, rates, subtotals) is already available in the `lineItems` array and `invoice` object. The reconciliation tables will use the same quantities, marking failed/excluded as 0 (since we only bill successfully processed records).
-
-### New Data Needed for Payment Instructions
-The payment instructions (bank name, routing number, account number, mailing address) will be hardcoded as configurable constants at the top of the file, since these are Appendify's own banking details and don't change per invoice. The client billing address fields will use existing `client` data, with placeholders for address fields not yet stored.
-
-### Approach
-- Use jsPDF (already installed) with manual layout
-- Helper functions for: drawing reconciliation tables, page headers/footers, the service charges table
-- Each page gets the "CONFIDENTIAL" mark and "Appendify, LLC | Invoice/Appendix A | Page N" footer
-- Currency formatting uses 2 decimal places for totals, up to 4 for unit rates (e.g., $0.012)
-- Only show line items where quantity > 0 in the service charges table; show all 7 categories in reconciliation with 0s where not applicable
+## Change
+- One database migration to update PadSplit's `enabled_services` to include all active service categories
