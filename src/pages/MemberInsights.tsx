@@ -54,24 +54,19 @@ const MemberInsights = () => {
   const [dateRange, setDateRange] = useState<DateRangeOption>('thisMonth');
   const [dbSlowMode, setDbSlowMode] = useState(false);
 
-  // Get period filter values (include 'manual' for backward compatibility)
-  const getPeriodFilters = useCallback((period: DateRangeOption): string[] => {
-    if (period === 'allTime') {
-      return ['allTime', 'manual']; // Treat old 'manual' entries as 'allTime'
-    }
-    return [period];
-  }, []);
-
   // Memoized fetch function to prevent stale closures
   const fetchInsights = useCallback(async () => {
     try {
-      const periodFilters = getPeriodFilters(dateRange);
+      const { start, end } = getDateRange(dateRange);
+      const startStr = format(start, 'yyyy-MM-dd');
+      const endStr = format(end, 'yyyy-MM-dd');
       
-      const result = await deduplicatedQuery(`member_insights_list_${dateRange}`, async () => {
+      const result = await deduplicatedQuery(`member_insights_list_${dateRange}_${startStr}`, async () => {
         return await supabase
           .from('member_insights')
           .select('id, analysis_period, date_range_start, date_range_end, total_calls_analyzed, created_at, status')
-          .in('analysis_period', periodFilters)
+          .gte('date_range_start', startStr)
+          .lte('date_range_start', endStr)
           .order('created_at', { ascending: false })
           .limit(10);
       });
@@ -120,7 +115,7 @@ const MemberInsights = () => {
     } finally {
       setIsLoading(false);
     }
-  }, [dateRange, getPeriodFilters]);
+  }, [dateRange]);
 
   const fetchInsightsCallback = useCallback(() => {
     setIsLoading(true);
