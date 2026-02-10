@@ -1,40 +1,29 @@
 
-
-# Fix: Only Bill Telephony for Platform-Originated Calls
+# Fix User Creation Form — Add Password Validation Feedback
 
 ## Problem
-Currently, `fetchPeriodCounts` bills telephony minutes for ALL bookings in the period -- including ones that were uploaded or imported from external sources. Telephony should only be charged when the platform's own services (Telnyx/Kixie) originated the call. Uploaded recordings were transcribed by the platform (billable as voice processing), but the actual phone minutes were not provided by the platform.
+The Create User dialog in User Management has no client-side password validation or strength indicator. The backend requires passwords with 8+ characters, uppercase, lowercase, number, and special character — but the form gives no feedback until submission fails. This is almost certainly why Jack Avera couldn't create Anoosha Kumar's account: the password was rejected silently or with a vague error toast.
 
-## How to Identify Platform vs. External Records
-The `bookings` table has an `import_batch_id` column:
-- **NULL** = booking was created through the platform (live call via Kixie webhook or manual entry with platform telephony)
-- **Non-NULL** = booking was imported/uploaded from an external source
+## Root Cause
+- The `PasswordStrengthIndicator` component exists and is used on the Login page, but is NOT included in the User Management create user dialog
+- Client-side validation (line 281) only checks if fields are non-empty — no password strength check
+- Backend errors are shown via toast but may not be clear enough (e.g., "Password must contain at least one special character")
 
-Right now, all 39 bookings in the Feb 1-10 period are imported (`import_batch_id IS NOT NULL`), meaning zero telephony should be billed for that period.
+## Solution
 
-## What Should and Shouldn't Be Billed for Imported Records
+### 1. Add PasswordStrengthIndicator to Create User Dialog
+Wire the existing `PasswordStrengthIndicator` component into the create user form, showing real-time password requirements as the admin types.
 
-| Service | Bill for Imports? | Reason |
-|---|---|---|
-| Voice Processing (AI analysis) | Yes | Platform performed the STT and AI work |
-| Text Processing | Yes | Platform performed the analysis |
-| Voice Coaching (TTS audio) | Yes | Platform generated the coaching audio |
-| Email/SMS Delivery | Yes | Platform sent the communications |
-| **Telephony** | **No** | Platform did not originate or carry the call |
+### 2. Add Client-Side Password Validation Before Submission
+Add a check in `handleCreateUser` that validates password strength BEFORE calling the edge function, showing a clear validation error if requirements aren't met.
 
-## Change
+### 3. Improve Error Display
+Ensure backend validation errors (like "Password must contain at least one special character") are clearly surfaced in the toast description.
 
-### File: `src/hooks/useBillingData.ts`
-In `fetchPeriodCounts`, modify the bookings query to also fetch `import_batch_id`, then only sum telephony minutes for bookings where `import_batch_id IS NULL` (platform-originated calls).
+## Files to Modify
+- `src/pages/UserManagement.tsx` — Import `PasswordStrengthIndicator` and `validatePassword` from existing utils, add the indicator below the password field, add client-side validation in `handleCreateUser`
 
-Specifically:
-1. Change the bookings query from `.select('id')` to `.select('id, import_batch_id')`
-2. Create a set of platform-originated booking IDs: those where `import_batch_id` is null
-3. When calculating `telephonyMins`, only sum `audio_duration_seconds` from `api_costs` rows whose `booking_id` is in the platform-originated set
-4. All other counts (voice, text, coaching, email, SMS) remain unchanged since the platform did perform that work
-
-### Expected Impact
-- Imported/uploaded bookings: telephony = $0 (correct -- we didn't provide the phone service)
-- Platform-originated bookings: telephony billed normally at $0.012/min
-- All other line items unaffected
-
+## What Does NOT Change
+- No backend/edge function changes needed
+- No new components needed (reusing existing ones)
+- No database changes
