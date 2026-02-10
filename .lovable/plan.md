@@ -1,52 +1,69 @@
 
 
-# Fix: Invoice Generator Period Dates Should Drive Data
+# Rebuild Invoice PDF to Match SOW Template
 
-## Problem
-The Invoice Generator has its own "Period Start" and "Period End" date pickers, but they are purely cosmetic. The line items and record counts are driven by the **billing page's global date filter** (top-right dropdown, defaulting to "Today"). If there are no records processed today, nothing shows up regardless of what period you select in the invoice form.
+## Overview
+Replace the current simple 1-page PDF generator with a professional 5-page invoice matching the uploaded Appendify template exactly. The new PDF includes branded headers, an Invoice Summary paragraph, a numbered Service Charges table, Payment Instructions with ACH/Check details, and a full Appendix A with per-category reconciliation tables and a certification block.
 
-## Solution
-Make the Invoice Generator self-sufficient: when you select a period and a client, it fetches record counts for that specific date range and builds line items accordingly.
+---
 
-## Changes
+## Page Structure (matching the .docx)
 
-### 1. Add a dedicated data-fetch function in `useBillingData.ts`
-Create a new function `fetchPeriodCounts(startDate, endDate)` that:
-- Queries `bookings` within the date range to get booking IDs
-- Queries `api_costs` for those bookings to classify voice vs. text vs. coaching records
-- Queries `contact_communications` for email/SMS counts in that period
-- Returns `{ voiceRecordCount, textRecordCount, voiceCoachingCount, emailDeliveryCount, smsDeliveryCount, telephonyMinutes, totalInternalCost }`
+### Page 1 -- Invoice Header + Service Charges
+- "CONFIDENTIAL" watermark top-right
+- "INVOICE" title with Appendify, LLC branding
+- Left column: Invoice Number, Billing Period, Payment Terms, Email, Phone
+- Right column: Invoice Date, Due Date
+- "BILL TO" section: PadSplit, Inc. with address and contact
+- Invoice Summary paragraph (the SOW transparency statement)
+- **Service Charges table** with numbered rows:
+  1. AI Processing - Voice-Based Records
+  2. AI Processing - Text-Based Records
+  3. Data Appending and Enrichment
+  4. Communication Delivery - SMS
+  5. Communication Delivery - Email
+  6. Telephony Usage
+  7. Voice Feedback, QA, and Sales Coaching
+- Columns: #, Service Description, Billing Basis, Qty, Unit Price, Total
+- Footer: "Appendify, LLC | Invoice | Page X"
 
-### 2. Update `InvoiceGenerator.tsx`
-- Remove the props for `voiceRecordCount`, `textRecordCount`, etc.
-- Instead, accept a `fetchPeriodCounts` prop (or call it internally)
-- When the user changes period dates or selects a client, trigger a fetch for that specific period
-- Show a loading state while fetching
-- Populate line items from the fetched period data (not the global summary)
+### Page 2 -- Totals + Payment Instructions
+- Subtotal, Taxes (if applicable), Total Amount Due
+- Payment Instructions section:
+  - ACH / Wire Transfer details (bank, routing, account, reference)
+  - Check payable info and mailing address
+- Note: "Please include the invoice number on all payments"
 
-### 3. Update `Billing.tsx`
-- Pass `fetchPeriodCounts` from the hook instead of individual count props
-- Remove the static count props from the InvoiceGenerator usage
+### Pages 3-4 -- Appendix A: Billing Reconciliation
+- Per-category reconciliation tables (7 categories), each showing:
+  - Total records received/initiated
+  - Records successfully processed and billed
+  - Records failed or excluded (not billed)
+  - Volume tier / unit rate applied
+  - Subtotal
+- Categories: Voice, Text, Data Appending, SMS, Email, Telephony, Voice Coaching
 
-### 4. Client Enabled Services
-- Update the PadSplit client to include all relevant services (voice_coaching, email_delivery, sms_delivery, etc.) so line items appear when there's matching data
-- Alternatively, show all services with data regardless of enabled_services (with a note if not in the client's SOW)
+### Page 5 -- Billing Controls and Certification
+- Billing Controls bullet points (only successful records billed, volume discounts auto-applied, etc.)
+- Certification block with signature lines (Name, Date, Title)
+- "End of Document"
+
+---
 
 ## Technical Details
 
-### New function in `useBillingData.ts`
-```typescript
-const fetchPeriodCounts = async (start: string, end: string) => {
-  // 1. Get bookings in range
-  // 2. Get api_costs for those bookings
-  // 3. Classify: voice (has stt_transcription), text (no STT), coaching (tts_coaching)
-  // 4. Get communication counts from contact_communications
-  // 5. Return counts + totalInternalCost
-};
-```
-
 ### Files Modified
-- `src/hooks/useBillingData.ts` -- Add `fetchPeriodCounts` function
-- `src/components/billing/InvoiceGenerator.tsx` -- Fetch data on period change instead of using static props
-- `src/pages/Billing.tsx` -- Simplify InvoiceGenerator props
+- `src/components/billing/InvoicePDFGenerator.tsx` -- Complete rewrite to produce the 5-page format
 
+### Data Requirements
+The existing `generateInvoicePDF(invoice, client, lineItems)` signature stays the same. All needed data (quantities, rates, subtotals) is already available in the `lineItems` array and `invoice` object. The reconciliation tables will use the same quantities, marking failed/excluded as 0 (since we only bill successfully processed records).
+
+### New Data Needed for Payment Instructions
+The payment instructions (bank name, routing number, account number, mailing address) will be hardcoded as configurable constants at the top of the file, since these are Appendify's own banking details and don't change per invoice. The client billing address fields will use existing `client` data, with placeholders for address fields not yet stored.
+
+### Approach
+- Use jsPDF (already installed) with manual layout
+- Helper functions for: drawing reconciliation tables, page headers/footers, the service charges table
+- Each page gets the "CONFIDENTIAL" mark and "Appendify, LLC | Invoice/Appendix A | Page N" footer
+- Currency formatting uses 2 decimal places for totals, up to 4 for unit rates (e.g., $0.012)
+- Only show line items where quantity > 0 in the service charges table; show all 7 categories in reconciliation with 0s where not applicable
