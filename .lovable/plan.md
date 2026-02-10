@@ -1,34 +1,40 @@
 
 
-# Fix: Negative Margin Due to Missing Enabled Services
+# Fix: Only Bill Telephony for Platform-Originated Calls
 
 ## Problem
-The invoice shows $47.67 internal cost but only $15.30 billable, resulting in a -$32.37 loss. This happens because PadSplit's `enabled_services` only includes `["voice_processing", "text_processing"]`, so the other SOW categories that were actually performed (Voice Coaching at $0.55/record, Telephony at $0.012/min, etc.) are excluded from the invoice.
+Currently, `fetchPeriodCounts` bills telephony minutes for ALL bookings in the period -- including ones that were uploaded or imported from external sources. Telephony should only be charged when the platform's own services (Telnyx/Kixie) originated the call. Uploaded recordings were transcribed by the platform (billable as voice processing), but the actual phone minutes were not provided by the platform.
 
-The $0.15/record voice processing rate alone can't cover the full pipeline cost (~$0.47/record when TTS coaching is involved). The SOW is designed so that Voice Coaching ($0.55/record) covers the expensive TTS audio generation — but it's not being billed because it's not in `enabled_services`.
+## How to Identify Platform vs. External Records
+The `bookings` table has an `import_batch_id` column:
+- **NULL** = booking was created through the platform (live call via Kixie webhook or manual entry with platform telephony)
+- **Non-NULL** = booking was imported/uploaded from an external source
 
-## Fix
+Right now, all 39 bookings in the Feb 1-10 period are imported (`import_batch_id IS NOT NULL`), meaning zero telephony should be billed for that period.
 
-### 1. Update PadSplit's enabled services in the database
-Add all applicable services to the client's `enabled_services` array:
-- `voice_processing` (already enabled)
-- `text_processing` (already enabled)
-- `voice_coaching` -- this is the big one at $0.55/record covering TTS costs
-- `telephony` -- $0.012/min for call minutes
-- `email_delivery` -- $0.01/email
-- `sms_delivery` -- $0.05/segment
+## What Should and Shouldn't Be Billed for Imported Records
 
-This is a simple database UPDATE on the `clients` table.
-
-### 2. Make Client Management UI easier to configure
-The Client Management component already has service toggle controls. No code changes needed -- just the data fix.
-
-## Expected Result After Fix
-For the same Feb 1-9 period with 102 voice records:
-- Voice Processing: 102 x $0.15 = $15.30
-- Voice Coaching: 102 x $0.55 = $56.10
-- Telephony: (total minutes) x $0.012
-- **New total: ~$71+ vs $47.67 internal cost = positive margin**
+| Service | Bill for Imports? | Reason |
+|---|---|---|
+| Voice Processing (AI analysis) | Yes | Platform performed the STT and AI work |
+| Text Processing | Yes | Platform performed the analysis |
+| Voice Coaching (TTS audio) | Yes | Platform generated the coaching audio |
+| Email/SMS Delivery | Yes | Platform sent the communications |
+| **Telephony** | **No** | Platform did not originate or carry the call |
 
 ## Change
-- One database migration to update PadSplit's `enabled_services` to include all active service categories
+
+### File: `src/hooks/useBillingData.ts`
+In `fetchPeriodCounts`, modify the bookings query to also fetch `import_batch_id`, then only sum telephony minutes for bookings where `import_batch_id IS NULL` (platform-originated calls).
+
+Specifically:
+1. Change the bookings query from `.select('id')` to `.select('id, import_batch_id')`
+2. Create a set of platform-originated booking IDs: those where `import_batch_id` is null
+3. When calculating `telephonyMins`, only sum `audio_duration_seconds` from `api_costs` rows whose `booking_id` is in the platform-originated set
+4. All other counts (voice, text, coaching, email, SMS) remain unchanged since the platform did perform that work
+
+### Expected Impact
+- Imported/uploaded bookings: telephony = $0 (correct -- we didn't provide the phone service)
+- Platform-originated bookings: telephony billed normally at $0.012/min
+- All other line items unaffected
+
