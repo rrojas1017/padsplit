@@ -135,15 +135,17 @@ export function NonBookingAnalysisTab({ dateRange, onDateRangeChange }: NonBooki
     },
   });
 
-  // Fetch previous insights - FILTER BY DATE RANGE
+  // Fetch previous insights - FILTER BY DATE RANGE using actual date overlap
   const { data: previousInsights, refetch: refetchInsights } = useQuery({
     queryKey: ['non-booking-insights-list', dateRange],
     queryFn: async (): Promise<NonBookingInsight[]> => {
+      const params = getDateRangeParams(dateRange);
       const { data, error } = await supabase
         .from('non_booking_insights')
         .select('*')
         .eq('status', 'completed')
-        .eq('analysis_period', dateRange)
+        .gte('date_range_start', params.start)
+        .lte('date_range_start', params.end)
         .order('created_at', { ascending: false })
         .limit(10);
 
