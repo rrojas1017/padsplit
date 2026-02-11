@@ -50,49 +50,71 @@ serve(async (req) => {
     }
 
     const body = await req.json().catch(() => ({}));
-    const batchSize = body.batchSize || 10;
+    const batchSize = body.batchSize || 50;
+    const startDate = body.startDate || null;
+    const endDate = body.endDate || null;
+    const startTime = Date.now();
+    const MAX_DURATION_MS = 45000; // 45 seconds max
 
-    // Find transcriptions that have call_key_points but no lifestyleSignals
-    // We check for records where call_key_points exists and call_transcription exists
-    const { data: candidates, error: fetchError } = await supabase
-      .from('booking_transcriptions')
-      .select('id, booking_id, call_transcription, call_key_points')
-      .not('call_transcription', 'is', null)
-      .not('call_key_points', 'is', null)
-      .limit(batchSize);
+    let totalProcessed = 0;
+    let totalFailed = 0;
 
-    if (fetchError) throw new Error(`Fetch error: ${fetchError.message}`);
+    // Process in a loop until timeout or no more records
+    while (Date.now() - startTime < MAX_DURATION_MS) {
+      // Fetch transcriptions that need lifestyle signal extraction
+      // Join with bookings to get booking_date for date filtering and ordering
+      let query = supabase
+        .from('booking_transcriptions')
+        .select('id, booking_id, call_transcription, call_key_points, bookings!inner(booking_date)')
+        .not('call_transcription', 'is', null)
+        .not('call_key_points', 'is', null)
+        .order('bookings(booking_date)', { ascending: false })
+        .limit(batchSize);
 
-    // Filter to only those without lifestyleSignals already
-    const toProcess = (candidates || []).filter(c => {
-      const kp = c.call_key_points as any;
-      return !kp?.lifestyleSignals || !Array.isArray(kp.lifestyleSignals);
-    });
+      // Apply date filters if provided
+      if (startDate) {
+        query = query.gte('bookings.booking_date', startDate);
+      }
+      if (endDate) {
+        query = query.lte('bookings.booking_date', endDate);
+      }
 
-    if (toProcess.length === 0) {
-      return new Response(JSON.stringify({
-        success: true,
-        message: 'No transcriptions need lifestyle signal extraction',
-        processed: 0,
-        remaining: 0
-      }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-    }
+      const { data: candidates, error: fetchError } = await query;
 
-    console.log(`[Backfill] Processing ${toProcess.length} transcriptions for lifestyle signals`);
+      if (fetchError) {
+        console.error(`[Backfill] Fetch error:`, fetchError.message);
+        // If the join/order fails, try simpler query without ordering
+        break;
+      }
 
-    let processed = 0;
-    let failed = 0;
+      // Filter to only those without lifestyleSignals already
+      const toProcess = (candidates || []).filter(c => {
+        const kp = c.call_key_points as any;
+        return !kp?.lifestyleSignals || !Array.isArray(kp.lifestyleSignals);
+      });
 
-    for (const record of toProcess) {
-      try {
-        const transcription = record.call_transcription as string;
-        if (!transcription || transcription.length < 50) {
-          console.log(`[Backfill] Skipping ${record.booking_id}: transcription too short`);
-          continue;
+      if (toProcess.length === 0) {
+        console.log(`[Backfill] No more records to process in this batch`);
+        break;
+      }
+
+      console.log(`[Backfill] Processing ${toProcess.length} transcriptions (elapsed: ${Date.now() - startTime}ms)`);
+
+      for (const record of toProcess) {
+        // Check timeout before each record
+        if (Date.now() - startTime > MAX_DURATION_MS) {
+          console.log(`[Backfill] Timeout reached, stopping`);
+          break;
         }
 
-        // Use Flash-lite for cost efficiency
-        const prompt = `Analyze this call transcript and extract ONLY lifestyle signals that indicate cross-sell or upsell opportunities.
+        try {
+          const transcription = record.call_transcription as string;
+          if (!transcription || transcription.length < 50) {
+            console.log(`[Backfill] Skipping ${record.booking_id}: transcription too short`);
+            continue;
+          }
+
+          const prompt = `Analyze this call transcript and extract ONLY lifestyle signals that indicate cross-sell or upsell opportunities.
 
 CATEGORIES:
 - healthcare: no insurance, need coverage, ACA/Obamacare, medical needs
@@ -121,78 +143,104 @@ Return ONLY a JSON object (no markdown):
 
 If no lifestyle signals are detected, return: {"lifestyleSignals": []}`;
 
-        const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${lovableApiKey}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            model: 'google/gemini-2.5-flash-lite',
-            messages: [{ role: 'user', content: prompt }],
-          }),
-        });
+          const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${lovableApiKey}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              model: 'google/gemini-2.5-flash-lite',
+              messages: [{ role: 'user', content: prompt }],
+            }),
+          });
 
-        if (!response.ok) {
-          console.error(`[Backfill] AI error for ${record.booking_id}: ${response.status}`);
-          failed++;
-          continue;
+          if (!response.ok) {
+            console.error(`[Backfill] AI error for ${record.booking_id}: ${response.status}`);
+            totalFailed++;
+            continue;
+          }
+
+          const result = await response.json();
+          let content = result.choices?.[0]?.message?.content?.trim() || '';
+          
+          // Clean JSON
+          if (content.startsWith('```json')) content = content.slice(7);
+          if (content.startsWith('```')) content = content.slice(3);
+          if (content.endsWith('```')) content = content.slice(0, -3);
+          content = content.trim();
+
+          const parsed = JSON.parse(content);
+          const signals = parsed.lifestyleSignals || [];
+
+          // Update the existing call_key_points with lifestyleSignals
+          const existingKeyPoints = record.call_key_points as any;
+          const updatedKeyPoints = { ...existingKeyPoints, lifestyleSignals: signals };
+
+          const { error: updateError } = await supabase
+            .from('booking_transcriptions')
+            .update({ 
+              call_key_points: updatedKeyPoints,
+              updated_at: new Date().toISOString()
+            })
+            .eq('id', record.id);
+
+          if (updateError) {
+            console.error(`[Backfill] Update error for ${record.booking_id}:`, updateError);
+            totalFailed++;
+          } else {
+            totalProcessed++;
+            console.log(`[Backfill] Extracted ${signals.length} signals for ${record.booking_id}`);
+          }
+
+          // Rate limiting: 300ms between requests
+          await new Promise(resolve => setTimeout(resolve, 300));
+
+        } catch (err) {
+          console.error(`[Backfill] Error processing ${record.booking_id}:`, err);
+          totalFailed++;
         }
-
-        const result = await response.json();
-        let content = result.choices?.[0]?.message?.content?.trim() || '';
-        
-        // Clean JSON
-        if (content.startsWith('```json')) content = content.slice(7);
-        if (content.startsWith('```')) content = content.slice(3);
-        if (content.endsWith('```')) content = content.slice(0, -3);
-        content = content.trim();
-
-        const parsed = JSON.parse(content);
-        const signals = parsed.lifestyleSignals || [];
-
-        // Update the existing call_key_points with lifestyleSignals
-        const existingKeyPoints = record.call_key_points as any;
-        const updatedKeyPoints = { ...existingKeyPoints, lifestyleSignals: signals };
-
-        const { error: updateError } = await supabase
-          .from('booking_transcriptions')
-          .update({ 
-            call_key_points: updatedKeyPoints,
-            updated_at: new Date().toISOString()
-          })
-          .eq('id', record.id);
-
-        if (updateError) {
-          console.error(`[Backfill] Update error for ${record.booking_id}:`, updateError);
-          failed++;
-        } else {
-          processed++;
-          console.log(`[Backfill] Extracted ${signals.length} signals for ${record.booking_id}`);
-        }
-
-        // Rate limiting: 500ms between requests
-        await new Promise(resolve => setTimeout(resolve, 500));
-
-      } catch (err) {
-        console.error(`[Backfill] Error processing ${record.booking_id}:`, err);
-        failed++;
       }
     }
 
-    // Count remaining
-    const { count: remainingCount } = await supabase
-      .from('booking_transcriptions')
-      .select('id', { count: 'exact', head: true })
-      .not('call_transcription', 'is', null)
-      .not('call_key_points', 'is', null);
+    // Count remaining records that still need processing (no lifestyleSignals)
+    // We fetch a sample and filter since we can't query JSON absence directly
+    let remainingCount = 0;
+    try {
+      let remainQuery = supabase
+        .from('booking_transcriptions')
+        .select('call_key_points', { count: 'exact', head: false })
+        .not('call_transcription', 'is', null)
+        .not('call_key_points', 'is', null)
+        .limit(1000);
+
+      const { data: remainCandidates, count } = await remainQuery;
+      
+      // Count those without lifestyleSignals from the sample
+      const withoutSignals = (remainCandidates || []).filter(c => {
+        const kp = c.call_key_points as any;
+        return !kp?.lifestyleSignals || !Array.isArray(kp.lifestyleSignals);
+      });
+      
+      // If we got fewer than 1000, we have exact count; otherwise estimate
+      if ((count || 0) <= 1000) {
+        remainingCount = withoutSignals.length;
+      } else {
+        // Estimate based on ratio
+        const ratio = withoutSignals.length / (remainCandidates?.length || 1);
+        remainingCount = Math.round(ratio * (count || 0));
+      }
+    } catch (e) {
+      console.error('[Backfill] Error counting remaining:', e);
+    }
 
     return new Response(JSON.stringify({
       success: true,
-      processed,
-      failed,
-      remaining: (remainingCount || 0) - processed,
-      message: `Processed ${processed} transcriptions, ${failed} failed`
+      processed: totalProcessed,
+      failed: totalFailed,
+      remaining: remainingCount,
+      elapsedMs: Date.now() - startTime,
+      message: `Processed ${totalProcessed} transcriptions, ${totalFailed} failed, ~${remainingCount} remaining`
     }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
   } catch (error) {
