@@ -1,68 +1,67 @@
 
-# Fix: Cross-Sell Tab Not Showing Data
 
-## Problem
-The Cross-Sell Opportunities tab shows no data because:
+# Auto-Backfill All Records with Progress Bar
 
-1. **Only 13 out of 5,914 transcriptions** have lifestyle signals extracted -- none from February 2026
-2. The backfill function processes only **10 records per click** -- at that rate it would take 590+ manual clicks
-3. The "remaining" count in the backfill response is inaccurate, showing misleading numbers
-4. No date filtering on the backfill -- it grabs random old records first instead of prioritizing the selected date range
+## Overview
+When clicking "Backfill All", the frontend will automatically loop -- calling the edge function repeatedly until all records are processed -- while displaying a live progress bar.
 
-## Solution
+## Changes
 
-### 1. Fix the backfill function to be practical and date-aware
+### 1. Edge Function (`batch-extract-lifestyle-signals/index.ts`)
+- No date filtering when called in "backfill all" mode (no startDate/endDate passed)
+- Add a `totalEligible` count in the response (total records that have `call_key_points` and `call_transcription` but no `lifestyleSignals`) so the progress bar knows the denominator
+- Keep the existing 45-second loop per invocation
 
-**File: `supabase/functions/batch-extract-lifestyle-signals/index.ts`**
+### 2. Frontend (`CrossSellOpportunitiesTab.tsx`)
+- Add new state: `backfillProgress` with `{ processed: number, total: number, running: boolean }`
+- Add a "Backfill All Records" button (separate from the date-filtered backfill)
+- `runFullBackfill` function:
+  - First call: gets initial `remaining` count as the `total`
+  - Loops: calls the edge function (no date filter), accumulates `processed`, updates progress
+  - Stops when `remaining === 0` or an error occurs
+  - Refreshes data after completion
+- Progress bar UI:
+  - Shown only while backfill is running
+  - Uses the existing `Progress` component from `src/components/ui/progress.tsx`
+  - Shows: progress bar + "X of Y processed (Z%)" text + elapsed time
+  - Styled consistently with the existing card design
 
-- Accept `startDate` and `endDate` parameters so it prioritizes records in the user's selected date range
-- Increase default batch size from 10 to 50 for faster processing
-- Add a self-retriggering loop (process multiple batches in one invocation, up to ~45 seconds)
-- Fix the "remaining" count to only count records that actually lack lifestyle signals
-- Order by `booking_date DESC` so newest records are processed first
+### UI Layout
+```text
++----------------------------------------------------------+
+| [Progress bar =====>                          ]           |
+| 1,240 of 5,800 processed (21%) -- 2m 15s elapsed         |
+| [Cancel]                                                  |
++----------------------------------------------------------+
+```
 
-### 2. Fix the "remaining" count query
+This card appears above the summary stats when the backfill is active, and disappears when complete.
 
-Currently counts ALL records with `call_key_points`, not just those missing `lifestyleSignals`. Replace with a filtered count that checks for records where `lifestyleSignals` is absent from the JSON.
-
-### 3. Update the frontend backfill trigger to pass date range
-
-**File: `src/components/call-insights/CrossSellOpportunitiesTab.tsx`**
-
-- Pass `startDate` and `endDate` from the current date filter to the backfill function
-- Show better progress feedback (e.g., "Processing batch... X processed, Y remaining")
-- Auto-refresh data after backfill completes
+### 3. Cancel Support
+- An `abortRef` ref allows the user to cancel the loop at any time
+- Clicking "Cancel" sets the ref to `true`, the loop exits on next iteration
 
 ## Technical Details
 
-### Edge Function Changes (`batch-extract-lifestyle-signals/index.ts`)
-
+### Frontend auto-retrigger loop
 ```text
-Current flow:
-  Fetch 10 random records -> process -> return
-
-New flow:
-  Accept startDate/endDate params
-  Loop (up to 45 seconds):
-    Fetch 50 records matching date range, ordered by booking_date DESC
-    Filter out those already having lifestyleSignals
-    Process batch with AI
-    Track total processed
-  Return processed count + accurate remaining count
+runFullBackfill():
+  1. Call edge function once with { batchSize: 50 } (no dates) to get initial remaining count
+  2. Set total = processed + remaining
+  3. Loop while remaining > 0 and !abortRef:
+     a. Call edge function with { batchSize: 50 }
+     b. Accumulate totalProcessed += result.processed
+     c. Update progress state
+     d. If result.processed === 0, break (nothing left)
+  4. Show completion toast
+  5. Refresh aggregated data
 ```
 
-Key changes:
-- Add `startDate`/`endDate` body params, join with `bookings` table to filter by `booking_date`
-- Process in a loop until timeout (~45s) or no more records
-- Fix remaining count: query records WITHOUT `lifestyleSignals` in their `call_key_points` JSON
-- Increase batch size to 50
-
-### Frontend Changes (`CrossSellOpportunitiesTab.tsx`)
-
-- Pass the active date range (`startDate`, `endDate`) when invoking the backfill
-- Increase timeout expectation (the function will run longer now)
-- Show a more informative toast with processed/remaining counts
+### Edge function change
+- When no `startDate`/`endDate` provided, skip date filters (already works this way)
+- Add `totalEligible` to response: count of all records with transcription + key_points but missing lifestyleSignals
 
 ## Files Changed
-- `supabase/functions/batch-extract-lifestyle-signals/index.ts` -- date filtering, larger batches, self-looping, accurate remaining count
-- `src/components/call-insights/CrossSellOpportunitiesTab.tsx` -- pass date range to backfill, better feedback
+- `supabase/functions/batch-extract-lifestyle-signals/index.ts` -- add `totalEligible` to response
+- `src/components/call-insights/CrossSellOpportunitiesTab.tsx` -- add progress bar, auto-retrigger loop, cancel button
+
