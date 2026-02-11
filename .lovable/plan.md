@@ -1,55 +1,71 @@
 
 
-# Fix: Sidebar Scroll Position Race Condition
+# Fix: Sidebar Scroll Jump on Admin Item Click
 
 ## Root Cause
-When clicking a sidebar link:
-1. Route changes, React re-renders
-2. The `<nav>` element's scroll resets to 0 during re-render
-3. The `onScroll` handler fires, overwriting `scrollPos.current` with 0
-4. The restoration `useEffect` runs, but reads `scrollPos.current` which is now 0
-5. Result: sidebar stays at top
+
+The current approach restores scroll position in a `useEffect` on `location.pathname`. But when clicking an admin item, **multiple re-renders** occur in sequence:
+
+1. Route changes -- scroll resets to 0, restoration effect queued
+2. Restoration effect fires via `requestAnimationFrame` -- scroll restored correctly
+3. `isInAdminGroup` becomes true -- `setAdminExpanded(true)` triggers **another re-render**
+4. The Collapsible component animates open, content shifts, scroll resets to 0 again
+5. No second restoration runs because `location.pathname` didn't change again
 
 ## Solution
-Add a guard flag that prevents the `onScroll` handler from overwriting the saved position during the brief window after a route change.
+
+Instead of saving scroll position via the `onScroll` event (which is fragile), capture it **on click** right before navigation happens, and restore it more robustly.
 
 ### File: `src/components/layout/AppSidebar.tsx`
 
-1. Add a `isRestoring` ref initialized to `false`
-2. In the route-change `useEffect`, set `isRestoring.current = true` before restoring, then set it back to `false` after restoration completes
-3. In the `onScroll` handler, skip saving when `isRestoring.current` is `true`
+**Change 1**: Add an `onClick` handler to each `NavLink` that snapshots the scroll position immediately before navigation:
 
 ```typescript
-const isRestoring = useRef(false);
+<NavLink
+  to={item.path}
+  onClick={() => {
+    if (navRef.current) {
+      scrollPos.current = navRef.current.scrollTop;
+    }
+  }}
+  ...
+>
+```
 
-// Restore scroll after route change
+**Change 2**: Remove the `onScroll` handler from the `<nav>` element entirely -- it's the source of the race condition where the reset-to-0 overwrites the saved position.
+
+**Change 3**: Make restoration more resilient by using a short `setTimeout` (e.g. 50ms) after `requestAnimationFrame`, which waits for the Collapsible animation and any cascading state updates to settle:
+
+```typescript
 useEffect(() => {
   const nav = navRef.current;
   if (nav) {
     isRestoring.current = true;
     requestAnimationFrame(() => {
       nav.scrollTop = scrollPos.current;
-      // Allow onScroll to save again after restoration settles
-      requestAnimationFrame(() => {
+      // Also restore after Collapsible animation settles
+      setTimeout(() => {
+        if (navRef.current) {
+          navRef.current.scrollTop = scrollPos.current;
+        }
         isRestoring.current = false;
-      });
+      }, 80);
     });
   }
 }, [location.pathname]);
-
-// onScroll handler (guarded)
-onScroll={() => {
-  if (navRef.current && !isRestoring.current) {
-    scrollPos.current = navRef.current.scrollTop;
-  }
-}}
 ```
 
-### Why This Works
-- The `isRestoring` flag blocks the `onScroll` handler from saving the spurious "0" position during re-render
-- Double `requestAnimationFrame` ensures the flag stays active through the full restoration cycle (set scroll + browser reflow)
-- After restoration completes, normal scroll tracking resumes
+## Why This Works
 
-### No Impact
-- Same approach, just adds a 1-line guard -- no changes to drag-and-drop, routing, or any other behavior
+- Scroll position is captured at the exact moment of click, before any re-renders
+- No `onScroll` handler means no risk of the saved position being overwritten by re-render-induced scroll resets
+- The delayed second restoration catches any scroll resets caused by the Collapsible component expanding or `adminExpanded` state changes
+- The `isRestoring` guard remains to prevent any accidental overwrites
+
+## Files Changed
+- `src/components/layout/AppSidebar.tsx` -- modify onClick, remove onScroll, update useEffect restoration logic
+
+## No Impact
+- Drag-and-drop, routing, auth, collapse toggle all unchanged
+- All user roles behave identically
 
