@@ -473,7 +473,29 @@ CRITICAL: You MUST include the "customer_journeys" array - this is the MOST IMPO
       "description": "specific pain point description", 
       "frequency": 25, 
       "examples": ["actual quote from a call", "another actual quote"],
-      "market_breakdown": {"Atlanta, GA": 35, "Dallas, TX": 15}
+      "market_breakdown": {"Atlanta, GA": 35, "Dallas, TX": 15},
+      "sub_categories": [
+        {
+          "name": "Bus Route Access",
+          "frequency": 40,
+          "description": "Members need properties near specific bus routes for their commute",
+          "examples": ["Is it near the 39 bus line?"],
+          "solution": {
+            "action": "Add public transit proximity info to every listing",
+            "owner": "Product",
+            "effort": "medium",
+            "expected_outcome": "Reduce transportation-related objections by ~25%"
+          }
+        }
+      ],
+      "actionable_solutions": [
+        {
+          "action": "Create a transit guide PDF for each market that agents can share",
+          "owner": "Training",
+          "effort": "low",
+          "expected_outcome": "Agents can proactively address transportation concerns"
+        }
+      ]
     }
   ],
   "payment_insights": [
@@ -511,6 +533,13 @@ CUSTOMER JOURNEY REQUIREMENTS (MANDATORY - DO NOT SKIP):
 - Journey stages should flow logically from trigger to outcome (3-5 stages each)
 - Include actual quotes from the call data as examples
 - Market concentration shows which markets have higher percentages of this persona
+
+PAIN POINT SUB-CATEGORY REQUIREMENTS (MANDATORY):
+- For any pain point with frequency >= 20%, you MUST break it into 2-5 specific sub_categories
+- Each sub_category frequency is a percentage OF THE PARENT CATEGORY'S calls (should sum to approximately 100%)
+- Each sub_category MUST include a practical "solution" object with: action (concrete step), owner (Product|Training|Marketing|Operations), effort (low|medium|high), and expected_outcome
+- The top-level "actionable_solutions" array should contain 1-3 cross-cutting solutions for the overall pain point
+- Pain points below 20% frequency do NOT need sub_categories (omit the field or use empty array)
 
 ADDITIONAL REQUIREMENTS:
 - Frequencies should be percentages of total calls analyzed
