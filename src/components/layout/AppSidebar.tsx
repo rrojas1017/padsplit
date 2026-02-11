@@ -93,6 +93,7 @@ export function AppSidebar() {
   const dragCounter = useRef(0);
   const navRef = useRef<HTMLDivElement>(null);
   const scrollPos = useRef(0);
+  const isRestoring = useRef(false);
 
   const isSuperAdmin = user?.role === 'super_admin';
   const isDragEnabled = isSuperAdmin && !collapsed;
@@ -119,8 +120,12 @@ export function AppSidebar() {
   useEffect(() => {
     const nav = navRef.current;
     if (nav) {
+      isRestoring.current = true;
       requestAnimationFrame(() => {
         nav.scrollTop = scrollPos.current;
+        requestAnimationFrame(() => {
+          isRestoring.current = false;
+        });
       });
     }
   }, [location.pathname]);
@@ -247,7 +252,7 @@ export function AppSidebar() {
       {/* Navigation */}
       <nav
         ref={navRef}
-        onScroll={() => { if (navRef.current) scrollPos.current = navRef.current.scrollTop; }}
+        onScroll={() => { if (navRef.current && !isRestoring.current) scrollPos.current = navRef.current.scrollTop; }}
         className="flex-1 p-3 space-y-1 overflow-y-auto"
       >
         {/* Core Items */}
