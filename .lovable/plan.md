@@ -1,134 +1,115 @@
 
 
-# Add Sub-Categories and Actionable Solutions to All Insight Sections
+# Track Super Admin Processing as Internal (Non-Billable) Costs
 
 ## Problem
-Payment Insights, Transportation Insights, and Move-In Barriers currently show flat, single-level data without the granular sub-category breakdowns and actionable solutions that General Pain Points now have.
+All processing costs are logged identically regardless of who triggered them. When a super_admin runs analyses, comparisons, or re-processes calls, those API costs get counted toward PadSplit's invoice -- even though they're internal/administrative actions.
 
 ## Solution
-Apply the same sub-category + solution pattern to all three remaining sections, in both the AI prompt and the frontend UI.
+Add a `triggered_by_user_id` column and an `is_internal` boolean flag to the `api_costs` table. Edge functions will detect when the requesting user is a super_admin and mark those cost entries as internal. All billing queries and invoice generation will filter out `is_internal = true` records, while the internal cost monitoring dashboard will still show them (with a visual distinction).
 
 ## Changes
 
-### 1. Edge Function (`analyze-member-insights/index.ts`) -- Enhanced Prompt Schema
+### 1. Database Migration
+Add two columns to `api_costs`:
+- `triggered_by_user_id UUID` (nullable, references auth.users)
+- `is_internal BOOLEAN DEFAULT false`
 
-Update the three schema sections in the AI prompt:
-
-**Payment Insights** -- add `sub_categories` and `actionable_solutions`:
-```json
-"payment_insights": [
-  {
-    "insight": "Members confused about total move-in costs",
-    "frequency": 15,
-    "impact": "high",
-    "examples": ["quote"],
-    "sub_categories": [
-      {
-        "name": "Deposit vs First Week",
-        "frequency": 45,
-        "description": "Members don't understand deposit is separate from first week payment",
-        "examples": ["quote"],
-        "solution": { "action": "...", "owner": "Product", "effort": "low", "expected_outcome": "..." }
-      }
-    ],
-    "actionable_solutions": [
-      { "action": "...", "owner": "Training", "effort": "low", "expected_outcome": "..." }
-    ]
-  }
-]
+```sql
+ALTER TABLE public.api_costs
+  ADD COLUMN triggered_by_user_id UUID,
+  ADD COLUMN is_internal BOOLEAN NOT NULL DEFAULT false;
 ```
 
-**Transportation Insights** -- add `sub_categories` and `actionable_solutions`:
-```json
-"transportation_insights": [
-  {
-    "insight": "Members need public transit access",
-    "frequency": 12,
-    "markets_affected": ["Atlanta"],
-    "examples": ["quote"],
-    "sub_categories": [
-      {
-        "name": "Bus Route Proximity",
-        "frequency": 50,
-        "description": "...",
-        "examples": ["quote"],
-        "solution": { "action": "...", "owner": "Product", "effort": "medium", "expected_outcome": "..." }
-      }
-    ],
-    "actionable_solutions": [...]
-  }
-]
-```
+### 2. Edge Functions -- Pass User Context and Mark Internal
 
-**Move-In Barriers** -- add `sub_categories` and `actionable_solutions`:
-```json
-"move_in_barriers": [
-  {
-    "barrier": "Financial readiness",
-    "frequency": 10,
-    "impact_score": 8,
-    "resolution": "...",
-    "examples": ["quote"],
-    "sub_categories": [
-      {
-        "name": "Insufficient funds for deposit",
-        "frequency": 40,
-        "description": "...",
-        "examples": ["quote"],
-        "solution": { "action": "...", "owner": "Operations", "effort": "medium", "expected_outcome": "..." }
-      }
-    ],
-    "actionable_solutions": [...]
-  }
-]
-```
+Each edge function that logs costs needs to:
+1. Extract the user ID from the Authorization header (where available)
+2. Check if the user is a super_admin via the `user_roles` table
+3. Pass `is_internal: true` to the cost log when triggered by a super_admin
 
-Add prompt instructions similar to pain points:
-- "For any payment_insight, transportation_insight, or move_in_barrier with frequency >= 15%, break it into 2-5 sub_categories"
-- "Each sub_category MUST include a practical solution with owner, effort, and expected_outcome"
+**Functions to update (10 files):**
+- `transcribe-call/index.ts` -- update `logApiCost` helper to accept `triggered_by_user_id` and `is_internal`
+- `reanalyze-call/index.ts` -- same pattern
+- `generate-coaching-audio/index.ts` -- same pattern
+- `generate-qa-coaching-audio/index.ts` -- same pattern
+- `generate-qa-scores/index.ts` -- same pattern
+- `batch-generate-qa-scores/index.ts` -- same pattern
+- `batch-generate-qa-coaching/index.ts` -- same pattern
+- `analyze-member-insights/index.ts` -- same pattern
+- `analyze-non-booking-insights/index.ts` -- same pattern (uses direct insert, not helper)
+- `compare-llm-providers/index.ts` -- same pattern (uses direct insert)
 
-### 2. Frontend (`PainPointsPanel.tsx`) -- Enhanced UI for All Three Sections
-
-Update the interfaces to include the new optional fields:
+The `logApiCost` helper in each function will be updated to include the new fields:
 
 ```typescript
-interface PaymentInsight {
-  insight: string;
-  frequency: number;
-  impact: string;
-  examples?: string[];
-  sub_categories?: PainPointSubCategory[];       // NEW
-  actionable_solutions?: PainPointSolution[];     // NEW
-}
-
-interface TransportationInsight {
-  insight: string;
-  frequency: number;
-  markets_affected?: string[];
-  examples?: string[];
-  sub_categories?: PainPointSubCategory[];       // NEW
-  actionable_solutions?: PainPointSolution[];     // NEW
-}
-
-interface MoveInBarrier {
-  barrier: string;
-  frequency: number;
-  impact_score: number;
-  resolution?: string;
-  examples?: string[];
-  sub_categories?: PainPointSubCategory[];       // NEW
-  actionable_solutions?: PainPointSolution[];     // NEW
+async function logApiCost(supabase: any, params: {
+  // ...existing fields...
+  triggered_by_user_id?: string;
+  is_internal?: boolean;
+}) {
+  // ...existing cost calculation...
+  await supabase.from('api_costs').insert({
+    // ...existing fields...
+    triggered_by_user_id: params.triggered_by_user_id || null,
+    is_internal: params.is_internal || false,
+  });
 }
 ```
 
-Add `<SubCategoriesSection>` and `<ActionableSolutionsSection>` (already existing components) to each of the three accordion sections, reusing the same drill-down UI pattern from General Pain Points.
+A shared helper pattern will check the user's role at the top of each serve handler:
 
-### Backward Compatibility
-- All new fields are optional, so existing stored analyses render exactly as before
-- Only new analyses (run after this change) will include the enhanced data
-- No database migration needed -- data is stored as JSONB
+```typescript
+// At top of serve handler, after parsing request
+let triggeredByUserId: string | null = null;
+let isInternal = false;
+
+const authHeader = req.headers.get('Authorization');
+if (authHeader) {
+  const token = authHeader.replace('Bearer ', '');
+  const { data: { user } } = await anonClient.auth.getUser(token);
+  if (user) {
+    triggeredByUserId = user.id;
+    const { data: roleData } = await supabase
+      .from('user_roles')
+      .select('role')
+      .eq('user_id', user.id)
+      .single();
+    isInternal = roleData?.role === 'super_admin';
+  }
+}
+```
+
+For functions that are triggered automatically (e.g., via database triggers or webhooks without user auth), `is_internal` will remain `false` and `triggered_by_user_id` will be `null` -- these are legitimate operational costs.
+
+### 3. Frontend -- Billing Queries Exclude Internal Costs
+
+**`src/hooks/useBillingData.ts`:**
+- Add `.eq('is_internal', false)` to all `api_costs` queries used for invoice calculation
+
+**`src/components/billing/InvoiceGenerator.tsx`** (if it queries costs directly):
+- Add the same filter
+
+**`src/hooks/useRealtimeCostMonitor.ts`:**
+- Keep showing internal costs but add a visual badge/indicator
+- Add a toggle to show/hide internal costs in the realtime dashboard
+
+**`src/components/billing/RealtimeCostDashboard.tsx`:**
+- Show internal costs with a distinct "Internal" badge
+- Add summary showing "Billable: $X | Internal: $Y | Total: $Z"
+
+### 4. Cost Overview Cards Update
+
+**`src/components/billing/CostOverviewCards.tsx`:**
+- Ensure totals displayed exclude internal costs by default
+- Show internal cost total separately as an info card
+
+## Backward Compatibility
+- The `is_internal` column defaults to `false`, so all existing records remain billable
+- Functions called without auth headers (webhooks, triggers) default to non-internal
+- No data loss or retroactive changes
 
 ## Files Changed
-- `supabase/functions/analyze-member-insights/index.ts` -- enhance prompt schema for payment_insights, transportation_insights, and move_in_barriers
-- `src/components/member-insights/PainPointsPanel.tsx` -- extend interfaces and add sub-category/solution components to all three sections
-
+- Database migration (1 new migration)
+- 10 edge functions updated
+- 3-4 frontend files updated for billing exclusion and visual indicators
