@@ -2,8 +2,11 @@ import { ReactNode } from 'react';
 import { Sun, Moon, Bell, Search } from 'lucide-react';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useAuth } from '@/contexts/AuthContext';
+import { useAdminNotifications } from '@/hooks/useAdminNotifications';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Badge } from '@/components/ui/badge';
+import { useNavigate } from 'react-router-dom';
 
 interface HeaderProps {
   title: string;
@@ -13,7 +16,12 @@ interface HeaderProps {
 
 export function Header({ title, subtitle, actions }: HeaderProps) {
   const { theme, toggleTheme } = useTheme();
-  const { user } = useAuth();
+  const { user, hasRole } = useAuth();
+  const navigate = useNavigate();
+  const isSuperAdmin = hasRole(['super_admin']);
+
+  const { unreadCount, criticalNotifications } = useAdminNotifications();
+  const hasCritical = isSuperAdmin && criticalNotifications.length > 0;
 
   return (
     <header className="h-16 border-b border-border bg-card/50 backdrop-blur-sm flex items-center justify-between px-6 sticky top-0 z-40">
@@ -36,9 +44,23 @@ export function Header({ title, subtitle, actions }: HeaderProps) {
         </div>
 
         {/* Notifications */}
-        <Button variant="ghost" size="icon" className="relative">
-          <Bell className="w-5 h-5" />
-          <span className="absolute top-1 right-1 w-2 h-2 bg-accent rounded-full" />
+        <Button
+          variant="ghost"
+          size="icon"
+          className={`relative ${hasCritical ? 'text-destructive hover:text-destructive' : ''}`}
+          onClick={() => isSuperAdmin && navigate('/billing')}
+        >
+          <Bell className={`w-5 h-5 ${hasCritical ? 'animate-pulse' : ''}`} />
+          {isSuperAdmin && unreadCount > 0 ? (
+            <Badge
+              variant="destructive"
+              className="absolute -top-1 -right-1 h-5 min-w-5 px-1 text-[10px] flex items-center justify-center"
+            >
+              {unreadCount > 9 ? '9+' : unreadCount}
+            </Badge>
+          ) : (
+            <span className="absolute top-1 right-1 w-2 h-2 bg-accent rounded-full" />
+          )}
         </Button>
 
         {/* Theme toggle */}
