@@ -113,6 +113,9 @@ export function CrossSellOpportunitiesTab({ dateRange, onDateRangeChange }: Cros
   const [activeJob, setActiveJob] = useState<BackfillJob | null>(null);
   const [starting, setStarting] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const lastProcessedRef = useRef<number>(0);
+  const lastProgressTimeRef = useRef<number>(Date.now());
+  const STALL_TIMEOUT_MS = 60_000;
 
   const pollJob = useCallback(async (jobId: string) => {
     try {
@@ -127,18 +130,38 @@ export function CrossSellOpportunitiesTab({ dateRange, onDateRangeChange }: Cros
         return;
       }
 
-      setActiveJob(job as BackfillJob);
+      const typedJob = job as BackfillJob;
+      setActiveJob(typedJob);
 
-      if (job.status === 'completed') {
+      // Stall detection: if total_processed hasn't changed in 60s, mark as failed
+      if (typedJob.status === 'running') {
+        if (typedJob.total_processed > lastProcessedRef.current) {
+          lastProcessedRef.current = typedJob.total_processed;
+          lastProgressTimeRef.current = Date.now();
+        } else if (Date.now() - lastProgressTimeRef.current > STALL_TIMEOUT_MS) {
+          console.warn('[Stall] Backfill stalled, marking as failed');
+          await supabase
+            .from('lifestyle_backfill_jobs')
+            .update({ status: 'failed', completed_at: new Date().toISOString() })
+            .eq('id', jobId);
+          setActiveJob(prev => prev ? { ...prev, status: 'failed' } : null);
+          if (pollRef.current) clearInterval(pollRef.current);
+          pollRef.current = null;
+          toast.error('Backfill stalled — you can restart it.');
+          return;
+        }
+      }
+
+      if (typedJob.status === 'completed') {
         if (pollRef.current) clearInterval(pollRef.current);
         pollRef.current = null;
-        toast.success(`Backfill complete! ${job.total_processed?.toLocaleString()} records processed.`);
+        toast.success(`Backfill complete! ${typedJob.total_processed?.toLocaleString()} records processed.`);
         fetchData();
-      } else if (job.status === 'cancelled') {
+      } else if (typedJob.status === 'cancelled') {
         if (pollRef.current) clearInterval(pollRef.current);
         pollRef.current = null;
-        toast.info(`Backfill cancelled. ${job.total_processed?.toLocaleString()} records processed.`);
-      } else if (job.status === 'failed') {
+        toast.info(`Backfill cancelled. ${typedJob.total_processed?.toLocaleString()} records processed.`);
+      } else if (typedJob.status === 'failed') {
         if (pollRef.current) clearInterval(pollRef.current);
         pollRef.current = null;
         toast.error('Backfill failed.');

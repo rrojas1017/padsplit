@@ -321,16 +321,39 @@ If no lifestyle signals are detected, return: {"lifestyleSignals": []}`;
     // Self-retrigger if more to do and not cancelled
     if (remainingCount > 0 && !wasCancelled && !isComplete) {
       const selfUrl = `${supabaseUrl}/functions/v1/batch-extract-lifestyle-signals`;
-      fetch(selfUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${supabaseServiceKey}`,
-        },
-        body: JSON.stringify({ jobId, batchSize, startDate, endDate }),
-      }).catch(e => console.error('[Backfill] Self-trigger error:', e));
+      const triggerPayload = JSON.stringify({ jobId, batchSize, startDate, endDate });
+      const triggerHeaders = {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${supabaseServiceKey}`,
+      };
 
-      console.log(`[Backfill] Self-retriggered. Processed ${totalProcessed} this batch, ${remainingCount} remaining.`);
+      let triggerOk = false;
+      for (let attempt = 0; attempt < 2; attempt++) {
+        try {
+          const triggerRes = await fetch(selfUrl, {
+            method: 'POST',
+            headers: triggerHeaders,
+            body: triggerPayload,
+          });
+          if (triggerRes.ok) {
+            triggerOk = true;
+            console.log(`[Backfill] Self-retriggered (attempt ${attempt + 1}). Processed ${totalProcessed} this batch, ${remainingCount} remaining.`);
+            break;
+          }
+          console.error(`[Backfill] Self-trigger attempt ${attempt + 1} failed: ${triggerRes.status}`);
+        } catch (e) {
+          console.error(`[Backfill] Self-trigger attempt ${attempt + 1} error:`, e);
+        }
+        if (attempt === 0) await new Promise(r => setTimeout(r, 2000));
+      }
+
+      if (!triggerOk) {
+        console.error('[Backfill] Self-trigger failed after 2 attempts, marking job as failed');
+        await supabase
+          .from('lifestyle_backfill_jobs')
+          .update({ status: 'failed', completed_at: new Date().toISOString() })
+          .eq('id', jobId);
+      }
     } else {
       console.log(`[Backfill] Done. Total processed: ${newProcessed}, remaining: ${remainingCount}`);
     }
