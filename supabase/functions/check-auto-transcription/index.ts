@@ -62,7 +62,7 @@ serve(async (req) => {
       agents: { id: string; site_id: string; sites: { name: string } | null } | null;
     };
 
-    // Check if booking has kixie_link and hasn't been transcribed
+    // Check if booking has kixie_link
     if (!bookingData.kixie_link) {
       console.log(`[check-auto-transcription] No kixie_link for booking ${bookingId}`);
       return new Response(
@@ -71,13 +71,33 @@ serve(async (req) => {
       );
     }
 
-    if (bookingData.transcription_status && bookingData.transcription_status !== 'failed') {
-      console.log(`[check-auto-transcription] Already transcribed or processing: ${bookingData.transcription_status}`);
+    // Atomic claim: only proceed if status is NULL or 'failed'
+    // This prevents duplicate processing when multiple triggers fire
+    const { data: claimResult, error: claimError } = await supabase
+      .from('bookings')
+      .update({ transcription_status: 'queued' })
+      .eq('id', bookingId)
+      .or('transcription_status.is.null,transcription_status.eq.failed')
+      .select('id')
+      .maybeSingle();
+
+    if (claimError) {
+      console.error(`[check-auto-transcription] Claim error:`, claimError);
       return new Response(
-        JSON.stringify({ triggered: false, reason: 'Already transcribed or processing' }),
+        JSON.stringify({ triggered: false, reason: 'Claim error' }),
         { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
+
+    if (!claimResult) {
+      console.log(`[check-auto-transcription] Booking ${bookingId} already claimed by another invocation, skipping`);
+      return new Response(
+        JSON.stringify({ triggered: false, reason: 'Already claimed by another invocation' }),
+        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    console.log(`[check-auto-transcription] Successfully claimed booking ${bookingId} for transcription`);
 
     // Fetch all active rules ordered by priority
     const { data: rules, error: rulesError } = await supabase
