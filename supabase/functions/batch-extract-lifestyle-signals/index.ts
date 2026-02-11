@@ -1,5 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -54,7 +54,7 @@ serve(async (req) => {
     const startDate = body.startDate || null;
     const endDate = body.endDate || null;
     const startTime = Date.now();
-    const MAX_DURATION_MS = 45000; // 45 seconds max
+    const MAX_DURATION_MS = 35000; // 35 seconds max – leave headroom for count query + HTTP overhead before 60s gateway limit
 
     let totalProcessed = 0;
     let totalFailed = 0;
