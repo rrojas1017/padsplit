@@ -12,6 +12,10 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+// === HARD-WIRED COST PROTECTION CONSTANTS ===
+const MAX_COST_PER_RECORD_NO_TTS = 0.07; // USD - absolute ceiling per record (excluding TTS)
+const ROLLING_AVERAGE_WINDOW = 20; // number of recent records to check
+
 // STT Provider types
 type STTProviderName = 'elevenlabs' | 'deepgram';
 
@@ -1905,6 +1909,10 @@ async function processTranscription(bookingId: string, kixieUrl: string, skipTts
 
     console.log(`[Background] All automation triggers dispatched for booking ${bookingId}`);
 
+    // === HARD-WIRED COST PROTECTION ===
+    // Audit cost after all processing completes
+    await auditBookingCost(supabase, bookingId, skipTts);
+
   } catch (error) {
     // Clear timeout on error
     clearTimeout(timeoutId);
@@ -1914,6 +1922,134 @@ async function processTranscription(bookingId: string, kixieUrl: string, skipTts
     // Update status to failed WITH error message for debugging
     await updateBookingError(supabase, bookingId, errorMessage);
     console.log(`[Background] Status updated to failed for booking ${bookingId} with error: ${errorMessage}`);
+  }
+}
+
+// === HARD-WIRED COST AUDIT FUNCTION ===
+async function auditBookingCost(supabase: any, bookingId: string, skipTts: boolean) {
+  try {
+    // Only audit non-TTS cost ceiling when TTS was skipped
+    if (!skipTts) {
+      console.log(`[CostAudit] Skipping audit for ${bookingId} - TTS was included (different cost profile)`);
+      return;
+    }
+
+    // Query all api_costs for this booking
+    const { data: costs, error } = await supabase
+      .from('api_costs')
+      .select('service_type, estimated_cost_usd, service_provider')
+      .eq('booking_id', bookingId);
+
+    if (error) {
+      console.error(`[CostAudit] Failed to query costs for ${bookingId}:`, error);
+      return;
+    }
+
+    if (!costs || costs.length === 0) {
+      console.log(`[CostAudit] No costs recorded for ${bookingId}`);
+      return;
+    }
+
+    // Sum non-TTS costs
+    const nonTtsCosts = costs.filter((c: any) => !c.service_type.startsWith('tts_'));
+    const totalNonTts = nonTtsCosts.reduce((sum: number, c: any) => sum + (c.estimated_cost_usd || 0), 0);
+
+    // Build breakdown by service type
+    const breakdown: Record<string, number> = {};
+    for (const c of nonTtsCosts) {
+      breakdown[c.service_type] = (breakdown[c.service_type] || 0) + (c.estimated_cost_usd || 0);
+    }
+
+    console.log(`[CostAudit] Booking ${bookingId}: $${totalNonTts.toFixed(4)} non-TTS (limit: $${MAX_COST_PER_RECORD_NO_TTS})`);
+
+    // CHECK 1: Single record ceiling breach
+    if (totalNonTts > MAX_COST_PER_RECORD_NO_TTS) {
+      const breakdownStr = Object.entries(breakdown)
+        .map(([k, v]) => `${k}: $${v.toFixed(4)}`)
+        .join(', ');
+
+      console.error(`[CostAudit] CEILING BREACH for ${bookingId}: $${totalNonTts.toFixed(4)} > $${MAX_COST_PER_RECORD_NO_TTS}`);
+
+      await supabase.from('admin_notifications').insert({
+        notification_type: 'cost_ceiling_breach',
+        service: 'billing',
+        title: `Cost Ceiling Breach: Booking ${bookingId.substring(0, 8)}...`,
+        message: `Record processed at $${totalNonTts.toFixed(4)} (limit: $${MAX_COST_PER_RECORD_NO_TTS}). Services: ${breakdownStr}`,
+        severity: 'critical',
+        metadata: {
+          booking_id: bookingId,
+          total_non_tts_cost: totalNonTts,
+          ceiling: MAX_COST_PER_RECORD_NO_TTS,
+          breakdown,
+          all_costs: costs,
+        },
+      });
+    }
+
+    // CHECK 2: Rolling average of last N records today
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+
+    const { data: recentCosts, error: recentError } = await supabase
+      .from('api_costs')
+      .select('booking_id, estimated_cost_usd, service_type')
+      .gte('created_at', todayStart.toISOString())
+      .not('service_type', 'like', 'tts_%')
+      .order('created_at', { ascending: false })
+      .limit(500); // Grab enough to find N unique bookings
+
+    if (recentError || !recentCosts) {
+      console.error(`[CostAudit] Failed to query rolling average:`, recentError);
+      return;
+    }
+
+    // Group by booking_id, take last N unique bookings
+    const bookingTotals = new Map<string, number>();
+    for (const c of recentCosts) {
+      if (!c.booking_id) continue;
+      bookingTotals.set(c.booking_id, (bookingTotals.get(c.booking_id) || 0) + (c.estimated_cost_usd || 0));
+    }
+
+    const recentBookingCosts = Array.from(bookingTotals.values()).slice(0, ROLLING_AVERAGE_WINDOW);
+    if (recentBookingCosts.length < 3) {
+      console.log(`[CostAudit] Not enough records for rolling average (${recentBookingCosts.length})`);
+      return;
+    }
+
+    const rollingAvg = recentBookingCosts.reduce((a, b) => a + b, 0) / recentBookingCosts.length;
+    console.log(`[CostAudit] Rolling avg (${recentBookingCosts.length} records): $${rollingAvg.toFixed(4)}`);
+
+    if (rollingAvg > MAX_COST_PER_RECORD_NO_TTS) {
+      // Check if we already fired this alert today
+      const { data: existingAlert } = await supabase
+        .from('admin_notifications')
+        .select('id')
+        .eq('notification_type', 'cost_rolling_avg_breach')
+        .gte('created_at', todayStart.toISOString())
+        .eq('is_resolved', false)
+        .maybeSingle();
+
+      if (!existingAlert) {
+        await supabase.from('admin_notifications').insert({
+          notification_type: 'cost_rolling_avg_breach',
+          service: 'billing',
+          title: `Rolling Average Cost Alert`,
+          message: `Average cost per record today: $${rollingAvg.toFixed(4)} across ${recentBookingCosts.length} records (limit: $${MAX_COST_PER_RECORD_NO_TTS})`,
+          severity: 'critical',
+          metadata: {
+            rolling_average: rollingAvg,
+            ceiling: MAX_COST_PER_RECORD_NO_TTS,
+            records_checked: recentBookingCosts.length,
+            triggered_by_booking: bookingId,
+          },
+        });
+        console.error(`[CostAudit] ROLLING AVERAGE BREACH: $${rollingAvg.toFixed(4)} > $${MAX_COST_PER_RECORD_NO_TTS}`);
+      } else {
+        console.log(`[CostAudit] Rolling average breach already alerted today`);
+      }
+    }
+  } catch (err) {
+    console.error(`[CostAudit] Unexpected error:`, err);
   }
 }
 
