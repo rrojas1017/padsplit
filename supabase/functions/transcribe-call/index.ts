@@ -289,42 +289,36 @@ async function logApiCost(supabase: any, params: {
   audio_duration_seconds?: number;
   character_count?: number;
   metadata?: Record<string, any>;
+  triggered_by_user_id?: string;
+  is_internal?: boolean;
 }) {
   try {
     let cost = 0;
     
     if (params.service_provider === 'elevenlabs') {
-      // Pro Plan rates (credits-based, ~$99/mo for 500k credits)
-      // STT: ~$0.034 per minute (Pro Plan)
       if (params.audio_duration_seconds) {
         cost = (params.audio_duration_seconds / 60) * STT_PRICING.elevenlabs;
       }
-      // TTS: ~$0.15 per 1000 characters (Pro Plan)
       if (params.character_count) {
         cost = params.character_count * 0.00015;
       }
     } else if (params.service_provider === 'deepgram') {
-      // Deepgram Nova-2: ~$0.0043 per minute
       if (params.audio_duration_seconds) {
         cost = (params.audio_duration_seconds / 60) * STT_PRICING.deepgram;
       }
     } else if (params.service_provider === 'deepseek') {
-      // DeepSeek: $0.14 per 1M input, $0.28 per 1M output
       const inputCost = (params.input_tokens || 0) * DEEPSEEK_PRICING.inputRate;
       const outputCost = (params.output_tokens || 0) * DEEPSEEK_PRICING.outputRate;
       cost = inputCost + outputCost;
     } else if (params.service_provider === 'lovable_ai') {
-      // Model-aware pricing for Lovable AI
       const model = params.metadata?.model || 'google/gemini-2.5-flash';
-      let inputRate = 0.0000003;  // Flash: $0.30 per 1M tokens = $0.0003 per 1K tokens
-      let outputRate = 0.0000025; // Flash: $2.50 per 1M tokens = $0.0025 per 1K tokens
+      let inputRate = 0.0000003;
+      let outputRate = 0.0000025;
       
       if (model.includes('gemini-2.5-pro')) {
-        // Gemini Pro: $1.25 per 1M tokens input, $10.00 per 1M tokens output
         inputRate = 0.00000125;
         outputRate = 0.00001;
       } else if (model.includes('gemini-2.5-flash-lite')) {
-        // Flash-lite: $0.075 per 1M input, $0.30 per 1M output
         inputRate = 0.000000075;
         outputRate = 0.0000003;
       }
@@ -346,7 +340,9 @@ async function logApiCost(supabase: any, params: {
       audio_duration_seconds: params.audio_duration_seconds || null,
       character_count: params.character_count || null,
       estimated_cost_usd: cost,
-      metadata: params.metadata || {}
+      metadata: params.metadata || {},
+      triggered_by_user_id: params.triggered_by_user_id || null,
+      is_internal: params.is_internal || false,
     });
     
     console.log(`[Cost] Logged ${params.service_provider} ${params.service_type}: $${cost.toFixed(6)}`);

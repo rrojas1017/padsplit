@@ -158,6 +158,7 @@ export function useBillingData(dateRange: DateRangeType = 'thisMonth', customSta
           .from('api_costs')
           .select('*')
           .in('booking_id', bookingIds)
+          .eq('is_internal', false)
           .order('created_at', { ascending: false })
           .limit(5000);
 
@@ -378,6 +379,7 @@ export function useBillingData(dateRange: DateRangeType = 'thisMonth', customSta
         .from('api_costs')
         .select('booking_id, service_type, estimated_cost_usd, audio_duration_seconds')
         .in('booking_id', periodBookingIds)
+        .eq('is_internal', false)
         .limit(5000);
       if (cErr) throw cErr;
       periodCosts = data || [];

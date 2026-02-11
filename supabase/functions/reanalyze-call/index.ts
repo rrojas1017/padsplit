@@ -222,6 +222,8 @@ async function logApiCost(supabase: any, params: {
   audio_duration_seconds?: number;
   character_count?: number;
   metadata?: Record<string, any>;
+  triggered_by_user_id?: string;
+  is_internal?: boolean;
 }) {
   try {
     let cost = 0;
@@ -233,34 +235,29 @@ async function logApiCost(supabase: any, params: {
         cost += params.character_count * 0.0003;
       }
     } else if (params.service_provider === 'deepseek') {
-      // DeepSeek: $0.14 per 1M input, $0.28 per 1M output
       const inputCost = (params.input_tokens || 0) * DEEPSEEK_PRICING.inputRate;
       const outputCost = (params.output_tokens || 0) * DEEPSEEK_PRICING.outputRate;
       cost = inputCost + outputCost;
     } else if (params.service_provider === 'lovable_ai') {
-      // Model-aware pricing for Lovable AI
       const model = params.metadata?.model || 'google/gemini-2.5-flash';
-      let inputRate = 0.0000003;  // Flash: $0.30 per 1M tokens
-      let outputRate = 0.0000025; // Flash: $2.50 per 1M tokens
+      let inputRate = 0.0001;
+      let outputRate = 0.0003;
       
       if (model.includes('gemini-2.5-pro')) {
-        // Gemini Pro: $1.25 per 1M input, $10.00 per 1M output
-        inputRate = 0.00000125;
-        outputRate = 0.00001;
-      } else if (model.includes('gemini-2.5-flash-lite')) {
-        // Flash-lite: $0.075 per 1M input, $0.30 per 1M output
-        inputRate = 0.000000075;
-        outputRate = 0.0000003;
+        inputRate = 0.00125;
+        outputRate = 0.005;
       }
       
-      const inputCost = (params.input_tokens || 0) * inputRate;
-      const outputCost = (params.output_tokens || 0) * outputRate;
+      const inputCost = ((params.input_tokens || 0) / 1000) * inputRate;
+      const outputCost = ((params.output_tokens || 0) / 1000) * outputRate;
       cost = inputCost + outputCost;
     }
 
     await supabase.from('api_costs').insert({
       ...params,
-      estimated_cost_usd: cost
+      estimated_cost_usd: cost,
+      triggered_by_user_id: params.triggered_by_user_id || null,
+      is_internal: params.is_internal || false,
     });
     console.log(`[Cost] Logged ${params.service_type}: $${cost.toFixed(4)}`);
   } catch (error) {
@@ -576,7 +573,9 @@ async function callAIWithRetry(
   siteId: string | null,
   maxRetries = 2,
   callDurationSeconds: number | null = null,
-  bookingStatus: string | null = null
+  bookingStatus: string | null = null,
+  triggeredByUserId: string | null = null,
+  isInternal: boolean = false
 ): Promise<{ keyPoints: any; agentFeedback: any; summary: string; llmProvider: LLMProviderName }> {
   let lastError: Error | null = null;
   
@@ -628,7 +627,9 @@ async function callAIWithRetry(
               latency_ms: deepseekResult.latencyMs,
               fallback_reason: llmSelection.fallbackReason,
               prompt_enhanced: !!enhancements
-            }
+            },
+            triggered_by_user_id: triggeredByUserId || undefined,
+            is_internal: isInternal,
           });
         }
       } else {
@@ -673,7 +674,9 @@ async function callAIWithRetry(
               attempt: attempt + 1, 
               call_duration_seconds: callDurationSeconds,
               fallback_reason: llmSelection.fallbackReason
-            }
+            },
+            triggered_by_user_id: triggeredByUserId || undefined,
+            is_internal: isInternal,
           });
         }
       }
@@ -760,6 +763,25 @@ serve(async (req) => {
     const lovableApiKey = Deno.env.get('LOVABLE_API_KEY');
     const supabaseUrl = Deno.env.get('SUPABASE_URL');
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+
+    // Detect if triggered by super_admin
+    let triggeredByUserId: string | null = null;
+    let isInternal = false;
+    const authHeader = req.headers.get('Authorization');
+    if (authHeader) {
+      try {
+        const anonClient = createClient(supabaseUrl!, Deno.env.get('SUPABASE_ANON_KEY')!);
+        const token = authHeader.replace('Bearer ', '');
+        const { data: { user } } = await anonClient.auth.getUser(token);
+        if (user) {
+          triggeredByUserId = user.id;
+          const adminClient = createClient(supabaseUrl!, supabaseServiceKey!);
+          const { data: roleData } = await adminClient.from('user_roles').select('role').eq('user_id', user.id).single();
+          isInternal = roleData?.role === 'super_admin';
+          if (isInternal) console.log('[Internal] Request triggered by super_admin, marking costs as internal');
+        }
+      } catch (e) { console.log('[Internal] Could not determine user role:', e); }
+    }
     
     if (!lovableApiKey) {
       throw new Error('LOVABLE_API_KEY not configured');
@@ -815,7 +837,9 @@ serve(async (req) => {
       siteId,
       2, // maxRetries
       booking.call_duration_seconds, // Pass duration for model selection
-      bookingStatus // Pass status for LLM fallback logic
+      bookingStatus, // Pass status for LLM fallback logic
+      triggeredByUserId,
+      isInternal
     );
 
     // Update booking_transcriptions with new analysis and LLM provider

@@ -34,6 +34,8 @@ async function logApiCost(supabase: any, params: {
   audio_duration_seconds?: number;
   character_count?: number;
   metadata?: Record<string, any>;
+  triggered_by_user_id?: string;
+  is_internal?: boolean;
 }) {
   try {
     let cost = 0;
@@ -52,7 +54,9 @@ async function logApiCost(supabase: any, params: {
 
     await supabase.from('api_costs').insert({
       ...params,
-      estimated_cost_usd: cost
+      estimated_cost_usd: cost,
+      triggered_by_user_id: params.triggered_by_user_id || null,
+      is_internal: params.is_internal || false,
     });
     console.log(`[Cost] Logged ${params.service_type}: $${cost.toFixed(4)}`);
   } catch (error) {
@@ -67,6 +71,25 @@ serve(async (req) => {
 
   try {
     const { bookingId } = await req.json();
+
+    // Detect if triggered by super_admin
+    let triggeredByUserId: string | null = null;
+    let isInternal = false;
+    const authHeader = req.headers.get('Authorization');
+    if (authHeader) {
+      try {
+        const anonClient = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_ANON_KEY')!);
+        const token = authHeader.replace('Bearer ', '');
+        const { data: { user } } = await anonClient.auth.getUser(token);
+        if (user) {
+          triggeredByUserId = user.id;
+          const supabaseAdmin = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
+          const { data: roleData } = await supabaseAdmin.from('user_roles').select('role').eq('user_id', user.id).single();
+          isInternal = roleData?.role === 'super_admin';
+          if (isInternal) console.log('[Internal] Request triggered by super_admin, marking costs as internal');
+        }
+      } catch (e) { console.log('[Internal] Could not determine user role:', e); }
+    }
     
     if (!bookingId) {
       return new Response(
@@ -190,7 +213,9 @@ ${categories.map(cat => `    "${cat.name}": <score 0-${cat.maxPoints}>`).join(',
       site_id: siteId,
       input_tokens: inputTokens,
       output_tokens: outputTokens,
-      metadata: { model: 'google/gemini-2.5-flash' }
+      metadata: { model: 'google/gemini-2.5-flash' },
+      triggered_by_user_id: triggeredByUserId || undefined,
+      is_internal: isInternal,
     });
     
     console.log('AI response:', content);

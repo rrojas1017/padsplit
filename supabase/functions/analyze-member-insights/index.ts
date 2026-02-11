@@ -57,6 +57,8 @@ async function logApiCost(supabase: any, params: {
   audio_duration_seconds?: number;
   character_count?: number;
   metadata?: Record<string, any>;
+  triggered_by_user_id?: string;
+  is_internal?: boolean;
 }) {
   try {
     let cost = 0;
@@ -84,7 +86,9 @@ async function logApiCost(supabase: any, params: {
 
     await supabase.from('api_costs').insert({
       ...params,
-      estimated_cost_usd: cost
+      estimated_cost_usd: cost,
+      triggered_by_user_id: params.triggered_by_user_id || null,
+      is_internal: params.is_internal || false,
     });
     console.log(`[Cost] Logged ${params.service_type}: $${cost.toFixed(4)}`);
   } catch (error) {
@@ -263,7 +267,9 @@ async function processAnalysis(
   insightId: string,
   analysis_period: string,
   date_range_start: string,
-  date_range_end: string
+  date_range_end: string,
+  triggeredByUserId: string | null = null,
+  isInternal: boolean = false
 ) {
   const supabase = createClient(supabaseUrl, supabaseServiceKey);
   const startTime = Date.now();
@@ -694,7 +700,9 @@ CRITICAL: Your response must start with { and end with }. Return ONLY the JSON o
         analysis_period,
         total_calls: totalCalls,
         retry_count: retryCount
-      }
+      },
+      triggered_by_user_id: triggeredByUserId || undefined,
+      is_internal: isInternal,
     });
     
     console.log('[Background] AI response received and parsed successfully');
@@ -846,6 +854,24 @@ Deno.serve(async (req) => {
     // Parse request body
     const { analysis_period = 'manual', date_range_start, date_range_end, created_by } = await req.json();
 
+    // Detect if triggered by super_admin
+    let triggeredByUserId: string | null = null;
+    let isInternal = false;
+    const authHeader = req.headers.get('Authorization');
+    if (authHeader) {
+      try {
+        const anonClient = createClient(supabaseUrl, Deno.env.get('SUPABASE_ANON_KEY')!);
+        const token = authHeader.replace('Bearer ', '');
+        const { data: { user } } = await anonClient.auth.getUser(token);
+        if (user) {
+          triggeredByUserId = user.id;
+          const { data: roleData } = await supabase.from('user_roles').select('role').eq('user_id', user.id).single();
+          isInternal = roleData?.role === 'super_admin';
+          if (isInternal) console.log('[Internal] Request triggered by super_admin, marking costs as internal');
+        }
+      } catch (e) { console.log('[Internal] Could not determine user role:', e); }
+    }
+
     console.log(`Starting ${analysis_period} member insights analysis from ${date_range_start} to ${date_range_end}`);
 
     // Create a pending insight record immediately
@@ -879,7 +905,9 @@ Deno.serve(async (req) => {
         pendingInsight.id,
         analysis_period,
         date_range_start,
-        date_range_end
+        date_range_end,
+        triggeredByUserId,
+        isInternal
       )
     );
 

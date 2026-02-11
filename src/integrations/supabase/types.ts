@@ -241,11 +241,13 @@ export type Database = {
           estimated_cost_usd: number
           id: string
           input_tokens: number | null
+          is_internal: boolean
           metadata: Json | null
           output_tokens: number | null
           service_provider: string
           service_type: string
           site_id: string | null
+          triggered_by_user_id: string | null
         }
         Insert: {
           agent_id?: string | null
@@ -257,11 +259,13 @@ export type Database = {
           estimated_cost_usd?: number
           id?: string
           input_tokens?: number | null
+          is_internal?: boolean
           metadata?: Json | null
           output_tokens?: number | null
           service_provider: string
           service_type: string
           site_id?: string | null
+          triggered_by_user_id?: string | null
         }
         Update: {
           agent_id?: string | null
@@ -273,11 +277,13 @@ export type Database = {
           estimated_cost_usd?: number
           id?: string
           input_tokens?: number | null
+          is_internal?: boolean
           metadata?: Json | null
           output_tokens?: number | null
           service_provider?: string
           service_type?: string
           site_id?: string | null
+          triggered_by_user_id?: string | null
         }
         Relationships: [
           {

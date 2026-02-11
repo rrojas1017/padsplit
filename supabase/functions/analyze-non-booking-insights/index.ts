@@ -137,7 +137,7 @@ async function fetchBookingsInBatches(
   return allBookings;
 }
 
-async function processAnalysis(url: string, key: string, apiKey: string, id: string, period: string, start: string, end: string) {
+async function processAnalysis(url: string, key: string, apiKey: string, id: string, period: string, start: string, end: string, triggeredByUserId: string | null = null, isInternal: boolean = false) {
   const startTime = Date.now();
   const supabase = createClient(url, key);
   
@@ -344,7 +344,9 @@ Return JSON:
       input_tokens: inTok, 
       output_tokens: outTok,
       estimated_cost_usd: (inTok / 1000) * 0.00015 + (outTok / 1000) * 0.0006,
-      metadata: { model: 'google/gemini-2.5-flash', total_calls: total, processing_time_ms: totalElapsed }
+      metadata: { model: 'google/gemini-2.5-flash', total_calls: total, processing_time_ms: totalElapsed },
+      triggered_by_user_id: triggeredByUserId || null,
+      is_internal: isInternal,
     });
 
   } catch (e) {
