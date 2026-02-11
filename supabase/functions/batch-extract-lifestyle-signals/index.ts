@@ -110,7 +110,14 @@ serve(async (req) => {
         try {
           const transcription = record.call_transcription as string;
           if (!transcription || transcription.length < 50) {
-            console.log(`[Backfill] Skipping ${record.booking_id}: transcription too short`);
+            // Mark as processed with empty signals so it's not refetched
+            const existingKP = record.call_key_points as any;
+            await supabase
+              .from('booking_transcriptions')
+              .update({ call_key_points: { ...existingKP, lifestyleSignals: [] } })
+              .eq('id', record.id);
+            totalProcessed++;
+            console.log(`[Backfill] Marked ${record.booking_id} with empty signals (too short)`);
             continue;
           }
 
