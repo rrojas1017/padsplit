@@ -59,7 +59,7 @@ export default function MarketIntelligence() {
   const abortRef = useRef(false);
 
   const { from, to } = getDateRange(dateRange, customDates);
-  const { stateData, cityData, topMarkets, systemAvgConversion, systemAvgBudget, generatedAt, fromCache, isLoading, isRefreshing, refresh } = useMarketIntelligence(from, to, minRecords);
+  const { stateData, cityData, rawTotal, topMarkets, systemAvgConversion, systemAvgBudget, generatedAt, fromCache, isLoading, isRefreshing, refresh } = useMarketIntelligence(from, to, minRecords);
 
   // Fetch unmapped count on mount
   useEffect(() => {
@@ -190,6 +190,11 @@ export default function MarketIntelligence() {
               <p className="text-2xl font-bold text-foreground">
                 {stateData.reduce((s, d) => s + d.total, 0).toLocaleString()}
               </p>
+              {rawTotal !== null && rawTotal > stateData.reduce((s, d) => s + d.total, 0) && (
+                <p className="text-xs text-muted-foreground mt-1">
+                  {rawTotal - stateData.reduce((s, d) => s + d.total, 0)} hidden by min records filter
+                </p>
+              )}
             </div>
             <div className="bg-card rounded-xl p-4 border border-border">
               <p className="text-xs text-muted-foreground font-medium uppercase">Avg Conversion</p>

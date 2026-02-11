@@ -43,6 +43,7 @@ export function useMarketIntelligence(dateFrom?: string, dateTo?: string, minRec
       return response.data as {
         stateData: MarketStateData[];
         cityData: MarketCityData[];
+        rawTotal?: number;
         generatedAt: string;
         fromCache: boolean;
       };
@@ -81,6 +82,7 @@ export function useMarketIntelligence(dateFrom?: string, dateTo?: string, minRec
   return {
     stateData: data?.stateData || [],
     cityData: data?.cityData || [],
+    rawTotal: data?.rawTotal ?? null,
     topMarkets,
     systemAvgConversion,
     systemAvgBudget,

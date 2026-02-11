@@ -5,6 +5,20 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+// Normalize city/state names: trim, title case, strip neighborhood prefixes
+function normalizeName(name: string | null | undefined): string {
+  if (!name) return "Unknown";
+  let n = name.trim();
+  if (!n) return "Unknown";
+  // Strip neighborhood prefix (e.g., "Northline, Houston" → "Houston")
+  if (n.includes(",")) {
+    const parts = n.split(",").map(p => p.trim()).filter(Boolean);
+    n = parts[parts.length - 1]; // take last part (the city)
+  }
+  // Title case
+  return n.toLowerCase().replace(/\b\w/g, c => c.toUpperCase());
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -86,8 +100,8 @@ Deno.serve(async (req) => {
     const cityMap = new Map<string, any>();
 
     for (const b of bookings || []) {
-      const state = b.market_state || "Unknown";
-      const city = b.market_city || "Unknown";
+      const state = normalizeName(b.market_state);
+      const city = normalizeName(b.market_city);
       const cityKey = `${state}|${city}`;
 
       // State aggregation
@@ -244,6 +258,7 @@ Deno.serve(async (req) => {
     return new Response(JSON.stringify({
       stateData,
       cityData,
+      rawTotal: (bookings || []).length,
       generatedAt: new Date().toISOString(),
       fromCache: false,
     }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
