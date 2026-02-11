@@ -1,13 +1,29 @@
 
-# Fix: Budget Data Not Showing in Market Intelligence — RESOLVED
 
-## Root Cause
-The `.in("booking_id", chunk)` query was using chunk size 500, which with 36-char UUIDs exceeded PostgREST's URL length limit, causing the transcription fetch to silently return 0 rows. This meant ALL transcription-derived data (sentiments, buyer intent, budgets, objections) was missing.
+# Fix: Date Filter Mismatch on Market Intelligence
 
-## Fix Applied
-Reduced transcription fetch chunk size from 500 to 100 UUIDs per query in `aggregate-market-data` edge function, keeping the URL well within limits.
+## Problem
+The date filter button shows "Today" on page load, but the actual data query uses "All Time." This is because:
+- `MarketIntelligence.tsx` initializes state as `'all'`
+- `DateRangeFilter` component internally defaults to `'today'`
+- No `defaultValue` prop is passed to sync them
 
-## Verified
-- Atlanta: avgWeeklyBudget $214, buyerIntent 70, sentiments populated
-- Houston: avgWeeklyBudget $210, buyerIntent 70
-- All transcription-derived fields now working correctly
+## Fix
+One-line change in `src/pages/MarketIntelligence.tsx` line 121:
+
+Pass the `defaultValue` prop so the filter UI matches the page's data state:
+
+```
+<DateRangeFilter
+  onRangeChange={handleRangeChange}
+  includeAllTime={true}
+  includeCustom={true}
+  defaultValue="all"         // <-- add this
+/>
+```
+
+This ensures the filter button displays "All Time" on load, matching the actual data being shown.
+
+## Files Changed
+- `src/pages/MarketIntelligence.tsx` -- add `defaultValue="all"` prop (1 line)
+
