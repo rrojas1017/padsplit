@@ -91,6 +91,8 @@ export function AppSidebar() {
   const [draggedPath, setDraggedPath] = useState<string | null>(null);
   const [dropTarget, setDropTarget] = useState<{ group: MenuGroup; index: number } | null>(null);
   const dragCounter = useRef(0);
+  const navRef = useRef<HTMLDivElement>(null);
+  const scrollPos = useRef(0);
 
   const isSuperAdmin = user?.role === 'super_admin';
   const isDragEnabled = isSuperAdmin && !collapsed;
@@ -112,6 +114,16 @@ export function AppSidebar() {
   useEffect(() => {
     localStorage.setItem('sidebar-admin-expanded', JSON.stringify(adminExpanded));
   }, [adminExpanded]);
+
+  // Restore sidebar scroll position after route change
+  useEffect(() => {
+    const nav = navRef.current;
+    if (nav) {
+      requestAnimationFrame(() => {
+        nav.scrollTop = scrollPos.current;
+      });
+    }
+  }, [location.pathname]);
 
   const roleLabel = {
     super_admin: 'Super Admin',
@@ -233,7 +245,11 @@ export function AppSidebar() {
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
+      <nav
+        ref={navRef}
+        onScroll={() => { if (navRef.current) scrollPos.current = navRef.current.scrollTop; }}
+        className="flex-1 p-3 space-y-1 overflow-y-auto"
+      >
         {/* Core Items */}
         {coreItems.map((item, i) => renderNavItem(item, i, 'core'))}
         {renderEndDropZone('core', coreItems.length)}
