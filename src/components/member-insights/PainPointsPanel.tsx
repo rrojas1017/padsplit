@@ -4,8 +4,23 @@ import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { Button } from '@/components/ui/button';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
-import { AlertTriangle, CreditCard, Car, Clock, Home, TrendingUp, TrendingDown, Sparkles, Quote, ChevronDown, ExternalLink } from 'lucide-react';
+import { AlertTriangle, CreditCard, Car, Clock, Home, TrendingUp, TrendingDown, Sparkles, Quote, ChevronDown, ExternalLink, Lightbulb, Users, Target } from 'lucide-react';
 import { useState } from 'react';
+
+interface PainPointSolution {
+  action: string;
+  owner: 'Product' | 'Training' | 'Marketing' | 'Operations';
+  effort: 'low' | 'medium' | 'high';
+  expected_outcome: string;
+}
+
+interface PainPointSubCategory {
+  name: string;
+  frequency: number;
+  description: string;
+  examples?: string[];
+  solution?: PainPointSolution;
+}
 
 interface PainPoint {
   category: string;
@@ -15,6 +30,8 @@ interface PainPoint {
   trend_delta?: number;
   is_emerging?: boolean;
   market_breakdown?: Record<string, number>;
+  sub_categories?: PainPointSubCategory[];
+  actionable_solutions?: PainPointSolution[];
 }
 
 interface PaymentInsight {
@@ -68,6 +85,25 @@ const getFrequencyColor = (frequency: number) => {
   if (frequency >= 30) return 'text-destructive';
   if (frequency >= 20) return 'text-amber-500';
   return 'text-muted-foreground';
+};
+
+const getOwnerColor = (owner: string) => {
+  switch (owner) {
+    case 'Product': return 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400';
+    case 'Training': return 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400';
+    case 'Marketing': return 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400';
+    case 'Operations': return 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400';
+    default: return 'bg-muted text-muted-foreground';
+  }
+};
+
+const getEffortColor = (effort: string) => {
+  switch (effort) {
+    case 'low': return 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400';
+    case 'medium': return 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400';
+    case 'high': return 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400';
+    default: return 'bg-muted text-muted-foreground';
+  }
 };
 
 const TrendBadge = ({ delta, isEmerging }: { delta?: number; isEmerging?: boolean }) => {
@@ -157,6 +193,75 @@ const MarketBreakdownSection = ({ breakdown }: { breakdown?: Record<string, numb
   );
 };
 
+const SolutionCard = ({ solution }: { solution: PainPointSolution }) => (
+  <div className="bg-muted/30 border border-border/50 rounded-lg p-3 space-y-2">
+    <div className="flex items-start gap-2">
+      <Lightbulb className="h-3.5 w-3.5 text-amber-500 mt-0.5 shrink-0" />
+      <p className="text-xs font-medium">{solution.action}</p>
+    </div>
+    <div className="flex items-center gap-2 flex-wrap">
+      <Badge variant="outline" className={`text-[10px] px-1.5 py-0 ${getOwnerColor(solution.owner)}`}>
+        <Users className="h-2.5 w-2.5 mr-0.5" />
+        {solution.owner}
+      </Badge>
+      <Badge variant="outline" className={`text-[10px] px-1.5 py-0 ${getEffortColor(solution.effort)}`}>
+        {solution.effort} effort
+      </Badge>
+    </div>
+    <p className="text-[11px] text-muted-foreground">
+      <Target className="h-3 w-3 inline mr-1" />
+      {solution.expected_outcome}
+    </p>
+  </div>
+);
+
+const SubCategoriesSection = ({ subCategories, parentFrequency }: { subCategories: PainPointSubCategory[]; parentFrequency: number }) => {
+  const [isOpen, setIsOpen] = useState(false);
+
+  if (!subCategories || subCategories.length === 0) return null;
+
+  return (
+    <Collapsible open={isOpen} onOpenChange={setIsOpen}>
+      <CollapsibleTrigger asChild>
+        <Button variant="outline" size="sm" className="w-full justify-center text-xs mt-2 h-7">
+          <ChevronDown className={`h-3 w-3 mr-1 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+          {isOpen ? 'Hide' : 'View'} Breakdown ({subCategories.length} sub-issues)
+        </Button>
+      </CollapsibleTrigger>
+      <CollapsibleContent className="mt-3 space-y-3">
+        {subCategories.map((sub, idx) => (
+          <div key={idx} className="border border-border/50 rounded-lg p-3 space-y-2 bg-muted/20">
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-medium">{sub.name}</span>
+              <span className="text-xs font-semibold text-muted-foreground">{sub.frequency}% of category</span>
+            </div>
+            <Progress value={sub.frequency} className="h-1.5" />
+            <p className="text-xs text-muted-foreground">{sub.description}</p>
+            <QuotesSection examples={sub.examples} />
+            {sub.solution && <SolutionCard solution={sub.solution} />}
+          </div>
+        ))}
+      </CollapsibleContent>
+    </Collapsible>
+  );
+};
+
+const ActionableSolutionsSection = ({ solutions }: { solutions?: PainPointSolution[] }) => {
+  if (!solutions || solutions.length === 0) return null;
+
+  return (
+    <div className="mt-3 space-y-2">
+      <div className="flex items-center gap-1.5 text-xs font-semibold text-amber-600 dark:text-amber-400">
+        <Lightbulb className="h-3.5 w-3.5" />
+        Recommended Actions
+      </div>
+      {solutions.map((sol, idx) => (
+        <SolutionCard key={idx} solution={sol} />
+      ))}
+    </div>
+  );
+};
+
 const PainPointsPanel = ({ painPoints, paymentInsights, transportationInsights, moveInBarriers, onViewCalls }: PainPointsPanelProps) => {
   return (
     <Card className="h-full">
@@ -197,6 +302,8 @@ const PainPointsPanel = ({ painPoints, paymentInsights, transportationInsights, 
                       
                       <QuotesSection examples={point.examples} />
                       <MarketBreakdownSection breakdown={point.market_breakdown} />
+                      <SubCategoriesSection subCategories={point.sub_categories || []} parentFrequency={point.frequency} />
+                      <ActionableSolutionsSection solutions={point.actionable_solutions} />
                     </div>
                   ))}
                 </div>
