@@ -158,23 +158,25 @@ export function CrossSellOpportunitiesTab({ dateRange, onDateRangeChange }: Cros
     setFullBackfill({ running: true, processed: 0, total: 0, startedAt: Date.now(), failed: 0 });
     setElapsed(0);
 
-    try {
-      let totalProcessed = 0;
-      let totalFailed = 0;
-      let remaining = 1; // Start with non-zero to enter loop
+    let totalProcessed = 0;
+    let totalFailed = 0;
+    let remaining = 1;
+    let consecutiveFailures = 0;
 
-      while (remaining > 0 && !abortRef.current) {
+    while (remaining > 0 && !abortRef.current) {
+      try {
         const { data: result, error } = await supabase.functions.invoke('batch-extract-lifestyle-signals', {
           body: { batchSize: 50, startDate, endDate }
         });
 
-        if (error || !result?.success) {
-          console.error('Backfill batch error:', error || result?.error);
-          totalFailed++;
-          setFullBackfill(prev => ({ ...prev, failed: totalFailed }));
-          if (abortRef.current) break;
-          continue;
+        if (error) throw error;
+
+        if (!result?.success) {
+          throw new Error(result?.error || 'Batch returned unsuccessful');
         }
+
+        // Reset on success
+        consecutiveFailures = 0;
 
         totalProcessed += result.processed || 0;
         totalFailed += result.failed || 0;
@@ -188,20 +190,28 @@ export function CrossSellOpportunitiesTab({ dateRange, onDateRangeChange }: Cros
         }));
 
         if ((result.processed || 0) === 0) break;
-      }
+      } catch (err) {
+        consecutiveFailures++;
+        console.error(`Backfill iteration error (${consecutiveFailures}/5):`, err);
 
-      if (abortRef.current) {
-        toast.info(`Backfill cancelled. ${totalProcessed.toLocaleString()} records processed.`);
-      } else {
-        toast.success(`Backfill complete! ${totalProcessed.toLocaleString()} records processed.`);
+        if (consecutiveFailures >= 5) {
+          toast.error('Backfill stopped after 5 consecutive errors. You can resume later.');
+          break;
+        }
+
+        // Wait 2s before retrying
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        continue;
       }
-      fetchData();
-    } catch (err) {
-      console.error('Backfill error:', err);
-      toast.error('Backfill encountered an error');
-    } finally {
-      setFullBackfill(prev => ({ ...prev, running: false }));
     }
+
+    if (abortRef.current) {
+      toast.info(`Backfill cancelled. ${totalProcessed.toLocaleString()} records processed.`);
+    } else if (consecutiveFailures < 5) {
+      toast.success(`Backfill complete! ${totalProcessed.toLocaleString()} records processed.`);
+    }
+    fetchData();
+    setFullBackfill(prev => ({ ...prev, running: false }));
   };
 
   const cancelBackfill = () => {
