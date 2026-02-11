@@ -1,48 +1,40 @@
 
-# Fix: transcribe-call Also Blocked by Stale Schema Cache
 
-## Problem
-The `check-auto-transcription` fix we deployed correctly bypasses the `42703` error and calls `transcribe-call`. However, `transcribe-call` has its **own** claim query (line 1348-1357) that also references `transcription_status` -- and it hits the same stale cache error. At line 1359-1362, it logs the error and **returns early**, so the transcription never actually runs.
-
-This is visible in the logs: every attempt shows "Claim error" with `42703` followed by silence -- no actual transcription work happens.
+# Fix: Two Bugs Blocking All Transcriptions
 
 ## Root Cause
-PostgREST's schema cache remains stale across **all** edge function invocations (not just `check-auto-transcription`). The `NOTIFY pgrst, 'reload schema'` command sent earlier did not propagate to the edge function runtime's connection pool.
+The PostgREST schema cache is stale and does not recognize `bookings.transcription_status`. This breaks every query that references that column -- not just the claim UPDATEs, but also SELECT queries.
 
-## Solution
+## Bug 1: `check-auto-transcription` SELECT fails silently
+The initial booking fetch (line 34) includes `transcription_status` in the SELECT column list. When the cache is stale, this query itself fails with `42703`. The error is caught on line 46 as "Booking not found" and the function returns 404 without ever reaching the claim or the call to `transcribe-call`.
 
-### 1. Add the same `42703` bypass to `transcribe-call` (lines 1359-1363)
-When the claim query fails with `42703`, bypass the claim and proceed with transcription instead of returning early. The transcription upsert to `booking_transcriptions` table (line 1777) uses a separate table that is NOT affected by the stale cache, so the actual work will succeed.
+**This is why the 4 newest records (Deon Holt, Lamar Camp, Kareem Lumpkin, Tristan DiVergigelis) have `NULL` status** -- the trigger fired but `check-auto-transcription` died immediately.
 
-**File:** `supabase/functions/transcribe-call/index.ts`
+**Fix:** Remove `transcription_status` from the SELECT column list (line 37). It is not used in any logic after the SELECT -- it was only referenced in the type definition. The claim step handles status checking separately.
 
-Current code (lines 1359-1362):
-```
-if (claimError) {
-  console.error(`[Background] Claim error for ${bookingId}:`, claimError);
-  clearTimeout(timeoutId);
-  return;
-}
-```
+## Bug 2: `transcribe-call` claim bypass still exits early
+When the claim UPDATE fails with `42703`, the bypass lets execution continue past the error check. But `claimResult` is `null` (because the query failed), so line 1374's `if (!claimResult)` catches it and returns "already processing/completed, skipping duplicate."
 
-Change to:
-```
-if (claimError) {
-  if (claimError.code === '42703') {
-    console.warn(`[Background] Schema cache stale (42703) for ${bookingId}. Bypassing claim.`);
-  } else {
-    console.error(`[Background] Claim error for ${bookingId}:`, claimError);
-    clearTimeout(timeoutId);
-    return;
-  }
-}
-```
+**This is why Lanston Lowe and Nicholas Jackson show "already processing/completed, skipping duplicate" in the logs** despite never being processed.
 
-### 2. Handle `42703` on status update writes (lines 1761-1773, 1308-1316)
-The final "completed" update and error update also write to `transcription_status`. Add try/catch with `42703` tolerance so the transcription data still gets saved even if the status column update fails.
+**Fix:** Add a `claimBypassed` flag. When `42703` is detected, set it to `true`. Then modify line 1374 to skip the duplicate check when `claimBypassed` is `true`.
 
-### 3. Re-trigger the two stuck bookings
-After deploying, manually invoke `transcribe-call` for both stuck records to process them immediately.
+## Changes
+
+### File 1: `supabase/functions/check-auto-transcription/index.ts`
+- Remove `transcription_status` from the SELECT on line 37
+- Remove `transcription_status` from the type definition on line 58
+- Add a `42703` catch around the initial SELECT itself (lines 46-52): if `bookingError.code === '42703'`, re-query without `transcription_status`
+
+### File 2: `supabase/functions/transcribe-call/index.ts`
+- Add a `let claimBypassed = false;` variable before the claim block
+- Set `claimBypassed = true` inside the `42703` bypass (line 1366)
+- Change line 1374 from `if (!claimResult)` to `if (!claimResult && !claimBypassed)`
+
+### Post-deploy: Re-trigger all 6 stuck records
+After deploying both functions, manually invoke `transcribe-call` for all 6 booking IDs to process them immediately.
 
 ## Files Changed
-- **Edit:** `supabase/functions/transcribe-call/index.ts` -- add `42703` bypass in 3 locations (claim, completion update, error update)
+- **Edit:** `supabase/functions/check-auto-transcription/index.ts` -- remove `transcription_status` from SELECT, add error handling
+- **Edit:** `supabase/functions/transcribe-call/index.ts` -- fix claim bypass logic with `claimBypassed` flag
+
