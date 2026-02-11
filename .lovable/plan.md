@@ -1,76 +1,59 @@
 
 
-# Drag-and-Drop Sidebar Reordering (Super Admin Only)
+# Fix: Sidebar Scroll Position Resets on Navigation
 
-## Summary
-Allow super admins to reorder sidebar items and move them between the Core and Admin sections via drag-and-drop. All other roles see the default static sidebar with zero changes to their experience.
+## Problem
+When clicking any sidebar option, the sidebar scrolls back to the top. This happens because the route change causes a React re-render, and the `<nav>` element with `overflow-y-auto` loses its scroll position.
 
-## Safety Guarantees
-- The static `menuItems` array (icons, labels, paths, role permissions) is NEVER modified
-- Role-based filtering (`hasRole`) always runs first -- drag-and-drop only reorders already-visible items
-- Only `super_admin` users see drag handles; other roles are completely unaffected
-- Persistence is localStorage only -- no database or schema changes
-- If saved order references a removed menu item, it is silently skipped
-- If a new menu item is added to code but not in saved order, it appends to its default group
-- A "Reset to Default" button lets super admins restore the original order instantly
+## Solution
+Add a `ref` to the `<nav>` element and preserve its scroll position across re-renders using a simple ref-based approach.
 
-## Files Changed
+## Technical Details
 
-### 1. NEW: `src/hooks/useSidebarOrder.ts`
-- Custom hook that manages ordered item paths and group assignments
-- Reads from `localStorage` key `sidebar-custom-order` on mount; falls back to default `menuItems` order
-- Exposes:
-  - `getOrderedItems(visibleItems)` -- takes role-filtered items, returns them reordered/regrouped
-  - `moveItem(itemPath, targetGroup, targetIndex)` -- handles drop events
-  - `resetOrder()` -- clears localStorage, restores defaults
-- Merges logic: new code items not in saved order get appended; removed items get dropped
+### File: `src/components/layout/AppSidebar.tsx`
 
-### 2. MODIFIED: `src/components/layout/AppSidebar.tsx`
-- Import `useSidebarOrder` hook and `GripVertical` icon from lucide-react
-- For super_admin users only:
-  - Add `draggable` attribute and HTML5 drag event handlers (`onDragStart`, `onDragOver`, `onDrop`) to each nav item wrapper
-  - Show a subtle grip handle icon on hover (left of the menu icon)
-  - Show a gold insertion line on the current drop target
-  - Add a small "Reset order" text button below the nav items
-- For non-super_admin users: zero changes -- same static rendering as today
-- When sidebar is collapsed: drag is disabled (too narrow for handles)
-- Core logic flow:
-  1. `visibleItems = menuItems.filter(hasRole)` (unchanged)
-  2. `orderedItems = getOrderedItems(visibleItems)` (new -- applies saved order)
-  3. Split into `coreItems` / `adminItems` from `orderedItems` (unchanged pattern)
+1. Add a `useRef` for the nav element:
+   ```typescript
+   const navRef = useRef<HTMLDivElement>(null);
+   ```
 
-### 3. MODIFIED: `src/index.css`
-- Add two small utility classes (~4 lines):
-  - `.sidebar-drag-over` -- gold left border or insertion line indicator
-  - `.sidebar-dragging` -- reduced opacity on the dragged item
+2. Save and restore scroll position around route changes using a `useEffect` on `location.pathname`:
+   ```typescript
+   const scrollPos = useRef(0);
+   
+   // Save scroll position before re-render
+   useEffect(() => {
+     const nav = navRef.current;
+     if (nav) {
+       // Restore after route change re-render
+       requestAnimationFrame(() => {
+         nav.scrollTop = scrollPos.current;
+       });
+     }
+   }, [location.pathname]);
+   ```
 
-## How It Works
+3. Attach an `onScroll` handler to the `<nav>` to continuously track scroll position:
+   ```typescript
+   <nav 
+     ref={navRef}
+     onScroll={() => {
+       if (navRef.current) {
+         scrollPos.current = navRef.current.scrollTop;
+       }
+     }}
+     className="flex-1 p-3 space-y-1 overflow-y-auto"
+   >
+   ```
 
-```text
-Default sidebar (all roles)     Super Admin with drag enabled
-+------------------------+      +-----------------------------+
-| Dashboard              |      | [=] Dashboard               |
-| Add Booking            |      | [=] Add Booking             |
-| Agent Leaderboard      |      | [=] Agent Leaderboard       |
-| ...                    |      | ...                         |
-| Market Intelligence    |  --> | [=] Market Intelligence  <--drag down
-|                        |      |                             |
-| v Admin                |      | v Admin                     |
-|   Communication Insigh |      |   Communication Insights    |
-|   User Management      |      |   User Management           |
-|   ...                  |      |   Market Intelligence  <--dropped here
-|                        |      |   ...                       |
-|                        |      | [Reset to default]          |
-+------------------------+      +-----------------------------+
+### Why This Works
+- The `onScroll` handler saves the current scroll position to a ref (not state, so no re-renders)
+- After a route change triggers a re-render, `requestAnimationFrame` restores the saved position once the DOM has updated
+- Zero visual flicker since restoration happens in the next animation frame
 
-[=] = grip handle (visible on hover, super_admin only)
-```
+### Files Changed
+- `src/components/layout/AppSidebar.tsx` -- Add navRef, scrollPos ref, onScroll handler, and restoration useEffect (~10 lines added)
 
-## No Impact on Other Features
-- Route definitions in `App.tsx`: untouched
-- `ProtectedRoute` access control: untouched
-- `AuthContext` and role checking: untouched
-- Admin collapsible section behavior: preserved (auto-expand on active route still works)
-- Sidebar collapse/expand toggle: preserved
-- All other user roles: see identical sidebar to current behavior
-
+### No Impact
+- No changes to routing, auth, drag-and-drop, or any other sidebar behavior
+- Works identically for all user roles
