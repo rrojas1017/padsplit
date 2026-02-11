@@ -1305,14 +1305,30 @@ async function processTranscription(bookingId: string, kixieUrl: string, skipTts
   let siteId: string | null = null;
 
   try {
-    // Update status to processing (clear any previous error)
-    await supabase
+    // Deduplication guard: atomically claim processing status
+    // Only proceed if status is 'queued' or NULL (belt-and-suspenders with check-auto-transcription)
+    const { data: claimResult, error: claimError } = await supabase
       .from('bookings')
       .update({ 
         transcription_status: 'processing',
         transcription_error_message: null 
       })
-      .eq('id', bookingId);
+      .eq('id', bookingId)
+      .or('transcription_status.is.null,transcription_status.eq.queued,transcription_status.eq.failed')
+      .select('id')
+      .maybeSingle();
+
+    if (claimError) {
+      console.error(`[Background] Claim error for ${bookingId}:`, claimError);
+      clearTimeout(timeoutId);
+      return;
+    }
+
+    if (!claimResult) {
+      console.log(`[Background] Booking ${bookingId} already processing/completed, skipping duplicate`);
+      clearTimeout(timeoutId);
+      return;
+    }
 
     // Fetch booking to get call_type_id, agent_id, site_id, and status
     const { data: bookingData, error: bookingError } = await supabase
