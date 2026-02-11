@@ -65,19 +65,13 @@ serve(async (req) => {
       // Join with bookings to get booking_date for date filtering and ordering
       let query = supabase
         .from('booking_transcriptions')
-        .select('id, booking_id, call_transcription, call_key_points, bookings!inner(booking_date)')
+        .select('id, booking_id, call_transcription, call_key_points')
         .not('call_transcription', 'is', null)
         .not('call_key_points', 'is', null)
-        .order('bookings(booking_date)', { ascending: false })
+        .is('call_key_points->lifestyleSignals', null)
         .limit(batchSize);
 
-      // Apply date filters if provided
-      if (startDate) {
-        query = query.gte('bookings.booking_date', startDate);
-      }
-      if (endDate) {
-        query = query.lte('bookings.booking_date', endDate);
-      }
+      // Date filters removed - no longer joining bookings table
 
       const { data: candidates, error: fetchError } = await query;
 
@@ -87,14 +81,11 @@ serve(async (req) => {
         break;
       }
 
-      // Filter to only those without lifestyleSignals already
-      const toProcess = (candidates || []).filter(c => {
-        const kp = c.call_key_points as any;
-        return !kp?.lifestyleSignals || !Array.isArray(kp.lifestyleSignals);
-      });
+      // DB-level filter handles this now; safety net only
+      const toProcess = candidates || [];
 
       if (toProcess.length === 0) {
-        console.log(`[Backfill] No more records to process in this batch`);
+        console.log(`[Backfill] No more records to process`);
         break;
       }
 
@@ -214,29 +205,14 @@ If no lifestyle signals are detected, return: {"lifestyleSignals": []}`;
     // We fetch a sample and filter since we can't query JSON absence directly
     let remainingCount = 0;
     try {
-      let remainQuery = supabase
+      const { count } = await supabase
         .from('booking_transcriptions')
-        .select('call_key_points', { count: 'exact', head: false })
+        .select('id', { count: 'exact', head: true })
         .not('call_transcription', 'is', null)
         .not('call_key_points', 'is', null)
-        .limit(1000);
+        .is('call_key_points->lifestyleSignals', null);
 
-      const { data: remainCandidates, count } = await remainQuery;
-      
-      // Count those without lifestyleSignals from the sample
-      const withoutSignals = (remainCandidates || []).filter(c => {
-        const kp = c.call_key_points as any;
-        return !kp?.lifestyleSignals || !Array.isArray(kp.lifestyleSignals);
-      });
-      
-      // If we got fewer than 1000, we have exact count; otherwise estimate
-      if ((count || 0) <= 1000) {
-        remainingCount = withoutSignals.length;
-      } else {
-        // Estimate based on ratio
-        const ratio = withoutSignals.length / (remainCandidates?.length || 1);
-        remainingCount = Math.round(ratio * (count || 0));
-      }
+      remainingCount = count || 0;
     } catch (e) {
       console.error('[Backfill] Error counting remaining:', e);
     }
