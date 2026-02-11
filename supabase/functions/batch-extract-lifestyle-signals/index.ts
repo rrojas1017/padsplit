@@ -65,13 +65,14 @@ serve(async (req) => {
       // Join with bookings to get booking_date for date filtering and ordering
       let query = supabase
         .from('booking_transcriptions')
-        .select('id, booking_id, call_transcription, call_key_points')
+        .select('id, booking_id, call_transcription, call_key_points, bookings!inner(booking_date)')
         .not('call_transcription', 'is', null)
         .not('call_key_points', 'is', null)
         .is('call_key_points->lifestyleSignals', null)
         .limit(batchSize);
 
-      // Date filters removed - no longer joining bookings table
+      if (startDate) query = query.gte('bookings.booking_date', startDate);
+      if (endDate) query = query.lte('bookings.booking_date', endDate);
 
       const { data: candidates, error: fetchError } = await query;
 
@@ -205,12 +206,17 @@ If no lifestyle signals are detected, return: {"lifestyleSignals": []}`;
     // We fetch a sample and filter since we can't query JSON absence directly
     let remainingCount = 0;
     try {
-      const { count } = await supabase
+      let countQuery = supabase
         .from('booking_transcriptions')
-        .select('id', { count: 'exact', head: true })
+        .select('id, bookings!inner(booking_date)', { count: 'exact', head: true })
         .not('call_transcription', 'is', null)
         .not('call_key_points', 'is', null)
         .is('call_key_points->lifestyleSignals', null);
+
+      if (startDate) countQuery = countQuery.gte('bookings.booking_date', startDate);
+      if (endDate) countQuery = countQuery.lte('bookings.booking_date', endDate);
+
+      const { count } = await countQuery;
 
       remainingCount = count || 0;
     } catch (e) {

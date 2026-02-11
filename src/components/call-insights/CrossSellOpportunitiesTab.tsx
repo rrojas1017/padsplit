@@ -98,7 +98,6 @@ function getDateRange(range: DateRangeOption): { startDate: string | null; endDa
 export function CrossSellOpportunitiesTab({ dateRange, onDateRangeChange }: CrossSellOpportunitiesTabProps) {
   const [data, setData] = useState<AggregatedData | null>(null);
   const [loading, setLoading] = useState(true);
-  const [backfillRunning, setBackfillRunning] = useState(false);
   const [expandedCategory, setExpandedCategory] = useState<string | null>(null);
   
   // Full backfill state
@@ -154,60 +153,25 @@ export function CrossSellOpportunitiesTab({ dateRange, onDateRangeChange }: Cros
   }, [fetchData]);
 
   const runBackfill = async () => {
-    setBackfillRunning(true);
-    const { startDate, endDate } = getDateRange(dateRange);
-    toast.info('Running backfill... this may take up to 45 seconds.');
-    try {
-      const { data: result, error } = await supabase.functions.invoke('batch-extract-lifestyle-signals', {
-        body: { batchSize: 50, startDate, endDate }
-      });
-
-      if (error) throw error;
-      
-      if (result?.processed > 0) {
-        toast.success(`Processed ${result.processed} transcriptions. ~${result.remaining} remaining.`);
-      } else {
-        toast.info('No transcriptions need processing for this date range.');
-      }
-      fetchData();
-    } catch (err) {
-      console.error('Backfill error:', err);
-      toast.error('Backfill failed');
-    } finally {
-      setBackfillRunning(false);
-    }
-  };
-
-  const runFullBackfill = async () => {
     abortRef.current = false;
+    const { startDate, endDate } = getDateRange(dateRange);
     setFullBackfill({ running: true, processed: 0, total: 0, startedAt: Date.now(), failed: 0 });
     setElapsed(0);
 
     try {
-      // First call to get initial count
-      const { data: first, error: firstErr } = await supabase.functions.invoke('batch-extract-lifestyle-signals', {
-        body: { batchSize: 50 }
-      });
-      if (firstErr || !first?.success) throw firstErr || new Error(first?.error || 'Failed');
+      let totalProcessed = 0;
+      let totalFailed = 0;
+      let remaining = 1; // Start with non-zero to enter loop
 
-      const initialTotal = (first.processed || 0) + (first.remaining || 0);
-      let totalProcessed = first.processed || 0;
-      let totalFailed = first.failed || 0;
-      let remaining = first.remaining || 0;
-
-      setFullBackfill(prev => ({ ...prev, total: initialTotal, processed: totalProcessed, failed: totalFailed }));
-
-      // Loop until done
       while (remaining > 0 && !abortRef.current) {
         const { data: result, error } = await supabase.functions.invoke('batch-extract-lifestyle-signals', {
-          body: { batchSize: 50 }
+          body: { batchSize: 50, startDate, endDate }
         });
 
         if (error || !result?.success) {
           console.error('Backfill batch error:', error || result?.error);
           totalFailed++;
           setFullBackfill(prev => ({ ...prev, failed: totalFailed }));
-          // Continue trying unless cancelled
           if (abortRef.current) break;
           continue;
         }
@@ -220,11 +184,9 @@ export function CrossSellOpportunitiesTab({ dateRange, onDateRangeChange }: Cros
           ...prev,
           processed: totalProcessed,
           failed: totalFailed,
-          // Update total if it grew (edge case: new records appeared)
           total: Math.max(prev.total, totalProcessed + remaining),
         }));
 
-        // If nothing was processed, we're done
         if ((result.processed || 0) === 0) break;
       }
 
@@ -235,7 +197,7 @@ export function CrossSellOpportunitiesTab({ dateRange, onDateRangeChange }: Cros
       }
       fetchData();
     } catch (err) {
-      console.error('Full backfill error:', err);
+      console.error('Backfill error:', err);
       toast.error('Backfill encountered an error');
     } finally {
       setFullBackfill(prev => ({ ...prev, running: false }));
@@ -298,21 +260,12 @@ export function CrossSellOpportunitiesTab({ dateRange, onDateRangeChange }: Cros
             <RefreshCw className="h-4 w-4" />
           </Button>
           <Button 
-            variant="outline" 
             size="sm" 
             onClick={runBackfill}
-            disabled={backfillRunning || fullBackfill.running}
-          >
-            <Zap className="h-4 w-4 mr-1" />
-            {backfillRunning ? 'Running...' : 'Backfill'}
-          </Button>
-          <Button 
-            size="sm" 
-            onClick={runFullBackfill}
-            disabled={backfillRunning || fullBackfill.running}
+            disabled={fullBackfill.running}
           >
             <Loader2 className={`h-4 w-4 mr-1 ${fullBackfill.running ? 'animate-spin' : ''}`} />
-            {fullBackfill.running ? 'Running...' : 'Backfill All'}
+            {fullBackfill.running ? 'Running...' : 'Backfill'}
           </Button>
         </div>
       </div>
@@ -381,9 +334,9 @@ export function CrossSellOpportunitiesTab({ dateRange, onDateRangeChange }: Cros
               Signals will be automatically extracted from new call transcriptions. 
               Click "Backfill" to extract signals from existing transcriptions.
             </p>
-            <Button onClick={runBackfill} disabled={backfillRunning}>
+            <Button onClick={runBackfill} disabled={fullBackfill.running}>
               <Zap className="h-4 w-4 mr-2" />
-              {backfillRunning ? 'Processing...' : 'Run Backfill on Existing Calls'}
+              {fullBackfill.running ? 'Processing...' : 'Run Backfill on Existing Calls'}
             </Button>
           </CardContent>
         </Card>
