@@ -95,36 +95,113 @@ function getDateRange(range: DateRangeOption): { startDate: string | null; endDa
   }
 }
 
+interface BackfillJob {
+  id: string;
+  status: string;
+  total_processed: number;
+  total_failed: number;
+  remaining: number;
+  started_at: string;
+}
+
 export function CrossSellOpportunitiesTab({ dateRange, onDateRangeChange }: CrossSellOpportunitiesTabProps) {
   const [data, setData] = useState<AggregatedData | null>(null);
   const [loading, setLoading] = useState(true);
   const [expandedCategory, setExpandedCategory] = useState<string | null>(null);
   
-  // Full backfill state
-  const [fullBackfill, setFullBackfill] = useState<{
-    running: boolean;
-    processed: number;
-    total: number;
-    startedAt: number;
-    failed: number;
-  }>({ running: false, processed: 0, total: 0, startedAt: 0, failed: 0 });
-  const abortRef = useRef(false);
-  const [elapsed, setElapsed] = useState(0);
+  // Backfill job polling state
+  const [activeJob, setActiveJob] = useState<BackfillJob | null>(null);
+  const [starting, setStarting] = useState(false);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Timer for elapsed display
+  const pollJob = useCallback(async (jobId: string) => {
+    try {
+      const { data: job, error } = await supabase
+        .from('lifestyle_backfill_jobs')
+        .select('*')
+        .eq('id', jobId)
+        .single();
+
+      if (error) {
+        console.error('Poll error:', error);
+        return;
+      }
+
+      setActiveJob(job as BackfillJob);
+
+      if (job.status === 'completed') {
+        if (pollRef.current) clearInterval(pollRef.current);
+        pollRef.current = null;
+        toast.success(`Backfill complete! ${job.total_processed?.toLocaleString()} records processed.`);
+        fetchData();
+      } else if (job.status === 'cancelled') {
+        if (pollRef.current) clearInterval(pollRef.current);
+        pollRef.current = null;
+        toast.info(`Backfill cancelled. ${job.total_processed?.toLocaleString()} records processed.`);
+      } else if (job.status === 'failed') {
+        if (pollRef.current) clearInterval(pollRef.current);
+        pollRef.current = null;
+        toast.error('Backfill failed.');
+      }
+    } catch (err) {
+      console.error('Poll error:', err);
+    }
+  }, []);
+
+  const startPolling = useCallback((jobId: string) => {
+    if (pollRef.current) clearInterval(pollRef.current);
+    // Poll immediately, then every 3s
+    pollJob(jobId);
+    pollRef.current = setInterval(() => pollJob(jobId), 3000);
+  }, [pollJob]);
+
+  // Cleanup polling on unmount
   useEffect(() => {
-    if (!fullBackfill.running) return;
-    const interval = setInterval(() => {
-      setElapsed(Math.floor((Date.now() - fullBackfill.startedAt) / 1000));
-    }, 1000);
-    return () => clearInterval(interval);
-  }, [fullBackfill.running, fullBackfill.startedAt]);
+    return () => {
+      if (pollRef.current) clearInterval(pollRef.current);
+    };
+  }, []);
+
+  // Resume polling if there's a running job on mount
+  useEffect(() => {
+    const checkRunningJob = async () => {
+      try {
+        const { data: jobs } = await supabase
+          .from('lifestyle_backfill_jobs')
+          .select('*')
+          .eq('status', 'running')
+          .order('created_at', { ascending: false })
+          .limit(1);
+
+        if (jobs && jobs.length > 0) {
+          const job = jobs[0] as BackfillJob;
+          setActiveJob(job);
+          startPolling(job.id);
+        }
+      } catch (err) {
+        console.error('Error checking running jobs:', err);
+      }
+    };
+    checkRunningJob();
+  }, [startPolling]);
+
+  const elapsed = activeJob?.started_at
+    ? Math.floor((Date.now() - new Date(activeJob.started_at).getTime()) / 1000)
+    : 0;
 
   const formatElapsed = (seconds: number) => {
     const m = Math.floor(seconds / 60);
     const s = seconds % 60;
     return m > 0 ? `${m}m ${s}s` : `${s}s`;
   };
+
+  // Timer tick for elapsed display
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    if (!activeJob || activeJob.status !== 'running') return;
+    const interval = setInterval(() => setTick(t => t + 1), 1000);
+    return () => clearInterval(interval);
+  }, [activeJob]);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -153,70 +230,56 @@ export function CrossSellOpportunitiesTab({ dateRange, onDateRangeChange }: Cros
   }, [fetchData]);
 
   const runBackfill = async () => {
-    abortRef.current = false;
-    const { startDate, endDate } = getDateRange(dateRange);
-    setFullBackfill({ running: true, processed: 0, total: 0, startedAt: Date.now(), failed: 0 });
-    setElapsed(0);
+    setStarting(true);
+    try {
+      const { startDate, endDate } = getDateRange(dateRange);
+      const { data: result, error } = await supabase.functions.invoke('batch-extract-lifestyle-signals', {
+        body: { batchSize: 50, startDate, endDate }
+      });
 
-    let totalProcessed = 0;
-    let totalFailed = 0;
-    let remaining = 1;
-    let consecutiveFailures = 0;
+      if (error) throw error;
 
-    while (remaining > 0 && !abortRef.current) {
-      try {
-        const { data: result, error } = await supabase.functions.invoke('batch-extract-lifestyle-signals', {
-          body: { batchSize: 50, startDate, endDate }
+      if (result?.jobId) {
+        setActiveJob({
+          id: result.jobId,
+          status: 'running',
+          total_processed: 0,
+          total_failed: 0,
+          remaining: result.remaining || 0,
+          started_at: new Date().toISOString(),
         });
-
-        if (error) throw error;
-
-        if (!result?.success) {
-          throw new Error(result?.error || 'Batch returned unsuccessful');
-        }
-
-        // Reset on success
-        consecutiveFailures = 0;
-
-        totalProcessed += result.processed || 0;
-        totalFailed += result.failed || 0;
-        remaining = result.remaining || 0;
-
-        setFullBackfill(prev => ({
-          ...prev,
-          processed: totalProcessed,
-          failed: totalFailed,
-          total: Math.max(prev.total, totalProcessed + remaining),
-        }));
-
-        if ((result.processed || 0) === 0) break;
-      } catch (err) {
-        consecutiveFailures++;
-        console.error(`Backfill iteration error (${consecutiveFailures}/5):`, err);
-
-        if (consecutiveFailures >= 5) {
-          toast.error('Backfill stopped after 5 consecutive errors. You can resume later.');
-          break;
-        }
-
-        // Wait 2s before retrying
-        await new Promise(resolve => setTimeout(resolve, 2000));
-        continue;
+        startPolling(result.jobId);
+        toast.success('Backfill started in the background');
+      } else if (result?.remaining === 0) {
+        toast.info('No records to backfill');
       }
+    } catch (err) {
+      console.error('Error starting backfill:', err);
+      toast.error('Failed to start backfill');
+    } finally {
+      setStarting(false);
     }
-
-    if (abortRef.current) {
-      toast.info(`Backfill cancelled. ${totalProcessed.toLocaleString()} records processed.`);
-    } else if (consecutiveFailures < 5) {
-      toast.success(`Backfill complete! ${totalProcessed.toLocaleString()} records processed.`);
-    }
-    fetchData();
-    setFullBackfill(prev => ({ ...prev, running: false }));
   };
 
-  const cancelBackfill = () => {
-    abortRef.current = true;
+  const cancelBackfill = async () => {
+    if (!activeJob) return;
+    try {
+      await supabase
+        .from('lifestyle_backfill_jobs')
+        .update({ status: 'cancelled', completed_at: new Date().toISOString() })
+        .eq('id', activeJob.id);
+      
+      setActiveJob(prev => prev ? { ...prev, status: 'cancelled' } : null);
+      if (pollRef.current) clearInterval(pollRef.current);
+      pollRef.current = null;
+      toast.info('Backfill cancellation requested');
+    } catch (err) {
+      console.error('Error cancelling:', err);
+    }
   };
+
+  const isRunning = activeJob?.status === 'running';
+  const totalForProgress = activeJob ? (activeJob.total_processed + activeJob.remaining) : 0;
 
   if (loading) {
     return (
@@ -272,22 +335,22 @@ export function CrossSellOpportunitiesTab({ dateRange, onDateRangeChange }: Cros
           <Button 
             size="sm" 
             onClick={runBackfill}
-            disabled={fullBackfill.running}
+            disabled={isRunning || starting}
           >
-            <Loader2 className={`h-4 w-4 mr-1 ${fullBackfill.running ? 'animate-spin' : ''}`} />
-            {fullBackfill.running ? 'Running...' : 'Backfill'}
+            <Loader2 className={`h-4 w-4 mr-1 ${(isRunning || starting) ? 'animate-spin' : ''}`} />
+            {isRunning ? 'Running...' : starting ? 'Starting...' : 'Backfill'}
           </Button>
         </div>
       </div>
 
-      {/* Full Backfill Progress Bar */}
-      {fullBackfill.running && (
+      {/* Backfill Progress Bar */}
+      {isRunning && activeJob && (
         <Card className="border-primary/30 bg-primary/5">
           <CardContent className="pt-6 space-y-3">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Loader2 className="h-4 w-4 animate-spin text-primary" />
-                <span className="text-sm font-medium">Backfilling all records...</span>
+                <span className="text-sm font-medium">Backfilling in background — safe to navigate away</span>
               </div>
               <Button variant="ghost" size="sm" onClick={cancelBackfill}>
                 <XCircle className="h-4 w-4 mr-1" />
@@ -295,14 +358,14 @@ export function CrossSellOpportunitiesTab({ dateRange, onDateRangeChange }: Cros
               </Button>
             </div>
             <Progress 
-              value={fullBackfill.total > 0 ? (fullBackfill.processed / fullBackfill.total) * 100 : 0} 
+              value={totalForProgress > 0 ? (activeJob.total_processed / totalForProgress) * 100 : 0} 
               className="h-3"
             />
             <div className="flex items-center justify-between text-xs text-muted-foreground">
               <span>
-                {fullBackfill.processed.toLocaleString()} of {fullBackfill.total.toLocaleString()} processed
-                {fullBackfill.total > 0 && ` (${Math.round((fullBackfill.processed / fullBackfill.total) * 100)}%)`}
-                {fullBackfill.failed > 0 && ` · ${fullBackfill.failed} failed`}
+                {activeJob.total_processed.toLocaleString()} of {totalForProgress.toLocaleString()} processed
+                {totalForProgress > 0 && ` (${Math.round((activeJob.total_processed / totalForProgress) * 100)}%)`}
+                {activeJob.total_failed > 0 && ` · ${activeJob.total_failed} failed`}
               </span>
               <span>{formatElapsed(elapsed)} elapsed</span>
             </div>
@@ -344,9 +407,9 @@ export function CrossSellOpportunitiesTab({ dateRange, onDateRangeChange }: Cros
               Signals will be automatically extracted from new call transcriptions. 
               Click "Backfill" to extract signals from existing transcriptions.
             </p>
-            <Button onClick={runBackfill} disabled={fullBackfill.running}>
+            <Button onClick={runBackfill} disabled={isRunning || starting}>
               <Zap className="h-4 w-4 mr-2" />
-              {fullBackfill.running ? 'Processing...' : 'Run Backfill on Existing Calls'}
+              {isRunning ? 'Processing...' : 'Run Backfill on Existing Calls'}
             </Button>
           </CardContent>
         </Card>
@@ -430,17 +493,16 @@ export function CrossSellOpportunitiesTab({ dateRange, onDateRangeChange }: Cros
                       )}
                     </CardHeader>
                   </CollapsibleTrigger>
-                  
                   <CollapsibleContent>
                     <CardContent className="pt-0 space-y-4">
                       {/* Top Markets */}
                       {cat.topMarkets.length > 0 && (
                         <div>
-                          <h4 className="text-xs font-semibold text-muted-foreground uppercase mb-2 flex items-center gap-1">
+                          <h4 className="text-xs font-semibold mb-2 flex items-center gap-1">
                             <MapPin className="h-3 w-3" /> Top Markets
                           </h4>
-                          <div className="flex flex-wrap gap-2">
-                            {cat.topMarkets.slice(0, 6).map(m => (
+                          <div className="flex flex-wrap gap-1.5">
+                            {cat.topMarkets.slice(0, 5).map(m => (
                               <Badge key={m.market} variant="outline" className="text-xs">
                                 {m.market} ({m.count})
                               </Badge>
@@ -449,45 +511,39 @@ export function CrossSellOpportunitiesTab({ dateRange, onDateRangeChange }: Cros
                         </div>
                       )}
 
-                      {/* Signal Details Table */}
-                      {cat.topSignals.length > 0 && (
-                        <div>
-                          <h4 className="text-xs font-semibold text-muted-foreground uppercase mb-2">
-                            Recent Signals
-                          </h4>
-                          <div className="rounded-md border">
-                            <Table>
-                              <TableHeader>
-                                <TableRow>
-                                  <TableHead className="text-xs">Signal</TableHead>
-                                  <TableHead className="text-xs">Opportunity</TableHead>
-                                  <TableHead className="text-xs">Confidence</TableHead>
-                                  <TableHead className="text-xs">Market</TableHead>
-                                </TableRow>
-                              </TableHeader>
-                              <TableBody>
-                                {cat.topSignals.slice(0, 5).map((s, i) => (
-                                  <TableRow key={i}>
-                                    <TableCell className="text-xs max-w-[200px]">
-                                      <span className="italic">"{s.signal}"</span>
-                                    </TableCell>
-                                    <TableCell className="text-xs">{s.opportunity}</TableCell>
-                                    <TableCell>
-                                      <Badge 
-                                        variant={s.confidence === 'high' ? 'default' : 'secondary'}
-                                        className="text-xs"
-                                      >
-                                        {s.confidence}
-                                      </Badge>
-                                    </TableCell>
-                                    <TableCell className="text-xs">{s.marketCity}, {s.marketState}</TableCell>
-                                  </TableRow>
-                                ))}
-                              </TableBody>
-                            </Table>
-                          </div>
-                        </div>
-                      )}
+                      {/* Signal Table */}
+                      <div className="border rounded-lg overflow-hidden">
+                        <Table>
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead className="text-xs">Signal</TableHead>
+                              <TableHead className="text-xs">Confidence</TableHead>
+                              <TableHead className="text-xs">Opportunity</TableHead>
+                              <TableHead className="text-xs">Market</TableHead>
+                              <TableHead className="text-xs">Date</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {cat.topSignals.slice(0, 10).map((sig, idx) => (
+                              <TableRow key={idx}>
+                                <TableCell className="text-xs max-w-[200px] truncate">
+                                  <span className="italic">"{sig.signal}"</span>
+                                </TableCell>
+                                <TableCell>
+                                  <Badge variant={sig.confidence === 'high' ? 'default' : sig.confidence === 'medium' ? 'secondary' : 'outline'} className="text-xs">
+                                    {sig.confidence}
+                                  </Badge>
+                                </TableCell>
+                                <TableCell className="text-xs max-w-[180px] truncate">{sig.opportunity}</TableCell>
+                                <TableCell className="text-xs">
+                                  {sig.marketCity && sig.marketState ? `${sig.marketCity}, ${sig.marketState}` : '—'}
+                                </TableCell>
+                                <TableCell className="text-xs">{sig.date || '—'}</TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      </div>
                     </CardContent>
                   </CollapsibleContent>
                 </Card>
