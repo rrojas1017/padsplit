@@ -128,14 +128,20 @@ export function CrossSellOpportunitiesTab({ dateRange, onDateRangeChange }: Cros
 
   const runBackfill = async () => {
     setBackfillRunning(true);
+    const { startDate, endDate } = getDateRange(dateRange);
+    toast.info('Running backfill... this may take up to 45 seconds.');
     try {
       const { data: result, error } = await supabase.functions.invoke('batch-extract-lifestyle-signals', {
-        body: { batchSize: 10 }
+        body: { batchSize: 50, startDate, endDate }
       });
 
       if (error) throw error;
       
-      toast.success(`Processed ${result?.processed || 0} transcriptions. ${result?.remaining || 0} remaining.`);
+      if (result?.processed > 0) {
+        toast.success(`Processed ${result.processed} transcriptions. ~${result.remaining} remaining.`);
+      } else {
+        toast.info('No transcriptions need processing for this date range.');
+      }
       // Refresh data after backfill
       fetchData();
     } catch (err) {
