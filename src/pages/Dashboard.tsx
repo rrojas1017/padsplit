@@ -9,8 +9,8 @@ import { DateRangeFilter, DateFilterValue, CustomDateRange } from '@/components/
 import { SiteFilter } from '@/components/dashboard/SiteFilter';
 import { CalendarDays, Users, Clock, CheckCircle2, DollarSign, Timer, FileCheck, TrendingDown, PhoneOff, Repeat } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
-import { useBookings } from '@/contexts/BookingsContext';
 import { useAgents } from '@/contexts/AgentsContext';
+import { useDashboardData } from '@/hooks/useDashboardData';
 import { Navigate, Link } from 'react-router-dom';
 import { calculateKPIData, calculateChartData, calculateLeaderboard, calculateMarketData, calculateInsightsData, calculateNonBookingCount, DateRangeFilter as DateRangeFilterType, CustomDateRange as CalcCustomDateRange } from '@/utils/dashboardCalculations';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -35,11 +35,11 @@ const getBillingDateRange = (range: DateRangeFilterType): DateRangeType => {
 export default function Dashboard() {
   usePageTracking('view_dashboard');
   const { user } = useAuth();
-  const { bookings, isLoading: bookingsLoading } = useBookings();
   const { agents, isLoading: agentsLoading } = useAgents();
   const [dateRange, setDateRange] = useState<DateRangeFilterType>('today');
   const [customDates, setCustomDates] = useState<CalcCustomDateRange | undefined>(undefined);
   const [selectedSiteId, setSelectedSiteId] = useState<string | null>(null);
+  const { bookings, isLoading: bookingsLoading } = useDashboardData(dateRange, customDates);
 
   // Billing data for cost breakdown (super admin only)
   const { summary: costSummary, costs, isLoading: costsLoading, isSuperAdmin } = useBillingData(
