@@ -1605,6 +1605,33 @@ export type Database = {
           },
         ]
       }
+      market_intelligence_cache: {
+        Row: {
+          cache_key: string
+          city_data: Json
+          filters: Json | null
+          generated_at: string
+          id: string
+          state_data: Json
+        }
+        Insert: {
+          cache_key: string
+          city_data?: Json
+          filters?: Json | null
+          generated_at?: string
+          id?: string
+          state_data?: Json
+        }
+        Update: {
+          cache_key?: string
+          city_data?: Json
+          filters?: Json | null
+          generated_at?: string
+          id?: string
+          state_data?: Json
+        }
+        Relationships: []
+      }
       member_insights: {
         Row: {
           ai_recommendations: Json | null
