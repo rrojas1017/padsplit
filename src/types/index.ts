@@ -50,6 +50,13 @@ export interface BuyerIntent {
   timeframe: 'immediate' | 'this_week' | 'this_month' | 'exploring';
 }
 
+export interface LifestyleSignal {
+  category: 'healthcare' | 'pet' | 'transportation' | 'home_services' | 'telephony' | 'employment' | 'financial' | 'moving';
+  signal: string;
+  confidence: 'high' | 'medium' | 'low';
+  opportunity: string;
+}
+
 export interface CallKeyPoints {
   summary: string;
   memberConcerns: string[];
@@ -60,6 +67,7 @@ export interface CallKeyPoints {
   callSentiment: 'positive' | 'neutral' | 'negative';
   memberDetails?: MemberDetails;
   buyerIntent?: BuyerIntent; // Only present for Non-Booking calls
+  lifestyleSignals?: LifestyleSignal[]; // Cross-sell/upsell opportunity signals
 }
 
 export interface AgentFeedback {

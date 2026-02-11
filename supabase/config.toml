@@ -113,3 +113,9 @@ verify_jwt = false
 
 [functions.aggregate-market-data]
 verify_jwt = true
+
+[functions.aggregate-lifestyle-signals]
+verify_jwt = false
+
+[functions.batch-extract-lifestyle-signals]
+verify_jwt = false

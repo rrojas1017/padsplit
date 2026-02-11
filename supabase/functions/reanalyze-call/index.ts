@@ -459,8 +459,27 @@ Return a JSON object with EXACTLY this structure (no markdown, just raw JSON):
       "objectionHandling": 7,
       "closingSkills": 7
     }
-  }
+  },
+  "lifestyleSignals": [
+    {
+      "category": "healthcare | pet | transportation | home_services | telephony | employment | financial | moving",
+      "signal": "Exact quote or paraphrase from the conversation indicating a lifestyle need or opportunity",
+      "confidence": "high (explicitly stated) | medium (strongly implied) | low (loosely inferred)",
+      "opportunity": "Brief description of the cross-sell/upsell opportunity"
+    }
+  ]
 }
+
+LIFESTYLE SIGNALS EXTRACTION GUIDE:
+- healthcare: mentions of no insurance, needing coverage, ACA/Obamacare, medical needs, uninsured
+- pet: mentions of dogs, cats, pets, pet-friendly, pet deposits, animal needs
+- transportation: car details, no car, rideshare (Uber/Lyft), bus, transit needs
+- home_services: furniture needs, cleaning, WiFi/internet, laundry, appliances, bedding
+- telephony: phone plan issues, no phone service, prepaid phone, WiFi calling needs
+- employment: job searching, work schedule, unemployment, gig work, "not working"
+- financial: payment difficulties, no bank account, credit issues, cash-only, payday loans
+- moving: moving help, storage needs, shipping belongings, U-Haul, packing
+Only include signals with genuine evidence from the conversation. Return an empty array if no lifestyle signals are detected.
 
 ${scoringGuide}
 
@@ -514,8 +533,27 @@ Return a JSON object with EXACTLY this structure (no markdown, just raw JSON):
       "objectionHandling": 7,
       "closingSkills": 7
     }
-  }
+  },
+  "lifestyleSignals": [
+    {
+      "category": "healthcare | pet | transportation | home_services | telephony | employment | financial | moving",
+      "signal": "Exact quote or paraphrase from the conversation indicating a lifestyle need or opportunity",
+      "confidence": "high (explicitly stated) | medium (strongly implied) | low (loosely inferred)",
+      "opportunity": "Brief description of the cross-sell/upsell opportunity"
+    }
+  ]
 }
+
+LIFESTYLE SIGNALS EXTRACTION GUIDE:
+- healthcare: mentions of no insurance, needing coverage, ACA/Obamacare, medical needs, uninsured
+- pet: mentions of dogs, cats, pets, pet-friendly, pet deposits, animal needs
+- transportation: car details, no car, rideshare (Uber/Lyft), bus, transit needs
+- home_services: furniture needs, cleaning, WiFi/internet, laundry, appliances, bedding
+- telephony: phone plan issues, no phone service, prepaid phone, WiFi calling needs
+- employment: job searching, work schedule, unemployment, gig work, "not working"
+- financial: payment difficulties, no bank account, credit issues, cash-only, payday loans
+- moving: moving help, storage needs, shipping belongings, U-Haul, packing
+Only include signals with genuine evidence from the conversation. Return an empty array if no lifestyle signals are detected.
 
 SCORING GUIDE (1-10):
 - 9-10: Exceptional, textbook execution
@@ -679,7 +717,9 @@ async function callAIWithRetry(
         objections: parsed.objections || [],
         moveInReadiness: parsed.moveInReadiness || 'medium',
         callSentiment: parsed.callSentiment || 'neutral',
-        memberDetails: parsed.memberDetails || null
+        memberDetails: parsed.memberDetails || null,
+        // Lifestyle signals for cross-sell opportunities
+        ...(parsed.lifestyleSignals && parsed.lifestyleSignals.length > 0 ? { lifestyleSignals: parsed.lifestyleSignals } : {})
       };
       
       console.log('[ReAnalyze] AI parsing successful:', {
