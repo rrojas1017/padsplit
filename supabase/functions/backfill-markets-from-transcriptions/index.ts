@@ -14,7 +14,6 @@ interface ProcessingResult {
   error?: string;
 }
 
-// Extract market from transcription data using AI
 async function extractMarketFromTranscription(
   callSummary: string | null,
   propertyAddress: string | null,
@@ -54,7 +53,7 @@ Return ONLY a JSON object (no markdown, no explanation):
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'google/gemini-2.5-flash-lite', // Fast and cheap
+        model: 'google/gemini-2.5-flash-lite',
         messages: [{ role: 'user', content: prompt }],
       }),
     });
@@ -67,7 +66,6 @@ Return ONLY a JSON object (no markdown, no explanation):
     const result = await response.json();
     const content = result.choices?.[0]?.message?.content || '';
     
-    // Parse JSON response
     let cleanedContent = content.trim();
     if (cleanedContent.startsWith('```json')) cleanedContent = cleanedContent.slice(7);
     if (cleanedContent.startsWith('```')) cleanedContent = cleanedContent.slice(3);
@@ -75,8 +73,6 @@ Return ONLY a JSON object (no markdown, no explanation):
     cleanedContent = cleanedContent.trim();
     
     const parsed = JSON.parse(cleanedContent);
-    
-    // Validate response - ensure "null" strings become actual null
     const city = parsed.city === 'null' || parsed.city === '' ? null : parsed.city;
     const state = parsed.state === 'null' || parsed.state === '' ? null : parsed.state;
     
@@ -85,6 +81,47 @@ Return ONLY a JSON object (no markdown, no explanation):
     console.error('[Backfill] Error extracting market:', error);
     return { city: null, state: null };
   }
+}
+
+// Process a chunk of bookings in parallel
+async function processChunk(
+  chunk: any[],
+  supabase: any,
+  lovableApiKey: string,
+  dryRun: boolean
+): Promise<ProcessingResult[]> {
+  const promises = chunk.map(async (booking) => {
+    try {
+      const transcription = (booking as any).booking_transcriptions;
+      const callSummary = transcription?.call_summary || null;
+      const callKeyPoints = transcription?.call_key_points;
+      const propertyAddress = callKeyPoints?.memberDetails?.propertyAddress || null;
+
+      const { city, state } = await extractMarketFromTranscription(callSummary, propertyAddress, lovableApiKey);
+
+      if (!dryRun) {
+        const updateData: Record<string, unknown> = { market_backfill_checked: true };
+        if (city) updateData.market_city = city;
+        if (state) updateData.market_state = state;
+
+        const { error: updateError } = await supabase
+          .from('bookings')
+          .update(updateData)
+          .eq('id', booking.id);
+
+        if (updateError) {
+          return { bookingId: booking.id, success: false, error: updateError.message };
+        }
+      }
+
+      return { bookingId: booking.id, success: true, city, state };
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : 'Unknown error';
+      return { bookingId: booking.id, success: false, error: msg };
+    }
+  });
+
+  return Promise.all(promises);
 }
 
 serve(async (req) => {
@@ -97,142 +134,80 @@ serve(async (req) => {
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const lovableApiKey = Deno.env.get('LOVABLE_API_KEY')!;
     
-    if (!lovableApiKey) {
-      throw new Error('LOVABLE_API_KEY not configured');
-    }
+    if (!lovableApiKey) throw new Error('LOVABLE_API_KEY not configured');
 
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    // Parse request body for optional parameters
-    let batchSize = 10;
+    let batchSize = 50;
     let dryRun = false;
     try {
       const body = await req.json();
-      batchSize = body.batchSize || 10;
+      batchSize = body.batchSize || 50;
       dryRun = body.dryRun || false;
-    } catch {
-      // Use defaults if no body
-    }
+    } catch { /* defaults */ }
 
-    console.log(`[Backfill] Starting market backfill (batchSize: ${batchSize}, dryRun: ${dryRun})`);
+    console.log(`[Backfill] Starting (batchSize: ${batchSize}, dryRun: ${dryRun})`);
 
-    // Find IMPORTED bookings with completed transcriptions that are missing market data
+    // Fetch bookings missing market data with completed transcriptions
     const { data: bookingsToProcess, error: queryError } = await supabase
       .from('bookings')
       .select(`
-        id,
-        member_name,
-        market_city,
-        market_state,
-        booking_transcriptions!inner(
-          call_summary,
-          call_key_points
-        )
+        id, member_name, market_city, market_state,
+        booking_transcriptions!inner(call_summary, call_key_points)
       `)
       .eq('transcription_status', 'completed')
       .eq('market_backfill_checked', false)
-      .not('import_batch_id', 'is', null)  // Only imported records
-      .is('market_city', null)              // Only those missing market data
+      .is('market_city', null)
       .limit(batchSize);
 
-    if (queryError) {
-      console.error('[Backfill] Query error:', queryError);
-      throw new Error(`Failed to query bookings: ${queryError.message}`);
-    }
+    if (queryError) throw new Error(`Query failed: ${queryError.message}`);
 
     if (!bookingsToProcess || bookingsToProcess.length === 0) {
-      console.log('[Backfill] No bookings found that need market backfill');
       return new Response(
-        JSON.stringify({ 
-          success: true, 
-          message: 'No bookings need market backfill',
-          processed: 0 
-        }),
+        JSON.stringify({ success: true, message: 'No bookings need backfill', processed: 0, enriched: 0, remaining: 0 }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    console.log(`[Backfill] Found ${bookingsToProcess.length} bookings to process`);
+    // Get remaining count for self-chaining
+    const { count: remainingCount } = await supabase
+      .from('bookings')
+      .select('id', { count: 'exact', head: true })
+      .eq('transcription_status', 'completed')
+      .eq('market_backfill_checked', false)
+      .is('market_city', null);
 
+    console.log(`[Backfill] Processing ${bookingsToProcess.length}, ~${remainingCount} total remaining`);
+
+    // Process in parallel chunks of 5
+    const CONCURRENCY = 5;
     const results: ProcessingResult[] = [];
-    let successCount = 0;
-    let enrichedCount = 0;
-
-    for (const booking of bookingsToProcess) {
-      try {
-        const transcription = (booking as any).booking_transcriptions;
-        const callSummary = transcription?.call_summary || null;
-        const callKeyPoints = transcription?.call_key_points;
-        const propertyAddress = callKeyPoints?.memberDetails?.propertyAddress || null;
-
-        console.log(`[Backfill] Processing booking ${booking.id} (${booking.member_name})`);
-        console.log(`[Backfill]   - Summary available: ${!!callSummary}`);
-        console.log(`[Backfill]   - Property address: ${propertyAddress || 'none'}`);
-
-        // Extract market info using AI
-        const { city, state } = await extractMarketFromTranscription(
-          callSummary,
-          propertyAddress,
-          lovableApiKey
-        );
-
-        console.log(`[Backfill]   - Extracted: city=${city}, state=${state}`);
-
-        if (!dryRun) {
-          // Always mark as checked, update market data if found
-          const updateData: Record<string, unknown> = {
-            market_backfill_checked: true
-          };
-          
-          if (city) updateData.market_city = city;
-          if (state) updateData.market_state = state;
-
-          const { error: updateError } = await supabase
-            .from('bookings')
-            .update(updateData)
-            .eq('id', booking.id);
-
-          if (updateError) {
-            console.error(`[Backfill] Update error for ${booking.id}:`, updateError);
-            results.push({ bookingId: booking.id, success: false, error: updateError.message });
-            continue;
-          }
-        }
-
-        if (city || state) {
-          enrichedCount++;
-        }
-        results.push({ bookingId: booking.id, success: true, city, state });
-
-        successCount++;
-
-        // Add small delay between AI calls to avoid rate limiting
-        if (bookingsToProcess.indexOf(booking) < bookingsToProcess.length - 1) {
-          await new Promise(resolve => setTimeout(resolve, 500));
-        }
-
-      } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-        console.error(`[Backfill] Error processing ${booking.id}:`, errorMessage);
-        results.push({ bookingId: booking.id, success: false, error: errorMessage });
+    
+    for (let i = 0; i < bookingsToProcess.length; i += CONCURRENCY) {
+      const chunk = bookingsToProcess.slice(i, i + CONCURRENCY);
+      const chunkResults = await processChunk(chunk, supabase, lovableApiKey, dryRun);
+      results.push(...chunkResults);
+      
+      // Brief delay between concurrent groups
+      if (i + CONCURRENCY < bookingsToProcess.length) {
+        await new Promise(resolve => setTimeout(resolve, 200));
       }
     }
 
-    // Log API cost estimate
-    const estimatedCost = bookingsToProcess.length * 0.0001; // ~$0.0001 per lightweight AI call
-    console.log(`[Backfill] Estimated API cost: $${estimatedCost.toFixed(4)}`);
+    const successCount = results.filter(r => r.success).length;
+    const enrichedCount = results.filter(r => r.success && (r.city || r.state)).length;
+    const remaining = Math.max(0, (remainingCount || 0) - successCount);
 
-    console.log(`[Backfill] Completed: ${successCount}/${bookingsToProcess.length} processed, ${enrichedCount} enriched`);
+    console.log(`[Backfill] Done: ${successCount} processed, ${enrichedCount} enriched, ${remaining} remaining`);
 
     return new Response(
       JSON.stringify({
         success: true,
-        message: `Processed ${successCount} bookings, enriched ${enrichedCount} with market data`,
         processed: successCount,
         enriched: enrichedCount,
+        remaining,
         dryRun,
         results,
-        estimatedCost: `$${estimatedCost.toFixed(4)}`
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
@@ -240,14 +215,8 @@ serve(async (req) => {
   } catch (error) {
     console.error('[Backfill] Error:', error);
     return new Response(
-      JSON.stringify({ 
-        success: false, 
-        error: error instanceof Error ? error.message : 'Unknown error' 
-      }),
-      { 
-        status: 500, 
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
-      }
+      JSON.stringify({ success: false, error: error instanceof Error ? error.message : 'Unknown error' }),
+      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   }
 });
