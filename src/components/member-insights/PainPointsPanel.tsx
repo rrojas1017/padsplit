@@ -39,6 +39,8 @@ interface PaymentInsight {
   frequency: number;
   impact: string;
   examples?: string[];
+  sub_categories?: PainPointSubCategory[];
+  actionable_solutions?: PainPointSolution[];
 }
 
 interface TransportationInsight {
@@ -46,6 +48,8 @@ interface TransportationInsight {
   frequency: number;
   markets_affected?: string[];
   examples?: string[];
+  sub_categories?: PainPointSubCategory[];
+  actionable_solutions?: PainPointSolution[];
 }
 
 interface MoveInBarrier {
@@ -54,6 +58,8 @@ interface MoveInBarrier {
   impact_score: number;
   resolution?: string;
   examples?: string[];
+  sub_categories?: PainPointSubCategory[];
+  actionable_solutions?: PainPointSolution[];
 }
 
 interface PainPointsPanelProps {
@@ -334,6 +340,8 @@ const PainPointsPanel = ({ painPoints, paymentInsights, transportationInsights, 
                           <span className="text-xs text-muted-foreground">{insight.frequency}% of calls</span>
                         </div>
                         <QuotesSection examples={insight.examples} />
+                        <SubCategoriesSection subCategories={insight.sub_categories || []} parentFrequency={insight.frequency} />
+                        <ActionableSolutionsSection solutions={insight.actionable_solutions} />
                       </div>
                     </div>
                   ))}
@@ -364,6 +372,8 @@ const PainPointsPanel = ({ painPoints, paymentInsights, transportationInsights, 
                         ))}
                       </div>
                       <QuotesSection examples={insight.examples} />
+                      <SubCategoriesSection subCategories={insight.sub_categories || []} parentFrequency={insight.frequency} />
+                      <ActionableSolutionsSection solutions={insight.actionable_solutions} />
                     </div>
                   ))}
                 </div>
@@ -398,6 +408,8 @@ const PainPointsPanel = ({ painPoints, paymentInsights, transportationInsights, 
                         </p>
                       )}
                       <QuotesSection examples={barrier.examples} />
+                      <SubCategoriesSection subCategories={barrier.sub_categories || []} parentFrequency={barrier.frequency} />
+                      <ActionableSolutionsSection solutions={barrier.actionable_solutions} />
                     </div>
                   ))}
                 </div>

@@ -499,16 +499,83 @@ CRITICAL: You MUST include the "customer_journeys" array - this is the MOST IMPO
     }
   ],
   "payment_insights": [
-    {"insight": "specific insight about payment patterns", "frequency": 15, "impact": "high|medium|low", "examples": ["quote"]}
+    {
+      "insight": "specific insight about payment patterns", 
+      "frequency": 15, 
+      "impact": "high|medium|low", 
+      "examples": ["quote"],
+      "sub_categories": [
+        {
+          "name": "Specific payment sub-issue",
+          "frequency": 40,
+          "description": "Detailed description of this specific payment concern",
+          "examples": ["verbatim quote"],
+          "solution": {
+            "action": "Concrete step to address this",
+            "owner": "Product|Training|Marketing|Operations",
+            "effort": "low|medium|high",
+            "expected_outcome": "Expected result of implementing this solution"
+          }
+        }
+      ],
+      "actionable_solutions": [
+        {"action": "Cross-cutting solution", "owner": "Training", "effort": "low", "expected_outcome": "Expected result"}
+      ]
+    }
   ],
   "transportation_insights": [
-    {"insight": "specific insight about transportation needs", "frequency": 12, "markets_affected": ["Atlanta", "Dallas"], "examples": ["quote"]}
+    {
+      "insight": "specific insight about transportation needs", 
+      "frequency": 12, 
+      "markets_affected": ["Atlanta", "Dallas"], 
+      "examples": ["quote"],
+      "sub_categories": [
+        {
+          "name": "Specific transportation sub-issue",
+          "frequency": 50,
+          "description": "Detailed description of this specific transportation concern",
+          "examples": ["verbatim quote"],
+          "solution": {
+            "action": "Concrete step to address this",
+            "owner": "Product|Training|Marketing|Operations",
+            "effort": "low|medium|high",
+            "expected_outcome": "Expected result"
+          }
+        }
+      ],
+      "actionable_solutions": [
+        {"action": "Cross-cutting solution", "owner": "Operations", "effort": "medium", "expected_outcome": "Expected result"}
+      ]
+    }
   ],
   "price_sensitivity": [
     {"pattern": "budget range or comparison behavior", "frequency": 18, "suggested_action": "what PadSplit could do"}
   ],
   "move_in_barriers": [
-    {"barrier": "what prevents/delays move-in", "frequency": 10, "impact_score": 8, "resolution": "how to address", "examples": ["quote"]}
+    {
+      "barrier": "what prevents/delays move-in", 
+      "frequency": 10, 
+      "impact_score": 8, 
+      "resolution": "how to address", 
+      "examples": ["quote"],
+      "sub_categories": [
+        {
+          "name": "Specific barrier sub-issue",
+          "frequency": 40,
+          "description": "Detailed description of this specific barrier",
+          "examples": ["verbatim quote"],
+          "solution": {
+            "action": "Concrete step to address this",
+            "owner": "Product|Training|Marketing|Operations",
+            "effort": "low|medium|high",
+            "expected_outcome": "Expected result"
+          }
+        }
+      ],
+      "actionable_solutions": [
+        {"action": "Cross-cutting solution", "owner": "Operations", "effort": "medium", "expected_outcome": "Expected result"}
+      ]
+    }
   ],
   "property_preferences": [
     {"preference": "amenity or feature preference", "frequency": 22, "priority": "must-have|nice-to-have"}
@@ -534,12 +601,13 @@ CUSTOMER JOURNEY REQUIREMENTS (MANDATORY - DO NOT SKIP):
 - Include actual quotes from the call data as examples
 - Market concentration shows which markets have higher percentages of this persona
 
-PAIN POINT SUB-CATEGORY REQUIREMENTS (MANDATORY):
-- For any pain point with frequency >= 20%, you MUST break it into 2-5 specific sub_categories
-- Each sub_category frequency is a percentage OF THE PARENT CATEGORY'S calls (should sum to approximately 100%)
+SUB-CATEGORY REQUIREMENTS (MANDATORY FOR ALL INSIGHT SECTIONS):
+- For any pain_point, payment_insight, transportation_insight, or move_in_barrier with frequency >= 15%, you MUST break it into 2-5 specific sub_categories
+- Each sub_category frequency is a percentage OF THE PARENT ITEM'S occurrences (should sum to approximately 100%)
 - Each sub_category MUST include a practical "solution" object with: action (concrete step), owner (Product|Training|Marketing|Operations), effort (low|medium|high), and expected_outcome
-- The top-level "actionable_solutions" array should contain 1-3 cross-cutting solutions for the overall pain point
-- Pain points below 20% frequency do NOT need sub_categories (omit the field or use empty array)
+- The top-level "actionable_solutions" array should contain 1-3 cross-cutting solutions for the overall item
+- Items below 15% frequency do NOT need sub_categories (omit the field or use empty array)
+- This applies equally to pain_points, payment_insights, transportation_insights, AND move_in_barriers
 
 ADDITIONAL REQUIREMENTS:
 - Frequencies should be percentages of total calls analyzed
