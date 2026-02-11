@@ -123,9 +123,12 @@ export function AppSidebar() {
       isRestoring.current = true;
       requestAnimationFrame(() => {
         nav.scrollTop = scrollPos.current;
-        requestAnimationFrame(() => {
+        setTimeout(() => {
+          if (navRef.current) {
+            navRef.current.scrollTop = scrollPos.current;
+          }
           isRestoring.current = false;
-        });
+        }, 80);
       });
     }
   }, [location.pathname]);
@@ -186,6 +189,11 @@ export function AppSidebar() {
       >
         <NavLink
           to={item.path}
+          onClick={() => {
+            if (navRef.current) {
+              scrollPos.current = navRef.current.scrollTop;
+            }
+          }}
           className={cn(
             "flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200 group/item",
             indented && !collapsed && "ml-3",
@@ -252,7 +260,6 @@ export function AppSidebar() {
       {/* Navigation */}
       <nav
         ref={navRef}
-        onScroll={() => { if (navRef.current && !isRestoring.current) scrollPos.current = navRef.current.scrollTop; }}
         className="flex-1 p-3 space-y-1 overflow-y-auto"
       >
         {/* Core Items */}
