@@ -1,45 +1,52 @@
 
-# Fix Stale Date Filtering in Communication Insights
+# Fix Duplicate Processing of Bookings
 
-## Problem
-When you select "This Week", the system shows 106 calls — but those are from LAST week (Feb 2–6, analyzed on Feb 7). Today is Feb 10, a new week entirely. The filter matches on the stored string label (`analysis_period = 'thisWeek'`) instead of checking whether the analysis's actual date range falls within the current calendar week.
+## Root Cause Found
 
-This affects all relative period filters (This Week, This Month, Last Month) since they become stale as time passes.
+There are **two identical INSERT triggers** on the `bookings` table:
 
-## Root Cause
-In `BookingInsightsTab.tsx` (line 104-108), the query filters like this:
+```text
+trigger_auto_transcription        AFTER INSERT -> trigger_auto_transcription_on_insert()
+trigger_auto_transcription_insert AFTER INSERT -> trigger_auto_transcription_on_insert()
 ```
-.in('analysis_period', ['thisWeek'])
+
+Both call the exact same function, so every new booking fires `check-auto-transcription` **twice**, which triggers `transcribe-call` **twice**, doubling all costs (STT, LLM, TTS).
+
+The `transcribe-call` function has no deduplication guard -- it blindly sets `transcription_status = 'processing'` and proceeds, so both invocations race through the full pipeline.
+
+## Fix (2 changes)
+
+### 1. Remove the duplicate trigger (database migration)
+Drop `trigger_auto_transcription` (the older duplicate). Keep `trigger_auto_transcription_insert` as the single INSERT trigger.
+
+```sql
+DROP TRIGGER IF EXISTS trigger_auto_transcription ON public.bookings;
 ```
-This matches ANY record ever tagged "thisWeek", regardless of what dates it actually covers. A "This Week" analysis from 3 weeks ago would still show up.
 
-The same pattern exists in `NonBookingAnalysisTab.tsx`.
+### 2. Add deduplication guard to `check-auto-transcription` edge function
+Before triggering transcription, atomically check and set `transcription_status = 'queued'` using an UPDATE with a WHERE clause that only matches NULL or 'failed' status. If no rows are updated, another invocation already claimed it -- skip.
 
-## Solution
-Replace the string-label filter with actual date-range overlap filtering. When the user selects "This Week":
+This is a simple atomic "claim" pattern:
 
-1. Calculate the current week's boundaries (Mon Feb 10 – Sun Feb 16)
-2. Query where `date_range_start` and `date_range_end` overlap with that range
-3. If no matching analysis exists, show the "No analysis for this period — click Run Analysis" banner (which already exists)
+```text
+UPDATE bookings 
+SET transcription_status = 'queued' 
+WHERE id = bookingId 
+  AND (transcription_status IS NULL OR transcription_status = 'failed')
+```
 
-## Changes
+If the update returns 0 rows, the booking was already claimed by the other trigger invocation, so we return early without calling transcribe-call.
 
-### 1. `src/components/call-insights/BookingInsightsTab.tsx`
-- Modify `fetchInsights()` to calculate the expected date range for the selected period using `getDateRange()`
-- Replace `.in('analysis_period', periodFilters)` with `.gte('date_range_start', startDate).lte('date_range_start', endDate)` to match analyses whose date range overlaps the selected period
-- Remove the `getPeriodFilters` helper (no longer needed)
+### 3. Add deduplication guard to `transcribe-call` edge function
+As a belt-and-suspenders defense, add a status check at the start of the background processing: if `transcription_status` is already `'processing'` or `'completed'`, skip processing.
 
-### 2. `src/components/call-insights/NonBookingAnalysisTab.tsx`
-- Apply the same date-range-based filtering to the non-booking insights query
-- Replace the `analysis_period` string filter with date range overlap checks
+## Files to Change
 
-## What Does NOT Change
-- No database or backend changes needed
-- The `analysis_period` column is still written for display/labeling purposes
-- The "Run Analysis" flow remains the same
-- All other UI components remain untouched
+- **Database migration**: Drop `trigger_auto_transcription` trigger
+- **`supabase/functions/check-auto-transcription/index.ts`**: Add atomic claim before triggering transcription
+- **`supabase/functions/transcribe-call/index.ts`**: Add status guard at start of background processing
 
-## Expected Result
-- "This Week" will either show an analysis whose dates match this week (Feb 10–16), or show the "No analysis — click Run Analysis" prompt
-- Old analyses from previous weeks will no longer incorrectly appear under "This Week"
-- Users get accurate, current data for every time period filter
+## Impact
+- Eliminates 100% of duplicate processing
+- Reduces cost per booking from ~$0.78 to ~$0.39
+- No changes to the UI or other functions
