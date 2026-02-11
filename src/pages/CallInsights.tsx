@@ -5,7 +5,9 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { BookingInsightsTab } from '@/components/call-insights/BookingInsightsTab';
 import { NonBookingAnalysisTab } from '@/components/call-insights/NonBookingAnalysisTab';
-import { Lightbulb, TrendingUp, UserX } from 'lucide-react';
+import { CrossSellOpportunitiesTab } from '@/components/call-insights/CrossSellOpportunitiesTab';
+import { useAuth } from '@/contexts/AuthContext';
+import { Lightbulb, TrendingUp, UserX, ShoppingBag } from 'lucide-react';
 
 // Interface matching the Call type expected by child components
 export interface Call {
@@ -34,7 +36,10 @@ type DateRangeOption = 'thisWeek' | 'lastMonth' | 'thisMonth' | 'last3months' | 
 
 export default function CallInsights() {
   const [searchParams, setSearchParams] = useSearchParams();
-  const initialTab = searchParams.get('tab') === 'bookings' ? 'bookings' : 'non-bookings';
+  const { hasRole } = useAuth();
+  const isSuperAdmin = hasRole(['super_admin']);
+  const initialTab = searchParams.get('tab') === 'bookings' ? 'bookings' : 
+                     searchParams.get('tab') === 'cross-sell' && isSuperAdmin ? 'cross-sell' : 'non-bookings';
   const [activeTab, setActiveTab] = useState(initialTab);
   const [dateRange, setDateRange] = useState<DateRangeOption>('thisMonth');
 
@@ -43,6 +48,8 @@ export default function CallInsights() {
     const tabParam = searchParams.get('tab');
     if (tabParam === 'bookings' && activeTab !== 'bookings') {
       setActiveTab('bookings');
+    } else if (tabParam === 'cross-sell' && isSuperAdmin && activeTab !== 'cross-sell') {
+      setActiveTab('cross-sell');
     }
   }, [searchParams]);
 
@@ -50,6 +57,8 @@ export default function CallInsights() {
     setActiveTab(value);
     if (value === 'bookings') {
       setSearchParams({ tab: 'bookings' });
+    } else if (value === 'cross-sell') {
+      setSearchParams({ tab: 'cross-sell' });
     } else {
       setSearchParams({});
     }
@@ -78,7 +87,7 @@ export default function CallInsights() {
 
         {/* Main Tabs */}
         <Tabs value={activeTab} onValueChange={handleTabChange} className="space-y-6">
-          <TabsList className="grid w-full max-w-md grid-cols-2 p-1 h-12">
+          <TabsList className={`grid w-full ${isSuperAdmin ? 'max-w-2xl grid-cols-3' : 'max-w-md grid-cols-2'} p-1 h-12`}>
             <TabsTrigger 
               value="bookings" 
               className="gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
@@ -93,6 +102,15 @@ export default function CallInsights() {
               <UserX className="h-4 w-4" />
               <span>Non-Booking Analysis</span>
             </TabsTrigger>
+            {isSuperAdmin && (
+              <TabsTrigger 
+                value="cross-sell"
+                className="gap-2 data-[state=active]:bg-orange-500 data-[state=active]:text-white"
+              >
+                <ShoppingBag className="h-4 w-4" />
+                <span>Cross-Sell</span>
+              </TabsTrigger>
+            )}
           </TabsList>
 
           <TabsContent value="bookings" className="mt-6">
@@ -108,6 +126,15 @@ export default function CallInsights() {
               onDateRangeChange={setDateRange}
             />
           </TabsContent>
+
+          {isSuperAdmin && (
+            <TabsContent value="cross-sell" className="mt-6">
+              <CrossSellOpportunitiesTab 
+                dateRange={dateRange}
+                onDateRangeChange={setDateRange}
+              />
+            </TabsContent>
+          )}
         </Tabs>
       </div>
     </DashboardLayout>
