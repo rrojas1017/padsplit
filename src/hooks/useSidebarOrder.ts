@@ -1,4 +1,5 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
+import { supabase } from '@/integrations/supabase/client';
 
 type MenuGroup = 'core' | 'admin';
 
@@ -16,8 +17,9 @@ interface MenuItem {
 }
 
 const STORAGE_KEY = 'sidebar-custom-order';
+const PREFERENCE_KEY = 'sidebar_custom_order';
 
-function loadOrder(): OrderEntry[] | null {
+function loadOrderFromLocal(): OrderEntry[] | null {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return null;
@@ -31,12 +33,56 @@ function loadOrder(): OrderEntry[] | null {
   }
 }
 
-function saveOrder(order: OrderEntry[]) {
+function saveOrderToLocal(order: OrderEntry[]) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(order));
 }
 
-export function useSidebarOrder() {
-  const [savedOrder, setSavedOrder] = useState<OrderEntry[] | null>(() => loadOrder());
+export function useSidebarOrder(userId?: string) {
+  const [savedOrder, setSavedOrder] = useState<OrderEntry[] | null>(() => loadOrderFromLocal());
+  const dbLoaded = useRef(false);
+
+  // Load from database on mount (source of truth)
+  useEffect(() => {
+    if (!userId || dbLoaded.current) return;
+    dbLoaded.current = true;
+
+    supabase
+      .from('user_preferences')
+      .select('preference_value')
+      .eq('user_id', userId)
+      .eq('preference_key', PREFERENCE_KEY)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (data?.preference_value) {
+          const order = data.preference_value as unknown as OrderEntry[];
+          if (Array.isArray(order) && order.every(e => e.path && e.group)) {
+            setSavedOrder(order);
+            saveOrderToLocal(order);
+            return;
+          }
+        }
+        // No DB record — if localStorage has something, push it to DB
+        const local = loadOrderFromLocal();
+        if (local) {
+          setSavedOrder(local);
+          upsertToDb(userId, local);
+        }
+      });
+  }, [userId]);
+
+  const upsertToDb = useCallback(async (uid: string, order: OrderEntry[]) => {
+    await supabase
+      .from('user_preferences')
+      .upsert(
+        {
+          user_id: uid,
+          preference_key: PREFERENCE_KEY,
+          preference_value: order as any,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: 'user_id,preference_key' }
+      );
+  }, []);
 
   const getOrderedItems = useCallback((visibleItems: MenuItem[]): MenuItem[] => {
     if (!savedOrder) return visibleItems;
@@ -45,17 +91,14 @@ export function useSidebarOrder() {
     const ordered: MenuItem[] = [];
     const seen = new Set<string>();
 
-    // Place items in saved order, applying saved group
     for (const entry of savedOrder) {
       const item = itemMap.get(entry.path);
       if (item) {
         ordered.push({ ...item, group: entry.group });
         seen.add(entry.path);
       }
-      // silently skip removed items
     }
 
-    // Append new items not in saved order at end of their default group
     for (const item of visibleItems) {
       if (!seen.has(item.path)) {
         ordered.push(item);
@@ -71,46 +114,46 @@ export function useSidebarOrder() {
     targetIndex: number,
     currentItems: MenuItem[]
   ) => {
-    // Build current order entries
     const entries: OrderEntry[] = currentItems.map(item => ({
       path: item.path,
       group: item.group,
     }));
 
-    // Find and remove the dragged item
     const draggedIdx = entries.findIndex(e => e.path === itemPath);
     if (draggedIdx === -1) return;
     const [dragged] = entries.splice(draggedIdx, 1);
     dragged.group = targetGroup;
 
-    // Get items in target group after removal
     const groupItems = entries.filter(e => e.group === targetGroup);
     const otherItems = entries.filter(e => e.group !== targetGroup);
 
-    // Clamp target index
     const clampedIndex = Math.min(targetIndex, groupItems.length);
     groupItems.splice(clampedIndex, 0, dragged);
 
-    // Reconstruct: core first, then admin
-    const coreEntries = (targetGroup === 'core' ? groupItems : otherItems.filter(e => e.group === 'core'));
-    const adminEntries = (targetGroup === 'admin' ? groupItems : otherItems.filter(e => e.group === 'admin'));
-
-    // If target is core, we need non-core from otherItems for admin
     let newOrder: OrderEntry[];
     if (targetGroup === 'core') {
-      newOrder = [...coreEntries, ...otherItems.filter(e => e.group === 'admin')];
+      newOrder = [...groupItems, ...otherItems.filter(e => e.group === 'admin')];
     } else {
-      newOrder = [...otherItems.filter(e => e.group === 'core'), ...adminEntries];
+      newOrder = [...otherItems.filter(e => e.group === 'core'), ...groupItems];
     }
 
-    saveOrder(newOrder);
+    saveOrderToLocal(newOrder);
     setSavedOrder(newOrder);
-  }, []);
+    if (userId) upsertToDb(userId, newOrder);
+  }, [userId, upsertToDb]);
 
   const resetOrder = useCallback(() => {
     localStorage.removeItem(STORAGE_KEY);
     setSavedOrder(null);
-  }, []);
+    if (userId) {
+      supabase
+        .from('user_preferences')
+        .delete()
+        .eq('user_id', userId)
+        .eq('preference_key', PREFERENCE_KEY)
+        .then();
+    }
+  }, [userId]);
 
   const hasCustomOrder = savedOrder !== null;
 

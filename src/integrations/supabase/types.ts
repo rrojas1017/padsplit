@@ -2299,6 +2299,30 @@ export type Database = {
           },
         ]
       }
+      user_preferences: {
+        Row: {
+          id: string
+          preference_key: string
+          preference_value: Json
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          id?: string
+          preference_key: string
+          preference_value: Json
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          id?: string
+          preference_key?: string
+          preference_value?: Json
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       user_roles: {
         Row: {
           id: string

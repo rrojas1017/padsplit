@@ -80,7 +80,7 @@ export function AppSidebar() {
   const { user, logout, hasRole } = useAuth();
   const location = useLocation();
   const { collapsed, toggleSidebar } = useSidebar();
-  const { getOrderedItems, moveItem, resetOrder, hasCustomOrder } = useSidebarOrder();
+  const { getOrderedItems, moveItem, resetOrder, hasCustomOrder } = useSidebarOrder(user?.id);
   
   const [adminExpanded, setAdminExpanded] = useState(() => {
     const saved = localStorage.getItem('sidebar-admin-expanded');
