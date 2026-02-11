@@ -1465,6 +1465,48 @@ export type Database = {
           },
         ]
       }
+      lifestyle_backfill_jobs: {
+        Row: {
+          completed_at: string | null
+          created_at: string
+          created_by: string | null
+          end_date: string | null
+          id: string
+          remaining: number
+          start_date: string | null
+          started_at: string
+          status: string
+          total_failed: number
+          total_processed: number
+        }
+        Insert: {
+          completed_at?: string | null
+          created_at?: string
+          created_by?: string | null
+          end_date?: string | null
+          id?: string
+          remaining?: number
+          start_date?: string | null
+          started_at?: string
+          status?: string
+          total_failed?: number
+          total_processed?: number
+        }
+        Update: {
+          completed_at?: string | null
+          created_at?: string
+          created_by?: string | null
+          end_date?: string | null
+          id?: string
+          remaining?: number
+          start_date?: string | null
+          started_at?: string
+          status?: string
+          total_failed?: number
+          total_processed?: number
+        }
+        Relationships: []
+      }
       llm_prompt_enhancements: {
         Row: {
           content: string

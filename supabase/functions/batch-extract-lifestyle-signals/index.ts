@@ -18,51 +18,125 @@ serve(async (req) => {
 
     if (!lovableApiKey) throw new Error('LOVABLE_API_KEY not configured');
 
-    // Verify caller is super_admin
-    const authHeader = req.headers.get('Authorization');
-    if (!authHeader) {
-      return new Response(JSON.stringify({ error: 'Unauthorized' }), {
-        status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-      });
-    }
-
-    const token = authHeader.replace('Bearer ', '');
-    const anonClient = createClient(supabaseUrl, Deno.env.get('SUPABASE_ANON_KEY')!);
-    const { data: { user }, error: authError } = await anonClient.auth.getUser(token);
-
-    if (authError || !user) {
-      return new Response(JSON.stringify({ error: 'Unauthorized' }), {
-        status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-      });
-    }
-
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
-    const { data: roleData } = await supabase
-      .from('user_roles')
-      .select('role')
-      .eq('user_id', user.id)
-      .single();
-
-    if (roleData?.role !== 'super_admin') {
-      return new Response(JSON.stringify({ error: 'Forbidden: super_admin only' }), {
-        status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-      });
-    }
-
     const body = await req.json().catch(() => ({}));
     const batchSize = body.batchSize || 50;
     const startDate = body.startDate || null;
     const endDate = body.endDate || null;
-    const startTime = Date.now();
-    const MAX_DURATION_MS = 35000; // 35 seconds max – leave headroom for count query + HTTP overhead before 60s gateway limit
+    let jobId = body.jobId || null;
 
+    // If this is the initial call (has Authorization header), verify the user
+    const authHeader = req.headers.get('Authorization');
+    if (authHeader && !jobId) {
+      const token = authHeader.replace('Bearer ', '');
+      const anonClient = createClient(supabaseUrl, Deno.env.get('SUPABASE_ANON_KEY')!);
+      const { data: { user }, error: authError } = await anonClient.auth.getUser(token);
+
+      if (authError || !user) {
+        return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+          status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      }
+
+      const { data: roleData } = await supabase
+        .from('user_roles')
+        .select('role')
+        .eq('user_id', user.id)
+        .single();
+
+      if (roleData?.role !== 'super_admin') {
+        return new Response(JSON.stringify({ error: 'Forbidden: super_admin only' }), {
+          status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      }
+
+      // Count remaining before creating job
+      let initialRemaining = 0;
+      try {
+        let countQuery = supabase
+          .from('booking_transcriptions')
+          .select('id, bookings!inner(booking_date)', { count: 'exact', head: true })
+          .not('call_transcription', 'is', null)
+          .not('call_key_points', 'is', null)
+          .is('call_key_points->lifestyleSignals', null);
+
+        if (startDate) countQuery = countQuery.gte('bookings.booking_date', startDate);
+        if (endDate) countQuery = countQuery.lte('bookings.booking_date', endDate);
+
+        const { count } = await countQuery;
+        initialRemaining = count || 0;
+      } catch (e) {
+        console.error('[Backfill] Error counting initial:', e);
+      }
+
+      if (initialRemaining === 0) {
+        return new Response(JSON.stringify({
+          success: true, jobId: null, message: 'No records to process', remaining: 0
+        }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
+
+      // Create job row
+      const { data: jobRow, error: jobError } = await supabase
+        .from('lifestyle_backfill_jobs')
+        .insert({
+          status: 'running',
+          start_date: startDate,
+          end_date: endDate,
+          remaining: initialRemaining,
+          created_by: user.id,
+          started_at: new Date().toISOString(),
+        })
+        .select('id')
+        .single();
+
+      if (jobError) throw jobError;
+      jobId = jobRow.id;
+
+      // Fire self-retrigger to actually start processing (fire-and-forget)
+      const selfUrl = `${supabaseUrl}/functions/v1/batch-extract-lifestyle-signals`;
+      fetch(selfUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${supabaseServiceKey}`,
+        },
+        body: JSON.stringify({ jobId, batchSize, startDate, endDate }),
+      }).catch(e => console.error('[Backfill] Self-trigger error:', e));
+
+      // Return immediately with jobId
+      return new Response(JSON.stringify({
+        success: true, jobId, remaining: initialRemaining,
+        message: 'Backfill started in background'
+      }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
+
+    // ---- Self-retriggered call: process one batch ----
+    if (!jobId) {
+      return new Response(JSON.stringify({ error: 'No jobId provided' }), {
+        status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
+
+    // Check job status
+    const { data: job } = await supabase
+      .from('lifestyle_backfill_jobs')
+      .select('*')
+      .eq('id', jobId)
+      .single();
+
+    if (!job || job.status !== 'running') {
+      console.log(`[Backfill] Job ${jobId} status is ${job?.status}, stopping.`);
+      return new Response(JSON.stringify({ success: true, stopped: true }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
+
+    const MAX_DURATION_MS = 35000;
+    const startTime = Date.now();
     let totalProcessed = 0;
     let totalFailed = 0;
 
-    // Process in a loop until timeout or no more records
     while (Date.now() - startTime < MAX_DURATION_MS) {
-      // Fetch transcriptions that need lifestyle signal extraction
-      // Join with bookings to get booking_date for date filtering and ordering
       let query = supabase
         .from('booking_transcriptions')
         .select('id, booking_id, call_transcription, call_key_points, bookings!inner(booking_date)')
@@ -78,38 +152,39 @@ serve(async (req) => {
 
       if (fetchError) {
         console.error(`[Backfill] Fetch error:`, fetchError.message);
-        // If the join/order fails, try simpler query without ordering
         break;
       }
 
-      // DB-level filter handles this now; safety net only
       const toProcess = candidates || [];
-
-      if (toProcess.length === 0) {
-        console.log(`[Backfill] No more records to process`);
-        break;
-      }
+      if (toProcess.length === 0) break;
 
       console.log(`[Backfill] Processing ${toProcess.length} transcriptions (elapsed: ${Date.now() - startTime}ms)`);
 
       for (const record of toProcess) {
-        // Check timeout before each record
-        if (Date.now() - startTime > MAX_DURATION_MS) {
-          console.log(`[Backfill] Timeout reached, stopping`);
-          break;
+        if (Date.now() - startTime > MAX_DURATION_MS) break;
+
+        // Re-check job status periodically (every ~10 records)
+        if (totalProcessed > 0 && totalProcessed % 10 === 0) {
+          const { data: freshJob } = await supabase
+            .from('lifestyle_backfill_jobs')
+            .select('status')
+            .eq('id', jobId)
+            .single();
+          if (freshJob?.status !== 'running') {
+            console.log(`[Backfill] Job cancelled mid-batch`);
+            break;
+          }
         }
 
         try {
           const transcription = record.call_transcription as string;
           if (!transcription || transcription.length < 50) {
-            // Mark as processed with empty signals so it's not refetched
             const existingKP = record.call_key_points as any;
             await supabase
               .from('booking_transcriptions')
               .update({ call_key_points: { ...existingKP, lifestyleSignals: [] } })
               .eq('id', record.id);
             totalProcessed++;
-            console.log(`[Backfill] Marked ${record.booking_id} with empty signals (too short)`);
             continue;
           }
 
@@ -163,7 +238,6 @@ If no lifestyle signals are detected, return: {"lifestyleSignals": []}`;
           const result = await response.json();
           let content = result.choices?.[0]?.message?.content?.trim() || '';
           
-          // Clean JSON
           if (content.startsWith('```json')) content = content.slice(7);
           if (content.startsWith('```')) content = content.slice(3);
           if (content.endsWith('```')) content = content.slice(0, -3);
@@ -172,7 +246,6 @@ If no lifestyle signals are detected, return: {"lifestyleSignals": []}`;
           const parsed = JSON.parse(content);
           const signals = parsed.lifestyleSignals || [];
 
-          // Update the existing call_key_points with lifestyleSignals
           const existingKeyPoints = record.call_key_points as any;
           const updatedKeyPoints = { ...existingKeyPoints, lifestyleSignals: signals };
 
@@ -185,14 +258,11 @@ If no lifestyle signals are detected, return: {"lifestyleSignals": []}`;
             .eq('id', record.id);
 
           if (updateError) {
-            console.error(`[Backfill] Update error for ${record.booking_id}:`, updateError);
             totalFailed++;
           } else {
             totalProcessed++;
-            console.log(`[Backfill] Extracted ${signals.length} signals for ${record.booking_id}`);
           }
 
-          // Rate limiting: 300ms between requests
           await new Promise(resolve => setTimeout(resolve, 300));
 
         } catch (err) {
@@ -202,8 +272,7 @@ If no lifestyle signals are detected, return: {"lifestyleSignals": []}`;
       }
     }
 
-    // Count remaining records that still need processing (no lifestyleSignals)
-    // We fetch a sample and filter since we can't query JSON absence directly
+    // Count remaining
     let remainingCount = 0;
     try {
       let countQuery = supabase
@@ -217,19 +286,60 @@ If no lifestyle signals are detected, return: {"lifestyleSignals": []}`;
       if (endDate) countQuery = countQuery.lte('bookings.booking_date', endDate);
 
       const { count } = await countQuery;
-
       remainingCount = count || 0;
     } catch (e) {
       console.error('[Backfill] Error counting remaining:', e);
     }
 
+    // Update job row
+    const newProcessed = (job.total_processed || 0) + totalProcessed;
+    const newFailed = (job.total_failed || 0) + totalFailed;
+    const isComplete = remainingCount === 0;
+
+    // Check if cancelled
+    const { data: latestJob } = await supabase
+      .from('lifestyle_backfill_jobs')
+      .select('status')
+      .eq('id', jobId)
+      .single();
+
+    const wasCancelled = latestJob?.status === 'cancelled';
+
+    await supabase
+      .from('lifestyle_backfill_jobs')
+      .update({
+        total_processed: newProcessed,
+        total_failed: newFailed,
+        remaining: remainingCount,
+        ...(isComplete || wasCancelled ? {
+          status: wasCancelled ? 'cancelled' : 'completed',
+          completed_at: new Date().toISOString(),
+        } : {}),
+      })
+      .eq('id', jobId);
+
+    // Self-retrigger if more to do and not cancelled
+    if (remainingCount > 0 && !wasCancelled && !isComplete) {
+      const selfUrl = `${supabaseUrl}/functions/v1/batch-extract-lifestyle-signals`;
+      fetch(selfUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${supabaseServiceKey}`,
+        },
+        body: JSON.stringify({ jobId, batchSize, startDate, endDate }),
+      }).catch(e => console.error('[Backfill] Self-trigger error:', e));
+
+      console.log(`[Backfill] Self-retriggered. Processed ${totalProcessed} this batch, ${remainingCount} remaining.`);
+    } else {
+      console.log(`[Backfill] Done. Total processed: ${newProcessed}, remaining: ${remainingCount}`);
+    }
+
     return new Response(JSON.stringify({
       success: true,
-      processed: totalProcessed,
-      failed: totalFailed,
+      processed: newProcessed,
+      failed: newFailed,
       remaining: remainingCount,
-      elapsedMs: Date.now() - startTime,
-      message: `Processed ${totalProcessed} transcriptions, ${totalFailed} failed, ~${remainingCount} remaining`
     }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
   } catch (error) {
