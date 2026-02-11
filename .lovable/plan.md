@@ -1,59 +1,55 @@
 
 
-# Fix: Sidebar Scroll Position Resets on Navigation
+# Fix: Sidebar Scroll Position Race Condition
 
-## Problem
-When clicking any sidebar option, the sidebar scrolls back to the top. This happens because the route change causes a React re-render, and the `<nav>` element with `overflow-y-auto` loses its scroll position.
+## Root Cause
+When clicking a sidebar link:
+1. Route changes, React re-renders
+2. The `<nav>` element's scroll resets to 0 during re-render
+3. The `onScroll` handler fires, overwriting `scrollPos.current` with 0
+4. The restoration `useEffect` runs, but reads `scrollPos.current` which is now 0
+5. Result: sidebar stays at top
 
 ## Solution
-Add a `ref` to the `<nav>` element and preserve its scroll position across re-renders using a simple ref-based approach.
-
-## Technical Details
+Add a guard flag that prevents the `onScroll` handler from overwriting the saved position during the brief window after a route change.
 
 ### File: `src/components/layout/AppSidebar.tsx`
 
-1. Add a `useRef` for the nav element:
-   ```typescript
-   const navRef = useRef<HTMLDivElement>(null);
-   ```
+1. Add a `isRestoring` ref initialized to `false`
+2. In the route-change `useEffect`, set `isRestoring.current = true` before restoring, then set it back to `false` after restoration completes
+3. In the `onScroll` handler, skip saving when `isRestoring.current` is `true`
 
-2. Save and restore scroll position around route changes using a `useEffect` on `location.pathname`:
-   ```typescript
-   const scrollPos = useRef(0);
-   
-   // Save scroll position before re-render
-   useEffect(() => {
-     const nav = navRef.current;
-     if (nav) {
-       // Restore after route change re-render
-       requestAnimationFrame(() => {
-         nav.scrollTop = scrollPos.current;
-       });
-     }
-   }, [location.pathname]);
-   ```
+```typescript
+const isRestoring = useRef(false);
 
-3. Attach an `onScroll` handler to the `<nav>` to continuously track scroll position:
-   ```typescript
-   <nav 
-     ref={navRef}
-     onScroll={() => {
-       if (navRef.current) {
-         scrollPos.current = navRef.current.scrollTop;
-       }
-     }}
-     className="flex-1 p-3 space-y-1 overflow-y-auto"
-   >
-   ```
+// Restore scroll after route change
+useEffect(() => {
+  const nav = navRef.current;
+  if (nav) {
+    isRestoring.current = true;
+    requestAnimationFrame(() => {
+      nav.scrollTop = scrollPos.current;
+      // Allow onScroll to save again after restoration settles
+      requestAnimationFrame(() => {
+        isRestoring.current = false;
+      });
+    });
+  }
+}, [location.pathname]);
+
+// onScroll handler (guarded)
+onScroll={() => {
+  if (navRef.current && !isRestoring.current) {
+    scrollPos.current = navRef.current.scrollTop;
+  }
+}}
+```
 
 ### Why This Works
-- The `onScroll` handler saves the current scroll position to a ref (not state, so no re-renders)
-- After a route change triggers a re-render, `requestAnimationFrame` restores the saved position once the DOM has updated
-- Zero visual flicker since restoration happens in the next animation frame
-
-### Files Changed
-- `src/components/layout/AppSidebar.tsx` -- Add navRef, scrollPos ref, onScroll handler, and restoration useEffect (~10 lines added)
+- The `isRestoring` flag blocks the `onScroll` handler from saving the spurious "0" position during re-render
+- Double `requestAnimationFrame` ensures the flag stays active through the full restoration cycle (set scroll + browser reflow)
+- After restoration completes, normal scroll tracking resumes
 
 ### No Impact
-- No changes to routing, auth, drag-and-drop, or any other sidebar behavior
-- Works identically for all user roles
+- Same approach, just adds a 1-line guard -- no changes to drag-and-drop, routing, or any other behavior
+
