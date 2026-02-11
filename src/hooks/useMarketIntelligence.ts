@@ -69,11 +69,21 @@ export function useMarketIntelligence(dateFrom?: string, dateTo?: string, minRec
     return totalBookings > 0 ? Math.round((totalMovedIn / totalBookings) * 1000) / 10 : 0;
   })();
 
+  // System-wide average weekly budget
+  const systemAvgBudget = (() => {
+    const states = data?.stateData || [];
+    const withBudget = states.filter(s => s.avgWeeklyBudget !== null);
+    if (withBudget.length === 0) return null;
+    const sum = withBudget.reduce((s, st) => s + (st.avgWeeklyBudget ?? 0), 0);
+    return Math.round(sum / withBudget.length);
+  })();
+
   return {
     stateData: data?.stateData || [],
     cityData: data?.cityData || [],
     topMarkets,
     systemAvgConversion,
+    systemAvgBudget,
     generatedAt: data?.generatedAt,
     fromCache: data?.fromCache || false,
     isLoading,

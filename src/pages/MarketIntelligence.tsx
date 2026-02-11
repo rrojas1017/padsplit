@@ -59,7 +59,7 @@ export default function MarketIntelligence() {
   const abortRef = useRef(false);
 
   const { from, to } = getDateRange(dateRange, customDates);
-  const { stateData, cityData, topMarkets, systemAvgConversion, generatedAt, fromCache, isLoading, isRefreshing, refresh } = useMarketIntelligence(from, to, minRecords);
+  const { stateData, cityData, topMarkets, systemAvgConversion, systemAvgBudget, generatedAt, fromCache, isLoading, isRefreshing, refresh } = useMarketIntelligence(from, to, minRecords);
 
   // Fetch unmapped count on mount
   useEffect(() => {
@@ -176,7 +176,7 @@ export default function MarketIntelligence() {
       ) : (
         <div className="space-y-6">
           {/* Summary */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
             <div className="bg-card rounded-xl p-4 border border-border">
               <p className="text-xs text-muted-foreground font-medium uppercase">States</p>
               <p className="text-2xl font-bold text-foreground">{stateData.length}</p>
@@ -195,10 +195,14 @@ export default function MarketIntelligence() {
               <p className="text-xs text-muted-foreground font-medium uppercase">Avg Conversion</p>
               <p className="text-2xl font-bold text-foreground">{systemAvgConversion}%</p>
             </div>
+            <div className="bg-card rounded-xl p-4 border border-border">
+              <p className="text-xs text-muted-foreground font-medium uppercase">Avg Weekly Budget</p>
+              <p className="text-2xl font-bold text-foreground">{systemAvgBudget !== null ? `$${systemAvgBudget}` : '—'}</p>
+            </div>
           </div>
 
           {/* Top Markets */}
-          <MarketComparisonCards topMarkets={topMarkets} systemAvgConversion={systemAvgConversion} />
+          <MarketComparisonCards topMarkets={topMarkets} systemAvgConversion={systemAvgConversion} systemAvgBudget={systemAvgBudget} />
 
           {/* State Heat Table */}
           <StateHeatTable stateData={stateData} cityData={cityData} />
