@@ -1,35 +1,43 @@
 
 
-# Fix: Backfill Infinite Loop and Progress Bar Not Showing
+# Fix: Backfill Query Not Filtering Already-Processed Records
 
 ## Root Cause
 
-The edge function fetches records without `lifestyleSignals`, but when a record has a transcription shorter than 50 characters, it gets **skipped without being marked**. The same 3 short-transcription records keep appearing in every batch, the function spins for 45 seconds processing nothing, returns `processed: 0`, and the frontend loop immediately exits -- making the progress bar flash and vanish.
+The edge function query fetches any 50 records with `call_key_points IS NOT NULL`, then filters in JavaScript for those missing `lifestyleSignals`. Most of those 50 records already have the signals, leaving 0 to process per batch -- even though 5,855 truly unprocessed records exist deeper in the table.
 
 ## Solution
 
-### 1. Edge Function (`batch-extract-lifestyle-signals/index.ts`)
+Filter at the database level using PostgREST's JSON arrow operator so the query only returns records that genuinely lack `lifestyleSignals`.
 
-Mark skipped records with `lifestyleSignals: []` so they never appear again:
+### Edge Function (`batch-extract-lifestyle-signals/index.ts`)
 
-```typescript
-if (!transcription || transcription.length < 50) {
-  // Mark as processed with empty signals so it's not refetched
-  const existingKP = record.call_key_points as any;
-  await supabase
-    .from('booking_transcriptions')
-    .update({ call_key_points: { ...existingKP, lifestyleSignals: [] } })
-    .eq('id', record.id);
-  totalProcessed++; // Count it so the loop progresses
-  continue;
-}
+Replace the current query + in-memory filter approach with a database-level filter:
+
+```text
+Current (broken):
+  .select(...)
+  .not('call_key_points', 'is', null)
+  .limit(50)
+  -> then JS filter for missing lifestyleSignals (gets 0 results)
+
+Fixed:
+  .select(...)
+  .not('call_transcription', 'is', null)
+  .not('call_key_points', 'is', null)
+  .is('call_key_points->lifestyleSignals', null)   // <-- DB-level filter
+  .limit(50)
+  -> no JS filter needed, all 50 records are guaranteed unprocessed
 ```
 
-This ensures every record fetched in a batch gets marked, eliminating the infinite loop.
+This single change ensures the query skips already-processed records and always returns fresh ones. The in-memory `toProcess` filter becomes unnecessary but can stay as a safety net.
 
-### 2. Frontend (`CrossSellOpportunitiesTab.tsx`)
+Also fix the "remaining" count query to use the same `is('call_key_points->lifestyleSignals', null)` filter so the progress bar shows accurate numbers.
 
-No changes needed -- the existing progress bar and auto-retrigger loop are correctly implemented. Once the edge function stops returning `processed: 0` for stuck batches, the loop will progress properly and the progress bar will display as designed.
+### No Frontend Changes
+
+The frontend loop and progress bar are correct. Once the edge function returns non-zero `processed` counts consistently, the loop will keep running and the progress bar will update properly.
 
 ## Files Changed
-- `supabase/functions/batch-extract-lifestyle-signals/index.ts` -- mark short-transcription records with empty `lifestyleSignals` array instead of silently skipping them
+- `supabase/functions/batch-extract-lifestyle-signals/index.ts` -- add `.is('call_key_points->lifestyleSignals', null)` to both the main query and remaining count query, remove redundant in-memory filter
+
