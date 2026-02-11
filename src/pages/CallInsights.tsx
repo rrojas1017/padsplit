@@ -41,7 +41,7 @@ export default function CallInsights() {
   const initialTab = searchParams.get('tab') === 'bookings' ? 'bookings' : 
                      searchParams.get('tab') === 'cross-sell' && isSuperAdmin ? 'cross-sell' : 'non-bookings';
   const [activeTab, setActiveTab] = useState(initialTab);
-  const [dateRange, setDateRange] = useState<DateRangeOption>('thisMonth');
+  const [dateRange, setDateRange] = useState<DateRangeOption>('allTime');
 
   // Sync tab with URL
   useEffect(() => {

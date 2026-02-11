@@ -90,16 +90,11 @@ export function BookingInsightsTab({ dateRange, onDateRangeChange }: BookingInsi
   // Memoized fetch function to prevent stale closures
   const fetchInsights = useCallback(async () => {
     try {
-      const { start, end } = getDateRange(dateRange);
-      const startStr = format(start, 'yyyy-MM-dd');
-      const endStr = format(end, 'yyyy-MM-dd');
-      
-      const result = await deduplicatedQuery(`member_insights_list_${dateRange}_${startStr}`, async () => {
+      const result = await deduplicatedQuery(`member_insights_list_${dateRange}`, async () => {
         let query = supabase
           .from('member_insights')
           .select('id, analysis_period, date_range_start, date_range_end, total_calls_analyzed, created_at, status, sentiment_distribution')
-          .gte('date_range_start', startStr)
-          .lte('date_range_start', endStr)
+          .eq('analysis_period', dateRange)
           .order('created_at', { ascending: false })
           .limit(10);
 
