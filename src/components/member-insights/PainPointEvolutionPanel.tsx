@@ -17,7 +17,7 @@ import {
   LineChart as LineChartIcon
 } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer } from 'recharts';
-import { usePainPointEvolution, PainPointStatus, TimeRangeOption } from '@/hooks/usePainPointEvolution';
+import { usePainPointEvolution, PainPointStatus, TimeRangeOption, EvolutionMeta } from '@/hooks/usePainPointEvolution';
 import { useState } from 'react';
 import { cn } from '@/lib/utils';
 
@@ -80,7 +80,7 @@ function formatTrendDelta(delta: number, trend: PainPointStatus['trend']): strin
 
 export function PainPointEvolutionPanel() {
   const [timeRange, setTimeRange] = useState<TimeRangeOption>('6m');
-  const { chartData, categories, statuses, statusSummary, isLoading, error } = usePainPointEvolution(timeRange);
+  const { chartData, categories, statuses, statusSummary, isLoading, error, meta } = usePainPointEvolution(timeRange);
   const [isTableExpanded, setIsTableExpanded] = useState(false);
   const [hiddenCategories, setHiddenCategories] = useState<Set<string>>(new Set());
 
@@ -180,7 +180,10 @@ export function PainPointEvolutionPanel() {
               Pain Point Evolution
             </CardTitle>
             <p className="text-sm text-muted-foreground mt-1">
-              Monthly trends across {chartData.length} months
+              {meta.actualStartMonth && meta.actualEndMonth 
+                ? `${meta.actualStartMonth} — ${meta.actualEndMonth} (${meta.monthCount} data points)`
+                : `Monthly trends across ${chartData.length} months`
+              }
             </p>
           </div>
           <div className="flex items-center gap-2">
