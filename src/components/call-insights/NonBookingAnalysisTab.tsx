@@ -139,13 +139,11 @@ export function NonBookingAnalysisTab({ dateRange, onDateRangeChange }: NonBooki
   const { data: previousInsights, refetch: refetchInsights } = useQuery({
     queryKey: ['non-booking-insights-list', dateRange],
     queryFn: async (): Promise<NonBookingInsight[]> => {
-      const params = getDateRangeParams(dateRange);
       const { data, error } = await supabase
         .from('non_booking_insights')
         .select('*')
         .eq('status', 'completed')
-        .gte('date_range_start', params.start)
-        .lte('date_range_start', params.end)
+        .eq('analysis_period', dateRange)
         .order('created_at', { ascending: false })
         .limit(10);
 
