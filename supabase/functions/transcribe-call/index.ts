@@ -1307,13 +1307,18 @@ function applyCorrectLabels(
 // Helper to update booking with error message
 async function updateBookingError(supabase: any, bookingId: string, errorMessage: string) {
   try {
-    await supabase
+    const { error } = await supabase
       .from('bookings')
       .update({ 
         transcription_status: 'failed',
         transcription_error_message: errorMessage 
       })
       .eq('id', bookingId);
+    if (error && error.code === '42703') {
+      console.warn(`[Background] Schema cache stale (42703) on error update for ${bookingId}. Status update skipped.`);
+    } else if (error) {
+      console.error('[Background] Failed to update error status:', error);
+    }
   } catch (e) {
     console.error('[Background] Failed to update error status:', e);
   }
@@ -1357,9 +1362,13 @@ async function processTranscription(bookingId: string, kixieUrl: string, skipTts
       .maybeSingle();
 
     if (claimError) {
-      console.error(`[Background] Claim error for ${bookingId}:`, claimError);
-      clearTimeout(timeoutId);
-      return;
+      if (claimError.code === '42703') {
+        console.warn(`[Background] Schema cache stale (42703) for ${bookingId}. Bypassing claim and proceeding.`);
+      } else {
+        console.error(`[Background] Claim error for ${bookingId}:`, claimError);
+        clearTimeout(timeoutId);
+        return;
+      }
     }
 
     if (!claimResult) {
@@ -1769,8 +1778,12 @@ async function processTranscription(bookingId: string, kixieUrl: string, skipTts
       .eq('id', bookingId);
 
     if (bookingUpdateError) {
-      console.error('[Background] Booking update error:', bookingUpdateError);
-      throw new Error(`Failed to update booking: ${bookingUpdateError.message}`);
+      if (bookingUpdateError.code === '42703') {
+        console.warn(`[Background] Schema cache stale (42703) on completion update for ${bookingId}. Skipping status update, saving transcription data.`);
+      } else {
+        console.error('[Background] Booking update error:', bookingUpdateError);
+        throw new Error(`Failed to update booking: ${bookingUpdateError.message}`);
+      }
     }
 
     // Then upsert the heavy data to booking_transcriptions table with A/B testing metrics
