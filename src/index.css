@@ -207,6 +207,15 @@
   @apply bg-muted-foreground/30 rounded-full hover:bg-muted-foreground/50 transition-colors;
 }
 
+/* Sidebar drag-and-drop */
+.sidebar-dragging {
+  opacity: 0.4;
+}
+
+.sidebar-drag-over {
+  border-top: 2px solid hsl(42 72% 55%);
+}
+
 /* Marquee pause on hover */
 .hover-pause:hover {
   animation-play-state: paused;

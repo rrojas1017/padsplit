@@ -24,13 +24,16 @@ import {
   Calculator,
   Tag,
   Megaphone,
-  MapPin
+  MapPin,
+  GripVertical,
+  RotateCcw
 } from 'lucide-react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { useSidebar } from '@/contexts/SidebarContext';
+import { useSidebarOrder } from '@/hooks/useSidebarOrder';
 import { cn } from '@/lib/utils';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import padsplitLogo from '@/assets/padsplit-logo.jpeg';
 import appendifyLogo from '@/assets/appendify-logo.png';
@@ -46,203 +49,58 @@ interface MenuItem {
 }
 
 const menuItems: MenuItem[] = [
-  // Core items - always visible
-  { 
-    icon: LayoutDashboard, 
-    label: 'Dashboard', 
-    path: '/dashboard',
-    roles: ['super_admin', 'admin', 'supervisor', 'agent'],
-    group: 'core'
-  },
-  { 
-    icon: BarChart3, 
-    label: 'My Performance', 
-    path: '/my-performance',
-    roles: ['agent'],
-    group: 'core'
-  },
-  {
-    icon: ClipboardList,
-    label: 'My Bookings',
-    path: '/my-bookings',
-    roles: ['agent'],
-    group: 'core'
-  },
-  {
-    icon: ClipboardCheck,
-    label: 'My QA',
-    path: '/my-qa',
-    roles: ['agent'],
-    group: 'core'
-  },
-  {
-    icon: PlusCircle,
-    label: 'Add Booking',
-    path: '/add-booking',
-    roles: ['super_admin', 'admin', 'supervisor', 'agent'],
-    group: 'core'
-  },
-  { 
-    icon: Users, 
-    label: 'Agent Leaderboard', 
-    path: '/leaderboard',
-    roles: ['super_admin', 'admin', 'supervisor'],
-    group: 'core'
-  },
-  { 
-    icon: FileText, 
-    label: 'Reports', 
-    path: '/reports',
-    roles: ['super_admin', 'admin', 'supervisor'],
-    group: 'core'
-  },
-  { 
-    icon: Monitor, 
-    label: 'Operations View', 
-    path: '/wallboard',
-    roles: ['super_admin', 'admin', 'supervisor'],
-    group: 'core'
-  },
-  { 
-    icon: GraduationCap, 
-    label: 'Coaching Hub', 
-    path: '/coaching-hub',
-    roles: ['super_admin', 'admin', 'supervisor'],
-    group: 'core'
-  },
-  {
-    icon: ClipboardCheck,
-    label: 'QA Dashboard',
-    path: '/qa-dashboard',
-    roles: ['super_admin', 'admin', 'supervisor'],
-    group: 'core'
-  },
-  {
-    icon: Headphones,
-    label: 'Coaching Engagement',
-    path: '/coaching-engagement',
-    roles: ['super_admin', 'admin', 'supervisor'],
-    group: 'core'
-  },
-  {
-    icon: Lightbulb,
-    label: 'Communication Insights',
-    path: '/call-insights',
-    roles: ['super_admin', 'admin'],
-    group: 'admin'
-  },
-  {
-    icon: Target,
-    label: 'Agent Goals',
-    path: '/agent-goals',
-    roles: ['super_admin', 'admin', 'supervisor'],
-    group: 'core'
-  },
-  {
-    icon: Calculator,
-    label: 'Move-In Calculator',
-    path: '/tools/move-in-calculator',
-    roles: ['super_admin', 'admin', 'supervisor', 'agent'],
-    group: 'core'
-  },
-  {
-    icon: MapPin,
-    label: 'Market Intelligence',
-    path: '/market-intelligence',
-    roles: ['super_admin', 'admin'],
-    group: 'core'
-  },
-  // Admin items - collapsible group
-  {
-    icon: Users, 
-    label: 'User Management', 
-    path: '/users',
-    roles: ['super_admin', 'admin', 'supervisor'],
-    group: 'admin'
-  },
-  {
-    icon: Activity,
-    label: 'Agent Status',
-    path: '/agent-status',
-    roles: ['super_admin', 'admin', 'supervisor'],
-    group: 'admin'
-  },
-  {
-    icon: Link2,
-    label: 'Display Links',
-    path: '/display-links',
-    roles: ['super_admin', 'admin'],
-    group: 'admin'
-  },
-  {
-    icon: Upload,
-    label: 'Import Bookings',
-    path: '/import-bookings',
-    roles: ['super_admin', 'admin'],
-    group: 'admin'
-  },
-  {
-    icon: Upload,
-    label: 'Historical Import',
-    path: '/historical-import',
-    roles: ['super_admin', 'admin'],
-    group: 'admin'
-  },
-  { 
-    icon: Shield, 
-    label: 'Audit Log', 
-    path: '/audit-log',
-    roles: ['super_admin'],
-    group: 'admin'
-  },
-  { 
-    icon: Settings, 
-    label: 'Settings', 
-    path: '/settings',
-    roles: ['super_admin', 'admin'],
-    group: 'admin'
-  },
-  {
-    icon: DollarSign,
-    label: 'Cost & Billing',
-    path: '/billing',
-    roles: ['super_admin'],
-    group: 'admin'
-  },
-  {
-    icon: Tag,
-    label: 'Promo Codes',
-    path: '/settings/promo-codes',
-    roles: ['super_admin', 'admin'],
-    group: 'admin'
-  },
-  {
-    icon: Megaphone,
-    label: 'Broadcasts',
-    path: '/broadcasts',
-    roles: ['super_admin', 'admin', 'supervisor'],
-    group: 'admin'
-  },
+  { icon: LayoutDashboard, label: 'Dashboard', path: '/dashboard', roles: ['super_admin', 'admin', 'supervisor', 'agent'], group: 'core' },
+  { icon: BarChart3, label: 'My Performance', path: '/my-performance', roles: ['agent'], group: 'core' },
+  { icon: ClipboardList, label: 'My Bookings', path: '/my-bookings', roles: ['agent'], group: 'core' },
+  { icon: ClipboardCheck, label: 'My QA', path: '/my-qa', roles: ['agent'], group: 'core' },
+  { icon: PlusCircle, label: 'Add Booking', path: '/add-booking', roles: ['super_admin', 'admin', 'supervisor', 'agent'], group: 'core' },
+  { icon: Users, label: 'Agent Leaderboard', path: '/leaderboard', roles: ['super_admin', 'admin', 'supervisor'], group: 'core' },
+  { icon: FileText, label: 'Reports', path: '/reports', roles: ['super_admin', 'admin', 'supervisor'], group: 'core' },
+  { icon: Monitor, label: 'Operations View', path: '/wallboard', roles: ['super_admin', 'admin', 'supervisor'], group: 'core' },
+  { icon: GraduationCap, label: 'Coaching Hub', path: '/coaching-hub', roles: ['super_admin', 'admin', 'supervisor'], group: 'core' },
+  { icon: ClipboardCheck, label: 'QA Dashboard', path: '/qa-dashboard', roles: ['super_admin', 'admin', 'supervisor'], group: 'core' },
+  { icon: Headphones, label: 'Coaching Engagement', path: '/coaching-engagement', roles: ['super_admin', 'admin', 'supervisor'], group: 'core' },
+  { icon: Lightbulb, label: 'Communication Insights', path: '/call-insights', roles: ['super_admin', 'admin'], group: 'admin' },
+  { icon: Target, label: 'Agent Goals', path: '/agent-goals', roles: ['super_admin', 'admin', 'supervisor'], group: 'core' },
+  { icon: Calculator, label: 'Move-In Calculator', path: '/tools/move-in-calculator', roles: ['super_admin', 'admin', 'supervisor', 'agent'], group: 'core' },
+  { icon: MapPin, label: 'Market Intelligence', path: '/market-intelligence', roles: ['super_admin', 'admin'], group: 'core' },
+  { icon: Users, label: 'User Management', path: '/users', roles: ['super_admin', 'admin', 'supervisor'], group: 'admin' },
+  { icon: Activity, label: 'Agent Status', path: '/agent-status', roles: ['super_admin', 'admin', 'supervisor'], group: 'admin' },
+  { icon: Link2, label: 'Display Links', path: '/display-links', roles: ['super_admin', 'admin'], group: 'admin' },
+  { icon: Upload, label: 'Import Bookings', path: '/import-bookings', roles: ['super_admin', 'admin'], group: 'admin' },
+  { icon: Upload, label: 'Historical Import', path: '/historical-import', roles: ['super_admin', 'admin'], group: 'admin' },
+  { icon: Shield, label: 'Audit Log', path: '/audit-log', roles: ['super_admin'], group: 'admin' },
+  { icon: Settings, label: 'Settings', path: '/settings', roles: ['super_admin', 'admin'], group: 'admin' },
+  { icon: DollarSign, label: 'Cost & Billing', path: '/billing', roles: ['super_admin'], group: 'admin' },
+  { icon: Tag, label: 'Promo Codes', path: '/settings/promo-codes', roles: ['super_admin', 'admin'], group: 'admin' },
+  { icon: Megaphone, label: 'Broadcasts', path: '/broadcasts', roles: ['super_admin', 'admin', 'supervisor'], group: 'admin' },
 ];
 
 export function AppSidebar() {
   const { user, logout, hasRole } = useAuth();
   const location = useLocation();
   const { collapsed, toggleSidebar } = useSidebar();
+  const { getOrderedItems, moveItem, resetOrder, hasCustomOrder } = useSidebarOrder();
   
   const [adminExpanded, setAdminExpanded] = useState(() => {
     const saved = localStorage.getItem('sidebar-admin-expanded');
     return saved !== null ? JSON.parse(saved) : true;
   });
 
-  const visibleItems = menuItems.filter(item => 
-    hasRole(item.roles as any[])
-  );
+  // Drag state
+  const [draggedPath, setDraggedPath] = useState<string | null>(null);
+  const [dropTarget, setDropTarget] = useState<{ group: MenuGroup; index: number } | null>(null);
+  const dragCounter = useRef(0);
 
-  const coreItems = visibleItems.filter(item => item.group === 'core');
-  const adminItems = visibleItems.filter(item => item.group === 'admin');
+  const isSuperAdmin = user?.role === 'super_admin';
+  const isDragEnabled = isSuperAdmin && !collapsed;
+
+  const visibleItems = menuItems.filter(item => hasRole(item.roles as any[]));
+  const orderedItems = getOrderedItems(visibleItems);
+
+  const coreItems = orderedItems.filter(item => item.group === 'core');
+  const adminItems = orderedItems.filter(item => item.group === 'admin');
   
-  // Auto-expand if current route is in admin group
   const isInAdminGroup = adminItems.some(item => location.pathname === item.path);
   
   useEffect(() => {
@@ -262,23 +120,83 @@ export function AppSidebar() {
     agent: 'Agent',
   };
 
-  const renderNavItem = (item: MenuItem, indented = false) => {
+  // Drag handlers
+  const handleDragStart = (e: React.DragEvent, path: string) => {
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', path);
+    setDraggedPath(path);
+  };
+
+  const handleDragEnd = () => {
+    setDraggedPath(null);
+    setDropTarget(null);
+    dragCounter.current = 0;
+  };
+
+  const handleDragOver = (e: React.DragEvent, group: MenuGroup, index: number) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    setDropTarget({ group, index });
+  };
+
+  const handleDrop = (e: React.DragEvent, group: MenuGroup, index: number) => {
+    e.preventDefault();
+    const path = e.dataTransfer.getData('text/plain');
+    if (path) {
+      moveItem(path, group, index, orderedItems);
+    }
+    setDraggedPath(null);
+    setDropTarget(null);
+  };
+
+  const renderNavItem = (item: MenuItem, index: number, group: MenuGroup, indented = false) => {
     const isActive = location.pathname === item.path;
+    const isDragging = draggedPath === item.path;
+    const isDropTarget = dropTarget?.group === group && dropTarget?.index === index;
+
     return (
-      <NavLink
+      <div
         key={item.path}
-        to={item.path}
+        draggable={isDragEnabled}
+        onDragStart={isDragEnabled ? (e) => handleDragStart(e, item.path) : undefined}
+        onDragEnd={isDragEnabled ? handleDragEnd : undefined}
+        onDragOver={isDragEnabled ? (e) => handleDragOver(e, group, index) : undefined}
+        onDrop={isDragEnabled ? (e) => handleDrop(e, group, index) : undefined}
         className={cn(
-          "flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200",
-          indented && !collapsed && "ml-3",
-          isActive 
-            ? "bg-sidebar-primary text-sidebar-primary-foreground shadow-glow" 
-            : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+          isDragging && 'sidebar-dragging',
+          isDropTarget && 'sidebar-drag-over'
         )}
       >
-        <item.icon className="w-5 h-5 flex-shrink-0" />
-        {!collapsed && <span className="text-sm font-medium">{item.label}</span>}
-      </NavLink>
+        <NavLink
+          to={item.path}
+          className={cn(
+            "flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200 group/item",
+            indented && !collapsed && "ml-3",
+            isActive 
+              ? "bg-sidebar-primary text-sidebar-primary-foreground shadow-glow" 
+              : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+          )}
+        >
+          {isDragEnabled && (
+            <GripVertical className="w-3.5 h-3.5 flex-shrink-0 opacity-0 group-hover/item:opacity-50 transition-opacity cursor-grab" />
+          )}
+          <item.icon className="w-5 h-5 flex-shrink-0" />
+          {!collapsed && <span className="text-sm font-medium">{item.label}</span>}
+        </NavLink>
+      </div>
+    );
+  };
+
+  // Drop zone at end of a section
+  const renderEndDropZone = (group: MenuGroup, index: number) => {
+    if (!isDragEnabled) return null;
+    const isOver = dropTarget?.group === group && dropTarget?.index === index;
+    return (
+      <div
+        onDragOver={(e) => handleDragOver(e, group, index)}
+        onDrop={(e) => handleDrop(e, group, index)}
+        className={cn("h-1 rounded transition-all", isOver && "sidebar-drag-over")}
+      />
     );
   };
 
@@ -317,7 +235,8 @@ export function AppSidebar() {
       {/* Navigation */}
       <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
         {/* Core Items */}
-        {coreItems.map((item) => renderNavItem(item))}
+        {coreItems.map((item, i) => renderNavItem(item, i, 'core'))}
+        {renderEndDropZone('core', coreItems.length)}
         
         {/* Admin Group */}
         {adminItems.length > 0 && (
@@ -345,10 +264,22 @@ export function AppSidebar() {
                 )}
               </CollapsibleTrigger>
               <CollapsibleContent className="space-y-1 mt-1">
-                {adminItems.map((item) => renderNavItem(item, true))}
+                {adminItems.map((item, i) => renderNavItem(item, i, 'admin', true))}
+                {renderEndDropZone('admin', adminItems.length)}
               </CollapsibleContent>
             </Collapsible>
           </>
+        )}
+
+        {/* Reset order button - super admin only */}
+        {isDragEnabled && hasCustomOrder && (
+          <button
+            onClick={resetOrder}
+            className="flex items-center gap-2 px-3 py-2 mt-2 w-full rounded-lg text-sidebar-foreground/50 hover:text-sidebar-foreground hover:bg-sidebar-accent transition-colors"
+          >
+            <RotateCcw className="w-3.5 h-3.5" />
+            <span className="text-xs">Reset to default</span>
+          </button>
         )}
       </nav>
 
