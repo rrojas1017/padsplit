@@ -38,16 +38,25 @@ Deno.serve(async (req) => {
       }
     }
 
-    // Fetch bookings with optional date filter
-    let bookingsQuery = supabase
-      .from("bookings")
-      .select("id, market_city, market_state, status, booking_date, move_in_date, call_duration_seconds, communication_method, booking_type");
-
-    if (dateFrom) bookingsQuery = bookingsQuery.gte("booking_date", dateFrom);
-    if (dateTo) bookingsQuery = bookingsQuery.lte("booking_date", dateTo);
-
-    const { data: bookings, error: bookingsError } = await bookingsQuery;
-    if (bookingsError) throw bookingsError;
+    // Fetch all bookings in batches of 500 to avoid 1,000-row limit
+    const BATCH_SIZE = 500;
+    const bookings: any[] = [];
+    let offset = 0;
+    while (true) {
+      let q = supabase
+        .from("bookings")
+        .select("id, market_city, market_state, status, booking_date, move_in_date, call_duration_seconds, communication_method, booking_type")
+        .range(offset, offset + BATCH_SIZE - 1);
+      if (dateFrom) q = q.gte("booking_date", dateFrom);
+      if (dateTo) q = q.lte("booking_date", dateTo);
+      const { data, error } = await q;
+      if (error) throw error;
+      if (!data || data.length === 0) break;
+      bookings.push(...data);
+      if (data.length < BATCH_SIZE) break;
+      offset += BATCH_SIZE;
+    }
+    console.log(`Fetched ${bookings.length} bookings in ${Math.ceil(bookings.length / BATCH_SIZE)} batches`);
 
     // Fetch transcription key points
     const bookingIds = (bookings || []).map(b => b.id);
