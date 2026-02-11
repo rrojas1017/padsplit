@@ -61,16 +61,20 @@ Deno.serve(async (req) => {
     // Fetch transcription key points
     const bookingIds = (bookings || []).map(b => b.id);
     
-    // Fetch in chunks of 500 to avoid URL length limits
+    // Fetch in chunks of 100 to avoid URL length limits (UUIDs are 36 chars each)
+    const TRANS_CHUNK = 100;
     const allTranscriptions: any[] = [];
-    for (let i = 0; i < bookingIds.length; i += 500) {
-      const chunk = bookingIds.slice(i, i + 500);
-      const { data: trans } = await supabase
+    for (let i = 0; i < bookingIds.length; i += TRANS_CHUNK) {
+      const chunk = bookingIds.slice(i, i + TRANS_CHUNK);
+      const { data: trans, error: transErr } = await supabase
         .from("booking_transcriptions")
-        .select("booking_id, call_key_points, agent_feedback")
+        .select("booking_id, call_key_points")
         .in("booking_id", chunk);
+      if (transErr) console.error(`Transcription chunk ${i} error:`, transErr.message);
       if (trans) allTranscriptions.push(...trans);
     }
+
+    console.log(`Fetched ${allTranscriptions.length} transcriptions in ${Math.ceil(bookingIds.length / TRANS_CHUNK)} chunks`);
 
     const transcriptionMap = new Map<string, any>();
     for (const t of allTranscriptions) {
