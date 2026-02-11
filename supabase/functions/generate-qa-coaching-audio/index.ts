@@ -20,28 +20,25 @@ async function logApiCost(supabase: any, params: {
   audio_duration_seconds?: number;
   character_count?: number;
   metadata?: Record<string, any>;
+  triggered_by_user_id?: string;
+  is_internal?: boolean;
 }) {
   try {
     let cost = 0;
     
     if (params.service_provider === 'elevenlabs') {
-      // Pro Plan rates (credits-based, ~$99/mo for 500k credits)
-      // STT: ~$0.034 per minute (Pro Plan)
       if (params.audio_duration_seconds) {
         cost = (params.audio_duration_seconds / 60) * 0.034;
       }
-      // TTS: ~$0.15 per 1000 characters (Pro Plan)
       if (params.character_count) {
         cost = params.character_count * 0.00015;
       }
     } else if (params.service_provider === 'lovable_ai') {
-      // Model-aware pricing for Lovable AI
       const model = params.metadata?.model || 'google/gemini-2.5-flash';
-      let inputRate = 0.0001;  // Flash default: ~$0.0001 per 1K input
-      let outputRate = 0.0003; // Flash default: ~$0.0003 per 1K output
+      let inputRate = 0.0001;
+      let outputRate = 0.0003;
       
       if (model.includes('gemini-2.5-pro')) {
-        // Gemini Pro: ~$0.00125 per 1K input, ~$0.005 per 1K output
         inputRate = 0.00125;
         outputRate = 0.005;
       }
@@ -63,7 +60,9 @@ async function logApiCost(supabase: any, params: {
       audio_duration_seconds: params.audio_duration_seconds || null,
       character_count: params.character_count || null,
       estimated_cost_usd: cost,
-      metadata: params.metadata || {}
+      metadata: params.metadata || {},
+      triggered_by_user_id: params.triggered_by_user_id || null,
+      is_internal: params.is_internal || false,
     });
     
     console.log(`[Cost] Logged ${params.service_provider} ${params.service_type}: $${cost.toFixed(6)}`);
@@ -107,6 +106,25 @@ serve(async (req) => {
     const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
     const SUPABASE_URL = Deno.env.get('SUPABASE_URL');
     const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+
+    // Detect if triggered by super_admin
+    let triggeredByUserId: string | null = null;
+    let isInternal = false;
+    const authHeader = req.headers.get('Authorization');
+    if (authHeader) {
+      try {
+        const anonClient = createClient(SUPABASE_URL!, Deno.env.get('SUPABASE_ANON_KEY')!);
+        const token = authHeader.replace('Bearer ', '');
+        const { data: { user } } = await anonClient.auth.getUser(token);
+        if (user) {
+          triggeredByUserId = user.id;
+          const adminClient = createClient(SUPABASE_URL!, SUPABASE_SERVICE_ROLE_KEY!);
+          const { data: roleData } = await adminClient.from('user_roles').select('role').eq('user_id', user.id).single();
+          isInternal = roleData?.role === 'super_admin';
+          if (isInternal) console.log('[Internal] Request triggered by super_admin, marking costs as internal');
+        }
+      } catch (e) { console.log('[Internal] Could not determine user role:', e); }
+    }
 
     if (!ELEVENLABS_API_KEY || !LOVABLE_API_KEY || !SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
       throw new Error('Missing required environment variables');
@@ -331,7 +349,9 @@ Generate ONLY the spoken coaching script. No formatting, no quotes around the sc
       site_id: siteId,
       input_tokens: estimatedInputTokens,
       output_tokens: estimatedOutputTokens,
-      metadata: { model: 'google/gemini-2.5-pro', script_length: coachingScript.length }
+      metadata: { model: 'google/gemini-2.5-pro', script_length: coachingScript.length },
+      triggered_by_user_id: triggeredByUserId || undefined,
+      is_internal: isInternal,
     });
 
     // Generate audio with ElevenLabs using Sarah's voice
@@ -437,7 +457,9 @@ Generate ONLY the spoken coaching script. No formatting, no quotes around the sc
       agent_id: agentId,
       site_id: siteId,
       character_count: coachingScript.length,
-      metadata: { model: 'eleven_turbo_v2', voice_id: voiceId }
+      metadata: { model: 'eleven_turbo_v2', voice_id: voiceId },
+      triggered_by_user_id: triggeredByUserId || undefined,
+      is_internal: isInternal,
     });
 
     const audioBuffer = await elevenLabsResponse.arrayBuffer();

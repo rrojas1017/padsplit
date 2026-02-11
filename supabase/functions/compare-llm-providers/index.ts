@@ -321,29 +321,33 @@ function buildAnalysisPrompt(transcription: string): { system: string; user: str
        console.error("Failed to store comparison:", insertError);
      }
  
-     // Log costs to api_costs table
-     const costEntries = [
-       {
-         service_provider: "lovable_ai",
-         service_type: "ai_llm_comparison",
-         edge_function: "compare-llm-providers",
-         booking_id: bookingId || null,
-         input_tokens: geminiResult.inputTokens,
-         output_tokens: geminiResult.outputTokens,
-         estimated_cost_usd: geminiCost,
-         metadata: { model: geminiResult.model, latency_ms: geminiResult.latencyMs },
-       },
-       {
-         service_provider: "deepseek",
-         service_type: "ai_llm_comparison",
-         edge_function: "compare-llm-providers",
-         booking_id: bookingId || null,
-         input_tokens: deepseekResult.inputTokens,
-         output_tokens: deepseekResult.outputTokens,
-         estimated_cost_usd: deepseekCost,
-         metadata: { model: deepseekResult.model, latency_ms: deepseekResult.latencyMs },
-       },
-     ];
+    // Log costs to api_costs table - compare-llm is always triggered by super_admin (already verified above)
+    const costEntries = [
+      {
+        service_provider: "lovable_ai",
+        service_type: "ai_llm_comparison",
+        edge_function: "compare-llm-providers",
+        booking_id: bookingId || null,
+        input_tokens: geminiResult.inputTokens,
+        output_tokens: geminiResult.outputTokens,
+        estimated_cost_usd: geminiCost,
+        metadata: { model: geminiResult.model, latency_ms: geminiResult.latencyMs },
+        triggered_by_user_id: user.id,
+        is_internal: true,
+      },
+      {
+        service_provider: "deepseek",
+        service_type: "ai_llm_comparison",
+        edge_function: "compare-llm-providers",
+        booking_id: bookingId || null,
+        input_tokens: deepseekResult.inputTokens,
+        output_tokens: deepseekResult.outputTokens,
+        estimated_cost_usd: deepseekCost,
+        metadata: { model: deepseekResult.model, latency_ms: deepseekResult.latencyMs },
+        triggered_by_user_id: user.id,
+        is_internal: true,
+      },
+    ];
  
      await supabase.from("api_costs").insert(costEntries);
  

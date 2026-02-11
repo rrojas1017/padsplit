@@ -25,6 +25,8 @@ async function logApiCost(supabase: any, params: {
   audio_duration_seconds?: number;
   character_count?: number;
   metadata?: Record<string, any>;
+  triggered_by_user_id?: string;
+  is_internal?: boolean;
 }) {
   try {
     let cost = 0;
@@ -54,7 +56,9 @@ async function logApiCost(supabase: any, params: {
 
     await supabase.from('api_costs').insert({
       ...params,
-      estimated_cost_usd: cost
+      estimated_cost_usd: cost,
+      triggered_by_user_id: params.triggered_by_user_id || null,
+      is_internal: params.is_internal || false,
     });
   } catch (error) {
     console.error('[Cost] Failed to log cost:', error);
