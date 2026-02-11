@@ -1,71 +1,68 @@
 
+# Fix: Cross-Sell Tab Not Showing Data
 
-# Fix: Sidebar Scroll Jump on Admin Item Click
+## Problem
+The Cross-Sell Opportunities tab shows no data because:
 
-## Root Cause
-
-The current approach restores scroll position in a `useEffect` on `location.pathname`. But when clicking an admin item, **multiple re-renders** occur in sequence:
-
-1. Route changes -- scroll resets to 0, restoration effect queued
-2. Restoration effect fires via `requestAnimationFrame` -- scroll restored correctly
-3. `isInAdminGroup` becomes true -- `setAdminExpanded(true)` triggers **another re-render**
-4. The Collapsible component animates open, content shifts, scroll resets to 0 again
-5. No second restoration runs because `location.pathname` didn't change again
+1. **Only 13 out of 5,914 transcriptions** have lifestyle signals extracted -- none from February 2026
+2. The backfill function processes only **10 records per click** -- at that rate it would take 590+ manual clicks
+3. The "remaining" count in the backfill response is inaccurate, showing misleading numbers
+4. No date filtering on the backfill -- it grabs random old records first instead of prioritizing the selected date range
 
 ## Solution
 
-Instead of saving scroll position via the `onScroll` event (which is fragile), capture it **on click** right before navigation happens, and restore it more robustly.
+### 1. Fix the backfill function to be practical and date-aware
 
-### File: `src/components/layout/AppSidebar.tsx`
+**File: `supabase/functions/batch-extract-lifestyle-signals/index.ts`**
 
-**Change 1**: Add an `onClick` handler to each `NavLink` that snapshots the scroll position immediately before navigation:
+- Accept `startDate` and `endDate` parameters so it prioritizes records in the user's selected date range
+- Increase default batch size from 10 to 50 for faster processing
+- Add a self-retriggering loop (process multiple batches in one invocation, up to ~45 seconds)
+- Fix the "remaining" count to only count records that actually lack lifestyle signals
+- Order by `booking_date DESC` so newest records are processed first
 
-```typescript
-<NavLink
-  to={item.path}
-  onClick={() => {
-    if (navRef.current) {
-      scrollPos.current = navRef.current.scrollTop;
-    }
-  }}
-  ...
->
+### 2. Fix the "remaining" count query
+
+Currently counts ALL records with `call_key_points`, not just those missing `lifestyleSignals`. Replace with a filtered count that checks for records where `lifestyleSignals` is absent from the JSON.
+
+### 3. Update the frontend backfill trigger to pass date range
+
+**File: `src/components/call-insights/CrossSellOpportunitiesTab.tsx`**
+
+- Pass `startDate` and `endDate` from the current date filter to the backfill function
+- Show better progress feedback (e.g., "Processing batch... X processed, Y remaining")
+- Auto-refresh data after backfill completes
+
+## Technical Details
+
+### Edge Function Changes (`batch-extract-lifestyle-signals/index.ts`)
+
+```text
+Current flow:
+  Fetch 10 random records -> process -> return
+
+New flow:
+  Accept startDate/endDate params
+  Loop (up to 45 seconds):
+    Fetch 50 records matching date range, ordered by booking_date DESC
+    Filter out those already having lifestyleSignals
+    Process batch with AI
+    Track total processed
+  Return processed count + accurate remaining count
 ```
 
-**Change 2**: Remove the `onScroll` handler from the `<nav>` element entirely -- it's the source of the race condition where the reset-to-0 overwrites the saved position.
+Key changes:
+- Add `startDate`/`endDate` body params, join with `bookings` table to filter by `booking_date`
+- Process in a loop until timeout (~45s) or no more records
+- Fix remaining count: query records WITHOUT `lifestyleSignals` in their `call_key_points` JSON
+- Increase batch size to 50
 
-**Change 3**: Make restoration more resilient by using a short `setTimeout` (e.g. 50ms) after `requestAnimationFrame`, which waits for the Collapsible animation and any cascading state updates to settle:
+### Frontend Changes (`CrossSellOpportunitiesTab.tsx`)
 
-```typescript
-useEffect(() => {
-  const nav = navRef.current;
-  if (nav) {
-    isRestoring.current = true;
-    requestAnimationFrame(() => {
-      nav.scrollTop = scrollPos.current;
-      // Also restore after Collapsible animation settles
-      setTimeout(() => {
-        if (navRef.current) {
-          navRef.current.scrollTop = scrollPos.current;
-        }
-        isRestoring.current = false;
-      }, 80);
-    });
-  }
-}, [location.pathname]);
-```
-
-## Why This Works
-
-- Scroll position is captured at the exact moment of click, before any re-renders
-- No `onScroll` handler means no risk of the saved position being overwritten by re-render-induced scroll resets
-- The delayed second restoration catches any scroll resets caused by the Collapsible component expanding or `adminExpanded` state changes
-- The `isRestoring` guard remains to prevent any accidental overwrites
+- Pass the active date range (`startDate`, `endDate`) when invoking the backfill
+- Increase timeout expectation (the function will run longer now)
+- Show a more informative toast with processed/remaining counts
 
 ## Files Changed
-- `src/components/layout/AppSidebar.tsx` -- modify onClick, remove onScroll, update useEffect restoration logic
-
-## No Impact
-- Drag-and-drop, routing, auth, collapse toggle all unchanged
-- All user roles behave identically
-
+- `supabase/functions/batch-extract-lifestyle-signals/index.ts` -- date filtering, larger batches, self-looping, accurate remaining count
+- `src/components/call-insights/CrossSellOpportunitiesTab.tsx` -- pass date range to backfill, better feedback
