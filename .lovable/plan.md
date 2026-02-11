@@ -1,17 +1,13 @@
 
-# Fix: Budget Data Not Showing in Market Intelligence
+# Fix: Budget Data Not Showing in Market Intelligence — RESOLVED
 
 ## Root Cause
-The edge function `aggregate-market-data` code in the repository correctly extracts `weeklyBudget` from `call_key_points -> memberDetails -> weeklyBudget` (line 160-164). However, the **currently deployed** version of this function appears to be stale -- the fresh cache generated at 04:19:33 has null budgets for ALL 28 states, even though 2,328 out of 5,914 transcription records contain valid numeric budget data.
+The `.in("booking_id", chunk)` query was using chunk size 500, which with 36-char UUIDs exceeded PostgREST's URL length limit, causing the transcription fetch to silently return 0 rows. This meant ALL transcription-derived data (sentiments, buyer intent, budgets, objections) was missing.
 
-## Fix
-1. **Redeploy the `aggregate-market-data` edge function** -- no code changes needed, just a redeployment to pick up the current version.
-2. **Clear the stale cache** so the next request generates fresh data with budgets included:
-   - Run: `DELETE FROM market_intelligence_cache` (or at least delete the `all_all_3` entry).
-3. **Refresh the page** to trigger a new aggregation with the redeployed function.
+## Fix Applied
+Reduced transcription fetch chunk size from 500 to 100 UUIDs per query in `aggregate-market-data` edge function, keeping the URL well within limits.
 
-## Verification
-After redeployment and cache clear, the dashboard should show:
-- "Avg Weekly Budget" card with a dollar amount (likely around $200-300 based on the data)
-- Budget values on each Top 10 market card with green/red color coding
-- Budget column populated in the state heat table
+## Verified
+- Atlanta: avgWeeklyBudget $214, buyerIntent 70, sentiments populated
+- Houston: avgWeeklyBudget $210, buyerIntent 70
+- All transcription-derived fields now working correctly
