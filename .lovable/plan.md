@@ -1,43 +1,65 @@
 
 
-# Fix Stuck Cross-Sell Backfill Job and Add Stall Detection
+# Persist Super Admin Sidebar Order in Database
 
-## Root Cause
-The `batch-extract-lifestyle-signals` edge function uses a self-retriggering pattern where each invocation processes a batch and then fires a `fetch()` to re-invoke itself. At some point the self-trigger failed silently (network issue, cold start timeout, etc.), but the job row in `lifestyle_backfill_jobs` was never updated -- it still says `status: running` with no function actually executing.
+## Problem
+The custom sidebar order (drag-and-drop reordering) is stored in browser `localStorage`. This means:
+- It resets when the browser cache is cleared or the app reloads fresh
+- It doesn't carry across different browsers or devices
+- Preview/deployment rebuilds can wipe it
 
-The frontend polls this row, sees "running" with 577/5360 processed (10%), and displays the progress bar indefinitely.
+You moved Market Intelligence to the Admin section, but the change was lost because `localStorage` was cleared.
 
 ## Solution
+Store the sidebar order in the database so it persists permanently and syncs across sessions/devices.
 
-### 1. Unstick the Current Job (Database)
-Run a migration to mark the stale job as `failed` so the UI clears the progress bar and allows a fresh run:
+## Changes
+
+### 1. Database Migration -- New `user_preferences` Table
+
+Create a lightweight key-value preferences table tied to each user:
 
 ```sql
-UPDATE public.lifestyle_backfill_jobs
-SET status = 'failed', completed_at = NOW()
-WHERE status = 'running'
-  AND started_at < NOW() - INTERVAL '10 minutes';
+CREATE TABLE public.user_preferences (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  preference_key TEXT NOT NULL,
+  preference_value JSONB NOT NULL,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE(user_id, preference_key)
+);
+
+ALTER TABLE public.user_preferences ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Users can read own preferences"
+  ON public.user_preferences FOR SELECT
+  TO authenticated
+  USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can upsert own preferences"
+  ON public.user_preferences FOR INSERT
+  TO authenticated
+  WITH CHECK (auth.uid() = user_id);
+
+CREATE POLICY "Users can update own preferences"
+  ON public.user_preferences FOR UPDATE
+  TO authenticated
+  USING (auth.uid() = user_id);
 ```
 
-### 2. Add Stall Detection to Frontend (`CrossSellOpportunitiesTab.tsx`)
-During polling, compare `total_processed` across consecutive polls. If it hasn't changed for 60+ seconds while status is still "running", automatically mark the job as stale and offer a "Restart" button.
+### 2. Update `src/hooks/useSidebarOrder.ts`
 
-Changes:
-- Track `lastProcessedCount` and `lastProgressTime` in refs
-- On each poll, if `total_processed` hasn't increased in 60 seconds, update the job to `failed` and stop polling
-- Show a toast: "Backfill stalled -- you can restart it"
+- On mount: query `user_preferences` for key `sidebar_custom_order` for the current user
+- On save: upsert to `user_preferences` instead of (or in addition to) `localStorage`
+- Keep `localStorage` as a fast cache so the sidebar doesn't flash on load -- write to both, but database is the source of truth
+- On reset: delete the database row and clear `localStorage`
 
-### 3. Add Retry on Self-Trigger Failure (`batch-extract-lifestyle-signals/index.ts`)
-Make the self-retrigger more resilient by awaiting the fetch response and retrying once on failure. If both attempts fail, mark the job as `failed` rather than leaving it "running".
+### 3. Minor Update to `src/components/layout/AppSidebar.tsx`
 
-Changes at the self-retrigger section (around line 322-331):
-```text
-Current:  fire-and-forget fetch().catch(log)
-Proposed: await fetch, retry once on failure, mark job failed if both fail
-```
+- Pass the current user ID into `useSidebarOrder` so it can query the database
+- No other changes needed -- the hook API (`getOrderedItems`, `moveItem`, `resetOrder`) stays the same
 
 ## Files Changed
-- Database migration: mark stale running jobs as failed
-- `src/components/call-insights/CrossSellOpportunitiesTab.tsx` -- stall detection in poll loop
-- `supabase/functions/batch-extract-lifestyle-signals/index.ts` -- resilient self-retrigger with failure handling
-
+- 1 new database migration
+- `src/hooks/useSidebarOrder.ts` -- persist to database, load from database on mount
+- `src/components/layout/AppSidebar.tsx` -- pass user ID to hook
