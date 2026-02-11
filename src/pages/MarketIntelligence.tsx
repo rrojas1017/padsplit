@@ -118,7 +118,7 @@ export default function MarketIntelligence() {
     >
       {/* Filters */}
       <div className="flex flex-wrap items-center gap-4 mb-6">
-        <DateRangeFilter onRangeChange={handleRangeChange} includeAllTime={true} includeCustom={true} />
+        <DateRangeFilter onRangeChange={handleRangeChange} includeAllTime={true} includeCustom={true} defaultValue="all" />
         
         <div className="flex items-center gap-3">
           <span className="text-sm text-muted-foreground whitespace-nowrap">Min records:</span>
