@@ -1361,8 +1361,10 @@ async function processTranscription(bookingId: string, kixieUrl: string, skipTts
       .select('id')
       .maybeSingle();
 
+    let claimBypassed = false;
     if (claimError) {
       if (claimError.code === '42703') {
+        claimBypassed = true;
         console.warn(`[Background] Schema cache stale (42703) for ${bookingId}. Bypassing claim and proceeding.`);
       } else {
         console.error(`[Background] Claim error for ${bookingId}:`, claimError);
@@ -1371,7 +1373,7 @@ async function processTranscription(bookingId: string, kixieUrl: string, skipTts
       }
     }
 
-    if (!claimResult) {
+    if (!claimResult && !claimBypassed) {
       console.log(`[Background] Booking ${bookingId} already processing/completed, skipping duplicate`);
       clearTimeout(timeoutId);
       return;
