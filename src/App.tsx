@@ -42,6 +42,7 @@ import PromoCodeSettings from "./pages/PromoCodeSettings";
 import CallInsights from "./pages/CallInsights";
 import HistoricalImport from "./pages/HistoricalImport";
 import BroadcastMessages from "./pages/BroadcastMessages";
+import MarketIntelligence from "./pages/MarketIntelligence";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -277,6 +278,14 @@ const App = () => (
                 <ProtectedRoute allowedRoles={['super_admin', 'admin', 'supervisor']}>
                   <DataProviders>
                     <BroadcastMessages />
+                  </DataProviders>
+                </ProtectedRoute>
+              } />
+
+              <Route path="/market-intelligence" element={
+                <ProtectedRoute allowedRoles={['super_admin', 'admin']}>
+                  <DataProviders>
+                    <MarketIntelligence />
                   </DataProviders>
                 </ProtectedRoute>
               } />

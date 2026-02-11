@@ -16,6 +16,7 @@ import { calculateKPIData, calculateChartData, calculateLeaderboard, calculateMa
 import { Skeleton } from '@/components/ui/skeleton';
 import { useBillingData, DateRangeType } from '@/hooks/useBillingData';
 import { formatCurrency } from '@/utils/billingCalculations';
+import { ChurnWarningPanel } from '@/components/dashboard/ChurnWarningPanel';
 
 // Convert DateRangeFilter value to useBillingData format
 const getBillingDateRange = (range: DateRangeFilterType): DateRangeType => {
@@ -216,6 +217,13 @@ export default function Dashboard() {
           </div>
         </div>
       </div>
+
+      {/* Churn Early Warning - Admin+ */}
+      {(user?.role === 'super_admin' || user?.role === 'admin') && (
+        <div className="mt-6">
+          <ChurnWarningPanel />
+        </div>
+      )}
 
       {/* Cost Breakdown - Super Admin Only */}
       {isSuperAdmin && (

@@ -1,0 +1,245 @@
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+};
+
+Deno.serve(async (req) => {
+  if (req.method === "OPTIONS") {
+    return new Response(null, { headers: corsHeaders });
+  }
+
+  try {
+    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+    const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const supabase = createClient(supabaseUrl, serviceRoleKey);
+
+    const { dateFrom, dateTo, minRecords = 1 } = await req.json().catch(() => ({}));
+
+    const cacheKey = `${dateFrom || "all"}_${dateTo || "all"}_${minRecords}`;
+
+    // Check cache (valid for 15 minutes)
+    const { data: cached } = await supabase
+      .from("market_intelligence_cache")
+      .select("*")
+      .eq("cache_key", cacheKey)
+      .single();
+
+    if (cached) {
+      const age = Date.now() - new Date(cached.generated_at).getTime();
+      if (age < 15 * 60 * 1000) {
+        return new Response(JSON.stringify({
+          stateData: cached.state_data,
+          cityData: cached.city_data,
+          generatedAt: cached.generated_at,
+          fromCache: true,
+        }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+    }
+
+    // Fetch bookings with optional date filter
+    let bookingsQuery = supabase
+      .from("bookings")
+      .select("id, market_city, market_state, status, booking_date, move_in_date, call_duration_seconds, communication_method, booking_type");
+
+    if (dateFrom) bookingsQuery = bookingsQuery.gte("booking_date", dateFrom);
+    if (dateTo) bookingsQuery = bookingsQuery.lte("booking_date", dateTo);
+
+    const { data: bookings, error: bookingsError } = await bookingsQuery;
+    if (bookingsError) throw bookingsError;
+
+    // Fetch transcription key points
+    const bookingIds = (bookings || []).map(b => b.id);
+    
+    // Fetch in chunks of 500 to avoid URL length limits
+    const allTranscriptions: any[] = [];
+    for (let i = 0; i < bookingIds.length; i += 500) {
+      const chunk = bookingIds.slice(i, i + 500);
+      const { data: trans } = await supabase
+        .from("booking_transcriptions")
+        .select("booking_id, call_key_points, agent_feedback")
+        .in("booking_id", chunk);
+      if (trans) allTranscriptions.push(...trans);
+    }
+
+    const transcriptionMap = new Map<string, any>();
+    for (const t of allTranscriptions) {
+      transcriptionMap.set(t.booking_id, t);
+    }
+
+    // Aggregate by state
+    const stateMap = new Map<string, any>();
+    const cityMap = new Map<string, any>();
+
+    for (const b of bookings || []) {
+      const state = b.market_state || "Unknown";
+      const city = b.market_city || "Unknown";
+      const cityKey = `${state}|${city}`;
+
+      // State aggregation
+      if (!stateMap.has(state)) {
+        stateMap.set(state, {
+          state,
+          total: 0, bookings: 0, nonBookings: 0,
+          movedIn: 0, pendingMoveIn: 0, rejected: 0, noShow: 0, cancelled: 0, postponed: 0,
+          totalDuration: 0, durationCount: 0,
+          sentiments: { positive: 0, negative: 0, neutral: 0, mixed: 0 },
+          totalBuyerIntent: 0, buyerIntentCount: 0,
+          totalBudget: 0, budgetCount: 0,
+          objections: {} as Record<string, number>,
+        });
+      }
+
+      // City aggregation
+      if (!cityMap.has(cityKey)) {
+        cityMap.set(cityKey, {
+          state, city,
+          total: 0, bookings: 0, nonBookings: 0,
+          movedIn: 0, pendingMoveIn: 0, rejected: 0, noShow: 0, cancelled: 0, postponed: 0,
+          totalDuration: 0, durationCount: 0,
+          sentiments: { positive: 0, negative: 0, neutral: 0, mixed: 0 },
+          totalBuyerIntent: 0, buyerIntentCount: 0,
+          totalBudget: 0, budgetCount: 0,
+          objections: {} as Record<string, number>,
+        });
+      }
+
+      const stateAgg = stateMap.get(state)!;
+      const cityAgg = cityMap.get(cityKey)!;
+
+      for (const agg of [stateAgg, cityAgg]) {
+        agg.total++;
+        if (b.status === "Non Booking") agg.nonBookings++;
+        else agg.bookings++;
+        if (b.status === "Moved In") agg.movedIn++;
+        if (b.status === "Pending Move-In") agg.pendingMoveIn++;
+        if (b.status === "Member Rejected") agg.rejected++;
+        if (b.status === "No Show") agg.noShow++;
+        if (b.status === "Cancelled") agg.cancelled++;
+        if (b.status === "Postponed") agg.postponed++;
+
+        if (b.call_duration_seconds && b.call_duration_seconds > 0) {
+          agg.totalDuration += b.call_duration_seconds;
+          agg.durationCount++;
+        }
+      }
+
+      // Transcription data
+      const trans = transcriptionMap.get(b.id);
+      if (trans?.call_key_points) {
+        const kp = typeof trans.call_key_points === "string" 
+          ? JSON.parse(trans.call_key_points) 
+          : trans.call_key_points;
+
+        for (const agg of [stateAgg, cityAgg]) {
+          // Sentiment
+          const sentiment = kp.callSentiment?.toLowerCase?.() || "";
+          if (sentiment.includes("positive")) agg.sentiments.positive++;
+          else if (sentiment.includes("negative")) agg.sentiments.negative++;
+          else if (sentiment.includes("mixed")) agg.sentiments.mixed++;
+          else if (sentiment) agg.sentiments.neutral++;
+
+          // Buyer intent
+          const intentScore = kp.buyerIntent?.score;
+          if (typeof intentScore === "number") {
+            agg.totalBuyerIntent += intentScore;
+            agg.buyerIntentCount++;
+          }
+
+          // Weekly budget
+          const budget = kp.memberDetails?.weeklyBudget;
+          if (typeof budget === "number" && budget > 0) {
+            agg.totalBudget += budget;
+            agg.budgetCount++;
+          }
+
+          // Objections
+          const objections = kp.objections;
+          if (Array.isArray(objections)) {
+            for (const obj of objections) {
+              const label = typeof obj === "string" ? obj : obj?.type || obj?.concern || String(obj);
+              if (label) {
+                agg.objections[label] = (agg.objections[label] || 0) + 1;
+              }
+            }
+          }
+        }
+      }
+    }
+
+    // Format results
+    const formatAgg = (agg: any) => {
+      const convRate = agg.bookings > 0 ? (agg.movedIn / agg.bookings) * 100 : 0;
+      const churnRate = agg.bookings > 0 ? ((agg.rejected + agg.noShow + agg.cancelled) / agg.bookings) * 100 : 0;
+      const avgDuration = agg.durationCount > 0 ? agg.totalDuration / agg.durationCount : 0;
+      const avgBuyerIntent = agg.buyerIntentCount > 0 ? agg.totalBuyerIntent / agg.buyerIntentCount : null;
+      const avgBudget = agg.budgetCount > 0 ? agg.totalBudget / agg.budgetCount : null;
+
+      // Dominant sentiment
+      const sentimentEntries = Object.entries(agg.sentiments) as [string, number][];
+      const dominantSentiment = sentimentEntries.sort((a, b) => (b[1] as number) - (a[1] as number))[0];
+
+      // Top objections
+      const topObjections = Object.entries(agg.objections)
+        .sort((a, b) => (b[1] as number) - (a[1] as number))
+        .slice(0, 5)
+        .map(([label, count]) => ({ label, count }));
+
+      return {
+        total: agg.total,
+        bookings: agg.bookings,
+        nonBookings: agg.nonBookings,
+        movedIn: agg.movedIn,
+        pendingMoveIn: agg.pendingMoveIn,
+        rejected: agg.rejected,
+        noShow: agg.noShow,
+        cancelled: agg.cancelled,
+        postponed: agg.postponed,
+        conversionRate: Math.round(convRate * 10) / 10,
+        churnRate: Math.round(churnRate * 10) / 10,
+        avgCallDuration: Math.round(avgDuration),
+        dominantSentiment: dominantSentiment ? dominantSentiment[0] : "unknown",
+        sentimentBreakdown: agg.sentiments,
+        avgBuyerIntent: avgBuyerIntent !== null ? Math.round(avgBuyerIntent) : null,
+        avgWeeklyBudget: avgBudget !== null ? Math.round(avgBudget) : null,
+        topObjections,
+      };
+    };
+
+    const stateData = Array.from(stateMap.entries())
+      .map(([state, agg]) => ({ state, ...formatAgg(agg) }))
+      .filter(s => s.total >= minRecords)
+      .sort((a, b) => b.total - a.total);
+
+    const cityData = Array.from(cityMap.entries())
+      .map(([key, agg]) => ({ state: agg.state, city: agg.city, ...formatAgg(agg) }))
+      .filter(c => c.total >= minRecords)
+      .sort((a, b) => b.total - a.total);
+
+    // Upsert cache
+    await supabase
+      .from("market_intelligence_cache")
+      .upsert({
+        cache_key: cacheKey,
+        state_data: stateData,
+        city_data: cityData,
+        generated_at: new Date().toISOString(),
+        filters: { dateFrom, dateTo, minRecords },
+      }, { onConflict: "cache_key" });
+
+    return new Response(JSON.stringify({
+      stateData,
+      cityData,
+      generatedAt: new Date().toISOString(),
+      fromCache: false,
+    }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+
+  } catch (error) {
+    console.error("Error aggregating market data:", error);
+    return new Response(JSON.stringify({ error: error.message }), {
+      status: 500,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+});

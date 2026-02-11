@@ -37,6 +37,9 @@ import {
 import { DateRangePicker } from '@/components/dashboard/DateRangePicker';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from '@/components/ui/tooltip';
+import { ChurnRiskBadge } from '@/components/reports/ChurnRiskBadge';
+import { calculateChurnRisk } from '@/utils/churnPrediction';
+import { useChurnPrediction } from '@/hooks/useChurnPrediction';
 
 type Site = {
   id: string;
@@ -744,6 +747,7 @@ export default function Reports() {
                 <SortableHeader column="bookingType" label="Type" />
                 <SortableHeader column="status" label="Status" />
                 <th className="text-left py-3 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Priority</th>
+                <th className="text-left py-3 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Churn Risk</th>
                 <SortableHeader column="communicationMethod" label="Method" />
                 <th className="text-left py-3 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Links</th>
                 <th className="text-left py-3 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Actions</th>
@@ -754,7 +758,7 @@ export default function Reports() {
                 <TableSkeleton />
               ) : records.length === 0 ? (
                 <tr>
-                  <td colSpan={13} className="py-8 text-center text-muted-foreground">
+                  <td colSpan={14} className="py-8 text-center text-muted-foreground">
                     No records found matching your filters
                   </td>
                 </tr>
@@ -881,6 +885,21 @@ export default function Reports() {
                         )}
                         size="sm"
                       />
+                    </td>
+                    <td className="py-3 px-4">
+                      {booking.status === 'Pending Move-In' ? (
+                        <ChurnRiskBadge
+                          risk={calculateChurnRisk({
+                            callDurationSeconds: booking.callDurationSeconds || null,
+                            bookingDate: booking.bookingDate instanceof Date ? booking.bookingDate.toISOString() : String(booking.bookingDate),
+                            moveInDate: booking.moveInDate instanceof Date ? booking.moveInDate.toISOString() : String(booking.moveInDate),
+                            communicationMethod: booking.communicationMethod || null,
+                            transcription: booking.callKeyPoints ? (typeof booking.callKeyPoints === 'string' ? JSON.parse(booking.callKeyPoints) : booking.callKeyPoints) : null,
+                          })}
+                        />
+                      ) : (
+                        <span className="text-muted-foreground text-xs">—</span>
+                      )}
                     </td>
                     <td className="py-3 px-4 text-sm text-muted-foreground">
                       {booking.communicationMethod}

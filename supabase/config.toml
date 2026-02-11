@@ -110,3 +110,6 @@ verify_jwt = true
 
 [functions.validate-login-ip]
 verify_jwt = false
+
+[functions.aggregate-market-data]
+verify_jwt = true

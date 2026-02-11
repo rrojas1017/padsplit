@@ -23,7 +23,8 @@ import {
   ClipboardList,
   Calculator,
   Tag,
-  Megaphone
+  Megaphone,
+  MapPin
 } from 'lucide-react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
@@ -142,6 +143,13 @@ const menuItems: MenuItem[] = [
     label: 'Move-In Calculator',
     path: '/tools/move-in-calculator',
     roles: ['super_admin', 'admin', 'supervisor', 'agent'],
+    group: 'core'
+  },
+  {
+    icon: MapPin,
+    label: 'Market Intelligence',
+    path: '/market-intelligence',
+    roles: ['super_admin', 'admin'],
     group: 'core'
   },
   // Admin items - collapsible group
