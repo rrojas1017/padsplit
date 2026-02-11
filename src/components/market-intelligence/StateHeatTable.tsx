@@ -4,7 +4,7 @@ import { cn } from '@/lib/utils';
 import { MarketStateData, MarketCityData } from '@/hooks/useMarketIntelligence';
 import { CityDrillDown } from './CityDrillDown';
 
-type SortKey = 'state' | 'total' | 'bookings' | 'nonBookings' | 'conversionRate' | 'churnRate' | 'avgCallDuration' | 'dominantSentiment';
+type SortKey = 'state' | 'total' | 'bookings' | 'nonBookings' | 'conversionRate' | 'churnRate' | 'avgCallDuration' | 'dominantSentiment' | 'avgWeeklyBudget';
 
 interface StateHeatTableProps {
   stateData: MarketStateData[];
@@ -41,7 +41,7 @@ export function StateHeatTable({ stateData, cityData }: StateHeatTableProps) {
   };
 
   const sorted = [...stateData].sort((a, b) => {
-    const av = a[sortKey], bv = b[sortKey];
+    const av = a[sortKey] ?? -Infinity, bv = b[sortKey] ?? -Infinity;
     if (typeof av === 'number' && typeof bv === 'number') return sortDir === 'asc' ? av - bv : bv - av;
     return sortDir === 'asc' ? String(av).localeCompare(String(bv)) : String(bv).localeCompare(String(av));
   });
@@ -81,6 +81,7 @@ export function StateHeatTable({ stateData, cityData }: StateHeatTableProps) {
               <SortHeader label="Churn %" sortKey="churnRate" />
               <SortHeader label="Avg Call (s)" sortKey="avgCallDuration" />
               <SortHeader label="Sentiment" sortKey="dominantSentiment" />
+              <SortHeader label="Avg Budget" sortKey="avgWeeklyBudget" />
             </tr>
           </thead>
           <tbody>
@@ -118,10 +119,13 @@ export function StateHeatTable({ stateData, cityData }: StateHeatTableProps) {
                     <td className={cn("py-3 px-4 capitalize font-medium", getSentimentColor(row.dominantSentiment))}>
                       {row.dominantSentiment}
                     </td>
+                    <td className="py-3 px-4 text-foreground font-medium">
+                      {row.avgWeeklyBudget !== null ? `$${row.avgWeeklyBudget}` : '—'}
+                    </td>
                   </tr>
                   {isExpanded && cities.length > 0 && (
                     <tr key={`${row.state}-cities`}>
-                      <td colSpan={9} className="p-0 bg-muted/10">
+                      <td colSpan={10} className="p-0 bg-muted/10">
                         <CityDrillDown cities={cities} />
                       </td>
                     </tr>

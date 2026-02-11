@@ -5,9 +5,10 @@ import { TrendingUp, TrendingDown, Minus } from 'lucide-react';
 interface MarketComparisonCardsProps {
   topMarkets: MarketCityData[];
   systemAvgConversion: number;
+  systemAvgBudget: number | null;
 }
 
-export function MarketComparisonCards({ topMarkets, systemAvgConversion }: MarketComparisonCardsProps) {
+export function MarketComparisonCards({ topMarkets, systemAvgConversion, systemAvgBudget }: MarketComparisonCardsProps) {
   if (topMarkets.length === 0) return null;
 
   return (
@@ -37,6 +38,18 @@ export function MarketComparisonCards({ topMarkets, systemAvgConversion }: Marke
                   {isEqual ? <Minus className="w-3 h-3" /> : isAbove ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
                   {market.conversionRate}%
                 </div>
+              </div>
+              <div className="mt-1 text-xs font-medium">
+                {market.avgWeeklyBudget !== null ? (
+                  <span className={cn(
+                    systemAvgBudget !== null && market.avgWeeklyBudget >= systemAvgBudget ? "text-success" : 
+                    systemAvgBudget !== null ? "text-destructive" : "text-muted-foreground"
+                  )}>
+                    ${market.avgWeeklyBudget}/wk
+                  </span>
+                ) : (
+                  <span className="text-muted-foreground">—</span>
+                )}
               </div>
             </div>
           );
