@@ -34,7 +34,6 @@ serve(async (req) => {
       .select(`
         id,
         kixie_link,
-        transcription_status,
         agent_id,
         call_type_id,
         import_batch_id,
@@ -55,7 +54,6 @@ serve(async (req) => {
     const bookingData = booking as unknown as {
       id: string;
       kixie_link: string | null;
-      transcription_status: string | null;
       agent_id: string;
       call_type_id: string | null;
       import_batch_id: string | null;
