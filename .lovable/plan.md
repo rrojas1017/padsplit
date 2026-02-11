@@ -1,32 +1,17 @@
 
+# Fix: Budget Data Not Showing in Market Intelligence
 
-# Add Average Weekly Budget to Market Intelligence Cards
+## Root Cause
+The edge function `aggregate-market-data` code in the repository correctly extracts `weeklyBudget` from `call_key_points -> memberDetails -> weeklyBudget` (line 160-164). However, the **currently deployed** version of this function appears to be stale -- the fresh cache generated at 04:19:33 has null budgets for ALL 28 states, even though 2,328 out of 5,914 transcription records contain valid numeric budget data.
 
-## Overview
-Display the average weekly budget per state in the summary cards at the top, and add it to each market comparison card for the Top 10 Markets.
+## Fix
+1. **Redeploy the `aggregate-market-data` edge function** -- no code changes needed, just a redeployment to pick up the current version.
+2. **Clear the stale cache** so the next request generates fresh data with budgets included:
+   - Run: `DELETE FROM market_intelligence_cache` (or at least delete the `all_all_3` entry).
+3. **Refresh the page** to trigger a new aggregation with the redeployed function.
 
-## Changes
-
-### 1. `src/hooks/useMarketIntelligence.ts`
-- Compute a new `systemAvgBudget` value from `stateData`, averaging all non-null `avgWeeklyBudget` values across states.
-- Return `systemAvgBudget` from the hook.
-
-### 2. `src/pages/MarketIntelligence.tsx`
-- Add a 5th summary card titled **"Avg Weekly Budget"** showing the system-wide average formatted as currency (e.g., `$185`).
-- Update the summary grid from `grid-cols-4` to `grid-cols-5` on medium+ screens.
-- Pass `systemAvgBudget` down to `MarketComparisonCards`.
-
-### 3. `src/components/market-intelligence/MarketComparisonCards.tsx`
-- Accept `systemAvgBudget` as a new prop.
-- Add a budget line to each Top 10 market card showing that city's `avgWeeklyBudget` (e.g., `$180/wk`), with color coding:
-  - Green if above system average
-  - Red if below system average
-  - Gray if no data available
-
-### 4. `src/components/market-intelligence/StateHeatTable.tsx`
-- Add an **"Avg Budget"** sortable column to the state table.
-- Display formatted currency or an em-dash if null.
-- Add `avgWeeklyBudget` to the `SortKey` type.
-
-No backend changes needed -- `avgWeeklyBudget` is already computed and returned by the `aggregate-market-data` function.
-
+## Verification
+After redeployment and cache clear, the dashboard should show:
+- "Avg Weekly Budget" card with a dollar amount (likely around $200-300 based on the data)
+- Budget values on each Top 10 market card with green/red color coding
+- Budget column populated in the state heat table
