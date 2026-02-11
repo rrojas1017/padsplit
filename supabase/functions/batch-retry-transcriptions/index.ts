@@ -212,7 +212,7 @@ serve(async (req) => {
         agents!inner(id, name, sites(name))
       `)
       .not('kixie_link', 'is', null)
-      .or('transcription_status.is.null,transcription_status.in.(failed,pending)')
+      .or('transcription_status.is.null,transcription_status.in.(failed,pending,queued)')
       .order('booking_date', { ascending: false })
       .limit(limit);
 
@@ -256,8 +256,16 @@ serve(async (req) => {
 
     const transcribedIds = new Set((existingTranscriptions || []).map(t => t.booking_id));
     
-    // Bookings that have NO transcription record at all
-    const failedBookings = (potentialBookings as FailedBooking[]).filter(b => !transcribedIds.has(b.id));
+    // Filter: no transcription record, OR queued for more than 10 minutes (stuck)
+    const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+    const failedBookings = (potentialBookings as FailedBooking[]).filter(b => {
+      if (transcribedIds.has(b.id)) return false;
+      // For queued records, only include if they've been stuck for >10 minutes
+      if (b.transcription_status === 'queued') {
+        return (b.booking_date || '') < tenMinutesAgo;
+      }
+      return true;
+    });
 
     console.log(`[BATCH-RETRY] ${failedBookings.length} bookings need re-transcription (no transcription record)`);
 

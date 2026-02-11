@@ -81,23 +81,28 @@ serve(async (req) => {
       .select('id')
       .maybeSingle();
 
+    // Handle schema cache errors (e.g., after migrations, PostgREST may not recognize columns)
     if (claimError) {
-      console.error(`[check-auto-transcription] Claim error:`, claimError);
-      return new Response(
-        JSON.stringify({ triggered: false, reason: 'Claim error' }),
-        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-
-    if (!claimResult) {
+      if (claimError.code === '42703') {
+        // Column not found -- stale schema cache. Skip claim and proceed directly.
+        // transcribe-call has its own idempotency checks so this is safe.
+        console.warn(`[check-auto-transcription] Schema cache stale (42703) for booking ${bookingId}. Bypassing claim and proceeding directly.`);
+      } else {
+        console.error(`[check-auto-transcription] Claim error:`, claimError);
+        return new Response(
+          JSON.stringify({ triggered: false, reason: 'Claim error' }),
+          { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+    } else if (!claimResult) {
       console.log(`[check-auto-transcription] Booking ${bookingId} already claimed by another invocation, skipping`);
       return new Response(
         JSON.stringify({ triggered: false, reason: 'Already claimed by another invocation' }),
         { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
+    } else {
+      console.log(`[check-auto-transcription] Successfully claimed booking ${bookingId} for transcription`);
     }
-
-    console.log(`[check-auto-transcription] Successfully claimed booking ${bookingId} for transcription`);
 
     // Fetch all active rules ordered by priority
     const { data: rules, error: rulesError } = await supabase
