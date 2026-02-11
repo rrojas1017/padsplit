@@ -1,8 +1,9 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Progress } from '@/components/ui/progress';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -11,7 +12,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { 
   Heart, PawPrint, Car, Home, Phone, Briefcase, DollarSign, Truck, 
   ChevronDown, TrendingUp, BarChart3, RefreshCw, Zap, ShoppingBag,
-  MapPin, Quote, AlertCircle
+  MapPin, Quote, AlertCircle, XCircle, Loader2
 } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Cell } from 'recharts';
 
@@ -99,6 +100,32 @@ export function CrossSellOpportunitiesTab({ dateRange, onDateRangeChange }: Cros
   const [loading, setLoading] = useState(true);
   const [backfillRunning, setBackfillRunning] = useState(false);
   const [expandedCategory, setExpandedCategory] = useState<string | null>(null);
+  
+  // Full backfill state
+  const [fullBackfill, setFullBackfill] = useState<{
+    running: boolean;
+    processed: number;
+    total: number;
+    startedAt: number;
+    failed: number;
+  }>({ running: false, processed: 0, total: 0, startedAt: 0, failed: 0 });
+  const abortRef = useRef(false);
+  const [elapsed, setElapsed] = useState(0);
+
+  // Timer for elapsed display
+  useEffect(() => {
+    if (!fullBackfill.running) return;
+    const interval = setInterval(() => {
+      setElapsed(Math.floor((Date.now() - fullBackfill.startedAt) / 1000));
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [fullBackfill.running, fullBackfill.startedAt]);
+
+  const formatElapsed = (seconds: number) => {
+    const m = Math.floor(seconds / 60);
+    const s = seconds % 60;
+    return m > 0 ? `${m}m ${s}s` : `${s}s`;
+  };
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -142,7 +169,6 @@ export function CrossSellOpportunitiesTab({ dateRange, onDateRangeChange }: Cros
       } else {
         toast.info('No transcriptions need processing for this date range.');
       }
-      // Refresh data after backfill
       fetchData();
     } catch (err) {
       console.error('Backfill error:', err);
@@ -150,6 +176,74 @@ export function CrossSellOpportunitiesTab({ dateRange, onDateRangeChange }: Cros
     } finally {
       setBackfillRunning(false);
     }
+  };
+
+  const runFullBackfill = async () => {
+    abortRef.current = false;
+    setFullBackfill({ running: true, processed: 0, total: 0, startedAt: Date.now(), failed: 0 });
+    setElapsed(0);
+
+    try {
+      // First call to get initial count
+      const { data: first, error: firstErr } = await supabase.functions.invoke('batch-extract-lifestyle-signals', {
+        body: { batchSize: 50 }
+      });
+      if (firstErr || !first?.success) throw firstErr || new Error(first?.error || 'Failed');
+
+      const initialTotal = (first.processed || 0) + (first.remaining || 0);
+      let totalProcessed = first.processed || 0;
+      let totalFailed = first.failed || 0;
+      let remaining = first.remaining || 0;
+
+      setFullBackfill(prev => ({ ...prev, total: initialTotal, processed: totalProcessed, failed: totalFailed }));
+
+      // Loop until done
+      while (remaining > 0 && !abortRef.current) {
+        const { data: result, error } = await supabase.functions.invoke('batch-extract-lifestyle-signals', {
+          body: { batchSize: 50 }
+        });
+
+        if (error || !result?.success) {
+          console.error('Backfill batch error:', error || result?.error);
+          totalFailed++;
+          setFullBackfill(prev => ({ ...prev, failed: totalFailed }));
+          // Continue trying unless cancelled
+          if (abortRef.current) break;
+          continue;
+        }
+
+        totalProcessed += result.processed || 0;
+        totalFailed += result.failed || 0;
+        remaining = result.remaining || 0;
+
+        setFullBackfill(prev => ({
+          ...prev,
+          processed: totalProcessed,
+          failed: totalFailed,
+          // Update total if it grew (edge case: new records appeared)
+          total: Math.max(prev.total, totalProcessed + remaining),
+        }));
+
+        // If nothing was processed, we're done
+        if ((result.processed || 0) === 0) break;
+      }
+
+      if (abortRef.current) {
+        toast.info(`Backfill cancelled. ${totalProcessed.toLocaleString()} records processed.`);
+      } else {
+        toast.success(`Backfill complete! ${totalProcessed.toLocaleString()} records processed.`);
+      }
+      fetchData();
+    } catch (err) {
+      console.error('Full backfill error:', err);
+      toast.error('Backfill encountered an error');
+    } finally {
+      setFullBackfill(prev => ({ ...prev, running: false }));
+    }
+  };
+
+  const cancelBackfill = () => {
+    abortRef.current = true;
   };
 
   if (loading) {
@@ -207,13 +301,51 @@ export function CrossSellOpportunitiesTab({ dateRange, onDateRangeChange }: Cros
             variant="outline" 
             size="sm" 
             onClick={runBackfill}
-            disabled={backfillRunning}
+            disabled={backfillRunning || fullBackfill.running}
           >
             <Zap className="h-4 w-4 mr-1" />
             {backfillRunning ? 'Running...' : 'Backfill'}
           </Button>
+          <Button 
+            size="sm" 
+            onClick={runFullBackfill}
+            disabled={backfillRunning || fullBackfill.running}
+          >
+            <Loader2 className={`h-4 w-4 mr-1 ${fullBackfill.running ? 'animate-spin' : ''}`} />
+            {fullBackfill.running ? 'Running...' : 'Backfill All'}
+          </Button>
         </div>
       </div>
+
+      {/* Full Backfill Progress Bar */}
+      {fullBackfill.running && (
+        <Card className="border-primary/30 bg-primary/5">
+          <CardContent className="pt-6 space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                <span className="text-sm font-medium">Backfilling all records...</span>
+              </div>
+              <Button variant="ghost" size="sm" onClick={cancelBackfill}>
+                <XCircle className="h-4 w-4 mr-1" />
+                Cancel
+              </Button>
+            </div>
+            <Progress 
+              value={fullBackfill.total > 0 ? (fullBackfill.processed / fullBackfill.total) * 100 : 0} 
+              className="h-3"
+            />
+            <div className="flex items-center justify-between text-xs text-muted-foreground">
+              <span>
+                {fullBackfill.processed.toLocaleString()} of {fullBackfill.total.toLocaleString()} processed
+                {fullBackfill.total > 0 && ` (${Math.round((fullBackfill.processed / fullBackfill.total) * 100)}%)`}
+                {fullBackfill.failed > 0 && ` · ${fullBackfill.failed} failed`}
+              </span>
+              <span>{formatElapsed(elapsed)} elapsed</span>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Summary Stats */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
