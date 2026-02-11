@@ -1,50 +1,33 @@
 
 
-# Fix Dashboard "All Time" Filter Showing Only 698 Records
+# Prevent Stale Schema Cache From Blocking Transcriptions
 
 ## Problem
-The Dashboard gets its data from `BookingsContext`, which hard-limits queries to the **last 90 days** and **2,000 rows**. When you select "All Time", it only filters within those 698 pre-fetched records instead of querying all 5,943 records in the database.
+After database migrations, PostgREST's schema cache can become stale, causing the `check-auto-transcription` function to fail with `column bookings.transcription_status does not exist`. This blocked 2 records today (Lanston Lowe and Nicholas Jackson) -- both are now processing after manual intervention.
 
-## Why This Happens
-- `BookingsContext` (line 44-67) applies `.gte('booking_date', dateLimit)` where `dateLimit` = 90 days ago
-- The Dashboard's date filter is purely client-side -- it filters records already in memory
-- The Reports page works correctly because it uses a separate `useReportsData` hook with server-side queries
+## Why It Happens
+- Database triggers (`trigger_auto_transcription_on_insert/update`) call `check-auto-transcription` via `pg_net`
+- `check-auto-transcription` performs an atomic claim: `UPDATE bookings SET transcription_status = 'queued' WHERE ...`
+- After a migration, PostgREST may not recognize new/existing columns until its cache refreshes (can take minutes to hours)
+- The claim fails, and the record stays stuck in `queued` forever with no retry
 
-## Solution
-Create a dedicated `useDashboardData` hook that performs **server-side aggregation** for the Dashboard KPIs when "All Time" (or ranges beyond 90 days) is selected. This avoids expanding `BookingsContext` (which would slow down the entire app).
+## Solution: Add Resilience to `check-auto-transcription`
 
-### Approach: Server-Side KPI Query
+### 1. Add retry-with-fallback in `check-auto-transcription`
+If the atomic claim fails with error code `42703` (undefined column), skip the claim and call `transcribe-call` directly -- since the claim is just a deduplication guard, it's safe to proceed without it in this edge case.
 
-1. **New hook: `src/hooks/useDashboardData.ts`**
-   - When the date filter is `today`, `yesterday`, `7d`, `30d`, or `month` -- continue using `BookingsContext` data (it covers these ranges)
-   - When the filter is `all` or `custom` (with dates older than 90 days) -- query the database directly with the appropriate date filters and no 90-day cap
-   - Fetch with `.order('booking_date', { ascending: false })` and no row limit cap for "all time" (use pagination if needed)
-   - Return the same `Booking[]` shape so all existing `calculateKPIData`, `calculateChartData`, etc. functions continue to work unchanged
+**File:** `supabase/functions/check-auto-transcription/index.ts`
+- After the claim query fails, check if `claimError.code === '42703'`
+- If so, log a warning and proceed to call `transcribe-call` directly (the transcribe function has its own idempotency checks)
+- This makes the pipeline self-healing: even with a stale cache, records will still get processed
 
-2. **Update `src/pages/Dashboard.tsx`**
-   - Replace the direct `useBookings()` usage with the new `useDashboardData(dateRange, customDates)` hook
-   - The hook returns `{ bookings, isLoading }` -- same interface, so no other changes needed
-   - Keep `BookingsContext` for add/update/delete operations (CRUD still uses the context)
+### 2. Add a safety net: auto-retry stuck `queued` records
+Add a check in the existing `batch-retry-transcriptions` function to also pick up records stuck in `queued` status for more than 10 minutes. This acts as a background sweep.
 
-### Technical Details
-
-**`useDashboardData` hook logic:**
-```text
-if dateRange is 'all' or custom range extends beyond 90 days:
-  -> Query supabase directly (same SELECT as BookingsContext but without the 90-day filter)
-  -> Apply .limit(10000) as a safety cap
-  -> Cache result to avoid re-fetching on every render
-else:
-  -> Return bookings from BookingsContext (already covers recent data)
-```
-
-**Key considerations:**
-- The query selects the same lightweight columns as BookingsContext (no transcription blobs)
-- For "All Time", the query will return ~5,943 rows which is manageable for client-side KPI calculations
-- A loading state is shown while the larger dataset is being fetched
-- Results are cached so switching back to "All Time" doesn't re-fetch
+**File:** `supabase/functions/batch-retry-transcriptions/index.ts`
+- Expand the query to include `transcription_status = 'queued' AND created_at < now() - interval '10 minutes'`
+- These records get re-triggered through `transcribe-call` directly
 
 ## Files Changed
-- **New:** `src/hooks/useDashboardData.ts` -- smart data source that switches between context and direct DB query
-- **Edit:** `src/pages/Dashboard.tsx` -- use the new hook for bookings data
-
+- **Edit:** `supabase/functions/check-auto-transcription/index.ts` -- fallback on schema cache errors
+- **Edit:** `supabase/functions/batch-retry-transcriptions/index.ts` -- sweep stuck `queued` records
