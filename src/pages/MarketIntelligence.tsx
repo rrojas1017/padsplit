@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { usePageTracking } from '@/hooks/usePageTracking';
 import { useMarketIntelligence } from '@/hooks/useMarketIntelligence';
@@ -8,8 +8,11 @@ import { DateRangeFilter, DateFilterValue, CustomDateRange } from '@/components/
 import { Skeleton } from '@/components/ui/skeleton';
 import { Slider } from '@/components/ui/slider';
 import { Button } from '@/components/ui/button';
-import { RefreshCw, Map, Clock } from 'lucide-react';
+import { Progress } from '@/components/ui/progress';
+import { RefreshCw, Map, Clock, Database } from 'lucide-react';
 import { format } from 'date-fns';
+import { supabase } from '@/integrations/supabase/client';
+import { toast } from '@/hooks/use-toast';
 
 type DateRange = 'today' | 'yesterday' | '7d' | '30d' | 'month' | 'all' | 'custom';
 
@@ -48,8 +51,60 @@ export default function MarketIntelligence() {
   const [customDates, setCustomDates] = useState<CustomDateRange | undefined>();
   const [minRecords, setMinRecords] = useState(3);
 
+  // Backfill state
+  const [unmappedCount, setUnmappedCount] = useState<number | null>(null);
+  const [backfillRunning, setBackfillRunning] = useState(false);
+  const [backfillProcessed, setBackfillProcessed] = useState(0);
+  const [backfillTotal, setBackfillTotal] = useState(0);
+  const abortRef = useRef(false);
+
   const { from, to } = getDateRange(dateRange, customDates);
   const { stateData, cityData, topMarkets, systemAvgConversion, generatedAt, fromCache, isLoading, isRefreshing, refresh } = useMarketIntelligence(from, to, minRecords);
+
+  // Fetch unmapped count on mount
+  useEffect(() => {
+    supabase
+      .from('bookings')
+      .select('id', { count: 'exact', head: true })
+      .eq('transcription_status', 'completed')
+      .eq('market_backfill_checked', false)
+      .is('market_city', null)
+      .then(({ count }) => setUnmappedCount(count ?? 0));
+  }, []);
+
+  const runBackfill = useCallback(async () => {
+    abortRef.current = false;
+    setBackfillRunning(true);
+    setBackfillProcessed(0);
+    setBackfillTotal(unmappedCount || 0);
+    let totalProcessed = 0;
+
+    try {
+      while (!abortRef.current) {
+        const { data, error } = await supabase.functions.invoke('backfill-markets-from-transcriptions', {
+          body: { batchSize: 50 },
+        });
+
+        if (error) throw error;
+        
+        totalProcessed += data.processed || 0;
+        setBackfillProcessed(totalProcessed);
+
+        if (!data.remaining || data.remaining <= 0) break;
+
+        // Brief delay between batches
+        await new Promise(r => setTimeout(r, 2000));
+      }
+
+      toast({ title: 'Backfill Complete', description: `Processed ${totalProcessed} records` });
+      setUnmappedCount(0);
+      refresh();
+    } catch (err: any) {
+      toast({ title: 'Backfill Error', description: err.message, variant: 'destructive' });
+    } finally {
+      setBackfillRunning(false);
+    }
+  }, [unmappedCount, refresh]);
 
   const handleRangeChange = (range: DateFilterValue, dates?: CustomDateRange) => {
     setDateRange(range as DateRange);
@@ -83,6 +138,13 @@ export default function MarketIntelligence() {
           Refresh
         </Button>
 
+        {unmappedCount !== null && unmappedCount > 0 && !backfillRunning && (
+          <Button variant="secondary" size="sm" onClick={runBackfill} className="gap-2">
+            <Database className="w-4 h-4" />
+            Backfill Markets ({unmappedCount.toLocaleString()})
+          </Button>
+        )}
+
         {generatedAt && (
           <span className="text-xs text-muted-foreground flex items-center gap-1 ml-auto">
             <Clock className="w-3 h-3" />
@@ -90,6 +152,20 @@ export default function MarketIntelligence() {
           </span>
         )}
       </div>
+
+      {backfillRunning && (
+        <div className="flex items-center gap-3 mb-4 p-3 bg-muted/50 rounded-lg border border-border">
+          <RefreshCw className="w-4 h-4 animate-spin text-primary" />
+          <div className="flex-1">
+            <div className="flex justify-between text-sm mb-1">
+              <span className="text-foreground font-medium">Backfilling market data…</span>
+              <span className="text-muted-foreground">{backfillProcessed} / {backfillTotal}</span>
+            </div>
+            <Progress value={backfillTotal > 0 ? (backfillProcessed / backfillTotal) * 100 : 0} className="h-2" />
+          </div>
+          <Button variant="ghost" size="sm" onClick={() => { abortRef.current = true; }}>Stop</Button>
+        </div>
+      )}
 
       {isLoading ? (
         <div className="space-y-6">
