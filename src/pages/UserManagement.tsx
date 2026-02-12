@@ -268,7 +268,7 @@ export default function UserManagement() {
 
   const handleRoleChange = (role: string) => {
     setNewUserRole(role);
-    if (role === 'super_admin' || role === 'admin') {
+    if (role === 'super_admin' || role === 'admin' || role === 'researcher') {
       setNewUserSiteId('none');
       setLinkedAgentId('');
     }
@@ -608,6 +608,7 @@ export default function UserManagement() {
       case 'super_admin': return <Crown className="w-4 h-4" />;
       case 'admin': return <ShieldCheck className="w-4 h-4" />;
       case 'supervisor': return <Shield className="w-4 h-4" />;
+      case 'researcher': return <Mic className="w-4 h-4" />;
       default: return <User className="w-4 h-4" />;
     }
   };
@@ -617,6 +618,7 @@ export default function UserManagement() {
       case 'super_admin': return 'bg-accent/20 text-accent';
       case 'admin': return 'bg-primary/20 text-primary';
       case 'supervisor': return 'bg-warning/20 text-warning';
+      case 'researcher': return 'bg-purple-500/20 text-purple-400';
       default: return 'bg-muted text-muted-foreground';
     }
   };
@@ -626,13 +628,14 @@ export default function UserManagement() {
     admin: 'Admin',
     supervisor: 'Supervisor',
     agent: 'Agent',
+    researcher: 'Researcher',
   };
 
   const availableRoles = isSuperAdmin 
-    ? ['super_admin', 'admin', 'supervisor', 'agent']
+    ? ['super_admin', 'admin', 'supervisor', 'agent', 'researcher']
     : isSupervisor
       ? ['agent']
-      : ['supervisor', 'agent'];
+      : ['supervisor', 'agent', 'researcher'];
 
   return (
     <DashboardLayout 
@@ -648,12 +651,12 @@ export default function UserManagement() {
         {/* Non-Agents Tab */}
         <TabsContent value="non-agents">
           {(() => {
-            const nonAgentUsers = users.filter(u => ['super_admin', 'admin', 'supervisor'].includes(u.role));
+            const nonAgentUsers = users.filter(u => ['super_admin', 'admin', 'supervisor', 'researcher'].includes(u.role));
             return (
               <>
                 <div className="flex items-center justify-between mb-6">
                   <p className="text-muted-foreground">
-                    {loading ? 'Loading...' : `${nonAgentUsers.length} administrators & supervisors`}
+                    {loading ? 'Loading...' : `${nonAgentUsers.length} administrators, supervisors & researchers`}
                   </p>
             <Button 
               className="gap-2"
@@ -722,7 +725,9 @@ export default function UserManagement() {
                         <td className="py-4 px-4 text-sm">
                           {(user.role === 'super_admin' || user.role === 'admin') 
                             ? <span className="text-primary font-medium">All Sites</span>
-                            : <span className="text-muted-foreground">{user.site_name || '-'}</span>
+                            : user.role === 'researcher'
+                              ? <span className="text-muted-foreground">N/A</span>
+                              : <span className="text-muted-foreground">{user.site_name || '-'}</span>
                           }
                         </td>
                         <td className="py-4 px-4">
@@ -1030,7 +1035,7 @@ export default function UserManagement() {
               </Select>
             </div>
             
-            {(newUserRole === 'super_admin' || newUserRole === 'admin') && (
+            {(newUserRole === 'super_admin' || newUserRole === 'admin' || newUserRole === 'researcher') && (
               <div className="grid gap-2">
                 <Label>Site Access</Label>
                 <p className="text-sm text-muted-foreground bg-muted px-3 py-2 rounded-md">
@@ -1138,7 +1143,7 @@ export default function UserManagement() {
                 <Label htmlFor="newRole">New Role</Label>
                 <Select value={editRoleValue} onValueChange={(value) => {
                   setEditRoleValue(value);
-                  if (value === 'super_admin' || value === 'admin') {
+                  if (value === 'super_admin' || value === 'admin' || value === 'researcher') {
                     setEditRoleSiteId('');
                   }
                 }}>
@@ -1150,6 +1155,7 @@ export default function UserManagement() {
                     <SelectItem value="admin">Admin</SelectItem>
                     <SelectItem value="supervisor">Supervisor</SelectItem>
                     <SelectItem value="agent">Agent</SelectItem>
+                    <SelectItem value="researcher">Researcher</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
