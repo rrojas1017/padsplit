@@ -1,35 +1,23 @@
 
 
-# Speed Up Market Intelligence Loading
+## Fix: Budget Data Missing on "All Time" View
 
-## Problem
-The `aggregate-market-data` edge function makes **72 sequential database queries** (12 booking batches + 60 transcription chunks) to process ~6,000 records. This takes 13+ seconds on every cache miss (every 15 minutes).
+### Problem
+When selecting "All Time", Market Intelligence shows no budget data (all dashes). This is because the system fetches 5,960 bookings and then tries to look up their transcriptions using URL query parameters with 500 UUIDs per chunk. Each UUID is 36 characters, making URLs over 18,000 characters long -- which exceeds HTTP limits and causes all transcription lookups to silently fail.
 
-## Solution: Two optimizations that reduce query count from 72 to ~24
+The "This Month" filter works fine because it only has ~146 records (1 small chunk that fits in the URL).
 
-### 1. Increase transcription chunk size from 100 to 500
-The current chunk size of 100 was set to avoid URL length limits, but Supabase `.in()` sends the filter in the request body (POST), not the URL. Increasing to 500 reduces transcription fetches from 60 chunks to 12 chunks.
+### Solution
+Reduce the transcription chunk size from 500 back to **100 UUIDs per chunk** while keeping the parallel fetch approach for speed. This keeps URLs well within limits (~4,000 characters per request) and still processes all chunks simultaneously.
 
-**File:** `supabase/functions/aggregate-market-data/index.ts`
-- Change `TRANS_CHUNK = 100` to `TRANS_CHUNK = 500` (line 79)
+### What Changes
+- **File**: `supabase/functions/aggregate-market-data/index.ts`
+  - Change `TRANS_CHUNK` from `500` to `100`
+  - No other changes needed -- the parallel `Promise.all()` approach stays, so performance remains fast
 
-### 2. Fetch transcription chunks in parallel (not sequentially)
-Currently, chunks are fetched one at a time in a `for` loop. Using `Promise.all()` to fetch all chunks concurrently will reduce wall-clock time from ~12 round-trips to ~1 round-trip (all fire simultaneously).
+### Expected Result
+After this fix, selecting "All Time" will show budget data (with green/red color coding) for all markets, just like it already works for "This Month" and other filtered date ranges.
 
-**File:** `supabase/functions/aggregate-market-data/index.ts`
-- Replace the sequential `for` loop (lines 81-89) with parallel `Promise.all()` execution
-
-### 3. Extend cache TTL from 15 to 30 minutes
-Market data doesn't change frequently. Doubling the cache window halves the frequency of slow refreshes.
-
-**File:** `supabase/functions/aggregate-market-data/index.ts`
-- Change `15 * 60 * 1000` to `30 * 60 * 1000` (line 45)
-
-## Expected Impact
-- **Query count**: 72 sequential queries reduced to ~24 parallel queries
-- **Load time**: ~13 seconds reduced to ~3-4 seconds on cache miss
-- **Cache misses**: Half as frequent (every 30 min instead of 15)
-
-## Files Changed
-- **Edit:** `supabase/functions/aggregate-market-data/index.ts` -- increase chunk size, parallelize fetches, extend cache TTL
+### Technical Detail
+The parallel approach means even with 60 chunks (5,960 bookings / 100 per chunk), all requests fire simultaneously, so total load time stays similar to the current behavior with fewer, larger chunks.
 
