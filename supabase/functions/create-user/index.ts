@@ -6,7 +6,7 @@ const corsHeaders = {
 }
 
 // Valid roles enum
-const VALID_ROLES = ['super_admin', 'admin', 'supervisor', 'agent'] as const;
+const VALID_ROLES = ['super_admin', 'admin', 'supervisor', 'agent', 'researcher'] as const;
 type ValidRole = typeof VALID_ROLES[number];
 
 // Decode JWT to get user info (JWT is already verified by verify_jwt=true in config.toml)
