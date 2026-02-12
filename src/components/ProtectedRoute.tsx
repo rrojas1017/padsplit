@@ -30,6 +30,9 @@ export function ProtectedRoute({ children, allowedRoles }: ProtectedRouteProps) 
     if (user.role === 'agent') {
       return <Navigate to="/my-performance" replace />;
     }
+    if (user.role === 'researcher') {
+      return <Navigate to="/research/dashboard" replace />;
+    }
     return <Navigate to="/dashboard" replace />;
   }
 

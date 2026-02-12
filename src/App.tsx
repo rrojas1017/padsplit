@@ -45,6 +45,15 @@ import BroadcastMessages from "./pages/BroadcastMessages";
 import MarketIntelligence from "./pages/MarketIntelligence";
 import NotFound from "./pages/NotFound";
 
+// Research module pages
+import ResearchDashboard from "./pages/research/ResearchDashboard";
+import MyCampaigns from "./pages/research/MyCampaigns";
+import LogSurveyCall from "./pages/research/LogSurveyCall";
+import MyCallHistory from "./pages/research/MyCallHistory";
+import ScriptBuilder from "./pages/research/ScriptBuilder";
+import CampaignManager from "./pages/research/CampaignManager";
+import ResearchInsights from "./pages/research/ResearchInsights";
+
 const queryClient = new QueryClient();
 
 // Wrapper for protected routes that need data contexts
@@ -286,6 +295,58 @@ const App = () => (
                 <ProtectedRoute allowedRoles={['super_admin', 'admin']}>
                   <DataProviders>
                     <MarketIntelligence />
+                  </DataProviders>
+                </ProtectedRoute>
+              } />
+              {/* Research routes - Researcher role */}
+              <Route path="/research/dashboard" element={
+                <ProtectedRoute allowedRoles={['researcher']}>
+                  <DataProviders>
+                    <ResearchDashboard />
+                  </DataProviders>
+                </ProtectedRoute>
+              } />
+              <Route path="/research/campaigns" element={
+                <ProtectedRoute allowedRoles={['researcher']}>
+                  <DataProviders>
+                    <MyCampaigns />
+                  </DataProviders>
+                </ProtectedRoute>
+              } />
+              <Route path="/research/log-call" element={
+                <ProtectedRoute allowedRoles={['researcher']}>
+                  <DataProviders>
+                    <LogSurveyCall />
+                  </DataProviders>
+                </ProtectedRoute>
+              } />
+              <Route path="/research/history" element={
+                <ProtectedRoute allowedRoles={['researcher']}>
+                  <DataProviders>
+                    <MyCallHistory />
+                  </DataProviders>
+                </ProtectedRoute>
+              } />
+
+              {/* Research routes - Admin role */}
+              <Route path="/research/scripts" element={
+                <ProtectedRoute allowedRoles={['super_admin', 'admin']}>
+                  <DataProviders>
+                    <ScriptBuilder />
+                  </DataProviders>
+                </ProtectedRoute>
+              } />
+              <Route path="/research/manage-campaigns" element={
+                <ProtectedRoute allowedRoles={['super_admin', 'admin']}>
+                  <DataProviders>
+                    <CampaignManager />
+                  </DataProviders>
+                </ProtectedRoute>
+              } />
+              <Route path="/research/insights" element={
+                <ProtectedRoute allowedRoles={['super_admin', 'admin']}>
+                  <DataProviders>
+                    <ResearchInsights />
                   </DataProviders>
                 </ProtectedRoute>
               } />
