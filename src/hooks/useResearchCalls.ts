@@ -1,0 +1,211 @@
+import { useState, useEffect, useCallback } from 'react';
+import { supabase } from '@/integrations/supabase/client';
+import { toast } from 'sonner';
+import type { Json } from '@/integrations/supabase/types';
+
+export interface ResearchCallCampaign {
+  id: string;
+  name: string;
+  script_id: string;
+  status: string;
+  target_count: number;
+  start_date: string | null;
+  end_date: string | null;
+  script?: {
+    id: string;
+    name: string;
+    questions: ScriptQuestion[];
+  };
+  completed_calls: number;
+}
+
+export interface ScriptQuestion {
+  id: number;
+  text: string;
+  type: 'scale' | 'open_ended' | 'multiple_choice' | 'yes_no';
+  required?: boolean;
+  options?: string[];
+}
+
+export interface ResearchCall {
+  id: string;
+  campaign_id: string;
+  campaign_name?: string;
+  researcher_id: string;
+  caller_name: string;
+  caller_phone: string | null;
+  caller_type: string;
+  caller_status: string | null;
+  call_date: string;
+  call_duration_seconds: number | null;
+  call_outcome: string;
+  transferred_to_agent_id: string | null;
+  transfer_notes: string | null;
+  responses: Record<string, unknown> | null;
+  researcher_notes: string | null;
+  created_at: string;
+}
+
+export interface CallSubmission {
+  campaign_id: string;
+  caller_name: string;
+  caller_phone?: string;
+  caller_type: string;
+  caller_status?: string;
+  call_outcome: string;
+  call_duration_seconds?: number;
+  transferred_to_agent_id?: string;
+  transfer_notes?: string;
+  responses?: Record<string, unknown>;
+  researcher_notes?: string;
+}
+
+export function useResearchCalls() {
+  const [myCampaigns, setMyCampaigns] = useState<ResearchCallCampaign[]>([]);
+  const [myCalls, setMyCalls] = useState<ResearchCall[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const fetchMyCampaigns = useCallback(async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+
+    const { data, error } = await supabase
+      .from('research_campaigns')
+      .select('*, research_scripts(id, name, questions)')
+      .contains('assigned_researchers', [user.id])
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      console.error('Error fetching campaigns:', error);
+      return;
+    }
+
+    const campaignIds = (data || []).map(c => c.id);
+    let callCounts: Record<string, number> = {};
+
+    if (campaignIds.length > 0) {
+      const { data: callData } = await supabase
+        .from('research_calls')
+        .select('campaign_id')
+        .in('campaign_id', campaignIds)
+        .eq('call_outcome', 'completed');
+
+      if (callData) {
+        callData.forEach(c => {
+          callCounts[c.campaign_id] = (callCounts[c.campaign_id] || 0) + 1;
+        });
+      }
+    }
+
+    const mapped: ResearchCallCampaign[] = (data || []).map((c: any) => ({
+      id: c.id,
+      name: c.name,
+      script_id: c.script_id,
+      status: c.status,
+      target_count: c.target_count,
+      start_date: c.start_date,
+      end_date: c.end_date,
+      script: c.research_scripts ? {
+        id: c.research_scripts.id,
+        name: c.research_scripts.name,
+        questions: (c.research_scripts.questions || []) as ScriptQuestion[],
+      } : undefined,
+      completed_calls: callCounts[c.id] || 0,
+    }));
+
+    setMyCampaigns(mapped);
+  }, []);
+
+  const fetchMyCalls = useCallback(async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+
+    const { data, error } = await supabase
+      .from('research_calls')
+      .select('*, research_campaigns(name)')
+      .eq('researcher_id', user.id)
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      console.error('Error fetching calls:', error);
+      return;
+    }
+
+    const mapped: ResearchCall[] = (data || []).map((c: any) => ({
+      id: c.id,
+      campaign_id: c.campaign_id,
+      campaign_name: c.research_campaigns?.name || 'Unknown',
+      researcher_id: c.researcher_id,
+      caller_name: c.caller_name,
+      caller_phone: c.caller_phone,
+      caller_type: c.caller_type,
+      caller_status: c.caller_status,
+      call_date: c.call_date,
+      call_duration_seconds: c.call_duration_seconds,
+      call_outcome: c.call_outcome,
+      transferred_to_agent_id: c.transferred_to_agent_id,
+      transfer_notes: c.transfer_notes,
+      responses: c.responses as Record<string, unknown> | null,
+      researcher_notes: c.researcher_notes,
+      created_at: c.created_at,
+    }));
+
+    setMyCalls(mapped);
+  }, []);
+
+  useEffect(() => {
+    const load = async () => {
+      setIsLoading(true);
+      await Promise.all([fetchMyCampaigns(), fetchMyCalls()]);
+      setIsLoading(false);
+    };
+    load();
+  }, [fetchMyCampaigns, fetchMyCalls]);
+
+  const submitCall = async (submission: CallSubmission) => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      toast.error('You must be logged in');
+      return false;
+    }
+
+    setIsSubmitting(true);
+    const { error } = await supabase.from('research_calls').insert({
+      campaign_id: submission.campaign_id,
+      researcher_id: user.id,
+      caller_name: submission.caller_name,
+      caller_phone: submission.caller_phone || null,
+      caller_type: submission.caller_type,
+      caller_status: submission.caller_status || null,
+      call_outcome: submission.call_outcome,
+      call_duration_seconds: submission.call_duration_seconds || null,
+      transferred_to_agent_id: submission.transferred_to_agent_id || null,
+      transfer_notes: submission.transfer_notes || null,
+      responses: (submission.responses || null) as Json,
+      researcher_notes: submission.researcher_notes || null,
+    });
+
+    setIsSubmitting(false);
+
+    if (error) {
+      console.error('Error submitting call:', error);
+      toast.error('Failed to submit call');
+      return false;
+    }
+
+    toast.success('Call logged successfully');
+    await Promise.all([fetchMyCampaigns(), fetchMyCalls()]);
+    return true;
+  };
+
+  return {
+    myCampaigns,
+    myCalls,
+    isLoading,
+    isSubmitting,
+    fetchMyCampaigns,
+    fetchMyCalls,
+    submitCall,
+  };
+}
