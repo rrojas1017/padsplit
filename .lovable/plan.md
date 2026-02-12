@@ -1,59 +1,32 @@
 
 
-## Fix: Budget Data Still Missing on "All Time"
+## Fix: Stale Cache Serving Null Budgets
 
 ### Root Cause
-The previous fix (reducing chunk size to 100) hasn't fully resolved the issue. The `.in('booking_id', chunk)` approach encodes UUIDs directly into the URL query string, which hits HTTP URL length limits even at 100 IDs per chunk. The error logs confirm chunks are still failing with `TypeError: error sending request`.
+The cache entry `all_all_3` was generated at 03:29 (before the transcription fix was deployed) and stored null budget values. Since the cache is valid for 30 minutes, every request returns this stale data instead of running the fixed aggregation logic.
 
-### Why This Happens
-- 5,960 bookings exist, and 5,933 have transcriptions (99.5%)
-- Using `.in()` with UUID lists creates extremely long URLs regardless of chunk size
-- Failed chunks return 0 transcriptions, so no budget/sentiment data appears
+Proof the fix works: cache entry `all_all_2` was freshly computed after the fix and correctly shows `avgWeeklyBudget: 257`.
 
-### Solution
-Replace the chunked `.in()` approach with **range-based pagination** (the same pattern already used for fetching bookings). Since nearly every booking has a transcription, fetching all transcriptions is actually more efficient than filtering by ID.
+### Solution (Two Parts)
 
-### Changes
+**1. Clear stale cache entries (immediate fix)**
+Delete all `market_intelligence_cache` rows where `all` is in the cache key and budgets are null. This forces fresh computation on the next request.
 
-**File: `supabase/functions/aggregate-market-data/index.ts`**
+**2. Prevent future stale cache issues**
+- Change `.single()` to `.maybeSingle()` on the cache lookup (line 41) to prevent errors when no cache entry exists
+- Reduce cache TTL from 30 minutes to 15 minutes to match the original design intent (the comment on line 36 says "15 minutes" but the code checks for 30 minutes)
 
-Replace the transcription fetching logic (lines 76-96) with:
+### Technical Changes
 
-```typescript
-// Fetch all transcriptions with key points using range-based pagination
-const allTranscriptions: any[] = [];
-let transOffset = 0;
-while (true) {
-  const { data: transData, error: transError } = await supabase
-    .from("booking_transcriptions")
-    .select("booking_id, call_key_points")
-    .not("call_key_points", "is", null)
-    .range(transOffset, transOffset + BATCH_SIZE - 1);
-
-  if (transError) {
-    console.error("Transcription batch error:", transError.message);
-    break;
-  }
-  if (!transData || transData.length === 0) break;
-  allTranscriptions.push(...transData);
-  if (transData.length < BATCH_SIZE) break;
-  transOffset += BATCH_SIZE;
-}
+**Database**: Run SQL to delete stale cache entries:
+```sql
+DELETE FROM market_intelligence_cache 
+WHERE cache_key LIKE 'all_all_%';
 ```
 
-This uses the existing `BATCH_SIZE` (500) with `.range()` pagination -- the same proven pattern used for bookings on lines 56-68. No URL length issues since `.range()` only adds simple numeric parameters.
-
-### What Gets Removed
-- The `TRANS_CHUNK` variable
-- The `chunks` array construction
-- The `Promise.all()` parallel `.in()` fetching
-
-### Why This Is Better
-1. **No URL length limits** -- `.range()` uses offset/limit, not UUID lists
-2. **Simpler code** -- same pagination pattern as bookings
-3. **More reliable** -- no silent chunk failures
-4. **Same performance** -- sequential batches of 500 rows are fast for 5,933 records (~12 round trips)
+**File: `supabase/functions/aggregate-market-data/index.ts`**
+- Line 41: Change `.single()` to `.maybeSingle()`
+- Line 45: Change `30 * 60 * 1000` to `15 * 60 * 1000` (align with the comment)
 
 ### Expected Result
-After deployment, selecting "All Time" will correctly show budget data with green/red color coding across all markets, matching the behavior of filtered date ranges.
-
+After clearing the cache and redeploying, selecting "All Time" will trigger a fresh computation that correctly includes budget data with green/red color coding for all markets.
