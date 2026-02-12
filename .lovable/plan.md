@@ -1,145 +1,121 @@
 
 
-# Typeform-Style Script Flow with Intro, Consent Gate, and Rebuttal
+# AI Script Builder from Word Document + Interactive Preview/Test Mode
 
 ## Overview
 
-Transform the survey call experience into a guided, conversational script flow. The script will include an **opening introduction**, a **consent check** (Yes/No gate), **dynamic questions** presented one at a time, and a **rebuttal/dismissal** path for when the caller declines.
+Add two new capabilities to the Script Builder:
+
+1. **AI Import from Word Document** -- Upload a .docx file containing questions, and AI automatically converts it into a ready-to-use research script (with intro, questions, rebuttal, closing all parsed out).
+2. **Interactive Script Tester** -- A "Test Script" mode that simulates the exact Typeform-style flow the researcher will see, so admins can walk through the script before assigning it to a campaign.
 
 ## How It Will Work
 
-### The Call Flow
+### AI Document Import Flow
 
-```text
-+----------------------------+
-|   Step 1: SETUP            |
-|   Select campaign + caller |
-+----------------------------+
-            |
-            v
-+----------------------------+
-|   Step 2: INTRO SCRIPT     |
-|   "Hello, my name is       |
-|    [Agent Name], calling    |
-|    from PadSplit..."        |
-|   [Read Aloud to Caller]   |
-+----------------------------+
-            |
-            v
-+----------------------------+
-|   Step 3: CONSENT GATE     |
-|   "May I ask a few         |
-|    questions?"              |
-|   [ YES ]     [ NO ]       |
-+----------------------------+
-       |              |
-       v              v
-+----------------+  +-------------------+
-| Step 4-N:      |  | REBUTTAL SCRIPT   |
-| QUESTIONS      |  | "I understand,    |
-| (one per       |  |  thank you for    |
-| screen)        |  |  your time..."    |
-|                |  | [End Call]        |
-| [Back] [Next]  |  +-------------------+
-+----------------+
-       |
-       v
-+----------------------------+
-|   CLOSING SCRIPT           |
-|   "Thank you for your      |
-|    feedback today..."       |
-+----------------------------+
-       |
-       v
-+----------------------------+
-|   WRAP-UP                  |
-|   Outcome, duration, notes |
-|   [Submit Call]             |
-+----------------------------+
-```
+1. Admin clicks **"Import from Document"** button on the Script Builder page
+2. A dialog opens with a file upload area (drag-and-drop or click to browse)
+3. Admin uploads a .docx file containing their survey questions
+4. The system extracts text from the Word document (using the `xlsx` library pattern already in the project, but we'll use a simple text extraction approach for .docx)
+5. The extracted text is sent to an edge function that calls Lovable AI (Gemini) to parse it into structured script data: name, intro script, questions (with types auto-detected), rebuttal, and closing
+6. The parsed result populates the Script Builder dialog so the admin can review, tweak, and save
+7. AI auto-detects question types: lines with "1-10" or "rate" become scale, lines with bullet options become multiple choice, yes/no patterns become yes_no, everything else defaults to open_ended
 
-## Database Changes
+### Interactive Script Tester
 
-Add three new text columns to `research_scripts`:
-
-| Column | Type | Default | Purpose |
-|--------|------|---------|---------|
-| `intro_script` | text | null | Opening script text with `{agent_name}` placeholder |
-| `rebuttal_script` | text | null | Script to read when caller declines |
-| `closing_script` | text | null | Script to read after all questions are answered |
-
-These are simple text fields -- no schema restructuring needed. The existing `questions` JSONB column stays the same.
+The existing Preview dialog gets upgraded to a full interactive simulation:
+- Instead of a static list view, admins can click **"Test Script"** to walk through the exact same step-by-step wizard the researcher sees
+- Shows intro with `{agent_name}` replaced by "Test Agent"
+- Consent gate with Yes/No buttons
+- Questions one-by-one with progress bar
+- Closing script
+- Rebuttal path (if they click No)
+- A "Restart Test" button to go through it again
 
 ## Changes Required
 
-### 1. Database Migration
-- Add `intro_script`, `rebuttal_script`, and `closing_script` text columns to `research_scripts`
+### 1. New Edge Function: `parse-research-script/index.ts`
 
-### 2. Script Builder Updates (`ResearchScriptDialog.tsx` + `useResearchScripts.ts`)
-- Add three new textarea fields in the Script Builder dialog:
-  - **Intro Script**: with placeholder text showing the `{agent_name}` token usage
-  - **Rebuttal Script**: what to say if the caller says no
-  - **Closing Script**: what to say after completing all questions
-- Update the `ResearchScript` TypeScript interface to include the new fields
-- Update create/update functions to persist the new fields
+- Receives the raw text content extracted from the Word document
+- Calls Lovable AI (google/gemini-3-flash-preview) with a structured prompt to parse the text into:
+  - Script name (inferred from document title or first heading)
+  - Intro script (opening greeting text)
+  - Questions array (with auto-detected types and AI extraction hints)
+  - Rebuttal script
+  - Closing script
+- Uses tool calling to return structured JSON output
+- Returns the parsed script data to the frontend
 
-### 3. Log Survey Call Redesign (`LogSurveyCall.tsx`)
-Convert from single-page form to a step-based wizard:
+### 2. Script Builder Page (`ScriptBuilder.tsx`)
 
-- **Step 0 - Setup**: Campaign selection + caller info (name, phone, type, status) -- all on one screen
-- **Step 1 - Intro Script**: Large, readable intro text with `{agent_name}` replaced by the logged-in researcher's name. Single "Next" button to proceed after reading
-- **Step 2 - Consent Gate**: "Did the caller agree to continue?" with prominent Yes/No buttons
-  - **If No**: Show the rebuttal script screen, then jump to wrap-up with outcome auto-set to "refused"
-- **Steps 3..N - Questions**: One question per screen, displayed large for reading aloud
-  - Open-ended questions: optional note field labeled "Quick notes (optional -- AI extracts from recording)"
-  - Scale/multiple-choice/yes-no: quick-tap inputs, but "Next" is always enabled
-  - Progress bar: "Question 3 of 8"
-  - Back/Next navigation
-  - Enter key advances
-- **Step N+1 - Closing Script**: Display closing text for the researcher to read
-- **Step N+2 - Wrap-Up**: Outcome, duration, researcher notes, Submit button
+- Add **"Import from Document"** button next to "New Script"
+- Add `ScriptImportDialog` component inline or as a new component
+- Add **"Test Script"** button on each script card (next to existing Preview/Edit/Delete)
+- Replace the static `PreviewDialog` with an interactive `ScriptTesterDialog` that simulates the full agent flow
 
-### 4. Script Preview Update (`ScriptBuilder.tsx`)
-- Update the preview dialog to also show intro, rebuttal, and closing scripts so admins can see the full flow
+### 3. New Component: `ResearchScriptImportDialog.tsx`
 
-### 5. Hook Updates (`useResearchCalls.ts`)
-- Pass through the `intro_script`, `rebuttal_script`, `closing_script` from the joined `research_scripts` data so the form has access to them
+- File upload UI with drag-and-drop support
+- Accepts .docx files
+- Extracts text from the .docx file on the client side (docx files are ZIP archives containing XML -- we'll use a lightweight extraction approach)
+- Shows a loading state while AI processes
+- On success, opens the existing `ResearchScriptDialog` pre-populated with the AI-parsed data so the admin can review and save
+
+### 4. New Component: `ScriptTesterDialog.tsx`
+
+- Reuses the same step-based wizard logic from `LogSurveyCall.tsx` but in a dialog
+- Phases: intro, consent, questions (one at a time), closing, rebuttal
+- Progress bar, large text, Next/Back buttons
+- No actual data submission -- purely a walkthrough simulation
+- "Restart" button to test again
+- Shows exactly what the researcher will see
+
+### 5. No Database Changes
+
+The parsed document content flows directly into the existing `ResearchScriptDialog` form. No new tables or columns needed.
 
 ## Technical Details
 
-### Agent Name Substitution
-The intro script text supports a `{agent_name}` placeholder. At render time in LogSurveyCall, it is replaced with the current user's profile name:
+### Word Document Text Extraction
+
+Since the project already has the `xlsx` library for Excel parsing, we'll extract .docx text client-side. A .docx file is a ZIP containing `word/document.xml`. We can use a lightweight approach:
+- Read the file as ArrayBuffer
+- Use JSZip-style extraction (or a simple XML text strip) to get the raw text
+- Send the plain text to the edge function for AI parsing
+
+We'll add the `mammoth` npm package for reliable .docx-to-text conversion (lightweight, well-maintained).
+
+### AI Prompt Strategy
+
+The edge function prompt will instruct the model to:
+- Identify the opening/greeting section as `intro_script`
+- Identify numbered or bulleted questions
+- Auto-detect question types based on context clues (scale keywords, option lists, yes/no patterns)
+- Generate `ai_extraction_hint` values for each question
+- Identify closing/thank-you sections as `closing_script`
+- Generate a professional `rebuttal_script` if none is found
+
+### Script Tester State Machine
+
+Same as LogSurveyCall but simplified (no campaign selection, no submission):
 ```text
-"Hello, my name is {agent_name} and I'm calling from PadSplit..."
-  becomes
-"Hello, my name is Sarah Johnson and I'm calling from PadSplit..."
+intro -> consent -> questions (1..N) -> closing
+                 \-> rebuttal -> done
 ```
 
-### Step State Machine
-```text
-currentStep values:
-  0 = Setup (campaign + caller info)
-  1 = Intro Script
-  2 = Consent Gate
-  3..N = Individual questions (index = currentStep - 3)
-  N+1 = Closing Script
-  N+2 = Wrap-up
-
-If consent = NO:
-  Jump to Rebuttal screen -> then Wrap-up (outcome = "refused")
-```
+### Files to Create
+- `supabase/functions/parse-research-script/index.ts` -- AI parsing edge function
+- `src/components/research/ResearchScriptImportDialog.tsx` -- Upload + AI import dialog
+- `src/components/research/ScriptTesterDialog.tsx` -- Interactive test/preview
 
 ### Files to Edit
-- `src/hooks/useResearchScripts.ts` -- add new fields to interface
-- `src/hooks/useResearchCalls.ts` -- include new script fields in campaign fetch
-- `src/components/research/ResearchScriptDialog.tsx` -- add intro/rebuttal/closing textareas
-- `src/pages/research/ScriptBuilder.tsx` -- update preview to show new fields
-- `src/pages/research/LogSurveyCall.tsx` -- full redesign to step-based wizard
+- `src/pages/research/ScriptBuilder.tsx` -- Add import button, test button, wire new dialogs
+- `package.json` -- Add `mammoth` dependency for .docx text extraction
 
 ### Implementation Order
-1. Database migration (add 3 columns)
-2. Update `useResearchScripts.ts` interface + CRUD
-3. Update `ResearchScriptDialog.tsx` with new fields
-4. Update `ScriptBuilder.tsx` preview
-5. Update `useResearchCalls.ts` to pass script text fields
-6. Redesign `LogSurveyCall.tsx` as step-based wizard
+1. Add `mammoth` dependency
+2. Create `parse-research-script` edge function
+3. Create `ResearchScriptImportDialog` component
+4. Create `ScriptTesterDialog` component
+5. Update `ScriptBuilder.tsx` to wire everything together
+
