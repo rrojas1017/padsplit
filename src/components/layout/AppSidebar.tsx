@@ -26,7 +26,10 @@ import {
   Megaphone,
   MapPin,
   GripVertical,
-  RotateCcw
+  RotateCcw,
+  FlaskConical,
+  ScrollText,
+  FolderKanban
 } from 'lucide-react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
@@ -74,6 +77,9 @@ const menuItems: MenuItem[] = [
   { icon: DollarSign, label: 'Cost & Billing', path: '/billing', roles: ['super_admin'], group: 'admin' },
   { icon: Tag, label: 'Promo Codes', path: '/settings/promo-codes', roles: ['super_admin', 'admin'], group: 'admin' },
   { icon: Megaphone, label: 'Broadcasts', path: '/broadcasts', roles: ['super_admin', 'admin', 'supervisor'], group: 'admin' },
+  { icon: ScrollText, label: 'Script Builder', path: '/research/scripts', roles: ['super_admin', 'admin'], group: 'admin' },
+  { icon: FolderKanban, label: 'Campaign Manager', path: '/research/manage-campaigns', roles: ['super_admin', 'admin'], group: 'admin' },
+  { icon: FlaskConical, label: 'Research Insights', path: '/research/insights', roles: ['super_admin', 'admin'], group: 'admin' },
 ];
 
 export function AppSidebar() {
@@ -133,11 +139,12 @@ export function AppSidebar() {
     }
   }, [location.pathname]);
 
-  const roleLabel = {
+  const roleLabel: Record<string, string> = {
     super_admin: 'Super Admin',
     admin: 'Admin',
     supervisor: 'Supervisor',
     agent: 'Agent',
+    researcher: 'Researcher',
   };
 
   // Drag handlers

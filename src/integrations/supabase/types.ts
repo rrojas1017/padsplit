@@ -2017,6 +2017,234 @@ export type Database = {
         }
         Relationships: []
       }
+      research_calls: {
+        Row: {
+          ai_analysis: Json | null
+          call_date: string
+          call_duration_seconds: number | null
+          call_outcome: string
+          call_summary: string | null
+          call_transcription: string | null
+          caller_name: string
+          caller_phone: string | null
+          caller_status: string | null
+          caller_type: string
+          campaign_id: string
+          created_at: string
+          id: string
+          kixie_link: string | null
+          original_booking_id: string | null
+          researcher_id: string
+          researcher_notes: string | null
+          responses: Json | null
+          transcription_status: string | null
+          transfer_notes: string | null
+          transferred_to_agent_id: string | null
+        }
+        Insert: {
+          ai_analysis?: Json | null
+          call_date?: string
+          call_duration_seconds?: number | null
+          call_outcome: string
+          call_summary?: string | null
+          call_transcription?: string | null
+          caller_name: string
+          caller_phone?: string | null
+          caller_status?: string | null
+          caller_type: string
+          campaign_id: string
+          created_at?: string
+          id?: string
+          kixie_link?: string | null
+          original_booking_id?: string | null
+          researcher_id: string
+          researcher_notes?: string | null
+          responses?: Json | null
+          transcription_status?: string | null
+          transfer_notes?: string | null
+          transferred_to_agent_id?: string | null
+        }
+        Update: {
+          ai_analysis?: Json | null
+          call_date?: string
+          call_duration_seconds?: number | null
+          call_outcome?: string
+          call_summary?: string | null
+          call_transcription?: string | null
+          caller_name?: string
+          caller_phone?: string | null
+          caller_status?: string | null
+          caller_type?: string
+          campaign_id?: string
+          created_at?: string
+          id?: string
+          kixie_link?: string | null
+          original_booking_id?: string | null
+          researcher_id?: string
+          researcher_notes?: string | null
+          responses?: Json | null
+          transcription_status?: string | null
+          transfer_notes?: string | null
+          transferred_to_agent_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "research_calls_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "research_campaigns"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "research_calls_original_booking_id_fkey"
+            columns: ["original_booking_id"]
+            isOneToOne: false
+            referencedRelation: "bookings"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "research_calls_researcher_id_fkey"
+            columns: ["researcher_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "research_calls_transferred_to_agent_id_fkey"
+            columns: ["transferred_to_agent_id"]
+            isOneToOne: false
+            referencedRelation: "agents"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      research_campaigns: {
+        Row: {
+          assigned_researchers: string[]
+          created_at: string
+          created_by: string | null
+          end_date: string | null
+          id: string
+          name: string
+          script_id: string
+          start_date: string | null
+          status: string
+          target_count: number
+          updated_at: string
+        }
+        Insert: {
+          assigned_researchers?: string[]
+          created_at?: string
+          created_by?: string | null
+          end_date?: string | null
+          id?: string
+          name: string
+          script_id: string
+          start_date?: string | null
+          status?: string
+          target_count?: number
+          updated_at?: string
+        }
+        Update: {
+          assigned_researchers?: string[]
+          created_at?: string
+          created_by?: string | null
+          end_date?: string | null
+          id?: string
+          name?: string
+          script_id?: string
+          start_date?: string | null
+          status?: string
+          target_count?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "research_campaigns_script_id_fkey"
+            columns: ["script_id"]
+            isOneToOne: false
+            referencedRelation: "research_scripts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      research_insights: {
+        Row: {
+          caller_type: string
+          campaign_id: string
+          created_at: string
+          data: Json
+          generated_at: string
+          id: string
+          insight_type: string
+        }
+        Insert: {
+          caller_type: string
+          campaign_id: string
+          created_at?: string
+          data?: Json
+          generated_at?: string
+          id?: string
+          insight_type: string
+        }
+        Update: {
+          caller_type?: string
+          campaign_id?: string
+          created_at?: string
+          data?: Json
+          generated_at?: string
+          id?: string
+          insight_type?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "research_insights_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "research_campaigns"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      research_scripts: {
+        Row: {
+          campaign_type: string
+          created_at: string
+          created_by: string | null
+          description: string | null
+          id: string
+          is_active: boolean
+          name: string
+          questions: Json
+          target_audience: string
+          updated_at: string
+        }
+        Insert: {
+          campaign_type: string
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          id?: string
+          is_active?: boolean
+          name: string
+          questions?: Json
+          target_audience: string
+          updated_at?: string
+        }
+        Update: {
+          campaign_type?: string
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          id?: string
+          is_active?: boolean
+          name?: string
+          questions?: Json
+          target_audience?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       script_templates: {
         Row: {
           call_type_id: string | null
@@ -2478,7 +2706,7 @@ export type Database = {
       is_agent: { Args: { _user_id: string }; Returns: boolean }
     }
     Enums: {
-      app_role: "super_admin" | "admin" | "supervisor" | "agent"
+      app_role: "super_admin" | "admin" | "supervisor" | "agent" | "researcher"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -2606,7 +2834,7 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
-      app_role: ["super_admin", "admin", "supervisor", "agent"],
+      app_role: ["super_admin", "admin", "supervisor", "agent", "researcher"],
     },
   },
 } as const
