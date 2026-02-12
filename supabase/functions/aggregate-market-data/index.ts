@@ -72,30 +72,27 @@ Deno.serve(async (req) => {
     }
     console.log(`Fetched ${bookings.length} bookings in ${Math.ceil(bookings.length / BATCH_SIZE)} batches`);
 
-    // Fetch transcription key points
-    const bookingIds = (bookings || []).map(b => b.id);
-    
-    // Fetch in chunks of 500 in parallel
-    const TRANS_CHUNK = 100;
-    const chunks: string[][] = [];
-    for (let i = 0; i < bookingIds.length; i += TRANS_CHUNK) {
-      chunks.push(bookingIds.slice(i, i + TRANS_CHUNK));
-    }
-    const chunkResults = await Promise.all(
-      chunks.map((chunk, idx) =>
-        supabase
-          .from("booking_transcriptions")
-          .select("booking_id, call_key_points")
-          .in("booking_id", chunk)
-          .then(({ data, error }) => {
-            if (error) console.error(`Transcription chunk ${idx} error:`, error.message);
-            return data || [];
-          })
-      )
-    );
-    const allTranscriptions = chunkResults.flat();
+    // Fetch all transcriptions with key points using range-based pagination
+    const allTranscriptions: any[] = [];
+    let transOffset = 0;
+    while (true) {
+      const { data: transData, error: transError } = await supabase
+        .from("booking_transcriptions")
+        .select("booking_id, call_key_points")
+        .not("call_key_points", "is", null)
+        .range(transOffset, transOffset + BATCH_SIZE - 1);
 
-    console.log(`Fetched ${allTranscriptions.length} transcriptions in ${Math.ceil(bookingIds.length / TRANS_CHUNK)} chunks`);
+      if (transError) {
+        console.error("Transcription batch error:", transError.message);
+        break;
+      }
+      if (!transData || transData.length === 0) break;
+      allTranscriptions.push(...transData);
+      if (transData.length < BATCH_SIZE) break;
+      transOffset += BATCH_SIZE;
+    }
+
+    console.log(`Fetched ${allTranscriptions.length} transcriptions in ${Math.ceil(allTranscriptions.length / BATCH_SIZE)} batches`);
 
     const transcriptionMap = new Map<string, any>();
     for (const t of allTranscriptions) {
