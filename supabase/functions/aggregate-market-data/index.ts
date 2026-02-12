@@ -5,7 +5,7 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-// Normalize city/state names: trim, title case, strip neighborhood prefixes
+// Normalize city names: trim, title case, strip neighborhood prefixes
 function normalizeName(name: string | null | undefined): string {
   if (!name) return "Unknown";
   let n = name.trim();
@@ -17,6 +17,47 @@ function normalizeName(name: string | null | undefined): string {
   }
   // Title case
   return n.toLowerCase().replace(/\b\w/g, c => c.toUpperCase());
+}
+
+// Normalize state values: uppercase abbreviations, map full names, filter junk
+const STATE_NAME_MAP: Record<string, string> = {
+  "ALABAMA": "AL", "ALASKA": "AK", "ARIZONA": "AZ", "ARKANSAS": "AR",
+  "CALIFORNIA": "CA", "COLORADO": "CO", "CONNECTICUT": "CT", "DELAWARE": "DE",
+  "FLORIDA": "FL", "GEORGIA": "GA", "HAWAII": "HI", "IDAHO": "ID",
+  "ILLINOIS": "IL", "INDIANA": "IN", "IOWA": "IA", "KANSAS": "KS",
+  "KENTUCKY": "KY", "LOUISIANA": "LA", "MAINE": "ME", "MARYLAND": "MD",
+  "MASSACHUSETTS": "MA", "MICHIGAN": "MI", "MINNESOTA": "MN", "MISSISSIPPI": "MS",
+  "MISSOURI": "MO", "MONTANA": "MT", "NEBRASKA": "NE", "NEVADA": "NV",
+  "NEW HAMPSHIRE": "NH", "NEW JERSEY": "NJ", "NEW MEXICO": "NM", "NEW YORK": "NY",
+  "NORTH CAROLINA": "NC", "NORTH DAKOTA": "ND", "OHIO": "OH", "OKLAHOMA": "OK",
+  "OREGON": "OR", "PENNSYLVANIA": "PA", "RHODE ISLAND": "RI", "SOUTH CAROLINA": "SC",
+  "SOUTH DAKOTA": "SD", "TENNESSEE": "TN", "TEXAS": "TX", "UTAH": "UT",
+  "VERMONT": "VT", "VIRGINIA": "VA", "WASHINGTON": "WA", "WEST VIRGINIA": "WV",
+  "WISCONSIN": "WI", "WYOMING": "WY", "DISTRICT OF COLUMBIA": "DC",
+};
+
+const VALID_STATES = new Set(Object.values(STATE_NAME_MAP));
+VALID_STATES.add("DC");
+
+const JUNK_VALUES = new Set(["NONE", "NULL", "N/A", "NA", "UNKNOWN", ""]);
+
+function normalizeState(val: string | null | undefined): string {
+  if (!val) return "Unknown";
+  let s = val.trim().toUpperCase();
+  if (!s || JUNK_VALUES.has(s)) return "Unknown";
+
+  // Handle multi-state: take first
+  if (s.includes(",")) s = s.split(",")[0].trim();
+  if (s.includes("/")) s = s.split("/")[0].trim();
+
+  // Map full names
+  if (STATE_NAME_MAP[s]) return STATE_NAME_MAP[s];
+
+  // If it's a valid 2-letter abbreviation, return it
+  if (s.length === 2 && VALID_STATES.has(s)) return s;
+
+  // Otherwise unknown
+  return "Unknown";
 }
 
 Deno.serve(async (req) => {
@@ -104,7 +145,7 @@ Deno.serve(async (req) => {
     const cityMap = new Map<string, any>();
 
     for (const b of bookings || []) {
-      const state = normalizeName(b.market_state);
+      const state = normalizeState(b.market_state);
       const city = normalizeName(b.market_city);
       const cityKey = `${state}|${city}`;
 
