@@ -1,40 +1,35 @@
 
 
-# Fix: Two Bugs Blocking All Transcriptions
+# Speed Up Market Intelligence Loading
 
-## Root Cause
-The PostgREST schema cache is stale and does not recognize `bookings.transcription_status`. This breaks every query that references that column -- not just the claim UPDATEs, but also SELECT queries.
+## Problem
+The `aggregate-market-data` edge function makes **72 sequential database queries** (12 booking batches + 60 transcription chunks) to process ~6,000 records. This takes 13+ seconds on every cache miss (every 15 minutes).
 
-## Bug 1: `check-auto-transcription` SELECT fails silently
-The initial booking fetch (line 34) includes `transcription_status` in the SELECT column list. When the cache is stale, this query itself fails with `42703`. The error is caught on line 46 as "Booking not found" and the function returns 404 without ever reaching the claim or the call to `transcribe-call`.
+## Solution: Two optimizations that reduce query count from 72 to ~24
 
-**This is why the 4 newest records (Deon Holt, Lamar Camp, Kareem Lumpkin, Tristan DiVergigelis) have `NULL` status** -- the trigger fired but `check-auto-transcription` died immediately.
+### 1. Increase transcription chunk size from 100 to 500
+The current chunk size of 100 was set to avoid URL length limits, but Supabase `.in()` sends the filter in the request body (POST), not the URL. Increasing to 500 reduces transcription fetches from 60 chunks to 12 chunks.
 
-**Fix:** Remove `transcription_status` from the SELECT column list (line 37). It is not used in any logic after the SELECT -- it was only referenced in the type definition. The claim step handles status checking separately.
+**File:** `supabase/functions/aggregate-market-data/index.ts`
+- Change `TRANS_CHUNK = 100` to `TRANS_CHUNK = 500` (line 79)
 
-## Bug 2: `transcribe-call` claim bypass still exits early
-When the claim UPDATE fails with `42703`, the bypass lets execution continue past the error check. But `claimResult` is `null` (because the query failed), so line 1374's `if (!claimResult)` catches it and returns "already processing/completed, skipping duplicate."
+### 2. Fetch transcription chunks in parallel (not sequentially)
+Currently, chunks are fetched one at a time in a `for` loop. Using `Promise.all()` to fetch all chunks concurrently will reduce wall-clock time from ~12 round-trips to ~1 round-trip (all fire simultaneously).
 
-**This is why Lanston Lowe and Nicholas Jackson show "already processing/completed, skipping duplicate" in the logs** despite never being processed.
+**File:** `supabase/functions/aggregate-market-data/index.ts`
+- Replace the sequential `for` loop (lines 81-89) with parallel `Promise.all()` execution
 
-**Fix:** Add a `claimBypassed` flag. When `42703` is detected, set it to `true`. Then modify line 1374 to skip the duplicate check when `claimBypassed` is `true`.
+### 3. Extend cache TTL from 15 to 30 minutes
+Market data doesn't change frequently. Doubling the cache window halves the frequency of slow refreshes.
 
-## Changes
+**File:** `supabase/functions/aggregate-market-data/index.ts`
+- Change `15 * 60 * 1000` to `30 * 60 * 1000` (line 45)
 
-### File 1: `supabase/functions/check-auto-transcription/index.ts`
-- Remove `transcription_status` from the SELECT on line 37
-- Remove `transcription_status` from the type definition on line 58
-- Add a `42703` catch around the initial SELECT itself (lines 46-52): if `bookingError.code === '42703'`, re-query without `transcription_status`
-
-### File 2: `supabase/functions/transcribe-call/index.ts`
-- Add a `let claimBypassed = false;` variable before the claim block
-- Set `claimBypassed = true` inside the `42703` bypass (line 1366)
-- Change line 1374 from `if (!claimResult)` to `if (!claimResult && !claimBypassed)`
-
-### Post-deploy: Re-trigger all 6 stuck records
-After deploying both functions, manually invoke `transcribe-call` for all 6 booking IDs to process them immediately.
+## Expected Impact
+- **Query count**: 72 sequential queries reduced to ~24 parallel queries
+- **Load time**: ~13 seconds reduced to ~3-4 seconds on cache miss
+- **Cache misses**: Half as frequent (every 30 min instead of 15)
 
 ## Files Changed
-- **Edit:** `supabase/functions/check-auto-transcription/index.ts` -- remove `transcription_status` from SELECT, add error handling
-- **Edit:** `supabase/functions/transcribe-call/index.ts` -- fix claim bypass logic with `claimBypassed` flag
+- **Edit:** `supabase/functions/aggregate-market-data/index.ts` -- increase chunk size, parallelize fetches, extend cache TTL
 
