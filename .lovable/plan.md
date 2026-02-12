@@ -1,263 +1,140 @@
 
 
-# Campaign Manager Implementation Plan
+# Survey Call Form and Researcher Pages - End-to-End Flow
 
 ## Overview
 
-Build an admin-facing page (`/research/manage-campaigns`) that allows super_admin and admin users to:
-1. **Create new campaigns** by selecting a research script and assigning researchers
-2. **Manage campaign lifecycle** (draft → active → paused → completed)
-3. **Assign/reassign researchers** to campaigns
-4. **Track progress** against target call counts
-5. **Edit and delete campaigns**
+The Campaign Manager (admin side) is already built. This plan completes the researcher-facing side of the flow so the full pipeline works:
 
-The Campaign Manager acts as the bridge between Scripts (created in Script Builder) and Call Logging (by Researchers). Once a campaign is active and assigned to a researcher, they can select it in the Log Survey Call form.
+**Admin creates script -> Admin creates campaign -> Researcher sees campaign -> Researcher logs calls using script**
+
+Three stub pages need to be replaced with functional implementations, plus a new data hook for managing research calls.
 
 ---
 
-## Technical Architecture
+## What Gets Built
 
-### Data Flow
+### 1. New Hook: `useResearchCalls.ts`
+
+Manages CRUD operations for the `research_calls` table.
+
+- **fetchMyCalls()**: Get all calls logged by the current researcher, with campaign name joined
+- **fetchCampaignsForResearcher()**: Get active campaigns assigned to the current user (filters `research_campaigns` where `assigned_researchers` array contains the user's ID)
+- **submitCall()**: Insert a new research call record with responses stored as JSONB
+- Uses the existing `research_calls` table schema (campaign_id, researcher_id, caller_name, caller_phone, caller_type, caller_status, call_outcome, responses, researcher_notes, etc.)
+
+### 2. My Campaigns Page (`MyCampaigns.tsx`)
+
+Replace the stub with a functional page showing campaigns assigned to the logged-in researcher.
+
+- Fetches campaigns where `assigned_researchers` contains the current user ID
+- Filters to only show `active` campaigns (with option to see all)
+- Each campaign card shows: name, script name, progress (completed/target), date range, status badge
+- "Start Calling" button navigates to `/research/log-call?campaign=<id>`
+- Empty state when no campaigns are assigned
+
+### 3. Log Survey Call Form (`LogSurveyCall.tsx`) - The Core Feature
+
+Replace the stub with a dynamic, guided call-logging form.
+
+**Step 1 - Campaign Selection**:
+- Dropdown of active campaigns assigned to the researcher
+- Auto-selects if navigated from "My Campaigns" with query param
+- Once selected, fetches the linked script and its questions
+
+**Step 2 - Caller Information**:
+- Caller name (required)
+- Caller phone (optional)
+- Caller type dropdown: existing_member, former_booking, rejected_lead
+- Caller status: active, churned, prospect
+
+**Step 3 - Dynamic Script Questions**:
+- Renders each question from the script's JSONB `questions` array based on its type:
+  - **Scale (1-10)**: Slider or numbered button group
+  - **Open Ended**: Textarea input
+  - **Multiple Choice**: Radio button group with the defined options
+  - **Yes/No**: Two-button toggle (Yes / No)
+- Required questions are marked and validated before submission
+- Responses stored as JSONB: `{ "q1": 8, "q2": "Great experience", "q3": "Option B", ... }`
+
+**Step 4 - Call Outcome**:
+- Outcome selector: completed, no_answer, refused, callback_requested, transferred
+- If "transferred": show transfer fields (agent selector, transfer notes)
+- Researcher notes textarea
+- Call duration (optional, manual entry in minutes)
+
+**Step 5 - Submit**:
+- Validates required fields and required script questions
+- Inserts into `research_calls` with the researcher's user ID
+- Success toast and option to "Log Another Call" or "View History"
+- Resets form for next call
+
+### 4. My Call History Page (`MyCallHistory.tsx`)
+
+Replace the stub with a table/list of the researcher's past calls.
+
+- Table columns: Date, Campaign, Caller Name, Caller Type, Outcome, Duration
+- Filter by campaign and outcome
+- Click a row to expand and see responses + notes
+- Sort by date (newest first by default)
+- Shows total call count and today's count as summary cards
+
+---
+
+## Technical Details
+
+### Data Flow for Call Submission
 ```
-Admin creates Script
-         ↓
-Admin creates Campaign
-  (selects script + assigns researchers)
-         ↓
-Campaign stored in research_campaigns table
-  with assigned_researchers UUID array
-         ↓
-Researcher sees campaign in their
-  "Active Campaigns" list and
-  uses it to log calls
-```
-
-### Key Relationships
-- **research_campaigns → research_scripts**: Campaign links to one script (foreign key)
-- **research_campaigns.assigned_researchers**: Array of researcher user IDs from profiles table
-- **RLS Security**: Admins can CRUD all campaigns; researchers can only SELECT campaigns they're assigned to
-
----
-
-## Part 1: New Hook - `useResearchCampaigns.ts`
-
-**Purpose**: Manage campaign CRUD operations and data fetching
-
-**Operations**:
-- `fetchCampaigns()`: Query all campaigns with related script data
-- `createCampaign()`: Insert new campaign record
-- `updateCampaign()`: Update campaign details (name, status, dates, researchers, targets)
-- `deleteCampaign()`: Delete campaign (must check for orphaned calls first)
-- Fetch researchers list for multiselect dropdowns (query profiles table for users with 'researcher' role)
-
-**State**:
-```typescript
-campaigns: ResearchCampaign[]
-isLoading: boolean
-researchers: ResearcherProfile[]
-```
-
-**Error handling**: Toast notifications for failures; prevent deletion if campaign has active calls
-
----
-
-## Part 2: New Component - `ResearchCampaignDialog.tsx`
-
-**Purpose**: Modal dialog for creating/editing campaigns
-
-**Features**:
-- **Script selector**: Dropdown to choose which script this campaign uses (required)
-- **Campaign metadata**: Name, description, status, dates
-- **Target settings**: target_count (goal number of calls)
-- **Researcher assignment**: Multi-select dropdown of available researchers with "researcher" role
-  - Shows researcher name + email
-  - Allow selecting multiple researchers
-  - Display selected researchers as removable badges
-- **Date range**: Optional start_date and end_date
-- **Status selector**: draft / active / paused / completed
-- **Form validation**:
-  - Name is required
-  - Script must be selected
-  - At least one researcher must be assigned
-  - End date must be after start date (if both provided)
-  - Target count must be > 0
-- **Save/Update logic**: Prepare payload with assigned_researchers as UUID array
-
-**UI Pattern**: Match ResearchScriptDialog (same dialog size, field layout, validation feedback)
-
----
-
-## Part 3: Campaign Manager Page - `src/pages/research/CampaignManager.tsx`
-
-**Replace the stub** with functional dashboard
-
-**Layout**:
-1. **Header** with title, subtitle, "New Campaign" button
-2. **Filter/Search bar**:
-   - Status filter (All / Draft / Active / Paused / Completed)
-   - Optional search by campaign name
-3. **Campaign cards grid** (similar to Script Builder):
-   - Card shows:
-     - Campaign name + script name (linked, for context)
-     - Status badge (color-coded: blue=draft, green=active, yellow=paused, gray=completed)
-     - Progress bar: "X / Y calls completed" (show completed calls from research_calls table)
-     - Date range (if set)
-     - Target count
-     - Number of assigned researchers
-     - Action buttons: Edit, Delete, View Details (hover actions)
-4. **Empty state**: "No campaigns found" with CTA to create first campaign
-5. **Loading skeletons** while fetching
-
-**Details on card interactions**:
-- **Edit**: Click edit icon → opens ResearchCampaignDialog with populated data
-- **Delete**: Click trash icon → confirmation dialog → delete if no active calls
-- **Status management**: Show status selector inline or in edit dialog (quick-toggle or full edit)
-- **Progress tracking**: Query research_calls table to count completed calls for this campaign
-
----
-
-## Part 4: Progress Calculation Logic
-
-**Query pattern** (in hook or utility):
-```typescript
-// For each campaign, count calls by outcome
-const callStats = await supabase
-  .from('research_calls')
-  .select('call_outcome', { count: 'exact' })
-  .eq('campaign_id', campaignId)
-  .eq('call_outcome', 'completed');
-
-// Display: "15 / 50 calls completed"
-```
-
-This data is **not stored** but **calculated on-the-fly** from research_calls, enabling real-time progress tracking.
-
----
-
-## Part 5: Researcher Selector Implementation
-
-**Fetch researchers**:
-```typescript
-// Get all users with 'researcher' role
-const researchersData = await supabase
-  .from('profiles')
-  .select('id, name, email')
-  .in('id', (await getResearcherIds())); // filtered by user_roles table
-```
-
-**Or simpler**: Query profiles where they have a researcher role (join with user_roles if needed)
-
-**Multi-select UI**:
-- Dropdown showing list of researchers (name + email)
-- Selected researchers shown as blue badges with × to remove
-- Minimum 1 required validation
-
----
-
-## Part 6: Integration Points
-
-### With Script Builder
-- Campaign must reference a valid script_id
-- If a script is deleted, campaigns using it should show a warning/be marked as invalid
-- Admin can still edit the campaign but cannot select that script again
-
-### With Log Survey Call (Future)
-- When a researcher logs in and selects a campaign, the form loads the associated script automatically
-- Only "active" campaigns appear in the researcher's campaign dropdown
-
-### With Research Calls Table
-- Each call is tagged with campaign_id, enabling attribution
-- Enables progress tracking and insights aggregation
-
----
-
-## Part 7: Database Considerations
-
-**research_campaigns table (already created)**:
-- `name`: Campaign title
-- `script_id`: FK to research_scripts
-- `status`: 'draft' | 'active' | 'paused' | 'completed'
-- `target_count`: Goal number of calls (e.g., 50)
-- `start_date`, `end_date`: Campaign period
-- `assigned_researchers`: UUID array of researcher IDs
-- `created_by`: Who created the campaign
-- `created_at`, `updated_at`: Timestamps
-
-**RLS is already in place**:
-- Admins can manage all campaigns
-- Researchers can view only campaigns they're assigned to
-
----
-
-## Part 8: User Experience Flow
-
-1. **Admin navigates to** `/research/manage-campaigns`
-2. **Sees existing campaigns** with progress bars and status badges
-3. **Clicks "New Campaign"** → Dialog opens
-4. **Selects a script** (e.g., "Q1 Member Satisfaction Survey")
-5. **Fills in campaign metadata** (name: "January NPS Check", target: 100 calls)
-6. **Selects researchers** (e.g., Sarah, Michael, Jessica)
-7. **Sets dates** (Jan 1 - Jan 31)
-8. **Saves** → Campaign created, assigned researchers can now see it in their "Active Campaigns"
-9. **Can edit later** to adjust target, dates, or researcher assignments
-10. **Can delete** (with warning if calls already logged)
-
----
-
-## Part 9: Implementation Order
-
-1. Create `useResearchCampaigns.ts` hook with all CRUD + data fetching
-2. Create `ResearchCampaignDialog.tsx` component
-3. Replace `src/pages/research/CampaignManager.tsx` stub with full page
-4. Add researcher role validation and filtering
-5. Test end-to-end: create campaign → verify researcher can see it in dropdown
-
----
-
-## Part 10: Technical Details
-
-**TypeScript interfaces** (add to hook or types file):
-```typescript
-export interface ResearchCampaign {
-  id: string;
-  name: string;
-  script_id: string;
-  script_name?: string; // For display
-  status: 'draft' | 'active' | 'paused' | 'completed';
-  target_count: number;
-  start_date: string | null;
-  end_date: string | null;
-  assigned_researchers: string[]; // UUID array
-  created_by: string | null;
-  created_at: string;
-  updated_at: string;
-  completed_calls?: number; // Calculated, not stored
-}
-
-export interface ResearcherProfile {
-  id: string;
-  name: string | null;
-  email: string | null;
+Researcher selects campaign
+       |
+       v
+Hook fetches campaign.script_id
+       |
+       v
+Hook fetches research_scripts record
+       |
+       v
+Form renders questions[] dynamically
+       |
+       v
+Researcher fills responses + metadata
+       |
+       v
+INSERT into research_calls {
+  campaign_id, researcher_id,
+  caller_name, caller_type, call_outcome,
+  responses: { q1: value, q2: value, ... },
+  researcher_notes, call_duration_seconds
 }
 ```
 
-**Key validation rules**:
-- Campaign name required and non-empty
-- Script selection required
-- At least 1 researcher required
-- target_count must be > 0
-- end_date > start_date (if both provided)
-- Cannot delete campaign with active calls (status = 'completed' or show warning)
+### Response Storage Format
+Script questions are keyed by their order number in the JSONB `responses` column:
+```json
+{
+  "1": 8,
+  "2": "They loved the pricing",
+  "3": "Option A",
+  "4": true
+}
+```
+
+### Files to Create
+- `src/hooks/useResearchCalls.ts` - Call CRUD + campaign fetching for researchers
+
+### Files to Edit
+- `src/pages/research/MyCampaigns.tsx` - Replace stub with functional campaign list
+- `src/pages/research/LogSurveyCall.tsx` - Replace stub with dynamic survey form
+- `src/pages/research/MyCallHistory.tsx` - Replace stub with call history table
+
+### No Database Changes Needed
+All tables (`research_campaigns`, `research_scripts`, `research_calls`) already exist with the correct schema and RLS policies.
 
 ---
 
-## Summary
+## Implementation Order
 
-The Campaign Manager enables admins to:
-- **Organize research efforts** into campaigns with clear goals
-- **Assign researchers** to specific initiatives
-- **Track progress** in real-time via call counts
-- **Manage lifecycle** (draft → active → paused → completed)
-
-This is the prerequisite for researchers being able to log calls, as it links Scripts → Campaigns → Call Logging.
-
+1. Create `useResearchCalls.ts` hook (data layer first)
+2. Build `MyCampaigns.tsx` (simplest page, validates campaign fetching works)
+3. Build `LogSurveyCall.tsx` (core feature, depends on hook)
+4. Build `MyCallHistory.tsx` (reads submitted calls)
