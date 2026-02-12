@@ -76,7 +76,7 @@ Deno.serve(async (req) => {
     const bookingIds = (bookings || []).map(b => b.id);
     
     // Fetch in chunks of 500 in parallel
-    const TRANS_CHUNK = 500;
+    const TRANS_CHUNK = 100;
     const chunks: string[][] = [];
     for (let i = 0; i < bookingIds.length; i += TRANS_CHUNK) {
       chunks.push(bookingIds.slice(i, i + TRANS_CHUNK));
