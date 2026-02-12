@@ -38,11 +38,11 @@ Deno.serve(async (req) => {
       .from("market_intelligence_cache")
       .select("*")
       .eq("cache_key", cacheKey)
-      .single();
+      .maybeSingle();
 
     if (cached) {
       const age = Date.now() - new Date(cached.generated_at).getTime();
-      if (age < 30 * 60 * 1000) {
+      if (age < 15 * 60 * 1000) {
         return new Response(JSON.stringify({
           stateData: cached.state_data,
           cityData: cached.city_data,
