@@ -1,23 +1,59 @@
 
 
-## Fix: Budget Data Missing on "All Time" View
+## Fix: Budget Data Still Missing on "All Time"
 
-### Problem
-When selecting "All Time", Market Intelligence shows no budget data (all dashes). This is because the system fetches 5,960 bookings and then tries to look up their transcriptions using URL query parameters with 500 UUIDs per chunk. Each UUID is 36 characters, making URLs over 18,000 characters long -- which exceeds HTTP limits and causes all transcription lookups to silently fail.
+### Root Cause
+The previous fix (reducing chunk size to 100) hasn't fully resolved the issue. The `.in('booking_id', chunk)` approach encodes UUIDs directly into the URL query string, which hits HTTP URL length limits even at 100 IDs per chunk. The error logs confirm chunks are still failing with `TypeError: error sending request`.
 
-The "This Month" filter works fine because it only has ~146 records (1 small chunk that fits in the URL).
+### Why This Happens
+- 5,960 bookings exist, and 5,933 have transcriptions (99.5%)
+- Using `.in()` with UUID lists creates extremely long URLs regardless of chunk size
+- Failed chunks return 0 transcriptions, so no budget/sentiment data appears
 
 ### Solution
-Reduce the transcription chunk size from 500 back to **100 UUIDs per chunk** while keeping the parallel fetch approach for speed. This keeps URLs well within limits (~4,000 characters per request) and still processes all chunks simultaneously.
+Replace the chunked `.in()` approach with **range-based pagination** (the same pattern already used for fetching bookings). Since nearly every booking has a transcription, fetching all transcriptions is actually more efficient than filtering by ID.
 
-### What Changes
-- **File**: `supabase/functions/aggregate-market-data/index.ts`
-  - Change `TRANS_CHUNK` from `500` to `100`
-  - No other changes needed -- the parallel `Promise.all()` approach stays, so performance remains fast
+### Changes
+
+**File: `supabase/functions/aggregate-market-data/index.ts`**
+
+Replace the transcription fetching logic (lines 76-96) with:
+
+```typescript
+// Fetch all transcriptions with key points using range-based pagination
+const allTranscriptions: any[] = [];
+let transOffset = 0;
+while (true) {
+  const { data: transData, error: transError } = await supabase
+    .from("booking_transcriptions")
+    .select("booking_id, call_key_points")
+    .not("call_key_points", "is", null)
+    .range(transOffset, transOffset + BATCH_SIZE - 1);
+
+  if (transError) {
+    console.error("Transcription batch error:", transError.message);
+    break;
+  }
+  if (!transData || transData.length === 0) break;
+  allTranscriptions.push(...transData);
+  if (transData.length < BATCH_SIZE) break;
+  transOffset += BATCH_SIZE;
+}
+```
+
+This uses the existing `BATCH_SIZE` (500) with `.range()` pagination -- the same proven pattern used for bookings on lines 56-68. No URL length issues since `.range()` only adds simple numeric parameters.
+
+### What Gets Removed
+- The `TRANS_CHUNK` variable
+- The `chunks` array construction
+- The `Promise.all()` parallel `.in()` fetching
+
+### Why This Is Better
+1. **No URL length limits** -- `.range()` uses offset/limit, not UUID lists
+2. **Simpler code** -- same pagination pattern as bookings
+3. **More reliable** -- no silent chunk failures
+4. **Same performance** -- sequential batches of 500 rows are fast for 5,933 records (~12 round trips)
 
 ### Expected Result
-After this fix, selecting "All Time" will show budget data (with green/red color coding) for all markets, just like it already works for "This Month" and other filtered date ranges.
-
-### Technical Detail
-The parallel approach means even with 60 chunks (5,960 bookings / 100 per chunk), all requests fire simultaneously, so total load time stays similar to the current behavior with fewer, larger chunks.
+After deployment, selecting "All Time" will correctly show budget data with green/red color coding across all markets, matching the behavior of filtered date ranges.
 
