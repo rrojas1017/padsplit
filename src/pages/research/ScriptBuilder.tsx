@@ -194,7 +194,7 @@ function PreviewDialog({ script, onClose }: { script: ResearchScript; onClose: (
             Script Preview
           </AlertDialogTitle>
           <AlertDialogDescription>
-            How this script appears to researchers
+            Full call flow as the researcher will experience it
           </AlertDialogDescription>
         </AlertDialogHeader>
         <div className="space-y-4 py-2">
@@ -202,6 +202,26 @@ function PreviewDialog({ script, onClose }: { script: ResearchScript; onClose: (
             <h4 className="font-semibold text-sm">{script.name}</h4>
             {script.description && <p className="text-xs text-muted-foreground mt-0.5">{script.description}</p>}
           </div>
+
+          {/* Intro Script */}
+          {script.intro_script && (
+            <div className="border rounded-lg p-3 space-y-1 bg-primary/5">
+              <Badge variant="outline" className="text-xs">Opening Introduction</Badge>
+              <p className="text-sm whitespace-pre-wrap">{script.intro_script}</p>
+            </div>
+          )}
+
+          {/* Consent Gate */}
+          <div className="border rounded-lg p-3 space-y-2 bg-accent/30">
+            <Badge variant="outline" className="text-xs">Consent Gate</Badge>
+            <p className="text-sm italic">"May I ask you a few questions?"</p>
+            <div className="flex gap-2">
+              <Badge>Yes → Questions</Badge>
+              <Badge variant="secondary">No → Rebuttal</Badge>
+            </div>
+          </div>
+
+          {/* Questions */}
           {script.questions.map((q, idx) => (
             <div key={idx} className="border rounded-lg p-3 space-y-2">
               <div className="flex items-center gap-2">
@@ -235,12 +255,28 @@ function PreviewDialog({ script, onClose }: { script: ResearchScript; onClose: (
                 )}
                 {q.type === 'open_ended' && (
                   <div className="border border-dashed border-border rounded-md h-16 flex items-center justify-center text-xs text-muted-foreground">
-                    Free-text response
+                    Free-text response (AI extracts from recording)
                   </div>
                 )}
               </div>
             </div>
           ))}
+
+          {/* Closing Script */}
+          {script.closing_script && (
+            <div className="border rounded-lg p-3 space-y-1 bg-primary/5">
+              <Badge variant="outline" className="text-xs">Closing Script</Badge>
+              <p className="text-sm whitespace-pre-wrap">{script.closing_script}</p>
+            </div>
+          )}
+
+          {/* Rebuttal Script */}
+          {script.rebuttal_script && (
+            <div className="border rounded-lg p-3 space-y-1 bg-destructive/5">
+              <Badge variant="outline" className="text-xs">Rebuttal (if declined)</Badge>
+              <p className="text-sm whitespace-pre-wrap">{script.rebuttal_script}</p>
+            </div>
+          )}
         </div>
         <AlertDialogFooter>
           <AlertDialogAction onClick={onClose}>Close</AlertDialogAction>

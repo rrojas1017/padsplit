@@ -8,6 +8,7 @@ import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Plus, Trash2, GripVertical, ChevronUp, ChevronDown } from 'lucide-react';
 import type { ResearchScript, ScriptQuestion } from '@/hooks/useResearchScripts';
 
@@ -53,6 +54,9 @@ export function ResearchScriptDialog({ open, onOpenChange, script, onSave }: Pro
   const [targetAudience, setTargetAudience] = useState('existing_member');
   const [isActive, setIsActive] = useState(true);
   const [questions, setQuestions] = useState<ScriptQuestion[]>([]);
+  const [introScript, setIntroScript] = useState('');
+  const [rebuttalScript, setRebuttalScript] = useState('');
+  const [closingScript, setClosingScript] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [optionInput, setOptionInput] = useState<Record<number, string>>({});
 
@@ -65,6 +69,9 @@ export function ResearchScriptDialog({ open, onOpenChange, script, onSave }: Pro
         setTargetAudience(script.target_audience);
         setIsActive(script.is_active);
         setQuestions(script.questions.length > 0 ? script.questions : [emptyQuestion()]);
+        setIntroScript(script.intro_script || '');
+        setRebuttalScript(script.rebuttal_script || '');
+        setClosingScript(script.closing_script || '');
       } else {
         setName('');
         setDescription('');
@@ -72,6 +79,9 @@ export function ResearchScriptDialog({ open, onOpenChange, script, onSave }: Pro
         setTargetAudience('existing_member');
         setIsActive(true);
         setQuestions([emptyQuestion()]);
+        setIntroScript('');
+        setRebuttalScript('');
+        setClosingScript('');
       }
       setOptionInput({});
     }
@@ -123,6 +133,9 @@ export function ResearchScriptDialog({ open, onOpenChange, script, onSave }: Pro
         campaign_type: campaignType,
         target_audience: targetAudience,
         is_active: isActive,
+        intro_script: introScript.trim() || null,
+        rebuttal_script: rebuttalScript.trim() || null,
+        closing_script: closingScript.trim() || null,
         questions: validQuestions.map((q, i) => ({
           ...q,
           order: i + 1,
@@ -145,45 +158,94 @@ export function ResearchScriptDialog({ open, onOpenChange, script, onSave }: Pro
           <DialogTitle>{script ? 'Edit Research Script' : 'Create Research Script'}</DialogTitle>
         </DialogHeader>
 
-        <div className="space-y-5 py-2">
-          {/* Basic info */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div className="space-y-2 sm:col-span-2">
-              <Label>Script Name *</Label>
-              <Input value={name} onChange={e => setName(e.target.value)} placeholder="e.g., Member Satisfaction Survey Q1" />
-            </div>
-            <div className="space-y-2 sm:col-span-2">
-              <Label>Description</Label>
-              <Textarea value={description} onChange={e => setDescription(e.target.value)} placeholder="Purpose of this script..." rows={2} />
-            </div>
-            <div className="space-y-2">
-              <Label>Campaign Type *</Label>
-              <Select value={campaignType} onValueChange={setCampaignType}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {CAMPAIGN_TYPES.map(t => <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label>Target Audience *</Label>
-              <Select value={targetAudience} onValueChange={setTargetAudience}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {TARGET_AUDIENCES.map(t => <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
+        <Tabs defaultValue="basics" className="w-full">
+          <TabsList className="grid w-full grid-cols-3">
+            <TabsTrigger value="basics">Basics</TabsTrigger>
+            <TabsTrigger value="scripts">Call Scripts</TabsTrigger>
+            <TabsTrigger value="questions">Questions ({questions.length})</TabsTrigger>
+          </TabsList>
 
-          {/* Active toggle */}
-          <div className="flex items-center justify-between">
-            <Label>Active</Label>
-            <Switch checked={isActive} onCheckedChange={setIsActive} />
-          </div>
+          <TabsContent value="basics" className="space-y-5 py-2">
+            {/* Basic info */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="space-y-2 sm:col-span-2">
+                <Label>Script Name *</Label>
+                <Input value={name} onChange={e => setName(e.target.value)} placeholder="e.g., Member Satisfaction Survey Q1" />
+              </div>
+              <div className="space-y-2 sm:col-span-2">
+                <Label>Description</Label>
+                <Textarea value={description} onChange={e => setDescription(e.target.value)} placeholder="Purpose of this script..." rows={2} />
+              </div>
+              <div className="space-y-2">
+                <Label>Campaign Type *</Label>
+                <Select value={campaignType} onValueChange={setCampaignType}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {CAMPAIGN_TYPES.map(t => <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Target Audience *</Label>
+                <Select value={targetAudience} onValueChange={setTargetAudience}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {TARGET_AUDIENCES.map(t => <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            {/* Active toggle */}
+            <div className="flex items-center justify-between">
+              <Label>Active</Label>
+              <Switch checked={isActive} onCheckedChange={setIsActive} />
+            </div>
+          </TabsContent>
 
-          {/* Questions */}
-          <div className="space-y-3">
+          <TabsContent value="scripts" className="space-y-5 py-2">
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label>Opening Introduction</Label>
+                <p className="text-xs text-muted-foreground">
+                  Read aloud when the call starts. Use <code className="bg-muted px-1 rounded">{'{agent_name}'}</code> to auto-insert the researcher's name.
+                </p>
+                <Textarea
+                  value={introScript}
+                  onChange={e => setIntroScript(e.target.value)}
+                  placeholder={`Hello, my name is {agent_name} and I'm calling from PadSplit. The reason for our call today is to get some important feedback from you on your existing experience. We want to find out from you in hope to always assure great service. May I ask you a few questions? It won't take much of your time.`}
+                  rows={5}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label>Rebuttal / Decline Script</Label>
+                <p className="text-xs text-muted-foreground">
+                  Read when the caller says "No" to the consent question.
+                </p>
+                <Textarea
+                  value={rebuttalScript}
+                  onChange={e => setRebuttalScript(e.target.value)}
+                  placeholder="I completely understand, and I appreciate your time. If you ever have feedback you'd like to share, please don't hesitate to reach out. Thank you and have a great day!"
+                  rows={3}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label>Closing Script</Label>
+                <p className="text-xs text-muted-foreground">
+                  Read after the last question is answered, before wrapping up.
+                </p>
+                <Textarea
+                  value={closingScript}
+                  onChange={e => setClosingScript(e.target.value)}
+                  placeholder="Thank you so much for your time and feedback today. Your input is invaluable and helps us improve our service. Have a wonderful day!"
+                  rows={3}
+                />
+              </div>
+            </div>
+          </TabsContent>
+
+          <TabsContent value="questions" className="space-y-3 py-2">
             <div className="flex items-center justify-between">
               <Label className="text-base font-semibold">Questions ({questions.length})</Label>
               <Button variant="outline" size="sm" onClick={addQuestion}>
@@ -274,8 +336,8 @@ export function ResearchScriptDialog({ open, onOpenChange, script, onSave }: Pro
                 </CardContent>
               </Card>
             ))}
-          </div>
-        </div>
+          </TabsContent>
+        </Tabs>
 
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>

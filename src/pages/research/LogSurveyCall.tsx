@@ -1,7 +1,7 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { ResearchLayout } from '@/components/layout/ResearchLayout';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -9,9 +9,11 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Slider } from '@/components/ui/slider';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+import { Progress } from '@/components/ui/progress';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useResearchCalls, type ScriptQuestion, type CallSubmission } from '@/hooks/useResearchCalls';
-import { CheckCircle, Phone } from 'lucide-react';
+import { useAuth } from '@/contexts/AuthContext';
+import { CheckCircle, Phone, ArrowRight, ArrowLeft, MessageSquare, XCircle, ThumbsUp, ThumbsDown } from 'lucide-react';
 
 const callerTypes = [
   { value: 'existing_member', label: 'Existing Member' },
@@ -33,23 +35,35 @@ const outcomeOptions = [
   { value: 'transferred', label: 'Transferred' },
 ];
 
+type WizardPhase = 'setup' | 'intro' | 'consent' | 'question' | 'rebuttal' | 'closing' | 'wrapup';
+
 export default function LogSurveyCall() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const { myCampaigns, isLoading, isSubmitting, submitCall } = useResearchCalls();
+  const { user } = useAuth();
 
+  // Setup fields
   const [campaignId, setCampaignId] = useState(searchParams.get('campaign') || '');
   const [callerName, setCallerName] = useState('');
   const [callerPhone, setCallerPhone] = useState('');
   const [callerType, setCallerType] = useState('');
   const [callerStatus, setCallerStatus] = useState('');
+
+  // Wizard state
+  const [phase, setPhase] = useState<WizardPhase>('setup');
+  const [questionIndex, setQuestionIndex] = useState(0);
+  const [consent, setConsent] = useState<boolean | null>(null);
+
+  // Wrapup fields
   const [callOutcome, setCallOutcome] = useState('');
   const [callDurationMinutes, setCallDurationMinutes] = useState('');
   const [transferNotes, setTransferNotes] = useState('');
   const [researcherNotes, setResearcherNotes] = useState('');
   const [responses, setResponses] = useState<Record<string, unknown>>({});
+
   const [submitted, setSubmitted] = useState(false);
-  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [setupErrors, setSetupErrors] = useState<Record<string, string>>({});
 
   const activeCampaigns = useMemo(
     () => myCampaigns.filter(c => c.status === 'active'),
@@ -62,8 +76,14 @@ export default function LogSurveyCall() {
   );
 
   const questions: ScriptQuestion[] = selectedCampaign?.script?.questions || [];
+  const introScript = selectedCampaign?.script?.intro_script || '';
+  const rebuttalScript = selectedCampaign?.script?.rebuttal_script || '';
+  const closingScript = selectedCampaign?.script?.closing_script || '';
 
-  // Auto-select campaign from URL param
+  const agentName = user?.name || 'Researcher';
+
+  const renderedIntro = introScript.replace(/\{agent_name\}/gi, agentName);
+
   useEffect(() => {
     const param = searchParams.get('campaign');
     if (param && activeCampaigns.some(c => c.id === param)) {
@@ -71,29 +91,101 @@ export default function LogSurveyCall() {
     }
   }, [searchParams, activeCampaigns]);
 
+  // Keyboard navigation
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        if (phase === 'intro' || phase === 'question' || phase === 'closing' || phase === 'rebuttal') {
+          e.preventDefault();
+          handleNext();
+        }
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [phase, questionIndex, questions.length]);
+
   const setResponse = (qId: number, value: unknown) => {
     setResponses(prev => ({ ...prev, [String(qId)]: value }));
   };
 
-  const validate = (): boolean => {
+  const validateSetup = (): boolean => {
     const errs: Record<string, string> = {};
     if (!campaignId) errs.campaign = 'Select a campaign';
     if (!callerName.trim()) errs.callerName = 'Caller name is required';
     if (!callerType) errs.callerType = 'Select caller type';
-    if (!callOutcome) errs.callOutcome = 'Select call outcome';
-
-    questions.forEach(q => {
-      if (q.required && (responses[String(q.id)] === undefined || responses[String(q.id)] === '')) {
-        errs[`q_${q.id}`] = 'This question is required';
-      }
-    });
-
-    setErrors(errs);
+    setSetupErrors(errs);
     return Object.keys(errs).length === 0;
   };
 
+  const handleStartScript = () => {
+    if (!validateSetup()) return;
+    if (introScript) {
+      setPhase('intro');
+    } else {
+      setPhase('consent');
+    }
+  };
+
+  const handleConsent = (agreed: boolean) => {
+    setConsent(agreed);
+    if (agreed) {
+      if (questions.length > 0) {
+        setPhase('question');
+        setQuestionIndex(0);
+      } else if (closingScript) {
+        setPhase('closing');
+      } else {
+        setPhase('wrapup');
+      }
+    } else {
+      setCallOutcome('refused');
+      if (rebuttalScript) {
+        setPhase('rebuttal');
+      } else {
+        setPhase('wrapup');
+      }
+    }
+  };
+
+  const handleNext = useCallback(() => {
+    if (phase === 'intro') {
+      setPhase('consent');
+    } else if (phase === 'question') {
+      if (questionIndex < questions.length - 1) {
+        setQuestionIndex(prev => prev + 1);
+      } else if (closingScript) {
+        setPhase('closing');
+      } else {
+        setPhase('wrapup');
+      }
+    } else if (phase === 'closing' || phase === 'rebuttal') {
+      setPhase('wrapup');
+    }
+  }, [phase, questionIndex, questions.length, closingScript]);
+
+  const handleBack = () => {
+    if (phase === 'question' && questionIndex > 0) {
+      setQuestionIndex(prev => prev - 1);
+    } else if (phase === 'question' && questionIndex === 0) {
+      setPhase('consent');
+    } else if (phase === 'consent') {
+      if (introScript) setPhase('intro');
+      else setPhase('setup');
+    } else if (phase === 'intro') {
+      setPhase('setup');
+    } else if (phase === 'closing') {
+      if (questions.length > 0) {
+        setPhase('question');
+        setQuestionIndex(questions.length - 1);
+      } else {
+        setPhase('consent');
+      }
+    }
+  };
+
   const handleSubmit = async () => {
-    if (!validate()) return;
+    if (!callOutcome) return;
 
     const submission: CallSubmission = {
       campaign_id: campaignId,
@@ -122,9 +214,23 @@ export default function LogSurveyCall() {
     setTransferNotes('');
     setResearcherNotes('');
     setResponses({});
-    setErrors({});
+    setSetupErrors({});
     setSubmitted(false);
+    setPhase('setup');
+    setQuestionIndex(0);
+    setConsent(null);
   };
+
+  // Progress calculation
+  const totalSteps = questions.length + (introScript ? 1 : 0) + 1 /* consent */ + (closingScript ? 1 : 0);
+  const currentStepNum = (() => {
+    if (phase === 'intro') return 1;
+    if (phase === 'consent') return (introScript ? 2 : 1);
+    if (phase === 'question') return (introScript ? 3 : 2) + questionIndex;
+    if (phase === 'closing') return totalSteps;
+    return totalSteps;
+  })();
+  const progressPercent = totalSteps > 0 ? (currentStepNum / totalSteps) * 100 : 0;
 
   if (submitted) {
     return (
@@ -149,137 +255,275 @@ export default function LogSurveyCall() {
       {isLoading ? (
         <Card><CardContent className="p-6"><Skeleton className="h-64 w-full" /></CardContent></Card>
       ) : (
-        <div className="space-y-6 max-w-2xl">
-          {/* Campaign Selection */}
-          <Card>
-            <CardHeader><CardTitle className="text-base">Campaign</CardTitle></CardHeader>
-            <CardContent>
-              <Select value={campaignId} onValueChange={setCampaignId}>
-                <SelectTrigger className={errors.campaign ? 'border-destructive' : ''}>
-                  <SelectValue placeholder="Select a campaign" />
-                </SelectTrigger>
-                <SelectContent>
-                  {activeCampaigns.map(c => (
-                    <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              {errors.campaign && <p className="text-sm text-destructive mt-1">{errors.campaign}</p>}
-              {activeCampaigns.length === 0 && (
-                <p className="text-sm text-muted-foreground mt-2">No active campaigns assigned to you.</p>
-              )}
-            </CardContent>
-          </Card>
+        <div className="max-w-2xl mx-auto space-y-4">
+          {/* Progress bar (visible during script flow) */}
+          {phase !== 'setup' && phase !== 'wrapup' && (
+            <div className="space-y-1">
+              <div className="flex justify-between text-xs text-muted-foreground">
+                <span>
+                  {phase === 'question' ? `Question ${questionIndex + 1} of ${questions.length}` : phase === 'intro' ? 'Introduction' : phase === 'consent' ? 'Consent' : phase === 'closing' ? 'Closing' : 'Rebuttal'}
+                </span>
+                <span>{Math.round(progressPercent)}%</span>
+              </div>
+              <Progress value={progressPercent} className="h-2" />
+            </div>
+          )}
 
-          {/* Caller Info */}
-          <Card>
-            <CardHeader><CardTitle className="text-base">Caller Information</CardTitle></CardHeader>
-            <CardContent className="space-y-4">
-              <div>
-                <Label>Caller Name *</Label>
-                <Input value={callerName} onChange={e => setCallerName(e.target.value)}
-                  className={errors.callerName ? 'border-destructive' : ''} placeholder="Enter caller name" />
-                {errors.callerName && <p className="text-sm text-destructive mt-1">{errors.callerName}</p>}
-              </div>
-              <div>
-                <Label>Phone Number</Label>
-                <Input value={callerPhone} onChange={e => setCallerPhone(e.target.value)} placeholder="(optional)" />
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <Label>Caller Type *</Label>
-                  <Select value={callerType} onValueChange={setCallerType}>
-                    <SelectTrigger className={errors.callerType ? 'border-destructive' : ''}>
-                      <SelectValue placeholder="Select type" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {callerTypes.map(t => <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
-                  {errors.callerType && <p className="text-sm text-destructive mt-1">{errors.callerType}</p>}
-                </div>
-                <div>
-                  <Label>Status</Label>
-                  <Select value={callerStatus} onValueChange={setCallerStatus}>
-                    <SelectTrigger><SelectValue placeholder="Select status" /></SelectTrigger>
-                    <SelectContent>
-                      {callerStatuses.map(s => <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Dynamic Script Questions */}
-          {selectedCampaign && questions.length > 0 && (
+          {/* SETUP PHASE */}
+          {phase === 'setup' && (
             <Card>
-              <CardHeader>
-                <CardTitle className="text-base">Survey Questions</CardTitle>
-                <p className="text-sm text-muted-foreground">Script: {selectedCampaign.script?.name}</p>
-              </CardHeader>
-              <CardContent className="space-y-6">
-                {questions.map((q) => (
-                  <div key={q.id} className="space-y-2">
-                    <Label className="text-sm">
-                      {q.text} {q.required && <span className="text-destructive">*</span>}
-                    </Label>
-                    <QuestionInput
-                      question={q}
-                      value={responses[String(q.id)]}
-                      onChange={(val) => setResponse(q.id, val)}
-                    />
-                    {errors[`q_${q.id}`] && (
-                      <p className="text-sm text-destructive">{errors[`q_${q.id}`]}</p>
+              <CardContent className="p-6 space-y-5">
+                <div className="space-y-1">
+                  <h2 className="text-lg font-semibold">Call Setup</h2>
+                  <p className="text-sm text-muted-foreground">Select your campaign and enter caller details</p>
+                </div>
+
+                <div className="space-y-4">
+                  <div>
+                    <Label>Campaign *</Label>
+                    <Select value={campaignId} onValueChange={setCampaignId}>
+                      <SelectTrigger className={setupErrors.campaign ? 'border-destructive' : ''}>
+                        <SelectValue placeholder="Select a campaign" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {activeCampaigns.map(c => (
+                          <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    {setupErrors.campaign && <p className="text-sm text-destructive mt-1">{setupErrors.campaign}</p>}
+                    {activeCampaigns.length === 0 && (
+                      <p className="text-sm text-muted-foreground mt-2">No active campaigns assigned to you.</p>
                     )}
                   </div>
-                ))}
+
+                  <div>
+                    <Label>Caller Name *</Label>
+                    <Input value={callerName} onChange={e => setCallerName(e.target.value)}
+                      className={setupErrors.callerName ? 'border-destructive' : ''} placeholder="Enter caller name" />
+                    {setupErrors.callerName && <p className="text-sm text-destructive mt-1">{setupErrors.callerName}</p>}
+                  </div>
+
+                  <div>
+                    <Label>Phone Number</Label>
+                    <Input value={callerPhone} onChange={e => setCallerPhone(e.target.value)} placeholder="(optional)" />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <Label>Caller Type *</Label>
+                      <Select value={callerType} onValueChange={setCallerType}>
+                        <SelectTrigger className={setupErrors.callerType ? 'border-destructive' : ''}>
+                          <SelectValue placeholder="Select type" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {callerTypes.map(t => <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                      {setupErrors.callerType && <p className="text-sm text-destructive mt-1">{setupErrors.callerType}</p>}
+                    </div>
+                    <div>
+                      <Label>Status</Label>
+                      <Select value={callerStatus} onValueChange={setCallerStatus}>
+                        <SelectTrigger><SelectValue placeholder="Select status" /></SelectTrigger>
+                        <SelectContent>
+                          {callerStatuses.map(s => <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                </div>
+
+                <Button className="w-full" size="lg" onClick={handleStartScript} disabled={activeCampaigns.length === 0}>
+                  Start Script <ArrowRight className="w-4 h-4 ml-2" />
+                </Button>
               </CardContent>
             </Card>
           )}
 
-          {/* Call Outcome */}
-          <Card>
-            <CardHeader><CardTitle className="text-base">Call Outcome</CardTitle></CardHeader>
-            <CardContent className="space-y-4">
-              <div>
-                <Label>Outcome *</Label>
-                <Select value={callOutcome} onValueChange={setCallOutcome}>
-                  <SelectTrigger className={errors.callOutcome ? 'border-destructive' : ''}>
-                    <SelectValue placeholder="Select outcome" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {outcomeOptions.map(o => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-                {errors.callOutcome && <p className="text-sm text-destructive mt-1">{errors.callOutcome}</p>}
-              </div>
-
-              {callOutcome === 'transferred' && (
-                <div>
-                  <Label>Transfer Notes</Label>
-                  <Textarea value={transferNotes} onChange={e => setTransferNotes(e.target.value)}
-                    placeholder="Notes about the transfer..." />
+          {/* INTRO PHASE */}
+          {phase === 'intro' && (
+            <Card>
+              <CardContent className="p-8 space-y-6">
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <MessageSquare className="w-4 h-4" />
+                  <span>Read aloud to the caller</span>
                 </div>
-              )}
+                <div className="bg-muted/50 rounded-xl p-6 border">
+                  <p className="text-lg leading-relaxed whitespace-pre-wrap">{renderedIntro}</p>
+                </div>
+                <div className="flex justify-between">
+                  <Button variant="outline" onClick={handleBack}>
+                    <ArrowLeft className="w-4 h-4 mr-2" /> Back
+                  </Button>
+                  <Button size="lg" onClick={handleNext}>
+                    Next <ArrowRight className="w-4 h-4 ml-2" />
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          )}
 
-              <div>
-                <Label>Duration (minutes)</Label>
-                <Input type="number" min="0" step="0.5" value={callDurationMinutes}
-                  onChange={e => setCallDurationMinutes(e.target.value)} placeholder="(optional)" />
-              </div>
+          {/* CONSENT PHASE */}
+          {phase === 'consent' && (
+            <Card>
+              <CardContent className="p-8 space-y-6 text-center">
+                <h2 className="text-xl font-semibold">Did the caller agree to continue?</h2>
+                <p className="text-muted-foreground">"May I ask you a few questions?"</p>
+                <div className="flex gap-4 justify-center pt-4">
+                  <Button
+                    size="lg"
+                    className="px-10 py-6 text-lg"
+                    onClick={() => handleConsent(true)}
+                  >
+                    <ThumbsUp className="w-5 h-5 mr-2" /> Yes
+                  </Button>
+                  <Button
+                    size="lg"
+                    variant="outline"
+                    className="px-10 py-6 text-lg"
+                    onClick={() => handleConsent(false)}
+                  >
+                    <ThumbsDown className="w-5 h-5 mr-2" /> No
+                  </Button>
+                </div>
+                <div className="pt-2">
+                  <Button variant="ghost" size="sm" onClick={handleBack}>
+                    <ArrowLeft className="w-4 h-4 mr-1" /> Back
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          )}
 
-              <div>
-                <Label>Researcher Notes</Label>
-                <Textarea value={researcherNotes} onChange={e => setResearcherNotes(e.target.value)}
-                  placeholder="Any additional observations..." rows={3} />
-              </div>
-            </CardContent>
-          </Card>
+          {/* REBUTTAL PHASE */}
+          {phase === 'rebuttal' && (
+            <Card>
+              <CardContent className="p-8 space-y-6">
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <XCircle className="w-4 h-4" />
+                  <span>Read the dismissal script</span>
+                </div>
+                <div className="bg-destructive/5 rounded-xl p-6 border border-destructive/20">
+                  <p className="text-lg leading-relaxed whitespace-pre-wrap">
+                    {rebuttalScript || "I understand. Thank you for your time. Have a great day!"}
+                  </p>
+                </div>
+                <Button className="w-full" size="lg" onClick={handleNext}>
+                  End Call & Wrap Up <ArrowRight className="w-4 h-4 ml-2" />
+                </Button>
+              </CardContent>
+            </Card>
+          )}
 
-          <Button className="w-full" size="lg" onClick={handleSubmit} disabled={isSubmitting}>
-            {isSubmitting ? 'Submitting...' : 'Submit Call'}
-          </Button>
+          {/* QUESTION PHASE */}
+          {phase === 'question' && questions[questionIndex] && (
+            <Card>
+              <CardContent className="p-8 space-y-6">
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <MessageSquare className="w-4 h-4" />
+                  <span>Read aloud to the caller</span>
+                </div>
+
+                <div className="bg-muted/50 rounded-xl p-6 border">
+                  <p className="text-xl font-medium leading-relaxed">{questions[questionIndex].text}</p>
+                </div>
+
+                {/* Inline response capture */}
+                <div className="space-y-2">
+                  <QuestionInput
+                    question={questions[questionIndex]}
+                    value={responses[String(questions[questionIndex].id)]}
+                    onChange={(val) => setResponse(questions[questionIndex].id, val)}
+                  />
+                </div>
+
+                <div className="flex justify-between">
+                  <Button variant="outline" onClick={handleBack}>
+                    <ArrowLeft className="w-4 h-4 mr-2" /> Back
+                  </Button>
+                  <Button size="lg" onClick={handleNext}>
+                    {questionIndex < questions.length - 1 ? 'Next' : 'Finish Questions'} <ArrowRight className="w-4 h-4 ml-2" />
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* CLOSING PHASE */}
+          {phase === 'closing' && (
+            <Card>
+              <CardContent className="p-8 space-y-6">
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <MessageSquare className="w-4 h-4" />
+                  <span>Read the closing script</span>
+                </div>
+                <div className="bg-primary/5 rounded-xl p-6 border">
+                  <p className="text-lg leading-relaxed whitespace-pre-wrap">
+                    {closingScript || "Thank you for your time and feedback today!"}
+                  </p>
+                </div>
+                <div className="flex justify-between">
+                  <Button variant="outline" onClick={handleBack}>
+                    <ArrowLeft className="w-4 h-4 mr-2" /> Back
+                  </Button>
+                  <Button size="lg" onClick={handleNext}>
+                    Wrap Up <ArrowRight className="w-4 h-4 ml-2" />
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* WRAPUP PHASE */}
+          {phase === 'wrapup' && (
+            <Card>
+              <CardContent className="p-6 space-y-5">
+                <div className="space-y-1">
+                  <h2 className="text-lg font-semibold">Wrap Up</h2>
+                  <p className="text-sm text-muted-foreground">Finalize the call details</p>
+                </div>
+
+                <div className="space-y-4">
+                  <div>
+                    <Label>Outcome *</Label>
+                    <Select value={callOutcome} onValueChange={setCallOutcome}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select outcome" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {outcomeOptions.map(o => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {callOutcome === 'transferred' && (
+                    <div>
+                      <Label>Transfer Notes</Label>
+                      <Textarea value={transferNotes} onChange={e => setTransferNotes(e.target.value)}
+                        placeholder="Notes about the transfer..." />
+                    </div>
+                  )}
+
+                  <div>
+                    <Label>Duration (minutes)</Label>
+                    <Input type="number" min="0" step="0.5" value={callDurationMinutes}
+                      onChange={e => setCallDurationMinutes(e.target.value)} placeholder="(optional)" />
+                  </div>
+
+                  <div>
+                    <Label>Researcher Notes</Label>
+                    <Textarea value={researcherNotes} onChange={e => setResearcherNotes(e.target.value)}
+                      placeholder="Any additional observations..." rows={3} />
+                  </div>
+                </div>
+
+                <Button className="w-full" size="lg" onClick={handleSubmit} disabled={isSubmitting || !callOutcome}>
+                  {isSubmitting ? 'Submitting...' : 'Submit Call'}
+                </Button>
+              </CardContent>
+            </Card>
+          )}
         </div>
       )}
     </ResearchLayout>
@@ -296,60 +540,77 @@ function QuestionInput({ question, value, onChange }: {
     case 'scale':
       return (
         <div className="space-y-2">
-          <Slider
-            min={1} max={10} step={1}
-            value={[typeof value === 'number' ? value : 5]}
-            onValueChange={([v]) => onChange(v)}
-          />
-          <div className="flex justify-between text-xs text-muted-foreground">
-            <span>1</span>
-            <span className="font-medium text-foreground text-sm">{typeof value === 'number' ? value : '–'}</span>
-            <span>10</span>
+          <div className="flex gap-2 flex-wrap justify-center">
+            {Array.from({ length: 10 }, (_, i) => i + 1).map(n => (
+              <Button
+                key={n}
+                type="button"
+                variant={value === n ? 'default' : 'outline'}
+                size="lg"
+                className="w-12 h-12 text-lg"
+                onClick={() => onChange(n)}
+              >
+                {n}
+              </Button>
+            ))}
           </div>
+          <p className="text-xs text-center text-muted-foreground">Tap a number (optional — AI extracts from recording)</p>
         </div>
       );
 
     case 'open_ended':
       return (
-        <Textarea
-          value={typeof value === 'string' ? value : ''}
-          onChange={e => onChange(e.target.value)}
-          placeholder="Enter response..."
-          rows={3}
-        />
+        <div className="space-y-1">
+          <Textarea
+            value={typeof value === 'string' ? value : ''}
+            onChange={e => onChange(e.target.value)}
+            placeholder="Quick notes (optional — AI extracts from recording)"
+            rows={2}
+            className="text-sm"
+          />
+          <p className="text-xs text-muted-foreground">Optional — just click Next to continue</p>
+        </div>
       );
 
     case 'multiple_choice':
       return (
-        <RadioGroup value={typeof value === 'string' ? value : ''} onValueChange={onChange}>
-          {(question.options || []).map((opt) => (
-            <div key={opt} className="flex items-center space-x-2">
-              <RadioGroupItem value={opt} id={`q${question.id}_${opt}`} />
-              <Label htmlFor={`q${question.id}_${opt}`} className="font-normal cursor-pointer">{opt}</Label>
-            </div>
-          ))}
-        </RadioGroup>
+        <div className="space-y-2">
+          <RadioGroup value={typeof value === 'string' ? value : ''} onValueChange={onChange}>
+            {(question.options || []).map((opt) => (
+              <div key={opt} className="flex items-center space-x-3 p-3 rounded-lg border hover:bg-accent/50 cursor-pointer">
+                <RadioGroupItem value={opt} id={`q${question.id}_${opt}`} />
+                <Label htmlFor={`q${question.id}_${opt}`} className="font-normal cursor-pointer text-base flex-1">{opt}</Label>
+              </div>
+            ))}
+          </RadioGroup>
+          <p className="text-xs text-muted-foreground">Optional — AI extracts from recording</p>
+        </div>
       );
 
     case 'yes_no':
       return (
-        <div className="flex gap-2">
-          <Button
-            type="button"
-            variant={value === true ? 'default' : 'outline'}
-            size="sm"
-            onClick={() => onChange(true)}
-          >
-            Yes
-          </Button>
-          <Button
-            type="button"
-            variant={value === false ? 'default' : 'outline'}
-            size="sm"
-            onClick={() => onChange(false)}
-          >
-            No
-          </Button>
+        <div className="space-y-2">
+          <div className="flex gap-3 justify-center">
+            <Button
+              type="button"
+              variant={value === true ? 'default' : 'outline'}
+              size="lg"
+              className="px-8 py-5 text-base"
+              onClick={() => onChange(true)}
+            >
+              Yes
+            </Button>
+            <Button
+              type="button"
+              variant={value === false ? 'default' : 'outline'}
+              size="lg"
+              className="px-8 py-5 text-base"
+              onClick={() => onChange(false)}
+            >
+              No
+            </Button>
+          </div>
+          <p className="text-xs text-center text-muted-foreground">Optional — AI extracts from recording</p>
         </div>
       );
 

@@ -2209,37 +2209,46 @@ export type Database = {
       research_scripts: {
         Row: {
           campaign_type: string
+          closing_script: string | null
           created_at: string
           created_by: string | null
           description: string | null
           id: string
+          intro_script: string | null
           is_active: boolean
           name: string
           questions: Json
+          rebuttal_script: string | null
           target_audience: string
           updated_at: string
         }
         Insert: {
           campaign_type: string
+          closing_script?: string | null
           created_at?: string
           created_by?: string | null
           description?: string | null
           id?: string
+          intro_script?: string | null
           is_active?: boolean
           name: string
           questions?: Json
+          rebuttal_script?: string | null
           target_audience: string
           updated_at?: string
         }
         Update: {
           campaign_type?: string
+          closing_script?: string | null
           created_at?: string
           created_by?: string | null
           description?: string | null
           id?: string
+          intro_script?: string | null
           is_active?: boolean
           name?: string
           questions?: Json
+          rebuttal_script?: string | null
           target_audience?: string
           updated_at?: string
         }
