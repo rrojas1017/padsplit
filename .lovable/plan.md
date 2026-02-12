@@ -1,97 +1,289 @@
 
 
-## Fix: Unknown States and Dirty Market Data
+# PadSplit Research Agent Module
 
-### Problems Found
-1. **2,104 bookings (35%) have NULL `market_state`** but many have recognizable cities (Atlanta=40, Jacksonville=31, Baltimore=19, Las Vegas=17, Phoenix=17, etc.) that should map to known states
-2. **State abbreviations display as title-case** ("Tx", "Fl", "Ga") instead of proper uppercase ("TX", "FL", "GA") because the `normalizeName` function lowercases then title-cases everything
-3. **Junk state values** like "None", "Null", "Cl" (should be CO), "Ka" (should be KS), "Pe", "Vg", "Vi", "Mb" pollute the table
-4. **Multi-state entries** like "Ga, Fl", "De / Md", "Md / Dc" create extra rows
-5. **Full state names** ("Georgia", "Maryland") not merged with their abbreviations
+## Overview
 
-### Solution (Two Parts)
+A standalone module for Research Agents -- a new user role with its own simplified UI, dedicated to conducting structured phone interviews with existing members, former bookings, and rejected leads. Admins build questionnaire scripts; researchers log calls and outcomes; the AI pipeline processes recordings into actionable insights; a dedicated Research Insights dashboard surfaces findings with a summary widget on Market Intelligence.
 
-#### Part 1: Database Cleanup (SQL migration)
-Run a SQL update to fix existing data in the `bookings` table:
+**Zero impact on existing booking agent flows** -- this is an additive module with its own routes, sidebar, and data tables.
 
-- **Uppercase all state abbreviations** (e.g., "Tx" to "TX", "Fl" to "FL")
-- **Map known cities to states** for the 2,104 NULL-state records (e.g., Atlanta to GA, Jacksonville to FL, Las Vegas to NV, Phoenix to AZ, etc.)
-- **Fix junk values**: "None"/"Null" to NULL, "Cl" to "CO", "Ka" to "KS"
-- **Normalize full names**: "Georgia" to "GA", "Maryland" to "MD"
-- **Handle multi-state**: Take the first state from entries like "Ga, Fl" (becomes "GA")
+---
 
-This covers the ~30 most common city-to-state mappings which will resolve the vast majority of NULL-state records.
+## Architecture
 
-#### Part 2: Edge Function Update
-Modify `supabase/functions/aggregate-market-data/index.ts`:
-
-- Add a **`normalizeState` function** that uppercases state abbreviations, maps full names to abbreviations, and filters out junk values
-- Keep the existing `normalizeName` function for cities (title case is correct for city names)
-- Apply `normalizeState` instead of `normalizeName` for the state field during aggregation
-
-### Technical Details
-
-**SQL Migration** (data cleanup):
-```sql
--- Fix case: uppercase all state abbreviations
-UPDATE bookings SET market_state = UPPER(TRIM(market_state))
-WHERE market_state IS NOT NULL AND TRIM(market_state) != '';
-
--- Fix junk values
-UPDATE bookings SET market_state = NULL WHERE market_state IN ('NONE', 'NULL', 'MB', 'PE', 'VG', 'VI');
-UPDATE bookings SET market_state = 'CO' WHERE market_state = 'CL';
-UPDATE bookings SET market_state = 'KS' WHERE market_state = 'KA';
-
--- Fix full names
-UPDATE bookings SET market_state = 'GA' WHERE market_state = 'GEORGIA';
-UPDATE bookings SET market_state = 'MD' WHERE market_state = 'MARYLAND';
-
--- Fix multi-state (take first)
-UPDATE bookings SET market_state = 'GA' WHERE market_state = 'GA, FL';
-UPDATE bookings SET market_state = 'GA' WHERE market_state = 'GA, TX, DC, FL';
-UPDATE bookings SET market_state = 'DE' WHERE market_state = 'DE / MD';
-UPDATE bookings SET market_state = 'MD' WHERE market_state = 'MD / DC';
-UPDATE bookings SET market_state = 'MD' WHERE market_state = 'MD/DC';
-UPDATE bookings SET market_state = 'NC' WHERE market_state = 'NC, FL';
-UPDATE bookings SET market_state = 'NV' WHERE market_state = 'NV, FL, GA';
-
--- Map known cities to states (for NULL state records)
-UPDATE bookings SET market_state = 'GA' WHERE market_state IS NULL AND market_city IN ('Atlanta','Riverdale','Forest Park','Stone Mountain','Decatur','Jonesboro','Marietta','East Point','College Park','Lithonia','Conyers','Morrow','Ellenwood','Lawrenceville','Snellville','Duluth','Norcross','Kennesaw','Smyrna','Stockbridge','Hampton','McDonough','Fairburn','Union City','Austell','Powder Springs','Clarkston','Tucker','Chamblee','Brookhaven','Sandy Springs','Roswell','Alpharetta','Peachtree City','Newnan','Fayetteville','Covington','Rex','Redan','Scottdale','Avondale Estates');
-UPDATE bookings SET market_state = 'FL' WHERE market_state IS NULL AND market_city IN ('Jacksonville','Orlando','Tampa','Gainesville','Miami','Fort Lauderdale','Kissimmee','Lakeland','Clearwater','St. Petersburg','Daytona Beach','Cape Coral','Bradenton','Ocala','Tallahassee','Pensacola','Sanford','Deltona','Port Charlotte','Sarasota','Palm Bay','Melbourne','Brandon','Largo','Hollywood','Pompano Beach','Fort Myers');
-UPDATE bookings SET market_state = 'TX' WHERE market_state IS NULL AND market_city IN ('Houston','Dallas','San Antonio','Austin','Fort Worth','Arlington','El Paso','Plano','Irving','Garland','McKinney','Frisco','Denton','Killeen','Waco','Beaumont','Tyler','Midland','Odessa','Lubbock','Amarillo','Pasadena','Mesquite','Katy','Spring','Humble','Sugar Land','Conroe','Round Rock','Cedar Park');
-UPDATE bookings SET market_state = 'NV' WHERE market_state IS NULL AND market_city IN ('Las Vegas','Henderson','North Las Vegas','Reno','Vegas');
-UPDATE bookings SET market_state = 'AZ' WHERE market_state IS NULL AND market_city IN ('Phoenix','Mesa','Tempe','Scottsdale','Glendale','Chandler','Gilbert','Peoria','Surprise','Avondale','Goodyear','Buckeye','Casa Grande','Tolleson');
-UPDATE bookings SET market_state = 'MD' WHERE market_state IS NULL AND market_city IN ('Baltimore','Silver Spring','Columbia','Germantown','Waldorf','Frederick','Bowie','Rockville','Glen Burnie','Laurel','Salisbury','Hagerstown','Annapolis');
-UPDATE bookings SET market_state = 'NC' WHERE market_state IS NULL AND market_city IN ('Charlotte','Raleigh','Durham','Greensboro','Winston-Salem','Fayetteville','High Point','Asheville','Wilmington','Concord','Gastonia','Huntersville');
-UPDATE bookings SET market_state = 'PA' WHERE market_state IS NULL AND market_city IN ('Philadelphia','Pittsburgh','Allentown','Reading','Bethlehem','Lancaster','Harrisburg','Scranton','York');
-UPDATE bookings SET market_state = 'IN' WHERE market_state IS NULL AND market_city IN ('Indianapolis','Fort Wayne','Evansville','South Bend','Carmel','Fishers','Bloomington','Hammond','Gary','Muncie');
-UPDATE bookings SET market_state = 'MO' WHERE market_state IS NULL AND market_city IN ('Kansas City','St. Louis','Springfield','Columbia','Independence','Lee''s Summit');
-UPDATE bookings SET market_state = 'VA' WHERE market_state IS NULL AND market_city IN ('Richmond','Virginia Beach','Norfolk','Chesapeake','Newport News','Hampton','Alexandria','Roanoke','Lynchburg','Portsmouth');
-UPDATE bookings SET market_state = 'IL' WHERE market_state IS NULL AND market_city IN ('Chicago','Aurora','Joliet','Naperville','Rockford','Springfield','Elgin','Peoria');
-UPDATE bookings SET market_state = 'LA' WHERE market_state IS NULL AND market_city IN ('New Orleans','Baton Rouge','Shreveport','Metairie','Lafayette','Lake Charles','Kenner','Marrero','Harvey');
-UPDATE bookings SET market_state = 'TN' WHERE market_state IS NULL AND market_city IN ('Nashville','Memphis','Knoxville','Chattanooga','Clarksville','Murfreesboro','Franklin','Jackson','Johnson City');
-UPDATE bookings SET market_state = 'OH' WHERE market_state IS NULL AND market_city IN ('Columbus','Cleveland','Cincinnati','Toledo','Akron','Dayton','Canton','Youngstown');
-UPDATE bookings SET market_state = 'DC' WHERE market_state IS NULL AND market_city IN ('Washington','Washington D.C.','Washington DC');
-UPDATE bookings SET market_state = 'MA' WHERE market_state IS NULL AND market_city IN ('Boston','Worcester','Springfield','Cambridge','Lowell','Brockton');
-UPDATE bookings SET market_state = 'CA' WHERE market_state IS NULL AND market_city IN ('Los Angeles','San Diego','San Francisco','Sacramento','San Jose','Fresno','Long Beach','Oakland','Bakersfield','Riverside');
-UPDATE bookings SET market_state = 'NY' WHERE market_state IS NULL AND market_city IN ('New York','Buffalo','Rochester','Syracuse','Albany','Yonkers');
-UPDATE bookings SET market_state = 'WI' WHERE market_state IS NULL AND market_city IN ('Milwaukee','Madison','Green Bay','Kenosha','Racine');
-UPDATE bookings SET market_state = 'KS' WHERE market_state IS NULL AND market_city IN ('Wichita','Overland Park','Kansas City','Olathe','Topeka');
-UPDATE bookings SET market_state = 'MI' WHERE market_state IS NULL AND market_city IN ('Detroit','Grand Rapids','Warren','Sterling Heights','Ann Arbor','Lansing','Flint');
-UPDATE bookings SET market_state = 'SC' WHERE market_state IS NULL AND market_city IN ('Columbia','Charleston','North Charleston','Greenville','Rock Hill','Mount Pleasant');
-UPDATE bookings SET market_state = 'OK' WHERE market_state IS NULL AND market_city IN ('Oklahoma City','Tulsa','Norman','Broken Arrow','Edmond','Lawton');
-UPDATE bookings SET market_state = 'CO' WHERE market_state IS NULL AND market_city IN ('Denver','Colorado Springs','Aurora','Fort Collins','Lakewood','Thornton','Arvada','Westminster','Boulder');
+```text
++------------------+     +-------------------+     +--------------------+
+|  Admin/SuperAdmin |     |  Researcher UI    |     |  AI Pipeline       |
+|                  |     |                   |     |                    |
+| Script Builder   |---->| My Campaigns      |     | transcribe-call    |
+| Campaign Manager |---->| Log Survey Call   |---->| (existing)         |
+| Research Insights|<----| My Performance    |     |        |           |
+|                  |     |                   |     |        v           |
+| Market Intel     |     +-------------------+     | analyze-research   |
+| (summary widget) |                               | (new edge fn)      |
++------------------+                               +--------------------+
+                                                          |
+                                                          v
+                                                   +--------------------+
+                                                   | research_insights  |
+                                                   | (DB table)         |
+                                                   +--------------------+
 ```
 
-**Edge Function Changes** (`supabase/functions/aggregate-market-data/index.ts`):
-- Add `normalizeState()` function that uppercases the state and maps known full names to abbreviations
-- Use `normalizeState()` for the state field and keep `normalizeName()` for cities
-- Filter out records where normalized state is still "Unknown" from a separate "Unknown" bucket that users can optionally view
+---
 
-**Cache Cleanup**: Delete all cache entries so fresh data is computed with the cleaned-up values.
+## Part 1: New "researcher" Role
 
-### Expected Result
-- The "Unknown" state row will shrink dramatically (from 2,104 to likely under 200)
-- No more duplicate states from case differences
-- Clean, uppercase state abbreviations (TX, FL, GA, etc.)
-- Junk entries removed entirely
+**Database changes:**
+- Add `'researcher'` to the `app_role` enum
+- No changes to `profiles` or `user_roles` table structure
+
+**Frontend changes:**
+- Add `'researcher'` to the `UserRole` type in `src/types/index.ts`
+- Update `AuthContext` role label map to include `researcher: 'Researcher'`
+- Update `ProtectedRoute` to redirect researchers to `/research/dashboard` by default
+- Create a dedicated `ResearchSidebar` component (simpler than `AppSidebar`) with only research-relevant links
+- Create a `ResearchLayout` wrapper (similar to `DashboardLayout`) that uses `ResearchSidebar`
+
+**Researcher sidebar items:**
+- My Dashboard (performance stats)
+- Active Campaigns (assigned questionnaires)
+- Log Survey Call (entry form)
+- My Call History (past survey calls)
+
+**Admin sidebar:**
+- Add "Research" section under Admin group with:
+  - Script Builder (questionnaire creation)
+  - Campaign Manager (assign scripts to researchers)
+  - Research Insights (AI-processed findings)
+
+---
+
+## Part 2: Script Builder (Admin Tool)
+
+**Purpose:** Admins create structured questionnaires that guide researchers during calls.
+
+**New database table: `research_scripts`**
+| Column | Type | Description |
+|--------|------|-------------|
+| id | uuid PK | |
+| name | text | e.g., "Member Satisfaction Survey Q1" |
+| description | text | Purpose of the script |
+| campaign_type | text | 'satisfaction' / 'market_research' / 'retention' |
+| target_audience | text | 'existing_member' / 'former_booking' / 'rejected' |
+| questions | jsonb | Array of structured question objects |
+| is_active | boolean | |
+| created_by | uuid FK | |
+| created_at / updated_at | timestamptz | |
+
+**Question structure (JSONB):**
+```text
+{
+  "order": 1,
+  "question": "On a scale of 1-10, how likely are you to recommend PadSplit?",
+  "type": "scale" | "open_ended" | "multiple_choice" | "yes_no",
+  "options": ["Very Satisfied", "Satisfied", ...],  // for multiple_choice
+  "required": true,
+  "ai_extraction_hint": "nps_score"  // tells AI what to extract
+}
+```
+
+**UI: Script Builder page (`/research/scripts`)**
+- Card-based list of existing scripts with campaign type badges
+- Create/Edit dialog with:
+  - Name, description, campaign type, target audience selectors
+  - Drag-and-drop question builder (add/reorder/delete questions)
+  - Question type selector (scale, open-ended, multiple choice, yes/no)
+  - Preview mode showing the script as the researcher would see it
+  - AI extraction hints (optional, for advanced users)
+
+---
+
+## Part 3: Campaign Manager
+
+**New database table: `research_campaigns`**
+| Column | Type | Description |
+|--------|------|-------------|
+| id | uuid PK | |
+| name | text | e.g., "Q1 2026 NPS Survey" |
+| script_id | uuid FK | Links to research_scripts |
+| status | text | 'draft' / 'active' / 'completed' / 'paused' |
+| target_count | int | Goal number of calls |
+| start_date / end_date | date | |
+| assigned_researchers | uuid[] | Array of researcher user IDs |
+| created_by | uuid FK | |
+| created_at / updated_at | timestamptz | |
+
+**UI: Campaign Manager page (`/research/campaigns`)**
+- Campaign cards showing progress (calls made / target)
+- Create campaign: select script, assign researchers, set targets/dates
+- Status management (activate, pause, complete)
+
+---
+
+## Part 4: Survey Call Logging (Researcher UI)
+
+**New database table: `research_calls`**
+| Column | Type | Description |
+|--------|------|-------------|
+| id | uuid PK | |
+| campaign_id | uuid FK | |
+| researcher_id | uuid FK | profiles.id |
+| caller_type | text | 'existing_member' / 'former_booking' / 'rejected' |
+| caller_name | text | |
+| caller_phone | text | |
+| caller_status | text | Original booking status if applicable |
+| original_booking_id | uuid FK (nullable) | Link to bookings table |
+| call_date | date | |
+| call_duration_seconds | int | |
+| call_outcome | text | 'completed' / 'no_answer' / 'refused' / 'callback_requested' / 'transferred' |
+| transferred_to_agent_id | uuid FK (nullable) | For transfer tracking |
+| transfer_notes | text | |
+| responses | jsonb | Structured answers keyed by question order |
+| researcher_notes | text | Free-form notes |
+| kixie_link | text | Call recording URL |
+| transcription_status | text | Same pattern as bookings |
+| call_transcription | text | |
+| call_summary | text | |
+| ai_analysis | jsonb | AI-extracted insights |
+| created_at | timestamptz | |
+
+**UI: Log Survey Call page (`/research/log-call`)**
+- Campaign selector (only active campaigns assigned to this researcher)
+- Loads the associated script as a guided form
+- Caller info fields (name, phone, type)
+- Script questions rendered dynamically by type:
+  - Scale: slider or number input
+  - Open-ended: text area
+  - Multiple choice: radio/checkbox group
+  - Yes/No: toggle
+- Call outcome selector
+- Transfer option: if selected, shows agent picker and transfer notes
+- Kixie link field for recording
+- Submit logs the call and triggers auto-transcription if link provided
+
+---
+
+## Part 5: Transfer Tracking
+
+When a researcher selects "Transferred" as the call outcome:
+- They select the target booking agent from a dropdown
+- Add optional transfer notes
+- The system logs this in `research_calls.transferred_to_agent_id`
+- A `research_transfers` view (or query) joins `research_calls` with `bookings` created by the target agent within 24 hours of the transfer, enabling attribution reporting
+
+**Performance metrics for researchers:**
+- Calls completed per day/week
+- Completion rate (completed vs total attempts)
+- Transfer rate and transfer success rate
+- Campaign progress (% of target reached)
+- Average call duration
+
+---
+
+## Part 6: AI Analysis Pipeline
+
+**New edge function: `analyze-research-calls`**
+- Triggered after transcription completes (same pattern as booking analysis)
+- Uses the script's `ai_extraction_hint` fields to guide extraction
+- Produces structured output per call:
+  - NPS score (if applicable)
+  - Sentiment (positive/neutral/negative)
+  - Key themes/concerns extracted
+  - Competitor mentions
+  - Feature requests
+  - Churn risk indicators (for retention calls)
+  - Verbatim quotes worth highlighting
+
+**New edge function: `aggregate-research-insights`**
+- Processes all completed research calls for a campaign
+- Groups findings by caller_type and campaign_type
+- Produces aggregated insights:
+  - Average NPS by segment
+  - Top concerns/themes ranked by frequency
+  - Sentiment distribution
+  - Competitor landscape
+  - Actionable recommendations
+- Stores results in a `research_insights` table (cached, similar to `market_intelligence_cache`)
+
+---
+
+## Part 7: Research Insights Dashboard
+
+**UI: Research Insights page (`/research/insights`) -- Admin/SuperAdmin only**
+
+**Layout:**
+- Campaign selector at top
+- Summary KPI cards:
+  - Total Calls | Completion Rate | Avg NPS | Sentiment Score
+- Tabs by caller type:
+  - "Existing Members" | "Former Bookings" | "Rejected Leads"
+
+**Each tab shows:**
+- Sentiment distribution chart (pie/bar)
+- Top concerns/themes (ranked list with frequency bars)
+- NPS trend over time (line chart, for satisfaction campaigns)
+- Competitor mentions (word cloud or frequency table)
+- Feature requests (categorized list)
+- Key verbatim quotes panel
+- AI-generated recommendations panel
+
+---
+
+## Part 8: Market Intelligence Integration
+
+**Add a "Research Summary" widget to the existing Market Intelligence page:**
+- A collapsible card below the State Heat Table
+- Shows latest research campaign results at a glance:
+  - Active campaigns count
+  - Latest NPS score
+  - Top 3 concerns from research
+  - Link to full Research Insights page
+- Only visible to admin/super_admin
+- Does not modify any existing Market Intelligence logic
+
+---
+
+## Part 9: Routing and Navigation
+
+**New routes (all protected):**
+| Route | Role | Component |
+|-------|------|-----------|
+| `/research/dashboard` | researcher | ResearchDashboard |
+| `/research/campaigns` | researcher | MyCampaigns |
+| `/research/log-call` | researcher | LogSurveyCall |
+| `/research/history` | researcher | MyCallHistory |
+| `/research/scripts` | super_admin, admin | ScriptBuilder |
+| `/research/manage-campaigns` | super_admin, admin | CampaignManager |
+| `/research/insights` | super_admin, admin | ResearchInsights |
+
+**Researcher login redirect:** Researchers land on `/research/dashboard` after login (handled in `ProtectedRoute`).
+
+---
+
+## Part 10: Database Security
+
+**RLS policies for all new tables:**
+- `research_scripts`: admin/super_admin can CRUD; researchers can SELECT active scripts for their assigned campaigns
+- `research_campaigns`: admin/super_admin can CRUD; researchers can SELECT campaigns they're assigned to
+- `research_calls`: researchers can INSERT/SELECT their own calls; admin/super_admin can SELECT all
+- `research_insights`: admin/super_admin can SELECT; researchers have no access
+
+---
+
+## Implementation Sequence
+
+1. **Database first**: Add researcher to enum, create tables (research_scripts, research_campaigns, research_calls, research_insights), RLS policies
+2. **Role and auth**: Update TypeScript types, AuthContext, ProtectedRoute redirects
+3. **Research layout**: Create ResearchSidebar + ResearchLayout components
+4. **Script Builder**: Admin page for creating questionnaires
+5. **Campaign Manager**: Admin page for managing campaigns and assigning researchers
+6. **Survey Call Form**: Researcher's guided call logging form
+7. **Researcher Dashboard**: Performance stats for the researcher
+8. **AI Pipeline**: analyze-research-calls and aggregate-research-insights edge functions
+9. **Research Insights Dashboard**: Admin analytics page
+10. **Market Intelligence widget**: Summary card on existing page
+
+Each step is independently testable and can be built incrementally without affecting existing booking agent functionality.
+
