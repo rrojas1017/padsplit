@@ -177,7 +177,9 @@ export function useResearchCalls() {
     }
 
     setIsSubmitting(true);
-    const { error } = await supabase.from('research_calls').insert({
+    
+    // Step 1: Insert into research_calls
+    const { data: researchCallData, error } = await supabase.from('research_calls').insert({
       campaign_id: submission.campaign_id,
       researcher_id: user.id,
       caller_name: submission.caller_name,
@@ -190,16 +192,48 @@ export function useResearchCalls() {
       transfer_notes: submission.transfer_notes || null,
       responses: (submission.responses || null) as Json,
       researcher_notes: submission.researcher_notes || null,
-    });
-
-    setIsSubmitting(false);
+    }).select('id').single();
 
     if (error) {
+      setIsSubmitting(false);
       console.error('Error submitting call:', error);
       toast.error('Failed to submit call');
       return false;
     }
 
+    // Step 2: Also insert into bookings table for centralized reporting
+    try {
+      // Get any valid agent_id (required field) - use first available agent
+      const { data: anyAgent } = await supabase
+        .from('agents')
+        .select('id')
+        .eq('active', true)
+        .limit(1)
+        .single();
+
+      if (anyAgent) {
+        const today = new Date().toISOString().split('T')[0];
+        await supabase.from('bookings').insert({
+          record_type: 'research',
+          research_call_id: researchCallData.id,
+          member_name: submission.caller_name,
+          booking_date: today,
+          move_in_date: today, // Required column, displayed as "--" for research
+          booking_type: 'Research',
+          status: 'Research',
+          agent_id: anyAgent.id,
+          contact_phone: submission.caller_phone || null,
+          created_by: user.id,
+          notes: submission.researcher_notes || null,
+          call_duration_seconds: submission.call_duration_seconds || null,
+        });
+      }
+    } catch (bookingErr) {
+      // Non-fatal: research call was saved, just log the booking insert failure
+      console.error('Error creating booking record for research call:', bookingErr);
+    }
+
+    setIsSubmitting(false);
     toast.success('Call logged successfully');
     await Promise.all([fetchMyCampaigns(), fetchMyCalls()]);
     return true;

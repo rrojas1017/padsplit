@@ -23,6 +23,7 @@ export interface ReportsFilters {
   recordDateRange: DateRange;
   moveInDateRange: DateRange;
   importBatchFilter: string; // 'all' | 'manual' | specific batch ID
+  recordTypeFilter: 'all' | 'booking' | 'research';
   siteId: string;
   status: string;
   bookingType: string;
@@ -188,6 +189,8 @@ export function useReportsData(
           email_verified_at,
           email_verification_status,
           has_valid_conversation,
+          record_type,
+          research_call_id,
           booking_transcriptions (
             call_transcription,
             call_summary,
@@ -212,6 +215,13 @@ export function useReportsData(
       }
       if (filters.moveInDateRange.to) {
         query = query.lte('move_in_date', format(endOfDay(filters.moveInDateRange.to), 'yyyy-MM-dd'));
+      }
+
+      // Apply record type filter
+      if (filters.recordTypeFilter === 'booking') {
+        query = query.eq('record_type', 'booking');
+      } else if (filters.recordTypeFilter === 'research') {
+        query = query.eq('record_type', 'research');
       }
 
       // Apply import batch filter
@@ -328,6 +338,8 @@ export function useReportsData(
           emailVerifiedAt: row.email_verified_at ? new Date(row.email_verified_at) : undefined,
           emailVerificationStatus: row.email_verification_status as Booking['emailVerificationStatus'],
           hasValidConversation: row.has_valid_conversation,
+          recordType: (row as any).record_type as 'booking' | 'research' | undefined,
+          researchCallId: (row as any).research_call_id || undefined,
         };
       });
 

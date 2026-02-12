@@ -88,13 +88,13 @@ export interface Booking {
   moveInDate: Date;
   bookingDate: Date;
   memberName: string;
-  bookingType: 'Inbound' | 'Outbound' | 'Referral';
+  bookingType: 'Inbound' | 'Outbound' | 'Referral' | 'Research';
   agentId: string;
   agentName: string;
   marketCity: string;
   marketState: string;
   communicationMethod: 'Phone' | 'SMS' | 'LC' | 'Email';
-  status: 'Pending Move-In' | 'Moved In' | 'Member Rejected' | 'No Show' | 'Cancelled' | 'Postponed' | 'Non Booking';
+  status: 'Pending Move-In' | 'Moved In' | 'Member Rejected' | 'No Show' | 'Cancelled' | 'Postponed' | 'Non Booking' | 'Research';
   notes?: string;
   hubspotLink?: string;
   kixieLink?: string;
@@ -127,6 +127,9 @@ export interface Booking {
   emailVerificationStatus?: 'valid' | 'invalid' | 'disposable' | 'catch_all' | 'unknown' | null;
   // Conversation validity flag - detects voicemails/failed connections
   hasValidConversation?: boolean | null;
+  // Research record fields
+  recordType?: 'booking' | 'research';
+  researchCallId?: string;
 }
 
 export interface DailyMetrics {
