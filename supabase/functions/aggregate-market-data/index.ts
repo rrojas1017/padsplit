@@ -42,7 +42,7 @@ Deno.serve(async (req) => {
 
     if (cached) {
       const age = Date.now() - new Date(cached.generated_at).getTime();
-      if (age < 15 * 60 * 1000) {
+      if (age < 30 * 60 * 1000) {
         return new Response(JSON.stringify({
           stateData: cached.state_data,
           cityData: cached.city_data,
@@ -75,18 +75,25 @@ Deno.serve(async (req) => {
     // Fetch transcription key points
     const bookingIds = (bookings || []).map(b => b.id);
     
-    // Fetch in chunks of 100 to avoid URL length limits (UUIDs are 36 chars each)
-    const TRANS_CHUNK = 100;
-    const allTranscriptions: any[] = [];
+    // Fetch in chunks of 500 in parallel
+    const TRANS_CHUNK = 500;
+    const chunks: string[][] = [];
     for (let i = 0; i < bookingIds.length; i += TRANS_CHUNK) {
-      const chunk = bookingIds.slice(i, i + TRANS_CHUNK);
-      const { data: trans, error: transErr } = await supabase
-        .from("booking_transcriptions")
-        .select("booking_id, call_key_points")
-        .in("booking_id", chunk);
-      if (transErr) console.error(`Transcription chunk ${i} error:`, transErr.message);
-      if (trans) allTranscriptions.push(...trans);
+      chunks.push(bookingIds.slice(i, i + TRANS_CHUNK));
     }
+    const chunkResults = await Promise.all(
+      chunks.map((chunk, idx) =>
+        supabase
+          .from("booking_transcriptions")
+          .select("booking_id, call_key_points")
+          .in("booking_id", chunk)
+          .then(({ data, error }) => {
+            if (error) console.error(`Transcription chunk ${idx} error:`, error.message);
+            return data || [];
+          })
+      )
+    );
+    const allTranscriptions = chunkResults.flat();
 
     console.log(`Fetched ${allTranscriptions.length} transcriptions in ${Math.ceil(bookingIds.length / TRANS_CHUNK)} chunks`);
 
