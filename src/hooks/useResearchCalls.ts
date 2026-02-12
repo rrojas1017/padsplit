@@ -15,6 +15,9 @@ export interface ResearchCallCampaign {
     id: string;
     name: string;
     questions: ScriptQuestion[];
+    intro_script: string | null;
+    rebuttal_script: string | null;
+    closing_script: string | null;
   };
   completed_calls: number;
 }
@@ -72,7 +75,7 @@ export function useResearchCalls() {
 
     const { data, error } = await supabase
       .from('research_campaigns')
-      .select('*, research_scripts(id, name, questions)')
+      .select('*, research_scripts(id, name, questions, intro_script, rebuttal_script, closing_script)')
       .contains('assigned_researchers', [user.id])
       .order('created_at', { ascending: false });
 
@@ -110,6 +113,9 @@ export function useResearchCalls() {
         id: c.research_scripts.id,
         name: c.research_scripts.name,
         questions: (c.research_scripts.questions || []) as ScriptQuestion[],
+        intro_script: c.research_scripts.intro_script || null,
+        rebuttal_script: c.research_scripts.rebuttal_script || null,
+        closing_script: c.research_scripts.closing_script || null,
       } : undefined,
       completed_calls: callCounts[c.id] || 0,
     }));

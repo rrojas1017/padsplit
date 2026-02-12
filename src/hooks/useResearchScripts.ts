@@ -18,6 +18,9 @@ export interface ResearchScript {
   campaign_type: string;
   target_audience: string;
   questions: ScriptQuestion[];
+  intro_script: string | null;
+  rebuttal_script: string | null;
+  closing_script: string | null;
   is_active: boolean;
   created_by: string | null;
   created_at: string;
@@ -60,6 +63,9 @@ export function useResearchScripts() {
       campaign_type: script.campaign_type,
       target_audience: script.target_audience,
       questions: script.questions as any,
+      intro_script: script.intro_script || null,
+      rebuttal_script: script.rebuttal_script || null,
+      closing_script: script.closing_script || null,
       is_active: script.is_active,
       created_by: user?.id || null,
     });
