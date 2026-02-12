@@ -1,289 +1,263 @@
 
 
-# PadSplit Research Agent Module
+# Campaign Manager Implementation Plan
 
 ## Overview
 
-A standalone module for Research Agents -- a new user role with its own simplified UI, dedicated to conducting structured phone interviews with existing members, former bookings, and rejected leads. Admins build questionnaire scripts; researchers log calls and outcomes; the AI pipeline processes recordings into actionable insights; a dedicated Research Insights dashboard surfaces findings with a summary widget on Market Intelligence.
+Build an admin-facing page (`/research/manage-campaigns`) that allows super_admin and admin users to:
+1. **Create new campaigns** by selecting a research script and assigning researchers
+2. **Manage campaign lifecycle** (draft → active → paused → completed)
+3. **Assign/reassign researchers** to campaigns
+4. **Track progress** against target call counts
+5. **Edit and delete campaigns**
 
-**Zero impact on existing booking agent flows** -- this is an additive module with its own routes, sidebar, and data tables.
+The Campaign Manager acts as the bridge between Scripts (created in Script Builder) and Call Logging (by Researchers). Once a campaign is active and assigned to a researcher, they can select it in the Log Survey Call form.
 
 ---
 
-## Architecture
+## Technical Architecture
 
-```text
-+------------------+     +-------------------+     +--------------------+
-|  Admin/SuperAdmin |     |  Researcher UI    |     |  AI Pipeline       |
-|                  |     |                   |     |                    |
-| Script Builder   |---->| My Campaigns      |     | transcribe-call    |
-| Campaign Manager |---->| Log Survey Call   |---->| (existing)         |
-| Research Insights|<----| My Performance    |     |        |           |
-|                  |     |                   |     |        v           |
-| Market Intel     |     +-------------------+     | analyze-research   |
-| (summary widget) |                               | (new edge fn)      |
-+------------------+                               +--------------------+
-                                                          |
-                                                          v
-                                                   +--------------------+
-                                                   | research_insights  |
-                                                   | (DB table)         |
-                                                   +--------------------+
+### Data Flow
+```
+Admin creates Script
+         ↓
+Admin creates Campaign
+  (selects script + assigns researchers)
+         ↓
+Campaign stored in research_campaigns table
+  with assigned_researchers UUID array
+         ↓
+Researcher sees campaign in their
+  "Active Campaigns" list and
+  uses it to log calls
 ```
 
----
-
-## Part 1: New "researcher" Role
-
-**Database changes:**
-- Add `'researcher'` to the `app_role` enum
-- No changes to `profiles` or `user_roles` table structure
-
-**Frontend changes:**
-- Add `'researcher'` to the `UserRole` type in `src/types/index.ts`
-- Update `AuthContext` role label map to include `researcher: 'Researcher'`
-- Update `ProtectedRoute` to redirect researchers to `/research/dashboard` by default
-- Create a dedicated `ResearchSidebar` component (simpler than `AppSidebar`) with only research-relevant links
-- Create a `ResearchLayout` wrapper (similar to `DashboardLayout`) that uses `ResearchSidebar`
-
-**Researcher sidebar items:**
-- My Dashboard (performance stats)
-- Active Campaigns (assigned questionnaires)
-- Log Survey Call (entry form)
-- My Call History (past survey calls)
-
-**Admin sidebar:**
-- Add "Research" section under Admin group with:
-  - Script Builder (questionnaire creation)
-  - Campaign Manager (assign scripts to researchers)
-  - Research Insights (AI-processed findings)
+### Key Relationships
+- **research_campaigns → research_scripts**: Campaign links to one script (foreign key)
+- **research_campaigns.assigned_researchers**: Array of researcher user IDs from profiles table
+- **RLS Security**: Admins can CRUD all campaigns; researchers can only SELECT campaigns they're assigned to
 
 ---
 
-## Part 2: Script Builder (Admin Tool)
+## Part 1: New Hook - `useResearchCampaigns.ts`
 
-**Purpose:** Admins create structured questionnaires that guide researchers during calls.
+**Purpose**: Manage campaign CRUD operations and data fetching
 
-**New database table: `research_scripts`**
-| Column | Type | Description |
-|--------|------|-------------|
-| id | uuid PK | |
-| name | text | e.g., "Member Satisfaction Survey Q1" |
-| description | text | Purpose of the script |
-| campaign_type | text | 'satisfaction' / 'market_research' / 'retention' |
-| target_audience | text | 'existing_member' / 'former_booking' / 'rejected' |
-| questions | jsonb | Array of structured question objects |
-| is_active | boolean | |
-| created_by | uuid FK | |
-| created_at / updated_at | timestamptz | |
+**Operations**:
+- `fetchCampaigns()`: Query all campaigns with related script data
+- `createCampaign()`: Insert new campaign record
+- `updateCampaign()`: Update campaign details (name, status, dates, researchers, targets)
+- `deleteCampaign()`: Delete campaign (must check for orphaned calls first)
+- Fetch researchers list for multiselect dropdowns (query profiles table for users with 'researcher' role)
 
-**Question structure (JSONB):**
-```text
-{
-  "order": 1,
-  "question": "On a scale of 1-10, how likely are you to recommend PadSplit?",
-  "type": "scale" | "open_ended" | "multiple_choice" | "yes_no",
-  "options": ["Very Satisfied", "Satisfied", ...],  // for multiple_choice
-  "required": true,
-  "ai_extraction_hint": "nps_score"  // tells AI what to extract
+**State**:
+```typescript
+campaigns: ResearchCampaign[]
+isLoading: boolean
+researchers: ResearcherProfile[]
+```
+
+**Error handling**: Toast notifications for failures; prevent deletion if campaign has active calls
+
+---
+
+## Part 2: New Component - `ResearchCampaignDialog.tsx`
+
+**Purpose**: Modal dialog for creating/editing campaigns
+
+**Features**:
+- **Script selector**: Dropdown to choose which script this campaign uses (required)
+- **Campaign metadata**: Name, description, status, dates
+- **Target settings**: target_count (goal number of calls)
+- **Researcher assignment**: Multi-select dropdown of available researchers with "researcher" role
+  - Shows researcher name + email
+  - Allow selecting multiple researchers
+  - Display selected researchers as removable badges
+- **Date range**: Optional start_date and end_date
+- **Status selector**: draft / active / paused / completed
+- **Form validation**:
+  - Name is required
+  - Script must be selected
+  - At least one researcher must be assigned
+  - End date must be after start date (if both provided)
+  - Target count must be > 0
+- **Save/Update logic**: Prepare payload with assigned_researchers as UUID array
+
+**UI Pattern**: Match ResearchScriptDialog (same dialog size, field layout, validation feedback)
+
+---
+
+## Part 3: Campaign Manager Page - `src/pages/research/CampaignManager.tsx`
+
+**Replace the stub** with functional dashboard
+
+**Layout**:
+1. **Header** with title, subtitle, "New Campaign" button
+2. **Filter/Search bar**:
+   - Status filter (All / Draft / Active / Paused / Completed)
+   - Optional search by campaign name
+3. **Campaign cards grid** (similar to Script Builder):
+   - Card shows:
+     - Campaign name + script name (linked, for context)
+     - Status badge (color-coded: blue=draft, green=active, yellow=paused, gray=completed)
+     - Progress bar: "X / Y calls completed" (show completed calls from research_calls table)
+     - Date range (if set)
+     - Target count
+     - Number of assigned researchers
+     - Action buttons: Edit, Delete, View Details (hover actions)
+4. **Empty state**: "No campaigns found" with CTA to create first campaign
+5. **Loading skeletons** while fetching
+
+**Details on card interactions**:
+- **Edit**: Click edit icon → opens ResearchCampaignDialog with populated data
+- **Delete**: Click trash icon → confirmation dialog → delete if no active calls
+- **Status management**: Show status selector inline or in edit dialog (quick-toggle or full edit)
+- **Progress tracking**: Query research_calls table to count completed calls for this campaign
+
+---
+
+## Part 4: Progress Calculation Logic
+
+**Query pattern** (in hook or utility):
+```typescript
+// For each campaign, count calls by outcome
+const callStats = await supabase
+  .from('research_calls')
+  .select('call_outcome', { count: 'exact' })
+  .eq('campaign_id', campaignId)
+  .eq('call_outcome', 'completed');
+
+// Display: "15 / 50 calls completed"
+```
+
+This data is **not stored** but **calculated on-the-fly** from research_calls, enabling real-time progress tracking.
+
+---
+
+## Part 5: Researcher Selector Implementation
+
+**Fetch researchers**:
+```typescript
+// Get all users with 'researcher' role
+const researchersData = await supabase
+  .from('profiles')
+  .select('id, name, email')
+  .in('id', (await getResearcherIds())); // filtered by user_roles table
+```
+
+**Or simpler**: Query profiles where they have a researcher role (join with user_roles if needed)
+
+**Multi-select UI**:
+- Dropdown showing list of researchers (name + email)
+- Selected researchers shown as blue badges with × to remove
+- Minimum 1 required validation
+
+---
+
+## Part 6: Integration Points
+
+### With Script Builder
+- Campaign must reference a valid script_id
+- If a script is deleted, campaigns using it should show a warning/be marked as invalid
+- Admin can still edit the campaign but cannot select that script again
+
+### With Log Survey Call (Future)
+- When a researcher logs in and selects a campaign, the form loads the associated script automatically
+- Only "active" campaigns appear in the researcher's campaign dropdown
+
+### With Research Calls Table
+- Each call is tagged with campaign_id, enabling attribution
+- Enables progress tracking and insights aggregation
+
+---
+
+## Part 7: Database Considerations
+
+**research_campaigns table (already created)**:
+- `name`: Campaign title
+- `script_id`: FK to research_scripts
+- `status`: 'draft' | 'active' | 'paused' | 'completed'
+- `target_count`: Goal number of calls (e.g., 50)
+- `start_date`, `end_date`: Campaign period
+- `assigned_researchers`: UUID array of researcher IDs
+- `created_by`: Who created the campaign
+- `created_at`, `updated_at`: Timestamps
+
+**RLS is already in place**:
+- Admins can manage all campaigns
+- Researchers can view only campaigns they're assigned to
+
+---
+
+## Part 8: User Experience Flow
+
+1. **Admin navigates to** `/research/manage-campaigns`
+2. **Sees existing campaigns** with progress bars and status badges
+3. **Clicks "New Campaign"** → Dialog opens
+4. **Selects a script** (e.g., "Q1 Member Satisfaction Survey")
+5. **Fills in campaign metadata** (name: "January NPS Check", target: 100 calls)
+6. **Selects researchers** (e.g., Sarah, Michael, Jessica)
+7. **Sets dates** (Jan 1 - Jan 31)
+8. **Saves** → Campaign created, assigned researchers can now see it in their "Active Campaigns"
+9. **Can edit later** to adjust target, dates, or researcher assignments
+10. **Can delete** (with warning if calls already logged)
+
+---
+
+## Part 9: Implementation Order
+
+1. Create `useResearchCampaigns.ts` hook with all CRUD + data fetching
+2. Create `ResearchCampaignDialog.tsx` component
+3. Replace `src/pages/research/CampaignManager.tsx` stub with full page
+4. Add researcher role validation and filtering
+5. Test end-to-end: create campaign → verify researcher can see it in dropdown
+
+---
+
+## Part 10: Technical Details
+
+**TypeScript interfaces** (add to hook or types file):
+```typescript
+export interface ResearchCampaign {
+  id: string;
+  name: string;
+  script_id: string;
+  script_name?: string; // For display
+  status: 'draft' | 'active' | 'paused' | 'completed';
+  target_count: number;
+  start_date: string | null;
+  end_date: string | null;
+  assigned_researchers: string[]; // UUID array
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+  completed_calls?: number; // Calculated, not stored
+}
+
+export interface ResearcherProfile {
+  id: string;
+  name: string | null;
+  email: string | null;
 }
 ```
 
-**UI: Script Builder page (`/research/scripts`)**
-- Card-based list of existing scripts with campaign type badges
-- Create/Edit dialog with:
-  - Name, description, campaign type, target audience selectors
-  - Drag-and-drop question builder (add/reorder/delete questions)
-  - Question type selector (scale, open-ended, multiple choice, yes/no)
-  - Preview mode showing the script as the researcher would see it
-  - AI extraction hints (optional, for advanced users)
+**Key validation rules**:
+- Campaign name required and non-empty
+- Script selection required
+- At least 1 researcher required
+- target_count must be > 0
+- end_date > start_date (if both provided)
+- Cannot delete campaign with active calls (status = 'completed' or show warning)
 
 ---
 
-## Part 3: Campaign Manager
+## Summary
 
-**New database table: `research_campaigns`**
-| Column | Type | Description |
-|--------|------|-------------|
-| id | uuid PK | |
-| name | text | e.g., "Q1 2026 NPS Survey" |
-| script_id | uuid FK | Links to research_scripts |
-| status | text | 'draft' / 'active' / 'completed' / 'paused' |
-| target_count | int | Goal number of calls |
-| start_date / end_date | date | |
-| assigned_researchers | uuid[] | Array of researcher user IDs |
-| created_by | uuid FK | |
-| created_at / updated_at | timestamptz | |
+The Campaign Manager enables admins to:
+- **Organize research efforts** into campaigns with clear goals
+- **Assign researchers** to specific initiatives
+- **Track progress** in real-time via call counts
+- **Manage lifecycle** (draft → active → paused → completed)
 
-**UI: Campaign Manager page (`/research/campaigns`)**
-- Campaign cards showing progress (calls made / target)
-- Create campaign: select script, assign researchers, set targets/dates
-- Status management (activate, pause, complete)
-
----
-
-## Part 4: Survey Call Logging (Researcher UI)
-
-**New database table: `research_calls`**
-| Column | Type | Description |
-|--------|------|-------------|
-| id | uuid PK | |
-| campaign_id | uuid FK | |
-| researcher_id | uuid FK | profiles.id |
-| caller_type | text | 'existing_member' / 'former_booking' / 'rejected' |
-| caller_name | text | |
-| caller_phone | text | |
-| caller_status | text | Original booking status if applicable |
-| original_booking_id | uuid FK (nullable) | Link to bookings table |
-| call_date | date | |
-| call_duration_seconds | int | |
-| call_outcome | text | 'completed' / 'no_answer' / 'refused' / 'callback_requested' / 'transferred' |
-| transferred_to_agent_id | uuid FK (nullable) | For transfer tracking |
-| transfer_notes | text | |
-| responses | jsonb | Structured answers keyed by question order |
-| researcher_notes | text | Free-form notes |
-| kixie_link | text | Call recording URL |
-| transcription_status | text | Same pattern as bookings |
-| call_transcription | text | |
-| call_summary | text | |
-| ai_analysis | jsonb | AI-extracted insights |
-| created_at | timestamptz | |
-
-**UI: Log Survey Call page (`/research/log-call`)**
-- Campaign selector (only active campaigns assigned to this researcher)
-- Loads the associated script as a guided form
-- Caller info fields (name, phone, type)
-- Script questions rendered dynamically by type:
-  - Scale: slider or number input
-  - Open-ended: text area
-  - Multiple choice: radio/checkbox group
-  - Yes/No: toggle
-- Call outcome selector
-- Transfer option: if selected, shows agent picker and transfer notes
-- Kixie link field for recording
-- Submit logs the call and triggers auto-transcription if link provided
-
----
-
-## Part 5: Transfer Tracking
-
-When a researcher selects "Transferred" as the call outcome:
-- They select the target booking agent from a dropdown
-- Add optional transfer notes
-- The system logs this in `research_calls.transferred_to_agent_id`
-- A `research_transfers` view (or query) joins `research_calls` with `bookings` created by the target agent within 24 hours of the transfer, enabling attribution reporting
-
-**Performance metrics for researchers:**
-- Calls completed per day/week
-- Completion rate (completed vs total attempts)
-- Transfer rate and transfer success rate
-- Campaign progress (% of target reached)
-- Average call duration
-
----
-
-## Part 6: AI Analysis Pipeline
-
-**New edge function: `analyze-research-calls`**
-- Triggered after transcription completes (same pattern as booking analysis)
-- Uses the script's `ai_extraction_hint` fields to guide extraction
-- Produces structured output per call:
-  - NPS score (if applicable)
-  - Sentiment (positive/neutral/negative)
-  - Key themes/concerns extracted
-  - Competitor mentions
-  - Feature requests
-  - Churn risk indicators (for retention calls)
-  - Verbatim quotes worth highlighting
-
-**New edge function: `aggregate-research-insights`**
-- Processes all completed research calls for a campaign
-- Groups findings by caller_type and campaign_type
-- Produces aggregated insights:
-  - Average NPS by segment
-  - Top concerns/themes ranked by frequency
-  - Sentiment distribution
-  - Competitor landscape
-  - Actionable recommendations
-- Stores results in a `research_insights` table (cached, similar to `market_intelligence_cache`)
-
----
-
-## Part 7: Research Insights Dashboard
-
-**UI: Research Insights page (`/research/insights`) -- Admin/SuperAdmin only**
-
-**Layout:**
-- Campaign selector at top
-- Summary KPI cards:
-  - Total Calls | Completion Rate | Avg NPS | Sentiment Score
-- Tabs by caller type:
-  - "Existing Members" | "Former Bookings" | "Rejected Leads"
-
-**Each tab shows:**
-- Sentiment distribution chart (pie/bar)
-- Top concerns/themes (ranked list with frequency bars)
-- NPS trend over time (line chart, for satisfaction campaigns)
-- Competitor mentions (word cloud or frequency table)
-- Feature requests (categorized list)
-- Key verbatim quotes panel
-- AI-generated recommendations panel
-
----
-
-## Part 8: Market Intelligence Integration
-
-**Add a "Research Summary" widget to the existing Market Intelligence page:**
-- A collapsible card below the State Heat Table
-- Shows latest research campaign results at a glance:
-  - Active campaigns count
-  - Latest NPS score
-  - Top 3 concerns from research
-  - Link to full Research Insights page
-- Only visible to admin/super_admin
-- Does not modify any existing Market Intelligence logic
-
----
-
-## Part 9: Routing and Navigation
-
-**New routes (all protected):**
-| Route | Role | Component |
-|-------|------|-----------|
-| `/research/dashboard` | researcher | ResearchDashboard |
-| `/research/campaigns` | researcher | MyCampaigns |
-| `/research/log-call` | researcher | LogSurveyCall |
-| `/research/history` | researcher | MyCallHistory |
-| `/research/scripts` | super_admin, admin | ScriptBuilder |
-| `/research/manage-campaigns` | super_admin, admin | CampaignManager |
-| `/research/insights` | super_admin, admin | ResearchInsights |
-
-**Researcher login redirect:** Researchers land on `/research/dashboard` after login (handled in `ProtectedRoute`).
-
----
-
-## Part 10: Database Security
-
-**RLS policies for all new tables:**
-- `research_scripts`: admin/super_admin can CRUD; researchers can SELECT active scripts for their assigned campaigns
-- `research_campaigns`: admin/super_admin can CRUD; researchers can SELECT campaigns they're assigned to
-- `research_calls`: researchers can INSERT/SELECT their own calls; admin/super_admin can SELECT all
-- `research_insights`: admin/super_admin can SELECT; researchers have no access
-
----
-
-## Implementation Sequence
-
-1. **Database first**: Add researcher to enum, create tables (research_scripts, research_campaigns, research_calls, research_insights), RLS policies
-2. **Role and auth**: Update TypeScript types, AuthContext, ProtectedRoute redirects
-3. **Research layout**: Create ResearchSidebar + ResearchLayout components
-4. **Script Builder**: Admin page for creating questionnaires
-5. **Campaign Manager**: Admin page for managing campaigns and assigning researchers
-6. **Survey Call Form**: Researcher's guided call logging form
-7. **Researcher Dashboard**: Performance stats for the researcher
-8. **AI Pipeline**: analyze-research-calls and aggregate-research-insights edge functions
-9. **Research Insights Dashboard**: Admin analytics page
-10. **Market Intelligence widget**: Summary card on existing page
-
-Each step is independently testable and can be built incrementally without affecting existing booking agent functionality.
+This is the prerequisite for researchers being able to log calls, as it links Scripts → Campaigns → Call Logging.
 
