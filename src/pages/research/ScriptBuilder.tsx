@@ -5,9 +5,11 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
-import { Plus, Pencil, Trash2, FileText, ClipboardList, Eye, ToggleLeft, ToggleRight } from 'lucide-react';
+import { Plus, Pencil, Trash2, FileText, ClipboardList, Eye, Upload, Play } from 'lucide-react';
 import { useResearchScripts, type ResearchScript, type ScriptQuestion } from '@/hooks/useResearchScripts';
 import { ResearchScriptDialog } from '@/components/research/ResearchScriptDialog';
+import { ResearchScriptImportDialog } from '@/components/research/ResearchScriptImportDialog';
+import { ScriptTesterDialog } from '@/components/research/ScriptTesterDialog';
 import { Skeleton } from '@/components/ui/skeleton';
 
 const CAMPAIGN_TYPE_LABELS: Record<string, string> = {
@@ -22,20 +24,17 @@ const AUDIENCE_LABELS: Record<string, string> = {
   rejected: 'Rejected Leads',
 };
 
-const QUESTION_TYPE_LABELS: Record<string, string> = {
-  scale: 'Scale (1-10)',
-  open_ended: 'Open Ended',
-  multiple_choice: 'Multiple Choice',
-  yes_no: 'Yes/No',
-};
-
 export default function ScriptBuilder() {
   const { scripts, isLoading, createScript, updateScript, deleteScript } = useResearchScripts();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingScript, setEditingScript] = useState<ResearchScript | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<ResearchScript | null>(null);
-  const [previewScript, setPreviewScript] = useState<ResearchScript | null>(null);
   const [filterType, setFilterType] = useState('all');
+  const [importOpen, setImportOpen] = useState(false);
+  const [testScript, setTestScript] = useState<ResearchScript | null>(null);
+
+  // State for pre-populating dialog from AI import
+  const [importedData, setImportedData] = useState<any>(null);
 
   const filtered = filterType === 'all' ? scripts : scripts.filter(s => s.campaign_type === filterType);
 
@@ -53,14 +52,25 @@ export default function ScriptBuilder() {
     setDeleteTarget(null);
   };
 
+  const handleImported = (data: any) => {
+    setImportedData(data);
+    setEditingScript(null);
+    setDialogOpen(true);
+  };
+
   return (
     <DashboardLayout
       title="Script Builder"
       subtitle="Create questionnaires for research campaigns"
       actions={
-        <Button onClick={() => { setEditingScript(null); setDialogOpen(true); }}>
-          <Plus className="w-4 h-4 mr-2" /> New Script
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={() => setImportOpen(true)}>
+            <Upload className="w-4 h-4 mr-2" /> Import from Document
+          </Button>
+          <Button onClick={() => { setEditingScript(null); setImportedData(null); setDialogOpen(true); }}>
+            <Plus className="w-4 h-4 mr-2" /> New Script
+          </Button>
+        </div>
       }
     >
       <div className="space-y-6">
@@ -94,10 +104,15 @@ export default function ScriptBuilder() {
           <div className="text-center py-16">
             <ClipboardList className="w-14 h-14 mx-auto mb-4 text-muted-foreground/50" />
             <h3 className="text-lg font-medium mb-1">No scripts found</h3>
-            <p className="text-sm text-muted-foreground mb-4">Create a questionnaire to guide researchers during calls</p>
-            <Button onClick={() => { setEditingScript(null); setDialogOpen(true); }}>
-              <Plus className="w-4 h-4 mr-2" /> Create First Script
-            </Button>
+            <p className="text-sm text-muted-foreground mb-4">Create a questionnaire or import from a Word document</p>
+            <div className="flex gap-2 justify-center">
+              <Button variant="outline" onClick={() => setImportOpen(true)}>
+                <Upload className="w-4 h-4 mr-2" /> Import from Document
+              </Button>
+              <Button onClick={() => { setEditingScript(null); setImportedData(null); setDialogOpen(true); }}>
+                <Plus className="w-4 h-4 mr-2" /> Create First Script
+              </Button>
+            </div>
           </div>
         )}
 
@@ -120,13 +135,13 @@ export default function ScriptBuilder() {
                       </div>
                     </div>
                     <div className="flex gap-0.5 shrink-0">
-                      <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setPreviewScript(script)}>
-                        <Eye className="w-4 h-4" />
+                      <Button variant="ghost" size="icon" className="h-8 w-8" title="Test Script" onClick={() => setTestScript(script)}>
+                        <Play className="w-4 h-4" />
                       </Button>
-                      <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => { setEditingScript(script); setDialogOpen(true); }}>
+                      <Button variant="ghost" size="icon" className="h-8 w-8" title="Edit" onClick={() => { setEditingScript(script); setImportedData(null); setDialogOpen(true); }}>
                         <Pencil className="w-4 h-4" />
                       </Button>
-                      <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setDeleteTarget(script)}>
+                      <Button variant="ghost" size="icon" className="h-8 w-8" title="Delete" onClick={() => setDeleteTarget(script)}>
                         <Trash2 className="w-4 h-4 text-destructive" />
                       </Button>
                     </div>
@@ -153,10 +168,27 @@ export default function ScriptBuilder() {
       {/* Create/Edit dialog */}
       <ResearchScriptDialog
         open={dialogOpen}
-        onOpenChange={setDialogOpen}
+        onOpenChange={(v) => { setDialogOpen(v); if (!v) setImportedData(null); }}
         script={editingScript}
         onSave={handleSave}
+        importedData={importedData}
       />
+
+      {/* Import dialog */}
+      <ResearchScriptImportDialog
+        open={importOpen}
+        onOpenChange={setImportOpen}
+        onImported={handleImported}
+      />
+
+      {/* Test Script dialog */}
+      {testScript && (
+        <ScriptTesterDialog
+          open={!!testScript}
+          onOpenChange={(v) => { if (!v) setTestScript(null); }}
+          script={testScript}
+        />
+      )}
 
       {/* Delete confirmation */}
       <AlertDialog open={!!deleteTarget} onOpenChange={() => setDeleteTarget(null)}>
@@ -175,113 +207,6 @@ export default function ScriptBuilder() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-
-      {/* Preview dialog */}
-      {previewScript && (
-        <PreviewDialog script={previewScript} onClose={() => setPreviewScript(null)} />
-      )}
     </DashboardLayout>
-  );
-}
-
-function PreviewDialog({ script, onClose }: { script: ResearchScript; onClose: () => void }) {
-  return (
-    <AlertDialog open onOpenChange={onClose}>
-      <AlertDialogContent className="max-w-lg max-h-[80vh] overflow-y-auto">
-        <AlertDialogHeader>
-          <AlertDialogTitle className="flex items-center gap-2">
-            <Eye className="w-5 h-5" />
-            Script Preview
-          </AlertDialogTitle>
-          <AlertDialogDescription>
-            Full call flow as the researcher will experience it
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-        <div className="space-y-4 py-2">
-          <div>
-            <h4 className="font-semibold text-sm">{script.name}</h4>
-            {script.description && <p className="text-xs text-muted-foreground mt-0.5">{script.description}</p>}
-          </div>
-
-          {/* Intro Script */}
-          {script.intro_script && (
-            <div className="border rounded-lg p-3 space-y-1 bg-primary/5">
-              <Badge variant="outline" className="text-xs">Opening Introduction</Badge>
-              <p className="text-sm whitespace-pre-wrap">{script.intro_script}</p>
-            </div>
-          )}
-
-          {/* Consent Gate */}
-          <div className="border rounded-lg p-3 space-y-2 bg-accent/30">
-            <Badge variant="outline" className="text-xs">Consent Gate</Badge>
-            <p className="text-sm italic">"May I ask you a few questions?"</p>
-            <div className="flex gap-2">
-              <Badge>Yes → Questions</Badge>
-              <Badge variant="secondary">No → Rebuttal</Badge>
-            </div>
-          </div>
-
-          {/* Questions */}
-          {script.questions.map((q, idx) => (
-            <div key={idx} className="border rounded-lg p-3 space-y-2">
-              <div className="flex items-center gap-2">
-                <Badge variant="outline" className="text-xs shrink-0">Q{q.order}</Badge>
-                <span className="text-sm font-medium">{q.question}</span>
-                {q.required && <span className="text-destructive text-xs">*</span>}
-              </div>
-              <div className="pl-8">
-                {q.type === 'scale' && (
-                  <div className="flex gap-1">
-                    {Array.from({ length: 10 }, (_, i) => (
-                      <div key={i} className="w-7 h-7 rounded border border-border flex items-center justify-center text-xs text-muted-foreground">{i + 1}</div>
-                    ))}
-                  </div>
-                )}
-                {q.type === 'yes_no' && (
-                  <div className="flex gap-2">
-                    <Badge variant="outline">Yes</Badge>
-                    <Badge variant="outline">No</Badge>
-                  </div>
-                )}
-                {q.type === 'multiple_choice' && (
-                  <div className="space-y-1">
-                    {(q.options || []).map((opt, i) => (
-                      <div key={i} className="flex items-center gap-2 text-sm">
-                        <div className="w-3 h-3 rounded-full border border-border" />
-                        {opt}
-                      </div>
-                    ))}
-                  </div>
-                )}
-                {q.type === 'open_ended' && (
-                  <div className="border border-dashed border-border rounded-md h-16 flex items-center justify-center text-xs text-muted-foreground">
-                    Free-text response (AI extracts from recording)
-                  </div>
-                )}
-              </div>
-            </div>
-          ))}
-
-          {/* Closing Script */}
-          {script.closing_script && (
-            <div className="border rounded-lg p-3 space-y-1 bg-primary/5">
-              <Badge variant="outline" className="text-xs">Closing Script</Badge>
-              <p className="text-sm whitespace-pre-wrap">{script.closing_script}</p>
-            </div>
-          )}
-
-          {/* Rebuttal Script */}
-          {script.rebuttal_script && (
-            <div className="border rounded-lg p-3 space-y-1 bg-destructive/5">
-              <Badge variant="outline" className="text-xs">Rebuttal (if declined)</Badge>
-              <p className="text-sm whitespace-pre-wrap">{script.rebuttal_script}</p>
-            </div>
-          )}
-        </div>
-        <AlertDialogFooter>
-          <AlertDialogAction onClick={onClose}>Close</AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
   );
 }

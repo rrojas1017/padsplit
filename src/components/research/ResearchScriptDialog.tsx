@@ -36,6 +36,14 @@ interface Props {
   onOpenChange: (open: boolean) => void;
   script?: ResearchScript | null;
   onSave: (data: Omit<ResearchScript, 'id' | 'created_at' | 'updated_at' | 'created_by'>) => Promise<void>;
+  importedData?: {
+    name?: string;
+    description?: string;
+    intro_script?: string;
+    rebuttal_script?: string;
+    closing_script?: string;
+    questions?: ScriptQuestion[];
+  } | null;
 }
 
 const emptyQuestion = (): ScriptQuestion => ({
@@ -47,7 +55,7 @@ const emptyQuestion = (): ScriptQuestion => ({
   ai_extraction_hint: '',
 });
 
-export function ResearchScriptDialog({ open, onOpenChange, script, onSave }: Props) {
+export function ResearchScriptDialog({ open, onOpenChange, script, onSave, importedData }: Props) {
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [campaignType, setCampaignType] = useState('satisfaction');
@@ -62,16 +70,18 @@ export function ResearchScriptDialog({ open, onOpenChange, script, onSave }: Pro
 
   useEffect(() => {
     if (open) {
-      if (script) {
-        setName(script.name);
-        setDescription(script.description || '');
-        setCampaignType(script.campaign_type);
-        setTargetAudience(script.target_audience);
-        setIsActive(script.is_active);
-        setQuestions(script.questions.length > 0 ? script.questions : [emptyQuestion()]);
-        setIntroScript(script.intro_script || '');
-        setRebuttalScript(script.rebuttal_script || '');
-        setClosingScript(script.closing_script || '');
+      const source = script || importedData;
+      if (source) {
+        setName(source.name || '');
+        setDescription(source.description || '');
+        setCampaignType((source as any).campaign_type || 'satisfaction');
+        setTargetAudience((source as any).target_audience || 'existing_member');
+        setIsActive((source as any).is_active ?? true);
+        const qs = (source as any).questions;
+        setQuestions(qs && qs.length > 0 ? qs : [emptyQuestion()]);
+        setIntroScript(source.intro_script || '');
+        setRebuttalScript(source.rebuttal_script || '');
+        setClosingScript(source.closing_script || '');
       } else {
         setName('');
         setDescription('');
@@ -85,7 +95,7 @@ export function ResearchScriptDialog({ open, onOpenChange, script, onSave }: Pro
       }
       setOptionInput({});
     }
-  }, [open, script]);
+  }, [open, script, importedData]);
 
   const addQuestion = () => {
     setQuestions(prev => [...prev, { ...emptyQuestion(), order: prev.length + 1 }]);
