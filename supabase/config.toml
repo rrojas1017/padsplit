@@ -119,3 +119,6 @@ verify_jwt = false
 
 [functions.batch-extract-lifestyle-signals]
 verify_jwt = false
+
+[functions.parse-research-script]
+verify_jwt = false
