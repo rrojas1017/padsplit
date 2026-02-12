@@ -1,32 +1,97 @@
 
 
-## Fix: Stale Cache Serving Null Budgets
+## Fix: Unknown States and Dirty Market Data
 
-### Root Cause
-The cache entry `all_all_3` was generated at 03:29 (before the transcription fix was deployed) and stored null budget values. Since the cache is valid for 30 minutes, every request returns this stale data instead of running the fixed aggregation logic.
-
-Proof the fix works: cache entry `all_all_2` was freshly computed after the fix and correctly shows `avgWeeklyBudget: 257`.
+### Problems Found
+1. **2,104 bookings (35%) have NULL `market_state`** but many have recognizable cities (Atlanta=40, Jacksonville=31, Baltimore=19, Las Vegas=17, Phoenix=17, etc.) that should map to known states
+2. **State abbreviations display as title-case** ("Tx", "Fl", "Ga") instead of proper uppercase ("TX", "FL", "GA") because the `normalizeName` function lowercases then title-cases everything
+3. **Junk state values** like "None", "Null", "Cl" (should be CO), "Ka" (should be KS), "Pe", "Vg", "Vi", "Mb" pollute the table
+4. **Multi-state entries** like "Ga, Fl", "De / Md", "Md / Dc" create extra rows
+5. **Full state names** ("Georgia", "Maryland") not merged with their abbreviations
 
 ### Solution (Two Parts)
 
-**1. Clear stale cache entries (immediate fix)**
-Delete all `market_intelligence_cache` rows where `all` is in the cache key and budgets are null. This forces fresh computation on the next request.
+#### Part 1: Database Cleanup (SQL migration)
+Run a SQL update to fix existing data in the `bookings` table:
 
-**2. Prevent future stale cache issues**
-- Change `.single()` to `.maybeSingle()` on the cache lookup (line 41) to prevent errors when no cache entry exists
-- Reduce cache TTL from 30 minutes to 15 minutes to match the original design intent (the comment on line 36 says "15 minutes" but the code checks for 30 minutes)
+- **Uppercase all state abbreviations** (e.g., "Tx" to "TX", "Fl" to "FL")
+- **Map known cities to states** for the 2,104 NULL-state records (e.g., Atlanta to GA, Jacksonville to FL, Las Vegas to NV, Phoenix to AZ, etc.)
+- **Fix junk values**: "None"/"Null" to NULL, "Cl" to "CO", "Ka" to "KS"
+- **Normalize full names**: "Georgia" to "GA", "Maryland" to "MD"
+- **Handle multi-state**: Take the first state from entries like "Ga, Fl" (becomes "GA")
 
-### Technical Changes
+This covers the ~30 most common city-to-state mappings which will resolve the vast majority of NULL-state records.
 
-**Database**: Run SQL to delete stale cache entries:
+#### Part 2: Edge Function Update
+Modify `supabase/functions/aggregate-market-data/index.ts`:
+
+- Add a **`normalizeState` function** that uppercases state abbreviations, maps full names to abbreviations, and filters out junk values
+- Keep the existing `normalizeName` function for cities (title case is correct for city names)
+- Apply `normalizeState` instead of `normalizeName` for the state field during aggregation
+
+### Technical Details
+
+**SQL Migration** (data cleanup):
 ```sql
-DELETE FROM market_intelligence_cache 
-WHERE cache_key LIKE 'all_all_%';
+-- Fix case: uppercase all state abbreviations
+UPDATE bookings SET market_state = UPPER(TRIM(market_state))
+WHERE market_state IS NOT NULL AND TRIM(market_state) != '';
+
+-- Fix junk values
+UPDATE bookings SET market_state = NULL WHERE market_state IN ('NONE', 'NULL', 'MB', 'PE', 'VG', 'VI');
+UPDATE bookings SET market_state = 'CO' WHERE market_state = 'CL';
+UPDATE bookings SET market_state = 'KS' WHERE market_state = 'KA';
+
+-- Fix full names
+UPDATE bookings SET market_state = 'GA' WHERE market_state = 'GEORGIA';
+UPDATE bookings SET market_state = 'MD' WHERE market_state = 'MARYLAND';
+
+-- Fix multi-state (take first)
+UPDATE bookings SET market_state = 'GA' WHERE market_state = 'GA, FL';
+UPDATE bookings SET market_state = 'GA' WHERE market_state = 'GA, TX, DC, FL';
+UPDATE bookings SET market_state = 'DE' WHERE market_state = 'DE / MD';
+UPDATE bookings SET market_state = 'MD' WHERE market_state = 'MD / DC';
+UPDATE bookings SET market_state = 'MD' WHERE market_state = 'MD/DC';
+UPDATE bookings SET market_state = 'NC' WHERE market_state = 'NC, FL';
+UPDATE bookings SET market_state = 'NV' WHERE market_state = 'NV, FL, GA';
+
+-- Map known cities to states (for NULL state records)
+UPDATE bookings SET market_state = 'GA' WHERE market_state IS NULL AND market_city IN ('Atlanta','Riverdale','Forest Park','Stone Mountain','Decatur','Jonesboro','Marietta','East Point','College Park','Lithonia','Conyers','Morrow','Ellenwood','Lawrenceville','Snellville','Duluth','Norcross','Kennesaw','Smyrna','Stockbridge','Hampton','McDonough','Fairburn','Union City','Austell','Powder Springs','Clarkston','Tucker','Chamblee','Brookhaven','Sandy Springs','Roswell','Alpharetta','Peachtree City','Newnan','Fayetteville','Covington','Rex','Redan','Scottdale','Avondale Estates');
+UPDATE bookings SET market_state = 'FL' WHERE market_state IS NULL AND market_city IN ('Jacksonville','Orlando','Tampa','Gainesville','Miami','Fort Lauderdale','Kissimmee','Lakeland','Clearwater','St. Petersburg','Daytona Beach','Cape Coral','Bradenton','Ocala','Tallahassee','Pensacola','Sanford','Deltona','Port Charlotte','Sarasota','Palm Bay','Melbourne','Brandon','Largo','Hollywood','Pompano Beach','Fort Myers');
+UPDATE bookings SET market_state = 'TX' WHERE market_state IS NULL AND market_city IN ('Houston','Dallas','San Antonio','Austin','Fort Worth','Arlington','El Paso','Plano','Irving','Garland','McKinney','Frisco','Denton','Killeen','Waco','Beaumont','Tyler','Midland','Odessa','Lubbock','Amarillo','Pasadena','Mesquite','Katy','Spring','Humble','Sugar Land','Conroe','Round Rock','Cedar Park');
+UPDATE bookings SET market_state = 'NV' WHERE market_state IS NULL AND market_city IN ('Las Vegas','Henderson','North Las Vegas','Reno','Vegas');
+UPDATE bookings SET market_state = 'AZ' WHERE market_state IS NULL AND market_city IN ('Phoenix','Mesa','Tempe','Scottsdale','Glendale','Chandler','Gilbert','Peoria','Surprise','Avondale','Goodyear','Buckeye','Casa Grande','Tolleson');
+UPDATE bookings SET market_state = 'MD' WHERE market_state IS NULL AND market_city IN ('Baltimore','Silver Spring','Columbia','Germantown','Waldorf','Frederick','Bowie','Rockville','Glen Burnie','Laurel','Salisbury','Hagerstown','Annapolis');
+UPDATE bookings SET market_state = 'NC' WHERE market_state IS NULL AND market_city IN ('Charlotte','Raleigh','Durham','Greensboro','Winston-Salem','Fayetteville','High Point','Asheville','Wilmington','Concord','Gastonia','Huntersville');
+UPDATE bookings SET market_state = 'PA' WHERE market_state IS NULL AND market_city IN ('Philadelphia','Pittsburgh','Allentown','Reading','Bethlehem','Lancaster','Harrisburg','Scranton','York');
+UPDATE bookings SET market_state = 'IN' WHERE market_state IS NULL AND market_city IN ('Indianapolis','Fort Wayne','Evansville','South Bend','Carmel','Fishers','Bloomington','Hammond','Gary','Muncie');
+UPDATE bookings SET market_state = 'MO' WHERE market_state IS NULL AND market_city IN ('Kansas City','St. Louis','Springfield','Columbia','Independence','Lee''s Summit');
+UPDATE bookings SET market_state = 'VA' WHERE market_state IS NULL AND market_city IN ('Richmond','Virginia Beach','Norfolk','Chesapeake','Newport News','Hampton','Alexandria','Roanoke','Lynchburg','Portsmouth');
+UPDATE bookings SET market_state = 'IL' WHERE market_state IS NULL AND market_city IN ('Chicago','Aurora','Joliet','Naperville','Rockford','Springfield','Elgin','Peoria');
+UPDATE bookings SET market_state = 'LA' WHERE market_state IS NULL AND market_city IN ('New Orleans','Baton Rouge','Shreveport','Metairie','Lafayette','Lake Charles','Kenner','Marrero','Harvey');
+UPDATE bookings SET market_state = 'TN' WHERE market_state IS NULL AND market_city IN ('Nashville','Memphis','Knoxville','Chattanooga','Clarksville','Murfreesboro','Franklin','Jackson','Johnson City');
+UPDATE bookings SET market_state = 'OH' WHERE market_state IS NULL AND market_city IN ('Columbus','Cleveland','Cincinnati','Toledo','Akron','Dayton','Canton','Youngstown');
+UPDATE bookings SET market_state = 'DC' WHERE market_state IS NULL AND market_city IN ('Washington','Washington D.C.','Washington DC');
+UPDATE bookings SET market_state = 'MA' WHERE market_state IS NULL AND market_city IN ('Boston','Worcester','Springfield','Cambridge','Lowell','Brockton');
+UPDATE bookings SET market_state = 'CA' WHERE market_state IS NULL AND market_city IN ('Los Angeles','San Diego','San Francisco','Sacramento','San Jose','Fresno','Long Beach','Oakland','Bakersfield','Riverside');
+UPDATE bookings SET market_state = 'NY' WHERE market_state IS NULL AND market_city IN ('New York','Buffalo','Rochester','Syracuse','Albany','Yonkers');
+UPDATE bookings SET market_state = 'WI' WHERE market_state IS NULL AND market_city IN ('Milwaukee','Madison','Green Bay','Kenosha','Racine');
+UPDATE bookings SET market_state = 'KS' WHERE market_state IS NULL AND market_city IN ('Wichita','Overland Park','Kansas City','Olathe','Topeka');
+UPDATE bookings SET market_state = 'MI' WHERE market_state IS NULL AND market_city IN ('Detroit','Grand Rapids','Warren','Sterling Heights','Ann Arbor','Lansing','Flint');
+UPDATE bookings SET market_state = 'SC' WHERE market_state IS NULL AND market_city IN ('Columbia','Charleston','North Charleston','Greenville','Rock Hill','Mount Pleasant');
+UPDATE bookings SET market_state = 'OK' WHERE market_state IS NULL AND market_city IN ('Oklahoma City','Tulsa','Norman','Broken Arrow','Edmond','Lawton');
+UPDATE bookings SET market_state = 'CO' WHERE market_state IS NULL AND market_city IN ('Denver','Colorado Springs','Aurora','Fort Collins','Lakewood','Thornton','Arvada','Westminster','Boulder');
 ```
 
-**File: `supabase/functions/aggregate-market-data/index.ts`**
-- Line 41: Change `.single()` to `.maybeSingle()`
-- Line 45: Change `30 * 60 * 1000` to `15 * 60 * 1000` (align with the comment)
+**Edge Function Changes** (`supabase/functions/aggregate-market-data/index.ts`):
+- Add `normalizeState()` function that uppercases the state and maps known full names to abbreviations
+- Use `normalizeState()` for the state field and keep `normalizeName()` for cities
+- Filter out records where normalized state is still "Unknown" from a separate "Unknown" bucket that users can optionally view
+
+**Cache Cleanup**: Delete all cache entries so fresh data is computed with the cleaned-up values.
 
 ### Expected Result
-After clearing the cache and redeploying, selecting "All Time" will trigger a fresh computation that correctly includes budget data with green/red color coding for all markets.
+- The "Unknown" state row will shrink dramatically (from 2,104 to likely under 200)
+- No more duplicate states from case differences
+- Clean, uppercase state abbreviations (TX, FL, GA, etc.)
+- Junk entries removed entirely
