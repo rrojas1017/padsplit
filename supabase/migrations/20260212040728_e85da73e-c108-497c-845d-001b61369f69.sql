@@ -1,0 +1,52 @@
+
+-- Fix case: uppercase all state abbreviations
+UPDATE bookings SET market_state = UPPER(TRIM(market_state))
+WHERE market_state IS NOT NULL AND TRIM(market_state) != '';
+
+-- Fix junk values
+UPDATE bookings SET market_state = NULL WHERE market_state IN ('NONE', 'NULL', 'MB', 'PE', 'VG', 'VI');
+UPDATE bookings SET market_state = 'CO' WHERE market_state = 'CL';
+UPDATE bookings SET market_state = 'KS' WHERE market_state = 'KA';
+
+-- Fix full names
+UPDATE bookings SET market_state = 'GA' WHERE market_state = 'GEORGIA';
+UPDATE bookings SET market_state = 'MD' WHERE market_state = 'MARYLAND';
+
+-- Fix multi-state (take first)
+UPDATE bookings SET market_state = 'GA' WHERE market_state = 'GA, FL';
+UPDATE bookings SET market_state = 'GA' WHERE market_state = 'GA, TX, DC, FL';
+UPDATE bookings SET market_state = 'DE' WHERE market_state = 'DE / MD';
+UPDATE bookings SET market_state = 'MD' WHERE market_state = 'MD / DC';
+UPDATE bookings SET market_state = 'MD' WHERE market_state = 'MD/DC';
+UPDATE bookings SET market_state = 'NC' WHERE market_state = 'NC, FL';
+UPDATE bookings SET market_state = 'NV' WHERE market_state = 'NV, FL, GA';
+
+-- Map known cities to states (for NULL state records)
+UPDATE bookings SET market_state = 'GA' WHERE market_state IS NULL AND market_city IN ('Atlanta','Riverdale','Forest Park','Stone Mountain','Decatur','Jonesboro','Marietta','East Point','College Park','Lithonia','Conyers','Morrow','Ellenwood','Lawrenceville','Snellville','Duluth','Norcross','Kennesaw','Smyrna','Stockbridge','Hampton','McDonough','Fairburn','Union City','Austell','Powder Springs','Clarkston','Tucker','Chamblee','Brookhaven','Sandy Springs','Roswell','Alpharetta','Peachtree City','Newnan','Fayetteville','Covington','Rex','Redan','Scottdale','Avondale Estates');
+UPDATE bookings SET market_state = 'FL' WHERE market_state IS NULL AND market_city IN ('Jacksonville','Orlando','Tampa','Gainesville','Miami','Fort Lauderdale','Kissimmee','Lakeland','Clearwater','St. Petersburg','Daytona Beach','Cape Coral','Bradenton','Ocala','Tallahassee','Pensacola','Sanford','Deltona','Port Charlotte','Sarasota','Palm Bay','Melbourne','Brandon','Largo','Hollywood','Pompano Beach','Fort Myers');
+UPDATE bookings SET market_state = 'TX' WHERE market_state IS NULL AND market_city IN ('Houston','Dallas','San Antonio','Austin','Fort Worth','Arlington','El Paso','Plano','Irving','Garland','McKinney','Frisco','Denton','Killeen','Waco','Beaumont','Tyler','Midland','Odessa','Lubbock','Amarillo','Pasadena','Mesquite','Katy','Spring','Humble','Sugar Land','Conroe','Round Rock','Cedar Park');
+UPDATE bookings SET market_state = 'NV' WHERE market_state IS NULL AND market_city IN ('Las Vegas','Henderson','North Las Vegas','Reno','Vegas');
+UPDATE bookings SET market_state = 'AZ' WHERE market_state IS NULL AND market_city IN ('Phoenix','Mesa','Tempe','Scottsdale','Glendale','Chandler','Gilbert','Peoria','Surprise','Avondale','Goodyear','Buckeye','Casa Grande','Tolleson');
+UPDATE bookings SET market_state = 'MD' WHERE market_state IS NULL AND market_city IN ('Baltimore','Silver Spring','Columbia','Germantown','Waldorf','Frederick','Bowie','Rockville','Glen Burnie','Laurel','Salisbury','Hagerstown','Annapolis');
+UPDATE bookings SET market_state = 'NC' WHERE market_state IS NULL AND market_city IN ('Charlotte','Raleigh','Durham','Greensboro','Winston-Salem','Fayetteville','High Point','Asheville','Wilmington','Concord','Gastonia','Huntersville');
+UPDATE bookings SET market_state = 'PA' WHERE market_state IS NULL AND market_city IN ('Philadelphia','Pittsburgh','Allentown','Reading','Bethlehem','Lancaster','Harrisburg','Scranton','York');
+UPDATE bookings SET market_state = 'IN' WHERE market_state IS NULL AND market_city IN ('Indianapolis','Fort Wayne','Evansville','South Bend','Carmel','Fishers','Bloomington','Hammond','Gary','Muncie');
+UPDATE bookings SET market_state = 'MO' WHERE market_state IS NULL AND market_city IN ('Kansas City','St. Louis','Springfield','Columbia','Independence','Lee''s Summit');
+UPDATE bookings SET market_state = 'VA' WHERE market_state IS NULL AND market_city IN ('Richmond','Virginia Beach','Norfolk','Chesapeake','Newport News','Hampton','Alexandria','Roanoke','Lynchburg','Portsmouth');
+UPDATE bookings SET market_state = 'IL' WHERE market_state IS NULL AND market_city IN ('Chicago','Aurora','Joliet','Naperville','Rockford','Springfield','Elgin','Peoria');
+UPDATE bookings SET market_state = 'LA' WHERE market_state IS NULL AND market_city IN ('New Orleans','Baton Rouge','Shreveport','Metairie','Lafayette','Lake Charles','Kenner','Marrero','Harvey');
+UPDATE bookings SET market_state = 'TN' WHERE market_state IS NULL AND market_city IN ('Nashville','Memphis','Knoxville','Chattanooga','Clarksville','Murfreesboro','Franklin','Jackson','Johnson City');
+UPDATE bookings SET market_state = 'OH' WHERE market_state IS NULL AND market_city IN ('Columbus','Cleveland','Cincinnati','Toledo','Akron','Dayton','Canton','Youngstown');
+UPDATE bookings SET market_state = 'DC' WHERE market_state IS NULL AND market_city IN ('Washington','Washington D.C.','Washington DC');
+UPDATE bookings SET market_state = 'MA' WHERE market_state IS NULL AND market_city IN ('Boston','Worcester','Springfield','Cambridge','Lowell','Brockton');
+UPDATE bookings SET market_state = 'CA' WHERE market_state IS NULL AND market_city IN ('Los Angeles','San Diego','San Francisco','Sacramento','San Jose','Fresno','Long Beach','Oakland','Bakersfield','Riverside');
+UPDATE bookings SET market_state = 'NY' WHERE market_state IS NULL AND market_city IN ('New York','Buffalo','Rochester','Syracuse','Albany','Yonkers');
+UPDATE bookings SET market_state = 'WI' WHERE market_state IS NULL AND market_city IN ('Milwaukee','Madison','Green Bay','Kenosha','Racine');
+UPDATE bookings SET market_state = 'KS' WHERE market_state IS NULL AND market_city IN ('Wichita','Overland Park','Kansas City','Olathe','Topeka');
+UPDATE bookings SET market_state = 'MI' WHERE market_state IS NULL AND market_city IN ('Detroit','Grand Rapids','Warren','Sterling Heights','Ann Arbor','Lansing','Flint');
+UPDATE bookings SET market_state = 'SC' WHERE market_state IS NULL AND market_city IN ('Columbia','Charleston','North Charleston','Greenville','Rock Hill','Mount Pleasant');
+UPDATE bookings SET market_state = 'OK' WHERE market_state IS NULL AND market_city IN ('Oklahoma City','Tulsa','Norman','Broken Arrow','Edmond','Lawton');
+UPDATE bookings SET market_state = 'CO' WHERE market_state IS NULL AND market_city IN ('Denver','Colorado Springs','Aurora','Fort Collins','Lakewood','Thornton','Arvada','Westminster','Boulder');
+
+-- Clear all cache so fresh data is computed
+DELETE FROM market_intelligence_cache;
