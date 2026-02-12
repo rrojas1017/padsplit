@@ -548,6 +548,8 @@ export type Database = {
           move_in_day_reach_out: boolean | null
           notes: string | null
           original_booking_id: string | null
+          record_type: string
+          research_call_id: string | null
           status: string
           transcribed_at: string | null
           transcription_error_message: string | null
@@ -590,6 +592,8 @@ export type Database = {
           move_in_day_reach_out?: boolean | null
           notes?: string | null
           original_booking_id?: string | null
+          record_type?: string
+          research_call_id?: string | null
           status?: string
           transcribed_at?: string | null
           transcription_error_message?: string | null
@@ -632,6 +636,8 @@ export type Database = {
           move_in_day_reach_out?: boolean | null
           notes?: string | null
           original_booking_id?: string | null
+          record_type?: string
+          research_call_id?: string | null
           status?: string
           transcribed_at?: string | null
           transcription_error_message?: string | null
@@ -665,6 +671,13 @@ export type Database = {
             columns: ["original_booking_id"]
             isOneToOne: false
             referencedRelation: "bookings"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "bookings_research_call_id_fkey"
+            columns: ["research_call_id"]
+            isOneToOne: false
+            referencedRelation: "research_calls"
             referencedColumns: ["id"]
           },
         ]

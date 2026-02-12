@@ -5,7 +5,7 @@ import { useAgents } from '@/contexts/AgentsContext';
 import { useBookings } from '@/contexts/BookingsContext';
 import { useReportsData, ReportsFilters, ReportsPagination, ReportsSorting, SortColumn, SortDirection } from '@/hooks/useReportsData';
 import { Button } from '@/components/ui/button';
-import { Download, Search, PlusCircle, Pencil, ChevronDown, Building2, User, MessageSquare, Tag, CheckCircle, RotateCcw, ArrowUp, ArrowDown, ArrowUpDown, X, ExternalLink, Phone, UserCircle, Headphones, FileText, Loader2, MoreHorizontal, Clock, CalendarX, XCircle, Ban, AlertTriangle, Package } from 'lucide-react';
+import { Download, Search, PlusCircle, Pencil, ChevronDown, Building2, User, MessageSquare, Tag, CheckCircle, RotateCcw, ArrowUp, ArrowDown, ArrowUpDown, X, ExternalLink, Phone, UserCircle, Headphones, FileText, Loader2, MoreHorizontal, Clock, CalendarX, XCircle, Ban, AlertTriangle, Package, FlaskConical } from 'lucide-react';
 import { ContactProfileHoverCard } from '@/components/reports/ContactProfileHoverCard';
 import { FollowUpPriorityBadge } from '@/components/reports/FollowUpPriorityBadge';
 import { calculateFollowUpPriority } from '@/utils/followUpPriority';
@@ -60,6 +60,7 @@ const statusOptions = [
   { label: 'Cancelled', value: 'Cancelled' },
   { label: 'Postponed', value: 'Postponed' },
   { label: 'Non Booking', value: 'Non Booking' },
+  { label: 'Research', value: 'Research' },
 ];
 
 const bookingTypeOptions = [
@@ -67,7 +68,15 @@ const bookingTypeOptions = [
   { label: 'Inbound', value: 'Inbound' },
   { label: 'Outbound', value: 'Outbound' },
   { label: 'Referral', value: 'Referral' },
+  { label: 'Research', value: 'Research' },
 ];
+
+const recordTypeFilterOptions = [
+  { label: 'All Records', value: 'all' },
+  { label: 'Bookings Only', value: 'booking' },
+  { label: 'Research Only', value: 'research' },
+];
+
 
 const communicationMethodOptions = [
   { label: 'All Methods', value: 'all' },
@@ -124,6 +133,7 @@ export default function Reports() {
   const [agentFilter, setAgentFilter] = useState('all');
   const [rebookingFilter, setRebookingFilter] = useState<'all' | 'new' | 'rebooking'>('all');
   const [conversationFilter, setConversationFilter] = useState<'all' | 'valid' | 'no_conversation'>('all');
+  const [recordTypeFilter, setRecordTypeFilter] = useState<'all' | 'booking' | 'research'>('all');
   const [searchQuery, setSearchQuery] = useState('');
 
   // Sorting (primary only for server-side)
@@ -139,6 +149,7 @@ export default function Reports() {
     recordDateRange,
     moveInDateRange,
     importBatchFilter,
+    recordTypeFilter,
     siteId: siteFilter,
     status: statusFilter,
     bookingType: typeFilter,
@@ -147,7 +158,7 @@ export default function Reports() {
     rebookingFilter,
     conversationFilter,
     searchQuery,
-  }), [recordDateRange, moveInDateRange, importBatchFilter, siteFilter, statusFilter, typeFilter, methodFilter, agentFilter, rebookingFilter, conversationFilter, searchQuery]);
+  }), [recordDateRange, moveInDateRange, importBatchFilter, recordTypeFilter, siteFilter, statusFilter, typeFilter, methodFilter, agentFilter, rebookingFilter, conversationFilter, searchQuery]);
 
   const pagination: ReportsPagination = useMemo(() => ({
     page: currentPage,
@@ -174,6 +185,7 @@ export default function Reports() {
     setRecordDateRange({ from: undefined, to: undefined });
     setMoveInDateRange({ from: undefined, to: undefined });
     setImportBatchFilter('all');
+    setRecordTypeFilter('all');
     setSiteFilter('all');
     setStatusFilter('all');
     setTypeFilter('all');
@@ -189,6 +201,7 @@ export default function Reports() {
     recordDateRange.from || recordDateRange.to ||
     moveInDateRange.from || moveInDateRange.to ||
     importBatchFilter !== 'all' ||
+    recordTypeFilter !== 'all' ||
     siteFilter !== 'all' || statusFilter !== 'all' || 
     typeFilter !== 'all' || methodFilter !== 'all' || 
     agentFilter !== 'all' || rebookingFilter !== 'all' || 
@@ -207,7 +220,7 @@ export default function Reports() {
   // Reset to page 1 when filters change  
   useEffect(() => {
     setCurrentPage(1);
-  }, [recordDateRange, moveInDateRange, importBatchFilter, siteFilter, statusFilter, typeFilter, methodFilter, agentFilter, searchQuery, rebookingFilter, conversationFilter]);
+  }, [recordDateRange, moveInDateRange, importBatchFilter, recordTypeFilter, siteFilter, statusFilter, typeFilter, methodFilter, agentFilter, searchQuery, rebookingFilter, conversationFilter]);
 
   // Fetch sites from Supabase
   useEffect(() => {
@@ -271,6 +284,7 @@ export default function Reports() {
       'Market City',
       'Market State',
       'Booking Type',
+      'Record Type',
       'Status',
       'Communication Method',
       'Notes',
@@ -284,7 +298,7 @@ export default function Reports() {
 
     const rows = records.map(booking => [
       format(booking.bookingDate, 'yyyy-MM-dd'),
-      booking.status === 'Non Booking' ? '' : format(booking.moveInDate, 'yyyy-MM-dd'),
+      booking.status === 'Non Booking' || booking.recordType === 'research' ? '' : format(booking.moveInDate, 'yyyy-MM-dd'),
       booking.memberName,
       booking.contactEmail ? (shouldMask ? maskEmail(booking.contactEmail) : booking.contactEmail) : '',
       booking.contactPhone ? (shouldMask ? maskPhone(booking.contactPhone) : booking.contactPhone) : '',
@@ -292,6 +306,7 @@ export default function Reports() {
       booking.marketCity || '',
       booking.marketState || '',
       booking.bookingType,
+      booking.recordType || 'booking',
       booking.status,
       booking.communicationMethod || '',
       booking.notes || '',
@@ -320,6 +335,7 @@ export default function Reports() {
     'Cancelled': 'bg-muted text-muted-foreground',
     'Postponed': 'bg-primary/20 text-primary',
     'Non Booking': 'bg-slate-500/20 text-slate-500',
+    'Research': 'bg-purple-500/20 text-purple-500',
   };
 
   const selectedSiteLabel = siteFilter === 'all' ? 'All Sites' : sites.find(s => s.id === siteFilter)?.name || 'All Sites';
@@ -366,10 +382,11 @@ export default function Reports() {
     const noShowCancelled = records.filter(b => b.status === 'No Show' || b.status === 'Cancelled').length;
     const postponed = records.filter(b => b.status === 'Postponed').length;
     const nonBooking = records.filter(b => b.status === 'Non Booking').length;
+    const research = records.filter(b => b.recordType === 'research').length;
     const rebookings = records.filter(b => b.isRebooking).length;
-    const newBookings = records.length - rebookings - nonBooking;
+    const newBookings = records.length - rebookings - nonBooking - research;
     
-    return { total, pendingMoveIn, movedIn, memberRejected, noShowCancelled, postponed, nonBooking, rebookings, newBookings };
+    return { total, pendingMoveIn, movedIn, memberRejected, noShowCancelled, postponed, nonBooking, research, rebookings, newBookings };
   }, [totalCount, records]);
 
   // Loading skeleton for table rows
@@ -401,7 +418,7 @@ export default function Reports() {
       subtitle="Detailed call records and exports"
     >
       {/* Summary Cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3 mb-6">
+      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-9 gap-3 mb-6">
         <div className="bg-card rounded-xl p-4 border border-border shadow-sm">
           <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Total Records</p>
           <p className="text-2xl font-bold text-foreground mt-1">{summaryStats.total.toLocaleString()}</p>
@@ -453,6 +470,13 @@ export default function Reports() {
           </div>
           <p className="text-2xl font-bold text-slate-500 mt-1">{summaryStats.nonBooking}</p>
         </div>
+        <div className="bg-card rounded-xl p-4 border border-border shadow-sm">
+          <div className="flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-purple-500"></span>
+            <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Research</p>
+          </div>
+          <p className="text-2xl font-bold text-purple-500 mt-1">{summaryStats.research}</p>
+        </div>
       </div>
 
       {/* Filters Row 1 */}
@@ -470,6 +494,28 @@ export default function Reports() {
           dateRange={moveInDateRange}
           onDateRangeChange={setMoveInDateRange}
         />
+
+        {/* Record Type Filter */}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant={recordTypeFilter !== 'all' ? 'default' : 'outline'} className="gap-2">
+              <FlaskConical className="w-4 h-4" />
+              {recordTypeFilterOptions.find(r => r.value === recordTypeFilter)?.label}
+              <ChevronDown className="w-4 h-4" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="w-48">
+            {recordTypeFilterOptions.map((option) => (
+              <DropdownMenuItem
+                key={option.value}
+                onClick={() => setRecordTypeFilter(option.value as 'all' | 'booking' | 'research')}
+                className={recordTypeFilter === option.value ? 'bg-accent/20' : ''}
+              >
+                {option.label}
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
 
         {/* Import Batch Filter */}
         <DropdownMenu>
@@ -769,7 +815,7 @@ export default function Reports() {
                       {format(booking.bookingDate, 'MMM d, yyyy')}
                     </td>
                     <td className="py-3 px-4 text-sm text-foreground">
-                      {booking.status === 'Non Booking' ? (
+                      {booking.status === 'Non Booking' || booking.recordType === 'research' ? (
                         <span className="text-muted-foreground">—</span>
                       ) : (
                         format(booking.moveInDate, 'MMM d, yyyy')
@@ -808,6 +854,12 @@ export default function Reports() {
                             </Tooltip>
                           )}
                           <span className="hover:text-primary transition-colors">{booking.memberName}</span>
+                          {booking.recordType === 'research' && (
+                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-medium bg-purple-500/10 text-purple-500">
+                              <FlaskConical className="h-3 w-3" />
+                              Research
+                            </span>
+                          )}
                           {booking.isRebooking && (
                             <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-medium bg-primary/10 text-primary">
                               <RotateCcw className="h-3 w-3" />
