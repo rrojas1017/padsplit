@@ -285,7 +285,10 @@ export function useReportsData(
 
       // Apply issue filter (pain point tagging)
       if (filters.issueFilter && filters.issueFilter.length > 0) {
-        query = query.overlaps('detected_issues', filters.issueFilter);
+        const issueConditions = filters.issueFilter
+          .map(issue => `detected_issues.cs.[{"issue":"${issue}"}]`)
+          .join(',');
+        query = query.or(issueConditions);
       }
 
       // Apply search filter (member name, market city, market state)
