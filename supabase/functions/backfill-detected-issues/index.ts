@@ -46,18 +46,32 @@ const ISSUE_KEYWORDS: Record<string, string[]> = {
   ],
 };
 
-function classifyFromKeyPoints(keyPoints: any): string[] {
+interface DetectedIssueDetail {
+  issue: string;
+  matchingKeywords: string[];
+  matchingConcerns: string[];
+}
+
+function classifyFromKeyPoints(keyPoints: any): DetectedIssueDetail[] {
   const concerns: string[] = keyPoints?.memberConcerns || [];
   const objections: string[] = keyPoints?.objections || [];
-
-  const allText = [...concerns, ...objections].join(' ').toLowerCase();
+  const allSources = [...concerns, ...objections];
+  const allText = allSources.join(' ').toLowerCase();
   if (!allText.trim()) return [];
 
-  const detected: string[] = [];
+  const detected: DetectedIssueDetail[] = [];
   for (const [category, keywords] of Object.entries(ISSUE_KEYWORDS)) {
-    const matchCount = keywords.filter(kw => allText.includes(kw.toLowerCase())).length;
-    if (matchCount >= 2) {
-      detected.push(category);
+    const matchedKeywords = keywords.filter(kw => allText.includes(kw.toLowerCase()));
+    if (matchedKeywords.length >= 2) {
+      const matchingConcerns = allSources.filter(source => {
+        const lower = source.toLowerCase();
+        return matchedKeywords.some(kw => lower.includes(kw));
+      });
+      detected.push({
+        issue: category,
+        matchingKeywords: matchedKeywords,
+        matchingConcerns: [...new Set(matchingConcerns)],
+      });
     }
   }
   return detected;

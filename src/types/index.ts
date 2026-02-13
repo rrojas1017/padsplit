@@ -130,8 +130,8 @@ export interface Booking {
   // Research record fields
   recordType?: 'booking' | 'research';
   researchCallId?: string;
-  // Pain point issue tagging
-  detectedIssues?: string[];
+  // Pain point issue tagging (JSONB - array of DetectedIssueDetail objects or legacy strings)
+  detectedIssues?: any[];
 }
 
 export interface DailyMetrics {

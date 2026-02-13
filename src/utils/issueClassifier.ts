@@ -13,6 +13,13 @@ export const ISSUE_CATEGORIES = [
 
 export type IssueCategory = typeof ISSUE_CATEGORIES[number];
 
+// Enhanced detected issue with matching details
+export interface DetectedIssueDetail {
+  issue: string;
+  matchingKeywords: string[];
+  matchingConcerns: string[];
+}
+
 // Icon and color mapping for issue badges
 export const ISSUE_BADGE_CONFIG: Record<string, { color: string; icon: string }> = {
   'Payment & Pricing Confusion': { color: 'bg-amber-500/15 text-amber-600 border-amber-500/20', icon: 'CreditCard' },
@@ -92,4 +99,67 @@ export function classifyIssues(params: {
   }
 
   return detected;
+}
+
+/**
+ * Enhanced classifier that returns detailed issue objects with matching keywords
+ * and the specific concerns/objections that triggered each detection.
+ */
+export function classifyIssuesWithDetails(params: {
+  memberConcerns?: string[];
+  objections?: string[];
+}): DetectedIssueDetail[] {
+  const { memberConcerns = [], objections = [] } = params;
+  const allSources = [...memberConcerns, ...objections];
+  const allText = allSources.join(' ').toLowerCase();
+
+  if (!allText.trim()) return [];
+
+  const detected: DetectedIssueDetail[] = [];
+
+  for (const [category, keywords] of Object.entries(ISSUE_KEYWORDS)) {
+    const matchedKeywords = keywords.filter(kw => allText.includes(kw.toLowerCase()));
+    if (matchedKeywords.length >= 2) {
+      // Find which source strings contained matching keywords
+      const matchingConcerns = allSources.filter(source => {
+        const lower = source.toLowerCase();
+        return matchedKeywords.some(kw => lower.includes(kw.toLowerCase()));
+      });
+
+      detected.push({
+        issue: category,
+        matchingKeywords: matchedKeywords,
+        matchingConcerns: [...new Set(matchingConcerns)], // deduplicate
+      });
+    }
+  }
+
+  return detected;
+}
+
+/**
+ * Helper to normalize detected_issues from DB (handles both old string[] and new object[] formats)
+ */
+export function normalizeDetectedIssues(raw: any): DetectedIssueDetail[] {
+  if (!raw || !Array.isArray(raw)) return [];
+  
+  return raw.map((item: any) => {
+    // New format: { issue, matchingKeywords, matchingConcerns }
+    if (typeof item === 'object' && item !== null && item.issue) {
+      return {
+        issue: item.issue,
+        matchingKeywords: item.matchingKeywords || [],
+        matchingConcerns: item.matchingConcerns || [],
+      };
+    }
+    // Old format: plain string
+    if (typeof item === 'string') {
+      return {
+        issue: item,
+        matchingKeywords: [],
+        matchingConcerns: [],
+      };
+    }
+    return null;
+  }).filter(Boolean) as DetectedIssueDetail[];
 }
