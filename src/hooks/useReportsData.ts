@@ -31,6 +31,7 @@ export interface ReportsFilters {
   agentId: string;
   rebookingFilter: 'all' | 'new' | 'rebooking';
   conversationFilter: 'all' | 'valid' | 'no_conversation'; // Conversation validity filter
+  issueFilter: string[]; // Pain point issue filter
   searchQuery: string;
 }
 
@@ -191,6 +192,7 @@ export function useReportsData(
           has_valid_conversation,
           record_type,
           research_call_id,
+          detected_issues,
           booking_transcriptions (
             call_transcription,
             call_summary,
@@ -281,6 +283,11 @@ export function useReportsData(
         query = query.eq('has_valid_conversation', false);
       }
 
+      // Apply issue filter (pain point tagging)
+      if (filters.issueFilter && filters.issueFilter.length > 0) {
+        query = query.overlaps('detected_issues', filters.issueFilter);
+      }
+
       // Apply search filter (member name, market city, market state)
       if (filters.searchQuery) {
         const searchTerm = `%${filters.searchQuery}%`;
@@ -340,6 +347,7 @@ export function useReportsData(
           hasValidConversation: row.has_valid_conversation,
           recordType: (row as any).record_type as 'booking' | 'research' | undefined,
           researchCallId: (row as any).research_call_id || undefined,
+          detectedIssues: (row as any).detected_issues || undefined,
         };
       });
 

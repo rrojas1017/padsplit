@@ -122,3 +122,6 @@ verify_jwt = false
 
 [functions.parse-research-script]
 verify_jwt = false
+
+[functions.backfill-detected-issues]
+verify_jwt = false

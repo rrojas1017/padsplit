@@ -531,6 +531,7 @@ export type Database = {
           contact_phone: string | null
           created_at: string
           created_by: string | null
+          detected_issues: string[] | null
           email_verification_status: string | null
           email_verified: boolean | null
           email_verified_at: string | null
@@ -575,6 +576,7 @@ export type Database = {
           contact_phone?: string | null
           created_at?: string
           created_by?: string | null
+          detected_issues?: string[] | null
           email_verification_status?: string | null
           email_verified?: boolean | null
           email_verified_at?: string | null
@@ -619,6 +621,7 @@ export type Database = {
           contact_phone?: string | null
           created_at?: string
           created_by?: string | null
+          detected_issues?: string[] | null
           email_verification_status?: string | null
           email_verified?: boolean | null
           email_verified_at?: string | null

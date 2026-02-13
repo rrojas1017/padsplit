@@ -5,7 +5,7 @@ import { useAgents } from '@/contexts/AgentsContext';
 import { useBookings } from '@/contexts/BookingsContext';
 import { useReportsData, ReportsFilters, ReportsPagination, ReportsSorting, SortColumn, SortDirection } from '@/hooks/useReportsData';
 import { Button } from '@/components/ui/button';
-import { Download, Search, PlusCircle, Pencil, ChevronDown, Building2, User, MessageSquare, Tag, CheckCircle, RotateCcw, ArrowUp, ArrowDown, ArrowUpDown, X, ExternalLink, Phone, UserCircle, Headphones, FileText, Loader2, MoreHorizontal, Clock, CalendarX, XCircle, Ban, AlertTriangle, Package, FlaskConical } from 'lucide-react';
+import { Download, Search, PlusCircle, Pencil, ChevronDown, Building2, User, MessageSquare, Tag, CheckCircle, RotateCcw, ArrowUp, ArrowDown, ArrowUpDown, X, ExternalLink, Phone, UserCircle, Headphones, FileText, Loader2, MoreHorizontal, Clock, CalendarX, XCircle, Ban, AlertTriangle, Package, FlaskConical, ShieldAlert } from 'lucide-react';
 import { ContactProfileHoverCard } from '@/components/reports/ContactProfileHoverCard';
 import { FollowUpPriorityBadge } from '@/components/reports/FollowUpPriorityBadge';
 import { calculateFollowUpPriority } from '@/utils/followUpPriority';
@@ -40,6 +40,8 @@ import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from '@/comp
 import { ChurnRiskBadge } from '@/components/reports/ChurnRiskBadge';
 import { calculateChurnRisk } from '@/utils/churnPrediction';
 import { useChurnPrediction } from '@/hooks/useChurnPrediction';
+import { ISSUE_CATEGORIES, ISSUE_BADGE_CONFIG } from '@/utils/issueClassifier';
+import { Badge } from '@/components/ui/badge';
 
 type Site = {
   id: string;
@@ -134,6 +136,7 @@ export default function Reports() {
   const [rebookingFilter, setRebookingFilter] = useState<'all' | 'new' | 'rebooking'>('all');
   const [conversationFilter, setConversationFilter] = useState<'all' | 'valid' | 'no_conversation'>('all');
   const [recordTypeFilter, setRecordTypeFilter] = useState<'all' | 'booking' | 'research'>('all');
+  const [issueFilter, setIssueFilter] = useState<string[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
 
   // Sorting (primary only for server-side)
@@ -157,8 +160,9 @@ export default function Reports() {
     agentId: agentFilter,
     rebookingFilter,
     conversationFilter,
+    issueFilter,
     searchQuery,
-  }), [recordDateRange, moveInDateRange, importBatchFilter, recordTypeFilter, siteFilter, statusFilter, typeFilter, methodFilter, agentFilter, rebookingFilter, conversationFilter, searchQuery]);
+  }), [recordDateRange, moveInDateRange, importBatchFilter, recordTypeFilter, siteFilter, statusFilter, typeFilter, methodFilter, agentFilter, rebookingFilter, conversationFilter, issueFilter, searchQuery]);
 
   const pagination: ReportsPagination = useMemo(() => ({
     page: currentPage,
@@ -193,6 +197,7 @@ export default function Reports() {
     setAgentFilter('all');
     setRebookingFilter('all');
     setConversationFilter('all');
+    setIssueFilter([]);
     setSearchQuery('');
     setCurrentPage(1);
   };
@@ -205,7 +210,7 @@ export default function Reports() {
     siteFilter !== 'all' || statusFilter !== 'all' || 
     typeFilter !== 'all' || methodFilter !== 'all' || 
     agentFilter !== 'all' || rebookingFilter !== 'all' || 
-    conversationFilter !== 'all' || searchQuery !== '';
+    conversationFilter !== 'all' || issueFilter.length > 0 || searchQuery !== '';
 
   const handleSort = (column: SortColumn) => {
     if (sortColumn === column) {
@@ -220,7 +225,7 @@ export default function Reports() {
   // Reset to page 1 when filters change  
   useEffect(() => {
     setCurrentPage(1);
-  }, [recordDateRange, moveInDateRange, importBatchFilter, recordTypeFilter, siteFilter, statusFilter, typeFilter, methodFilter, agentFilter, searchQuery, rebookingFilter, conversationFilter]);
+  }, [recordDateRange, moveInDateRange, importBatchFilter, recordTypeFilter, siteFilter, statusFilter, typeFilter, methodFilter, agentFilter, searchQuery, rebookingFilter, conversationFilter, issueFilter]);
 
   // Fetch sites from Supabase
   useEffect(() => {
@@ -291,6 +296,7 @@ export default function Reports() {
       'HubSpot Link',
       'Kixie Link',
       'Admin Profile Link',
+      'Detected Issues',
     ];
 
     // Mask contact info for agents in CSV export
@@ -313,6 +319,7 @@ export default function Reports() {
       booking.hubspotLink || '',
       booking.kixieLink || '',
       booking.adminProfileLink || '',
+      booking.detectedIssues?.join(', ') || '',
     ]);
 
     const csvContent = [
@@ -385,8 +392,9 @@ export default function Reports() {
     const research = records.filter(b => b.recordType === 'research').length;
     const rebookings = records.filter(b => b.isRebooking).length;
     const newBookings = records.length - rebookings - nonBooking - research;
+    const issuesDetected = records.filter(b => b.detectedIssues && b.detectedIssues.length > 0).length;
     
-    return { total, pendingMoveIn, movedIn, memberRejected, noShowCancelled, postponed, nonBooking, research, rebookings, newBookings };
+    return { total, pendingMoveIn, movedIn, memberRejected, noShowCancelled, postponed, nonBooking, research, rebookings, newBookings, issuesDetected };
   }, [totalCount, records]);
 
   // Loading skeleton for table rows
@@ -418,7 +426,7 @@ export default function Reports() {
       subtitle="Detailed call records and exports"
     >
       {/* Summary Cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-9 gap-3 mb-6">
+      <div className="grid grid-cols-2 sm:grid-cols-5 lg:grid-cols-10 gap-3 mb-6">
         <div className="bg-card rounded-xl p-4 border border-border shadow-sm">
           <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Total Records</p>
           <p className="text-2xl font-bold text-foreground mt-1">{summaryStats.total.toLocaleString()}</p>
@@ -476,6 +484,18 @@ export default function Reports() {
             <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Research</p>
           </div>
           <p className="text-2xl font-bold text-purple-500 mt-1">{summaryStats.research}</p>
+        </div>
+        <div className="bg-card rounded-xl p-4 border border-border shadow-sm">
+          <div className="flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-amber-500"></span>
+            <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Issues Detected</p>
+          </div>
+          <p className="text-2xl font-bold text-amber-500 mt-1">{summaryStats.issuesDetected}</p>
+          {!isLoading && records.length > 0 && (
+            <p className="text-xs text-muted-foreground mt-1">
+              of {records.length} shown
+            </p>
+          )}
         </div>
       </div>
 
@@ -725,6 +745,45 @@ export default function Reports() {
             ))}
           </DropdownMenuContent>
         </DropdownMenu>
+
+        {/* Pain Point Issues Filter */}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant={issueFilter.length > 0 ? 'default' : 'outline'} className="gap-2">
+              <ShieldAlert className="w-4 h-4" />
+              {issueFilter.length > 0 ? `Issues (${issueFilter.length})` : 'Pain Point Issues'}
+              <ChevronDown className="w-4 h-4" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="w-64 max-h-80 overflow-y-auto">
+            <DropdownMenuItem
+              onClick={() => setIssueFilter([])}
+              className={issueFilter.length === 0 ? 'bg-accent/20' : ''}
+            >
+              All Records
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            {ISSUE_CATEGORIES.map((category) => (
+              <DropdownMenuItem
+                key={category}
+                onClick={() => {
+                  setIssueFilter(prev =>
+                    prev.includes(category)
+                      ? prev.filter(c => c !== category)
+                      : [...prev, category]
+                  );
+                }}
+                className={issueFilter.includes(category) ? 'bg-accent/20' : ''}
+              >
+                <div className="flex items-center gap-2 w-full">
+                  <span className={`w-2 h-2 rounded-full ${ISSUE_BADGE_CONFIG[category]?.color.split(' ')[0] || 'bg-muted'}`}></span>
+                  <span className="flex-1 text-sm">{category}</span>
+                  {issueFilter.includes(category) && <CheckCircle className="w-3 h-3" />}
+                </div>
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
 
       {/* Filters Row 2 */}
@@ -795,6 +854,7 @@ export default function Reports() {
                 <th className="text-left py-3 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Priority</th>
                 <th className="text-left py-3 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Churn Risk</th>
                 <SortableHeader column="communicationMethod" label="Method" />
+                <th className="text-left py-3 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Issues</th>
                 <th className="text-left py-3 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Links</th>
                 <th className="text-left py-3 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Actions</th>
               </tr>
@@ -804,7 +864,7 @@ export default function Reports() {
                 <TableSkeleton />
               ) : records.length === 0 ? (
                 <tr>
-                  <td colSpan={14} className="py-8 text-center text-muted-foreground">
+                  <td colSpan={15} className="py-8 text-center text-muted-foreground">
                     No records found matching your filters
                   </td>
                 </tr>
@@ -955,6 +1015,26 @@ export default function Reports() {
                     </td>
                     <td className="py-3 px-4 text-sm text-muted-foreground">
                       {booking.communicationMethod}
+                    </td>
+                    <td className="py-3 px-4">
+                      {booking.detectedIssues && booking.detectedIssues.length > 0 ? (
+                        <div className="flex flex-wrap gap-1 max-w-[200px]">
+                          {booking.detectedIssues.map((issue) => {
+                            const config = ISSUE_BADGE_CONFIG[issue];
+                            return (
+                              <span
+                                key={issue}
+                                className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium border ${config?.color || 'bg-muted text-muted-foreground border-border'}`}
+                                title={issue}
+                              >
+                                {issue.split(' ')[0]}
+                              </span>
+                            );
+                          })}
+                        </div>
+                      ) : (
+                        <span className="text-muted-foreground text-xs">—</span>
+                      )}
                     </td>
                     <td className="py-3 px-4">
                       <div className="flex items-center gap-2">

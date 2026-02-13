@@ -107,6 +107,32 @@ function validateConversation(params: {
   return true;
 }
 
+// ===== PAIN POINT ISSUE CLASSIFIER =====
+const ISSUE_KEYWORDS_MAP: Record<string, string[]> = {
+  'Payment & Pricing Confusion': ['payment', 'promo', 'deposit', 'weekly rate', 'cost', 'price', 'fee', 'afford', 'promo code', 'coupon', 'discount', 'billing', 'charge', 'pay', 'pricing'],
+  'Booking Process Issues': ['booking', 'navigate', 'website', 'platform', 'listing', 'process', 'confus', 'sign up', 'signup', 'register', 'how to book'],
+  'Host & Approval Concerns': ['host', 'approval', 'approv', 'reject', 'landlord', 'response', 'wait', 'denied', 'pending approval', 'owner'],
+  'Trust & Legitimacy': ['scam', 'legit', 'trust', 'safe', 'real', 'fraud', 'concern about company', 'suspicious', 'legitimate', 'sketchy', 'is this real'],
+  'Transportation Barriers': ['transport', 'drive', 'car', 'bus', 'transit', 'distance', 'commute', 'far from', 'uber', 'lyft', 'too far', 'close to work'],
+  'Move-In Barriers': ['move-in', 'move in', 'background check', 'document', 'timing', 'ready', 'schedule', 'when can i move', 'credit check', 'screening'],
+  'Property & Amenity Mismatch': ['room', 'amenity', 'size', 'location', 'neighborhood', 'noisy', 'space', 'bathroom', 'kitchen', 'parking', 'furnished', 'utilities'],
+  'Financial Constraints': ['budget', 'income', 'afford', 'expensive', 'money', 'unemploy', 'verification', 'job', 'employment', 'financial', "can't afford", 'too expensive', 'cheaper', 'low income'],
+};
+
+function classifyIssuesFromKeyPoints(keyPoints: any): string[] {
+  const concerns: string[] = keyPoints?.memberConcerns || [];
+  const objections: string[] = keyPoints?.objections || [];
+  const summary: string = keyPoints?.summary || '';
+  const preferences: string[] = keyPoints?.memberPreferences || [];
+  const allText = [...concerns, ...objections, summary, ...preferences].join(' ').toLowerCase();
+  if (!allText.trim()) return [];
+  const detected: string[] = [];
+  for (const [category, keywords] of Object.entries(ISSUE_KEYWORDS_MAP)) {
+    if (keywords.some(kw => allText.includes(kw))) detected.push(category);
+  }
+  return detected;
+}
+
 // Provider pricing constants (per minute)
 const STT_PRICING: Record<STTProviderName, number> = {
   elevenlabs: 0.034,  // ElevenLabs Pro Plan
@@ -1769,6 +1795,12 @@ async function processTranscription(bookingId: string, kixieUrl: string, skipTts
     console.log('[Background] Updating booking status and inserting transcription data...');
     
     // First update the booking status (light data stays in bookings table)
+    // ===== PAIN POINT ISSUE CLASSIFICATION =====
+    const detectedIssues = classifyIssuesFromKeyPoints(keyPoints);
+    if (detectedIssues.length > 0) {
+      console.log(`[Background] Detected issues for ${bookingId}: ${detectedIssues.join(', ')}`);
+    }
+
     const { error: bookingUpdateError } = await supabase
       .from('bookings')
       .update({
@@ -1776,6 +1808,7 @@ async function processTranscription(bookingId: string, kixieUrl: string, skipTts
         transcribed_at: new Date().toISOString(),
         call_duration_seconds: callDurationSeconds,
         has_valid_conversation: hasValidConversation,
+        detected_issues: detectedIssues.length > 0 ? detectedIssues : [],
       })
       .eq('id', bookingId);
 
