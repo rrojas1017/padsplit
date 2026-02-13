@@ -1,30 +1,38 @@
 
 
-# Fix: Pain Point Filter Returns No Results
+# Fix: Hide LLM/Provider Names from UI
 
-## Root Cause
+## Problem
 
-The `detected_issues` column was added but **no records have been tagged yet**. The backfill function that processes historical records crashes because it builds a `.in('booking_id', bookingIds)` query with up to 500 UUIDs, exceeding the HTTP URL length limit for Supabase REST API calls.
+The Call Insights modal displays raw provider names like "deepgram" in a badge. Per the white-label policy, no third-party provider names should be exposed to users. The current code at line 448 of `TranscriptionModal.tsx` has a `super_admin` role check, but it's either not working correctly or the user viewing it is a super_admin who should still see a properly formatted label.
 
 ## Fix
 
-### 1. Update `supabase/functions/backfill-detected-issues/index.ts`
+### 1. `src/components/booking/TranscriptionModal.tsx`
 
-Two changes:
+Update the STT provider badge (lines 447-452) to:
+- Import and use `getProviderLabel` from `src/utils/providerLabels.ts`
+- For super_admins: show the proper capitalized name (e.g., "Deepgram" not "deepgram")
+- For all other roles: hide the badge entirely (current behavior, but verify the check works)
 
-- **Reduce main batch size** from 500 to 200
-- **Sub-batch the transcription lookups** by adding a `fetchTranscriptionsInChunks()` helper that splits the `.in()` query into chunks of 50 IDs at a time, then merges the results
+Change from:
+```tsx
+{loadedDetails.sttProvider === 'elevenlabs' ? 'ElevenLabs' : loadedDetails.sttProvider}
+```
 
-This prevents the URL from exceeding length limits while still processing all records efficiently.
+To:
+```tsx
+{getProviderLabel(loadedDetails.sttProvider, true)}
+```
 
-### 2. Deploy and Run
+### 2. Audit other files for raw provider name exposure
 
-After fixing, deploy the function and execute it to tag all historical records with their detected issues. Once complete, the pain point filter in Reports will return matching records.
+Check and fix any other locations where provider names leak:
+- `src/components/billing/LLMCostCalculator.tsx` -- lines 319-329 show raw "Deepgram" and "ElevenLabs" labels; these should use `getProviderLabel` based on role
+- Any other components rendering `sttProvider` values directly
 
 ## Files to Edit
 
-- `supabase/functions/backfill-detected-issues/index.ts` -- add chunked fetching, reduce batch size
+- `src/components/booking/TranscriptionModal.tsx` -- use `getProviderLabel` for the STT badge
+- `src/components/billing/LLMCostCalculator.tsx` -- wrap provider labels with role-based anonymization
 
-## Expected Result
-
-After running the backfill, records with transcription data will have their `detected_issues` column populated (e.g., `["Payment & Pricing Confusion", "Transportation Barriers"]`), and the Reports filter will return matching records.
