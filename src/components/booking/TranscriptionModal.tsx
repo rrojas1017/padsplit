@@ -11,6 +11,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useBookingDetails } from '@/hooks/useBookingDetails';
 import { Booking, CallKeyPoints, AgentFeedback, MemberDetails } from '@/types';
 import { MemberDetailsCard } from './MemberDetailsCard';
+import { getProviderLabel, getProviderBadgeColor } from '@/utils/providerLabels';
 
 interface TranscriptionModalProps {
   booking: Booking;
@@ -446,8 +447,8 @@ export function TranscriptionModal({ booking, isOpen, onClose, onTranscriptionCo
               <div className="flex flex-wrap gap-2">
                 {/* STT Provider badge - only visible to super_admin */}
                 {loadedDetails?.sttProvider && user?.role === 'super_admin' && (
-                  <Badge variant="outline" className="bg-purple-500/10 text-purple-600 border-purple-500/20">
-                    {loadedDetails.sttProvider === 'elevenlabs' ? 'ElevenLabs' : loadedDetails.sttProvider}
+                  <Badge variant="outline" className={getProviderBadgeColor(loadedDetails.sttProvider)}>
+                    {getProviderLabel(loadedDetails.sttProvider, true)}
                   </Badge>
                 )}
                 {keyPoints?.moveInReadiness && (
