@@ -67,6 +67,24 @@ function classifyFromKeyPoints(keyPoints: any): string[] {
   return detected;
 }
 
+async function fetchTranscriptionsInChunks(
+  supabase: any,
+  bookingIds: string[],
+  chunkSize = 50
+): Promise<any[]> {
+  const results: any[] = [];
+  for (let i = 0; i < bookingIds.length; i += chunkSize) {
+    const chunk = bookingIds.slice(i, i + chunkSize);
+    const { data, error } = await supabase
+      .from('booking_transcriptions')
+      .select('booking_id, call_key_points')
+      .in('booking_id', chunk);
+    if (error) throw error;
+    if (data) results.push(...data);
+  }
+  return results;
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -77,7 +95,7 @@ serve(async (req) => {
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    const BATCH_SIZE = 500;
+    const BATCH_SIZE = 200;
     let totalProcessed = 0;
     let totalTagged = 0;
     let hasMore = true;
@@ -100,13 +118,8 @@ serve(async (req) => {
 
       const bookingIds = bookings.map(b => b.id);
 
-      // Fetch key points from booking_transcriptions
-      const { data: transcriptions, error: tError } = await supabase
-        .from('booking_transcriptions')
-        .select('booking_id, call_key_points')
-        .in('booking_id', bookingIds);
-
-      if (tError) throw tError;
+      // Fetch key points from booking_transcriptions in chunks
+      const transcriptions = await fetchTranscriptionsInChunks(supabase, bookingIds);
 
       // Process each transcription
       for (const t of (transcriptions || [])) {
