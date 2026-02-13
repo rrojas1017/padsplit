@@ -26,6 +26,57 @@ const OBJECTION_CATEGORIES: Record<string, string[]> = {
   'Personal/Life Circumstances': ['family', 'job', 'work', 'situation', 'personal', 'circumstances', 'life', 'change', 'uncertainty', 'decision'],
 };
 
+// Inlined keyword classifier from src/utils/issueClassifier.ts (cannot import from /src in edge functions)
+const ISSUE_KEYWORDS: Record<string, string[]> = {
+  'Payment & Pricing Confusion': [
+    'promo code', 'deposit', 'weekly rate', 'how much', 'move-in cost',
+    'coupon', 'discount', 'billing', 'pricing', 'overcharged', 'hidden fee',
+    'price confused', 'not sure about the price', 'weekly payment', 'first week',
+  ],
+  'Booking Process Issues': [
+    'how to book', 'confus', 'trouble booking', "can't figure out",
+    'hard to navigate', 'stuck on', 'book a room', 'reserve',
+  ],
+  'Host & Approval Concerns': [
+    'approval', 'approv', 'reject', 'landlord', 'denied', 'pending approval',
+    "haven't heard back", 'no response', 'still waiting', 'property manager',
+  ],
+  'Trust & Legitimacy': [
+    'scam', 'legit', 'trust', 'fraud', 'concern about company', 'suspicious',
+    'legitimate', 'sketchy', 'too good to be true', 'is this a scam',
+    'can i trust', 'is this real', 'reviews', 'reputation',
+  ],
+  'Transportation Barriers': [
+    'transport', 'bus', 'transit', 'commute', 'far from', 'too far',
+    'close to work', 'near work', 'no transportation', "can't get there", 'public transit',
+  ],
+  'Move-In Barriers': [
+    'background check', 'credit check', 'screening', 'eviction',
+    'when can i move', 'criminal', 'failed background', 'denied screening',
+    'move-in', 'move in',
+  ],
+  'Property & Amenity Mismatch': [
+    'noisy', 'neighborhood', 'too small', "doesn't have", 'no parking',
+    'not what i expected', 'wrong room', 'amenity',
+  ],
+  'Financial Constraints': [
+    'budget', "can't afford", 'too expensive', 'unemploy', 'cheaper',
+    'low income', 'fixed income', 'disability', 'ssi', 'ssdi',
+    'not enough money', "can't pay",
+  ],
+};
+
+function classifyBookingIssues(memberConcerns: string[], objections: string[]): string[] {
+  const allText = [...memberConcerns, ...objections].join(' ').toLowerCase();
+  if (!allText.trim()) return [];
+  const detected: string[] = [];
+  for (const [category, keywords] of Object.entries(ISSUE_KEYWORDS)) {
+    const matchCount = keywords.filter(kw => allText.includes(kw.toLowerCase())).length;
+    if (matchCount >= 2) detected.push(category);
+  }
+  return detected;
+}
+
 function categorizeObjection(text: string): string {
   const lower = text.toLowerCase();
   for (const [category, keywords] of Object.entries(OBJECTION_CATEGORIES)) {
@@ -206,9 +257,35 @@ async function processAnalysis(url: string, key: string, apiKey: string, id: str
       throw new Error(`Function timeout approaching before AI call (${elapsedBeforeAI}ms elapsed)`);
     }
 
+    // Phase 2.5: Pre-compute issue frequencies using keyword classifier (same as Reports page)
+    console.log(`[ProcessAnalysis] Phase 2.5: Computing keyword classifier frequencies...`);
+    const issueCounts: Record<string, number> = {};
+    for (const cat of Object.keys(ISSUE_KEYWORDS)) issueCounts[cat] = 0;
+
+    for (const b of bookings as any[]) {
+      const t = Array.isArray(b.booking_transcriptions) ? b.booking_transcriptions[0] : b.booking_transcriptions;
+      const kp = t?.call_key_points;
+      if (!kp) continue;
+      const detected = classifyBookingIssues(kp.memberConcerns || [], kp.objections || []);
+      for (const issue of detected) issueCounts[issue] = (issueCounts[issue] || 0) + 1;
+    }
+
+    const total = bookings.length;
+    const issueFrequencies: Record<string, { count: number; percent: number }> = {};
+    for (const [cat, count] of Object.entries(issueCounts)) {
+      issueFrequencies[cat] = { count, percent: Math.round((count / total) * 100) };
+    }
+
+    const classifierReference = Object.entries(issueFrequencies)
+      .filter(([_, v]) => v.count > 0)
+      .sort((a, b) => b[1].count - a[1].count)
+      .map(([cat, { count, percent }]) => `- ${cat}: ${percent}% (${count} of ${total} calls)`)
+      .join('\n');
+
+    console.log(`[ProcessAnalysis] Keyword classifier reference:\n${classifierReference}`);
+
     // Phase 3: AI Analysis with pre-aggregated objections
     console.log(`[ProcessAnalysis] Phase 3: Pre-aggregating objections and sending to AI...`);
-    const total = bookings.length;
     const pct = (n: number) => Math.round((n / total) * 100);
     
     // Pre-aggregate objections into semantic categories
@@ -230,25 +307,39 @@ async function processAnalysis(url: string, key: string, apiKey: string, id: str
       marketBkdn[m] = { non_booking_count: d.count, top_objection: top(d.objections), top_concern: top(d.concerns) };
     }
 
-    // Updated prompt with pre-aggregated objection categories
+    // Updated prompt with keyword classifier GROUND TRUTH anchoring
     const prompt = `Analyze ${total} Non-Booking calls with pre-grouped objection data.
 
 OBJECTION BREAKDOWN (pre-aggregated by server):
 ${formattedBreakdown}
 
+KEYWORD CLASSIFIER REFERENCE FREQUENCIES (GROUND TRUTH — from Reports page classifier):
+These counts represent calls where the issue was a GENUINE barrier, confirmed by 2+ keyword matches.
+Your objection_patterns frequency percentages MUST closely align with these counts.
+${classifierReference || '(No issues detected by keyword classifier)'}
+
 ADDITIONAL CONTEXT:
 - Concerns mentioned: ${concerns.slice(0, 20).join('; ')}
 - Sentiment distribution: Positive ${sentiment.positive}, Neutral ${sentiment.neutral}, Negative ${sentiment.negative}
 
-INSTRUCTIONS:
-For the objection_patterns array, use the EXACT counts and percentages from the pre-aggregated breakdown above. 
-Each category should become one objection pattern entry with an actionable suggested_response.
+CRITICAL FREQUENCY INSTRUCTIONS:
+- Your objection_patterns frequency percentages MUST closely align with the keyword classifier counts above.
+- Do NOT estimate higher frequencies based on mentions alone.
+- Only count calls where the topic was a GENUINE BARRIER or source of CONFUSION/FRUSTRATION.
+- "frequency" should reflect "percentage of calls where this was a genuine pain point that caused confusion, frustration, or was a barrier to booking" — NOT "percentage of calls where the topic was simply discussed as part of normal conversation."
+
+DISTINCTION EXAMPLES (what counts vs. what does NOT count):
+- PAYMENT/PRICING: COUNT "I'm confused about move-in costs" | DO NOT COUNT "What's the weekly rate?" (routine info)
+- TRANSPORTATION: COUNT "I can't get there, no bus route" | DO NOT COUNT "Where is the property?" (general interest)
+- MOVE-IN BARRIERS: COUNT "I failed the background check" | DO NOT COUNT "When can I move in?" (scheduling)
+- TRUST: COUNT "Is this a scam?" | DO NOT COUNT "Can you tell me about PadSplit?" (general inquiry)
+- FINANCIAL: COUNT "I can't afford it right now" | DO NOT COUNT "What are the payment options?" (routine)
 
 Return JSON:
 {
   "rejection_reasons": [{"reason": "", "percentage": 0, "count": 0}],
   "missed_opportunities": [{"pattern": "", "count": 0, "recovery_suggestion": "", "urgency": "high"}],
-  "objection_patterns": [{"objection": "Category Name from breakdown", "frequency": <percentage from breakdown>, "suggested_response": "specific actionable response"}],
+  "objection_patterns": [{"objection": "Category Name from breakdown", "frequency": <percentage from keyword classifier GROUND TRUTH, not from mentions>, "suggested_response": "specific actionable response"}],
   "recovery_recommendations": [{"recommendation": "", "priority": "high", "category": "Process"}],
   "agent_insights": {${Object.keys(agents).map(n => `"${n}":{"improvement_area":""}`).join(',')}},
   "market_insights": {${Object.keys(markets).map(m => `"${m}":{"suggested_focus":""}`).join(',')}}
