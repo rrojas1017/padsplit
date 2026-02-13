@@ -181,7 +181,6 @@ export function usePainPointEvolution(timeRange: TimeRangeOption = '6m'): UsePai
           .from('member_insights')
           .select('id, created_at, date_range_start, date_range_end, pain_points, status, analysis_period')
           .eq('status', 'completed')
-          .in('analysis_period', ['allTime', 'manual'])
           .order('date_range_end', { ascending: true });
 
         if (cutoffDate) {
