@@ -6,61 +6,57 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// Same keyword classifier as used in transcribe-call
+// Same keyword classifier as used in transcribe-call (tightened to reduce false positives)
 const ISSUE_KEYWORDS: Record<string, string[]> = {
   'Payment & Pricing Confusion': [
-    'payment', 'promo', 'deposit', 'weekly rate', 'cost', 'price', 'fee', 'afford',
-    'promo code', 'coupon', 'discount', 'billing', 'charge', 'pay', 'pricing',
-    'weekly payment', 'first week', 'move-in cost', 'how much',
+    'promo code', 'deposit', 'weekly rate', 'how much', 'move-in cost',
+    'coupon', 'discount', 'billing', 'pricing', 'overcharged', 'hidden fee',
+    'price confused', 'not sure about the price', 'weekly payment', 'first week',
   ],
   'Booking Process Issues': [
-    'booking', 'navigate', 'website', 'platform', 'listing', 'process', 'confus',
-    'sign up', 'signup', 'register', 'account', 'app', 'application', 'apply',
-    'how to book', 'book a room', 'reserve',
+    'how to book', 'confus', 'trouble booking', "can't figure out",
+    'hard to navigate', 'stuck on', 'book a room', 'reserve',
   ],
   'Host & Approval Concerns': [
-    'host', 'approval', 'approv', 'reject', 'landlord', 'response', 'wait',
-    'accepted', 'denied', 'pending approval', 'owner', 'property manager',
+    'approval', 'approv', 'reject', 'landlord', 'denied', 'pending approval',
+    "haven't heard back", 'no response', 'still waiting', 'property manager',
   ],
   'Trust & Legitimacy': [
-    'scam', 'legit', 'trust', 'safe', 'real', 'fraud', 'concern about company',
-    'suspicious', 'legitimate', 'verify', 'too good to be true', 'sketchy',
-    'is this real', 'reviews', 'reputation',
+    'scam', 'legit', 'trust', 'fraud', 'concern about company', 'suspicious',
+    'legitimate', 'sketchy', 'too good to be true', 'is this a scam',
+    'can i trust', 'is this real', 'reviews', 'reputation',
   ],
   'Transportation Barriers': [
-    'transport', 'drive', 'car', 'bus', 'transit', 'distance', 'commute', 'far from',
-    'uber', 'lyft', 'ride', 'walk', 'bike', 'train', 'subway', 'public transit',
-    'too far', 'close to work', 'near work',
+    'transport', 'bus', 'transit', 'commute', 'far from', 'too far',
+    'close to work', 'near work', 'no transportation', "can't get there", 'public transit',
   ],
   'Move-In Barriers': [
-    'move-in', 'move in', 'background check', 'document', 'timing', 'ready', 'schedule',
-    'when can i move', 'available', 'id', 'identification', 'credit check',
-    'criminal', 'eviction', 'screening',
+    'background check', 'credit check', 'screening', 'eviction',
+    'when can i move', 'criminal', 'failed background', 'denied screening',
+    'move-in', 'move in',
   ],
   'Property & Amenity Mismatch': [
-    'room', 'amenity', 'size', 'location', 'neighborhood', 'noisy', 'space',
-    'bathroom', 'kitchen', 'parking', 'furnished', 'utilities', 'wifi', 'laundry',
-    'shared', 'private', 'small', 'condition', 'clean',
+    'noisy', 'neighborhood', 'too small', "doesn't have", 'no parking',
+    'not what i expected', 'wrong room', 'amenity',
   ],
   'Financial Constraints': [
-    'budget', 'income', 'afford', 'expensive', 'money', 'unemploy', 'verification',
-    'job', 'employment', 'paycheck', 'financial', "can't afford", 'too expensive',
-    'cheaper', 'low income', 'fixed income', 'disability', 'ssi', 'ssdi',
+    'budget', "can't afford", 'too expensive', 'unemploy', 'cheaper',
+    'low income', 'fixed income', 'disability', 'ssi', 'ssdi',
+    'not enough money', "can't pay",
   ],
 };
 
 function classifyFromKeyPoints(keyPoints: any): string[] {
   const concerns: string[] = keyPoints?.memberConcerns || [];
   const objections: string[] = keyPoints?.objections || [];
-  const summary: string = keyPoints?.summary || '';
-  const preferences: string[] = keyPoints?.memberPreferences || [];
 
-  const allText = [...concerns, ...objections, summary, ...preferences].join(' ').toLowerCase();
+  const allText = [...concerns, ...objections].join(' ').toLowerCase();
   if (!allText.trim()) return [];
 
   const detected: string[] = [];
   for (const [category, keywords] of Object.entries(ISSUE_KEYWORDS)) {
-    if (keywords.some(kw => allText.includes(kw.toLowerCase()))) {
+    const matchCount = keywords.filter(kw => allText.includes(kw.toLowerCase())).length;
+    if (matchCount >= 2) {
       detected.push(category);
     }
   }
