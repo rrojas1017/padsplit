@@ -25,52 +25,50 @@ export const ISSUE_BADGE_CONFIG: Record<string, { color: string; icon: string }>
   'Financial Constraints': { color: 'bg-rose-500/15 text-rose-600 border-rose-500/20', icon: 'DollarSign' },
 };
 
-// Keyword patterns for each category
+// Keyword patterns for each category (tightened to reduce false positives)
 const ISSUE_KEYWORDS: Record<IssueCategory, string[]> = {
   'Payment & Pricing Confusion': [
-    'payment', 'promo', 'deposit', 'weekly rate', 'cost', 'price', 'fee', 'afford',
-    'promo code', 'coupon', 'discount', 'billing', 'charge', 'pay', 'pricing',
-    'weekly payment', 'first week', 'move-in cost', 'how much',
+    'promo code', 'deposit', 'weekly rate', 'how much', 'move-in cost',
+    'coupon', 'discount', 'billing', 'pricing', 'overcharged', 'hidden fee',
+    'price confused', 'not sure about the price', 'weekly payment', 'first week',
   ],
   'Booking Process Issues': [
-    'booking', 'navigate', 'website', 'platform', 'listing', 'process', 'confus',
-    'sign up', 'signup', 'register', 'account', 'app', 'application', 'apply',
-    'how to book', 'book a room', 'reserve',
+    'how to book', 'confus', 'trouble booking', "can't figure out",
+    'hard to navigate', 'stuck on', 'book a room', 'reserve',
   ],
   'Host & Approval Concerns': [
-    'host', 'approval', 'approv', 'reject', 'landlord', 'response', 'wait',
-    'accepted', 'denied', 'pending approval', 'owner', 'property manager',
+    'approval', 'approv', 'reject', 'landlord', 'denied', 'pending approval',
+    "haven't heard back", 'no response', 'still waiting', 'property manager',
   ],
   'Trust & Legitimacy': [
-    'scam', 'legit', 'trust', 'safe', 'real', 'fraud', 'concern about company',
-    'suspicious', 'legitimate', 'verify', 'too good to be true', 'sketchy',
-    'is this real', 'reviews', 'reputation',
+    'scam', 'legit', 'trust', 'fraud', 'concern about company', 'suspicious',
+    'legitimate', 'sketchy', 'too good to be true', 'is this a scam',
+    'can i trust', 'is this real', 'reviews', 'reputation',
   ],
   'Transportation Barriers': [
-    'transport', 'drive', 'car', 'bus', 'transit', 'distance', 'commute', 'far from',
-    'uber', 'lyft', 'ride', 'walk', 'bike', 'train', 'subway', 'public transit',
-    'too far', 'close to work', 'near work',
+    'transport', 'bus', 'transit', 'commute', 'far from', 'too far',
+    'close to work', 'near work', 'no transportation', "can't get there", 'public transit',
   ],
   'Move-In Barriers': [
-    'move-in', 'move in', 'background check', 'document', 'timing', 'ready', 'schedule',
-    'when can i move', 'available', 'id', 'identification', 'credit check',
-    'criminal', 'eviction', 'screening',
+    'background check', 'credit check', 'screening', 'eviction',
+    'when can i move', 'criminal', 'failed background', 'denied screening',
+    'move-in', 'move in',
   ],
   'Property & Amenity Mismatch': [
-    'room', 'amenity', 'size', 'location', 'neighborhood', 'noisy', 'space',
-    'bathroom', 'kitchen', 'parking', 'furnished', 'utilities', 'wifi', 'laundry',
-    'shared', 'private', 'small', 'condition', 'clean',
+    'noisy', 'neighborhood', 'too small', "doesn't have", 'no parking',
+    'not what i expected', 'wrong room', 'amenity',
   ],
   'Financial Constraints': [
-    'budget', 'income', 'afford', 'expensive', 'money', 'unemploy', 'verification',
-    'job', 'employment', 'paycheck', 'financial', 'can\'t afford', 'too expensive',
-    'cheaper', 'low income', 'fixed income', 'disability', 'ssi', 'ssdi',
+    'budget', "can't afford", 'too expensive', 'unemploy', 'cheaper',
+    'low income', 'fixed income', 'disability', 'ssi', 'ssdi',
+    'not enough money', "can't pay",
   ],
 };
 
 /**
  * Classify text into standardized issue categories using keyword matching.
- * Scans memberConcerns, objections, summary, and memberPreferences.
+ * Only scans memberConcerns and objections (not summary/preferences).
+ * Requires 2+ keyword matches per category to reduce false positives.
  */
 export function classifyIssues(params: {
   memberConcerns?: string[];
@@ -78,23 +76,17 @@ export function classifyIssues(params: {
   summary?: string;
   memberPreferences?: string[];
 }): string[] {
-  const { memberConcerns = [], objections = [], summary = '', memberPreferences = [] } = params;
+  const { memberConcerns = [], objections = [] } = params;
 
-  // Combine all text sources into a single searchable string
-  const allText = [
-    ...memberConcerns,
-    ...objections,
-    summary,
-    ...memberPreferences,
-  ].join(' ').toLowerCase();
+  const allText = [...memberConcerns, ...objections].join(' ').toLowerCase();
 
   if (!allText.trim()) return [];
 
   const detected: string[] = [];
 
   for (const [category, keywords] of Object.entries(ISSUE_KEYWORDS)) {
-    const matched = keywords.some(keyword => allText.includes(keyword.toLowerCase()));
-    if (matched) {
+    const matchCount = keywords.filter(keyword => allText.includes(keyword.toLowerCase())).length;
+    if (matchCount >= 2) {
       detected.push(category);
     }
   }
