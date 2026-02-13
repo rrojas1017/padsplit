@@ -1,85 +1,83 @@
 
-
-## Fix: Overhaul Issue Classification to Reduce False Positives
+## Feature: Highlight Concerns Flagging Records in Call Insights
 
 ### Problem
+When users see "detected issues" in Reports or Call Insights, they don't know *which specific concerns or objections* triggered each issue detection. The current implementation only shows the category name (e.g., "Payment & Pricing Confusion"), but the AI agent needs to understand what member feedback triggered the classification.
 
-The current keyword-based issue classifier produces **massively inflated results**:
-- 75% of records are tagged with 5+ issues (out of 8 possible)
-- 320 records are tagged with ALL 8 issues
-- Only 140 records have just 1 issue
+### Solution Overview
+We need to modify the issue classification logic to also track and display the **matching keywords/concerns** that flagged each issue. This requires:
 
-This happens because single generic words like "room", "booking", "pay", "wait", "host", "location", "document", and "ready" trigger entire categories. In a housing/booking context, these words appear in virtually every call regardless of whether an actual issue exists.
+1. **Enhanced Issue Detection Data Structure**
+   - Instead of storing just `["Payment & Pricing Confusion"]`, store rich data like:
+   ```typescript
+   {
+     issue: "Payment & Pricing Confusion",
+     matchingKeywords: ["promo code", "deposit"],
+     matchingConcerns: ["Customer asked about promo codes", "Concerned about deposit amount"]
+   }
+   ```
 
-### Root Cause
+2. **Update Backend Classification Logic**
+   - Modify `supabase/functions/transcribe-call/index.ts` to collect matching keywords and map them back to the original memberConcerns/objections
+   - Modify `supabase/functions/backfill-detected-issues/index.ts` to apply the same logic
+   - Modify `src/utils/issueClassifier.ts` to return enhanced issue objects with matching details
 
-The classifier uses a naive `string.includes(keyword)` approach:
-1. It concatenates ALL text fields (summary, concerns, objections, preferences) into one blob
-2. A single keyword match anywhere in that blob activates the entire category
-3. Keywords are too generic for a housing/booking domain (e.g., "room" will always appear)
+3. **Database Schema Migration**
+   - Update the `bookings` table to store the enhanced issue data structure in `detected_issues` as a JSONB array of objects instead of a simple array of strings
 
-### Solution: Contextual Keyword Refinement
+4. **UI Display Updates**
+   - **Reports Page**: When users hover over the issue badge, show not just the category but also the specific concerns/keywords that triggered it
+   - **TranscriptionModal**: Add a new "Flagged Issues" section that lists each detected issue with its matching concerns highlighted
+   - Create an expandable "Issue Details" card that shows:
+     - Issue category name
+     - Keywords from our classifier that matched
+     - The actual member concerns/objections that contained those keywords
 
-#### Phase 1: Tighten Keywords (all 3 files)
+5. **Backward Compatibility**
+   - The current simple string array format is still in use; we need to handle both old format (for existing records) and new format (for new classifications)
+   - UI components should gracefully handle both
 
-Remove overly generic single words and replace them with more specific phrases that indicate an actual **problem** rather than a normal conversation topic.
+### Implementation Steps
 
-**Changes per category:**
+1. **Create database migration** to alter `bookings` table: change `detected_issues` from `text[]` to `jsonb` to support richer data structure
 
-| Category | Remove (too generic) | Keep / Add (specific to actual issues) |
-|---|---|---|
-| Payment & Pricing Confusion | `pay`, `cost`, `price`, `fee`, `charge` | Keep: `promo code`, `deposit`, `how much`, `move-in cost`. Add: `overcharged`, `hidden fee`, `price confused`, `not sure about the price` |
-| Booking Process Issues | `booking`, `process`, `account`, `app`, `application`, `apply`, `platform`, `listing` | Keep: `how to book`, `confus`. Add: `trouble booking`, `can't figure out`, `hard to navigate`, `stuck on` |
-| Host & Approval Concerns | `host`, `response`, `wait`, `owner` | Keep: `reject`, `denied`, `pending approval`. Add: `haven't heard back`, `no response`, `still waiting` |
-| Trust & Legitimacy | `safe`, `real` | Keep: `scam`, `legit`, `fraud`, `sketchy`, `too good to be true`. Add: `is this a scam`, `can I trust` |
-| Transportation Barriers | `car`, `drive`, `walk`, `ride` | Keep: `too far`, `commute`, `close to work`, `far from`. Add: `no transportation`, `can't get there` |
-| Move-In Barriers | `document`, `ready`, `schedule`, `available`, `id`, `timing` | Keep: `background check`, `credit check`, `screening`, `eviction`, `when can i move`. Add: `failed background`, `denied screening` |
-| Property & Amenity Mismatch | `room`, `size`, `location`, `space`, `small`, `shared`, `private`, `clean`, `condition` | Keep: `noisy`, `neighborhood`. Add: `too small`, `doesn't have`, `no parking`, `not what I expected`, `wrong room` |
-| Financial Constraints | `job`, `money`, `income`, `verification` | Keep: `can't afford`, `too expensive`, `low income`, `fixed income`, `ssi`, `ssdi`, `unemploy`. Add: `not enough money`, `can't pay` |
+2. **Update `src/utils/issueClassifier.ts`**:
+   - Add new function `classifyIssuesWithDetails()` that returns objects with `{ issue, matchingKeywords, matchingConcerns }`
+   - Keep existing `classifyIssues()` for backward compatibility
 
-#### Phase 2: Only Classify from Concerns and Objections (not summary/preferences)
+3. **Update edge functions** (both `transcribe-call` and `backfill-detected-issues`):
+   - Use the new `classifyIssuesWithDetails()` function
+   - Store enhanced objects in database
 
-The summary and preferences contain normal descriptive text that will always match generic keywords. Issues should only be detected from fields that explicitly capture **problems**:
-- `memberConcerns` -- explicitly flagged concerns
-- `objections` -- explicit objections raised
+4. **Update Reports.tsx**:
+   - Enhance the issue tooltip to show matching keywords and concerns
+   - Add icons/visual indicators for each issue category
 
-Remove `summary` and `memberPreferences` from the classification input. These fields describe the call and member wants, not problems.
+5. **Update TranscriptionModal.tsx**:
+   - Add new "Detected Issues & Concerns" section
+   - Display each issue with its triggering keywords/concerns in an expandable format
+   - Use the ISSUE_BADGE_CONFIG colors for visual consistency
 
-#### Phase 3: Require Minimum Relevance
-
-Add a minimum threshold: only tag an issue if **2 or more** distinct keywords from that category match. A single keyword match is too noisy.
-
-### Files to Modify
-
-1. **`supabase/functions/transcribe-call/index.ts`** (lines 110-134)
-   - Update `ISSUE_KEYWORDS_MAP` with tightened keywords
-   - Update `classifyIssuesFromKeyPoints` to only use concerns + objections
-   - Add 2-keyword minimum threshold
-
-2. **`src/utils/issueClassifier.ts`** (lines 29-103)
-   - Mirror the same keyword changes
-   - Update `classifyIssues` to only use concerns + objections
-   - Add 2-keyword minimum threshold
-
-3. **`supabase/functions/backfill-detected-issues/index.ts`** (lines 10-72)
-   - Mirror the same keyword changes
-   - Update `classifyFromKeyPoints` to only use concerns + objections
-   - Add 2-keyword minimum threshold
-
-4. **Re-run backfill** after deploying changes to re-tag all existing records with the improved classifier
+6. **Re-run backfill**:
+   - After deploying updated functions, reset `detected_issues` to NULL
+   - Run backfill to populate all records with enhanced issue data
 
 ### Expected Outcome
 
-- Most records should have 0-2 issues instead of 5-8
-- Only records where the caller explicitly raised concerns about a topic will be tagged
-- The pain point filter and icons in Reports will become meaningful and actionable
-- Issue distribution should roughly follow a power law (many records with 0 issues, fewer with 1, very few with 3+)
+When users view a record in Reports or the Call Insights modal:
+- **Reports page**: Hovering over issue badge shows full issue name + list of concerns that triggered it
+- **TranscriptionModal**: New "Flagged Issues" panel shows each issue category with:
+  - The category icon and badge color
+  - List of keywords that matched
+  - The specific member concerns/objections that contained those keywords
+  - This helps agents understand *why* the system flagged this record and what to address
 
-### Implementation Order
+### Files to Modify
 
-1. Update all 3 keyword maps and classifier logic simultaneously
-2. Deploy the updated `transcribe-call` and `backfill-detected-issues` functions
-3. Reset all `detected_issues` to NULL to force re-processing
-4. Run the backfill to re-tag every record
-5. Verify the new distribution in the database
+1. **Database**: Create migration for `detected_issues` JSONB structure
+2. **`src/utils/issueClassifier.ts`** -- Add `classifyIssuesWithDetails()` function
+3. **`supabase/functions/transcribe-call/index.ts`** -- Use new classification function
+4. **`supabase/functions/backfill-detected-issues/index.ts`** -- Use new classification function
+5. **`src/pages/Reports.tsx`** -- Enhanced tooltip with matching concerns
+6. **`src/components/booking/TranscriptionModal.tsx`** -- New "Detected Issues" section
 
