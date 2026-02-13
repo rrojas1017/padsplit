@@ -40,7 +40,7 @@ import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from '@/comp
 import { ChurnRiskBadge } from '@/components/reports/ChurnRiskBadge';
 import { calculateChurnRisk } from '@/utils/churnPrediction';
 import { useChurnPrediction } from '@/hooks/useChurnPrediction';
-import { ISSUE_CATEGORIES, ISSUE_BADGE_CONFIG } from '@/utils/issueClassifier';
+import { ISSUE_CATEGORIES, ISSUE_BADGE_CONFIG, normalizeDetectedIssues } from '@/utils/issueClassifier';
 import { Badge } from '@/components/ui/badge';
 
 type Site = {
@@ -319,7 +319,7 @@ export default function Reports() {
       booking.hubspotLink || '',
       booking.kixieLink || '',
       booking.adminProfileLink || '',
-      booking.detectedIssues?.join(', ') || '',
+      booking.detectedIssues ? normalizeDetectedIssues(booking.detectedIssues).map(d => d.issue).join(', ') : '',
     ]);
 
     const csvContent = [
@@ -392,7 +392,7 @@ export default function Reports() {
     const research = records.filter(b => b.recordType === 'research').length;
     const rebookings = records.filter(b => b.isRebooking).length;
     const newBookings = records.length - rebookings - nonBooking - research;
-    const issuesDetected = records.filter(b => b.detectedIssues && b.detectedIssues.length > 0).length;
+    const issuesDetected = records.filter(b => b.detectedIssues && normalizeDetectedIssues(b.detectedIssues).length > 0).length;
     
     return { total, pendingMoveIn, movedIn, memberRejected, noShowCancelled, postponed, nonBooking, research, rebookings, newBookings, issuesDetected };
   }, [totalCount, records]);
@@ -874,31 +874,43 @@ export default function Reports() {
                     <td className="py-3 px-4 text-sm text-foreground">
                       <div className="flex items-center gap-1.5">
                         {format(booking.bookingDate, 'MMM d, yyyy')}
-                        {booking.detectedIssues && booking.detectedIssues.length > 0 && (
+                        {(() => {
+                          const issues = normalizeDetectedIssues(booking.detectedIssues);
+                          return issues.length > 0 && (
                           <Tooltip>
                             <TooltipTrigger asChild>
                               <span className={cn(
                                 "inline-flex items-center gap-0.5 cursor-help",
-                                booking.detectedIssues.length === 1
-                                  ? ISSUE_BADGE_CONFIG[booking.detectedIssues[0]]?.color.split(' ')[1] || 'text-amber-500'
+                                issues.length === 1
+                                  ? ISSUE_BADGE_CONFIG[issues[0].issue]?.color.split(' ')[1] || 'text-amber-500'
                                   : 'text-amber-500'
                               )}>
                                 <ShieldAlert className="h-4 w-4" />
-                                {booking.detectedIssues.length > 1 && (
-                                  <span className="text-[10px] font-bold">{booking.detectedIssues.length}</span>
+                                {issues.length > 1 && (
+                                  <span className="text-[10px] font-bold">{issues.length}</span>
                                 )}
                               </span>
                             </TooltipTrigger>
-                            <TooltipContent side="right" className="max-w-xs">
-                              <p className="font-semibold mb-1">{booking.detectedIssues.length} Issue{booking.detectedIssues.length > 1 ? 's' : ''} Detected</p>
-                              <ul className="text-xs space-y-0.5">
-                                {booking.detectedIssues.map((issue, i) => (
-                                  <li key={i}>• {issue}</li>
+                            <TooltipContent side="right" className="max-w-sm">
+                              <p className="font-semibold mb-1">{issues.length} Issue{issues.length > 1 ? 's' : ''} Detected</p>
+                              <div className="text-xs space-y-2">
+                                {issues.map((detail, i) => (
+                                  <div key={i}>
+                                    <p className="font-medium">• {detail.issue}</p>
+                                    {detail.matchingConcerns.length > 0 && (
+                                      <div className="ml-3 mt-0.5 text-muted-foreground">
+                                        {detail.matchingConcerns.map((c, j) => (
+                                          <p key={j} className="italic">"{c}"</p>
+                                        ))}
+                                      </div>
+                                    )}
+                                  </div>
                                 ))}
-                              </ul>
+                              </div>
                             </TooltipContent>
                           </Tooltip>
-                        )}
+                        );
+                        })()}
                       </div>
                     </td>
                     <td className="py-3 px-4 text-sm text-foreground">
@@ -1044,24 +1056,44 @@ export default function Reports() {
                       {booking.communicationMethod}
                     </td>
                     <td className="py-3 px-4">
-                      {booking.detectedIssues && booking.detectedIssues.length > 0 ? (
+                      {(() => {
+                        const issues = normalizeDetectedIssues(booking.detectedIssues);
+                        return issues.length > 0 ? (
                         <div className="flex flex-wrap gap-1 max-w-[200px]">
-                          {booking.detectedIssues.map((issue) => {
-                            const config = ISSUE_BADGE_CONFIG[issue];
+                          {issues.map((detail) => {
+                            const config = ISSUE_BADGE_CONFIG[detail.issue];
                             return (
-                              <span
-                                key={issue}
-                                className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium border ${config?.color || 'bg-muted text-muted-foreground border-border'}`}
-                                title={issue}
-                              >
-                                {issue.split(' ')[0]}
-                              </span>
+                              <Tooltip key={detail.issue}>
+                                <TooltipTrigger asChild>
+                                  <span
+                                    className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium border cursor-help ${config?.color || 'bg-muted text-muted-foreground border-border'}`}
+                                  >
+                                    {detail.issue.split(' ')[0]}
+                                  </span>
+                                </TooltipTrigger>
+                                <TooltipContent side="top" className="max-w-xs">
+                                  <p className="font-semibold text-xs">{detail.issue}</p>
+                                  {detail.matchingConcerns.length > 0 && (
+                                    <div className="mt-1 text-xs text-muted-foreground space-y-0.5">
+                                      {detail.matchingConcerns.map((c, j) => (
+                                        <p key={j} className="italic">"{c}"</p>
+                                      ))}
+                                    </div>
+                                  )}
+                                  {detail.matchingKeywords.length > 0 && (
+                                    <p className="mt-1 text-[10px] text-muted-foreground">
+                                      Keywords: {detail.matchingKeywords.join(', ')}
+                                    </p>
+                                  )}
+                                </TooltipContent>
+                              </Tooltip>
                             );
                           })}
                         </div>
                       ) : (
                         <span className="text-muted-foreground text-xs">—</span>
-                      )}
+                      );
+                      })()}
                     </td>
                     <td className="py-3 px-4">
                       <div className="flex items-center gap-2">

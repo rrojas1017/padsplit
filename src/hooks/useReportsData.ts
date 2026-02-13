@@ -347,7 +347,7 @@ export function useReportsData(
           hasValidConversation: row.has_valid_conversation,
           recordType: (row as any).record_type as 'booking' | 'research' | undefined,
           researchCallId: (row as any).research_call_id || undefined,
-          detectedIssues: (row as any).detected_issues || undefined,
+          detectedIssues: Array.isArray((row as any).detected_issues) ? (row as any).detected_issues : undefined,
         };
       });
 

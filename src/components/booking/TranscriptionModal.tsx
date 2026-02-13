@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
-import { Loader2, ChevronDown, ChevronUp, Mic, AlertCircle, CheckCircle2, Clock, TrendingUp, MessageSquare, Target, AlertTriangle, Lightbulb, Smile, Meh, Frown, Star, Award, ThumbsUp, GraduationCap, RefreshCw, Ban, Radio, Wrench } from 'lucide-react';
+import { Loader2, ChevronDown, ChevronUp, Mic, AlertCircle, CheckCircle2, Clock, TrendingUp, MessageSquare, Target, AlertTriangle, Lightbulb, Smile, Meh, Frown, Star, Award, ThumbsUp, GraduationCap, RefreshCw, Ban, Radio, Wrench, ShieldAlert } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/contexts/AuthContext';
@@ -12,6 +12,7 @@ import { useBookingDetails } from '@/hooks/useBookingDetails';
 import { Booking, CallKeyPoints, AgentFeedback, MemberDetails } from '@/types';
 import { MemberDetailsCard } from './MemberDetailsCard';
 import { getProviderLabel, getProviderBadgeColor } from '@/utils/providerLabels';
+import { normalizeDetectedIssues, ISSUE_BADGE_CONFIG } from '@/utils/issueClassifier';
 
 interface TranscriptionModalProps {
   booking: Booking;
@@ -551,6 +552,46 @@ export function TranscriptionModal({ booking, isOpen, onClose, onTranscriptionCo
                   </Button>
                 </div>
               )}
+
+              {/* Flagged Issues - shows which concerns triggered each detected issue */}
+              {(() => {
+                const issues = normalizeDetectedIssues(booking.detectedIssues);
+                return issues.length > 0 && (
+                  <div className="bg-amber-500/5 rounded-lg p-4 border border-amber-500/20">
+                    <h4 className="font-semibold mb-3 flex items-center gap-2 text-amber-600">
+                      <ShieldAlert className="h-4 w-4" />
+                      Flagged Issues ({issues.length})
+                    </h4>
+                    <div className="space-y-3">
+                      {issues.map((detail, i) => {
+                        const config = ISSUE_BADGE_CONFIG[detail.issue];
+                        return (
+                          <div key={i} className={`rounded-md p-3 border ${config?.color || 'bg-muted text-muted-foreground border-border'}`}>
+                            <p className="font-medium text-sm">{detail.issue}</p>
+                            {detail.matchingConcerns.length > 0 && (
+                              <div className="mt-1.5 space-y-1">
+                                <p className="text-[10px] uppercase tracking-wider font-semibold opacity-70">Triggering Concerns</p>
+                                {detail.matchingConcerns.map((concern, j) => (
+                                  <p key={j} className="text-xs italic opacity-80">"{concern}"</p>
+                                ))}
+                              </div>
+                            )}
+                            {detail.matchingKeywords.length > 0 && (
+                              <div className="mt-1.5 flex flex-wrap gap-1">
+                                {detail.matchingKeywords.map((kw, k) => (
+                                  <span key={k} className="inline-flex px-1.5 py-0.5 rounded text-[10px] bg-background/50 border border-current/10">
+                                    {kw}
+                                  </span>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })()}
 
               {/* Key Insights Grid */}
               <div className="grid md:grid-cols-2 gap-4">
