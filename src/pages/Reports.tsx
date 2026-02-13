@@ -872,7 +872,34 @@ export default function Reports() {
                 records.map((booking) => (
                   <tr key={booking.id} className="hover:bg-muted/30 transition-colors">
                     <td className="py-3 px-4 text-sm text-foreground">
-                      {format(booking.bookingDate, 'MMM d, yyyy')}
+                      <div className="flex items-center gap-1.5">
+                        {format(booking.bookingDate, 'MMM d, yyyy')}
+                        {booking.detectedIssues && booking.detectedIssues.length > 0 && (
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <span className={cn(
+                                "inline-flex items-center gap-0.5 cursor-help",
+                                booking.detectedIssues.length === 1
+                                  ? ISSUE_BADGE_CONFIG[booking.detectedIssues[0]]?.color.split(' ')[1] || 'text-amber-500'
+                                  : 'text-amber-500'
+                              )}>
+                                <ShieldAlert className="h-4 w-4" />
+                                {booking.detectedIssues.length > 1 && (
+                                  <span className="text-[10px] font-bold">{booking.detectedIssues.length}</span>
+                                )}
+                              </span>
+                            </TooltipTrigger>
+                            <TooltipContent side="right" className="max-w-xs">
+                              <p className="font-semibold mb-1">{booking.detectedIssues.length} Issue{booking.detectedIssues.length > 1 ? 's' : ''} Detected</p>
+                              <ul className="text-xs space-y-0.5">
+                                {booking.detectedIssues.map((issue, i) => (
+                                  <li key={i}>• {issue}</li>
+                                ))}
+                              </ul>
+                            </TooltipContent>
+                          </Tooltip>
+                        )}
+                      </div>
                     </td>
                     <td className="py-3 px-4 text-sm text-foreground">
                       {booking.status === 'Non Booking' || booking.recordType === 'research' ? (
