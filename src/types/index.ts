@@ -130,6 +130,8 @@ export interface Booking {
   // Research record fields
   recordType?: 'booking' | 'research';
   researchCallId?: string;
+  // Pain point issue tagging
+  detectedIssues?: string[];
 }
 
 export interface DailyMetrics {
