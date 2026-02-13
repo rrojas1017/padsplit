@@ -1,107 +1,154 @@
 
 
-# Centralize Research Records into the Reports Page
+# Pain Point Issue Tagging on Records
 
-## Overview
+## Goal
 
-Make the `bookings` table the single source of truth for ALL records -- bookings and research calls alike. When a researcher logs a survey call, the system will also insert a corresponding row into the `bookings` table flagged as a "Research" record. This means the Reports page automatically becomes the centralized hub, and all downstream processing (transcription, AI analysis, coaching, insights) can operate on research records too.
+Enable PadSplit to filter and audit individual records by the specific pain point categories detected during call analysis (e.g., "Payment Confusion", "Host Approval Issues", "Transportation Barriers"). This turns the aggregated insights from Booking Insights into actionable, record-level audit capability in the Reports page.
 
-## How It Will Work
+## How It Works
 
-When a researcher submits a call via the Log Survey Call form, the system will:
-1. Insert into `research_calls` as it does today (preserving campaign/script/responses data)
-2. Also insert a row into `bookings` with:
-   - `record_type` = `'research'` (new column, default `'booking'`)
-   - `status` = `'Research'` (new status value)
-   - `booking_type` = `'Research'`
-   - `member_name` = caller name
-   - `booking_date` = call date
-   - `contact_phone` = caller phone
-   - `research_call_id` = FK back to `research_calls` for drill-down
-   - `created_by` = researcher's user ID
-   - `move_in_date` = same as call date (required column, displayed as "--" for research)
-   - `agent_id` = a designated placeholder or the researcher's linked agent record
+When a call is transcribed and analyzed, the AI already extracts `memberConcerns`, `objections`, and `callSentiment` into `call_key_points`. This feature adds a classification step that maps those raw data points into standardized issue categories and stores them directly on the booking record. PadSplit can then filter Reports by any issue category to see exactly which accounts experienced it.
 
-In the Reports page, research records will be visually flagged with a purple "Research" badge (similar to how "Non Booking" and "Rebooking" are flagged today), and a new "Record Type" filter will let admins toggle between All, Bookings Only, and Research Only.
+## Standardized Issue Categories
+
+The system will classify each record into one or more of these categories (based on what the AI insights already surface):
+
+- **Payment & Pricing Confusion** -- promo codes, weekly rates, deposits, payment methods
+- **Booking Process Issues** -- platform navigation, booking flow confusion, listing accuracy
+- **Host & Approval Concerns** -- host responsiveness, approval delays, rejection fears
+- **Trust & Legitimacy** -- scam concerns, safety worries, company legitimacy questions
+- **Transportation Barriers** -- distance to work, public transit, car access
+- **Move-In Barriers** -- timing conflicts, background check worries, documentation
+- **Property & Amenity Mismatch** -- room size, amenities, location preferences
+- **Financial Constraints** -- budget limitations, income verification, affordability
 
 ## Database Changes
 
-### New columns on `bookings` table
+**New column on `bookings` table:**
+- `detected_issues` (text[], nullable) -- array of standardized issue category strings
 
-| Column | Type | Default | Purpose |
-|--------|------|---------|---------|
-| `record_type` | text | `'booking'` | Distinguishes `'booking'` vs `'research'` records |
-| `research_call_id` | uuid (nullable, FK to research_calls.id) | null | Links back to the detailed research call data |
+This column lives on the main `bookings` table (not `booking_transcriptions`) so it can be filtered efficiently with server-side queries without requiring a JOIN.
 
-### Validation trigger update
-The existing `validate_manual_booking_contacts` trigger requires email + phone for manual bookings. It needs to skip validation for research records (which may not have an email).
+## Backend Changes
 
-## Changes Required
+### 1. Update `transcribe-call` Edge Function
 
-### 1. Database Migration
-- Add `record_type` text column with default `'booking'`
-- Add `research_call_id` uuid column (nullable, FK to `research_calls`)
-- Update `validate_manual_booking_contacts` trigger to skip research records
-- Add index on `record_type` for efficient filtering
+After the AI generates `call_key_points`, add a classification step that scans `memberConcerns`, `objections`, and the call summary to map them to standardized categories. This uses keyword/semantic matching (not an additional AI call) to keep it fast and free:
 
-### 2. Research Call Submission (`useResearchCalls.ts`)
-- After inserting into `research_calls`, also insert a corresponding row into `bookings` with `record_type = 'research'`
-- Use the returned `research_calls.id` as the `research_call_id` FK value
-- Set `agent_id` to the first available agent or handle via a "Research" pseudo-agent approach -- since `agent_id` is required, we'll create a system-level "Research Team" agent record, or use the researcher's own profile. The simplest approach: use a `created_by` field and set `agent_id` to any valid agent (the Reports page already shows "Agent" column, but for research records we'll display "Researcher: Name" instead)
+```text
+memberConcerns: ["worried about deposit amount", "confused about promo code"]
+  -> detected_issues: ["Payment & Pricing Confusion"]
 
-### 3. Types Update (`src/types/index.ts`)
-- Add `'Research'` to the Booking `status` union type
-- Add `'Research'` to the `bookingType` union type
-- Add `recordType?: 'booking' | 'research'` field
-- Add `researchCallId?: string` field
+objections: ["too far from work", "no car"]
+  -> detected_issues: ["Transportation Barriers"]
+```
 
-### 4. Reports Data Hook (`useReportsData.ts`)
-- Add `record_type` and `research_call_id` to the select query
-- Add `recordTypeFilter` to `ReportsFilters` interface (values: `'all'`, `'booking'`, `'research'`)
-- Apply filter: when `'booking'` selected, filter `record_type = 'booking'`; when `'research'`, filter `record_type = 'research'`
-- Map `record_type` and `research_call_id` in the transform
+The classification runs inline after key points extraction and writes the `detected_issues` array back to the `bookings` row.
 
-### 5. Reports Page UI (`Reports.tsx`)
-- Add a "Record Type" filter dropdown with options: All Records, Bookings Only, Research Only
-- Add `'Research'` to status options and status colors (purple theme: `bg-purple-500/20 text-purple-500`)
-- In the table rows, show a purple "Research" badge next to the contact name for research records
-- For research records: Move-In Date shows "--", Agent column shows researcher name, Type shows "Research"
-- Add a "Research" summary card in the stats row
-- Update CSV export to include a "Record Type" column
+### 2. New Edge Function: `backfill-detected-issues`
 
-### 6. Booking Type/Status References
-- Add `'Research'` to `bookingTypeOptions` in Reports
-- Add `'Research'` status to `statusOptions` in Reports
-- Ensure other pages (Dashboard, Leaderboard, etc.) that count bookings filter by `record_type = 'booking'` OR ignore research status gracefully (since they already filter by specific statuses like "Moved In", "Pending Move-In", they won't accidentally count research records)
+Processes all existing records that have `call_key_points` but no `detected_issues`. Reads the stored key points from `booking_transcriptions`, runs the same classification logic, and updates the `bookings` row. Uses batch pagination (500 per batch) to handle the full dataset.
 
-## Visual Flagging in Reports
+## Frontend Changes
 
-Research records will stand out through:
-- A purple "Research" status badge (consistent with researcher role color)
-- A small "Research" tag next to the contact name (similar to the "Rebooking" tag)
-- Campaign name shown in the Notes/Market column area when available
-- Move-In Date column shows "--" (like Non Booking)
-- Agent column shows "Researcher: [Name]" instead of agent name
+### 1. Reports Page -- New Filter Dropdown
 
-## What This Enables
+Add a "Pain Point Issues" multi-select filter alongside existing filters (Status, Type, Method, etc.):
 
-With research records in the bookings table:
-- Centralized search across ALL call records
-- CSV export includes everything
-- Future: transcription pipeline can process research calls the same way
-- Future: AI insights can analyze research calls alongside booking calls
-- Date filtering, pagination, and sorting work automatically
-- Import batch tracking naturally excludes research (they have no batch ID)
+- Dropdown shows all standardized issue categories
+- Selecting one or more categories filters to records tagged with ANY of those issues
+- Badge count shows how many records match each category
+- Works with server-side pagination via the existing `useReportsData` hook
+
+### 2. Reports Table -- Issue Badges Column
+
+Add a new column "Issues" to the reports table that displays small colored badges for each detected issue on a record. Badges use the same iconography as the Pain Points panel (CreditCard for payment, Car for transportation, etc.).
+
+### 3. Reports Summary Cards
+
+Add an "Issues Detected" summary card showing total records with at least one flagged issue out of the current filtered set.
+
+### 4. CSV Export Update
+
+Include `detected_issues` as a comma-separated column in the CSV export so PadSplit can process the data externally.
+
+## Data Flow
+
+```text
+Call Transcribed (existing)
+        |
+        v
+AI extracts call_key_points (existing)
+  - memberConcerns, objections, callSentiment
+        |
+        v
+Classification Engine (NEW)
+  - Scans concerns, objections, summary
+  - Maps to standardized issue categories
+  - Keyword + pattern matching (no extra AI cost)
+        |
+        v
+bookings.detected_issues = ["Payment & Pricing Confusion", "Transportation Barriers"]
+        |
+        v
+Reports page shows issue badges + filter dropdown
+        |
+        v
+PadSplit filters by "Payment & Pricing Confusion"
+  -> sees all 47 records with that issue
+  -> can audit each account individually
+```
+
+## Technical Details
+
+### Classification Logic (keyword matching)
+
+The classifier scans `memberConcerns`, `objections`, `summary`, and `memberPreferences` for keyword patterns:
+
+| Category | Keywords/Patterns |
+|---|---|
+| Payment & Pricing Confusion | payment, promo, deposit, weekly rate, cost, price, fee, afford |
+| Booking Process Issues | booking, navigate, website, platform, listing, process, confus |
+| Host & Approval Concerns | host, approval, approv, reject, landlord, response, wait |
+| Trust & Legitimacy | scam, legit, trust, safe, real, fraud, concern about company |
+| Transportation Barriers | transport, drive, car, bus, transit, distance, commute, far from |
+| Move-In Barriers | move-in, background check, document, timing, ready, schedule |
+| Property & Amenity Mismatch | room, amenity, size, location, neighborhood, noisy, space |
+| Financial Constraints | budget, income, afford, expensive, money, unemploy, verification |
+
+### Server-Side Filter (useReportsData update)
+
+Add `issueFilter: string[]` to `ReportsFilters`. When populated, adds an `&&` (overlap) operator query:
+
+```sql
+WHERE detected_issues && ARRAY['Payment & Pricing Confusion']
+```
+
+This leverages PostgreSQL array overlap for efficient filtering.
+
+### Backfill Strategy
+
+The backfill function processes records in batches of 500, reads `call_key_points` from `booking_transcriptions`, runs the classifier, and updates `bookings.detected_issues`. Expected to process the full historical dataset in under 2 minutes.
+
+## Files to Create
+
+- `supabase/functions/backfill-detected-issues/index.ts` -- one-time backfill for existing records
 
 ## Files to Edit
-- `src/hooks/useResearchCalls.ts` -- dual-insert into bookings on submit
-- `src/hooks/useReportsData.ts` -- add record_type filter + field mapping
-- `src/pages/Reports.tsx` -- add Record Type filter, Research status/badges, summary card
-- `src/types/index.ts` -- add Research to type unions, add new fields
+
+- `supabase/functions/transcribe-call/index.ts` -- add classification step after key points extraction
+- `src/hooks/useReportsData.ts` -- add `issueFilter` to filters and query logic
+- `src/pages/Reports.tsx` -- add issue filter dropdown, issue badges column, summary card
+- `src/types/index.ts` -- add `detectedIssues` to Booking interface
 
 ## Implementation Order
-1. Database migration (add columns + update trigger)
-2. Update TypeScript types
-3. Update `useResearchCalls.ts` to dual-insert
-4. Update `useReportsData.ts` with new filter + field
-5. Update `Reports.tsx` UI with filter, badges, and summary card
+
+1. Database migration (add `detected_issues` column)
+2. Build classification utility (shared between transcribe-call and backfill)
+3. Update `transcribe-call` to classify new records
+4. Create `backfill-detected-issues` for existing records
+5. Update `useReportsData` with issue filter
+6. Update Reports UI (filter dropdown, badges column, CSV export)
+7. Run backfill to tag all historical records
+
