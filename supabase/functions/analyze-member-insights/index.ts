@@ -163,6 +163,61 @@ function calculateTrendDeltas(
   return { painPointsWithTrends, emergingIssues };
 }
 
+// Keyword-based issue classifier (mirrored from src/utils/issueClassifier.ts for Deno edge function)
+const ISSUE_KEYWORDS: Record<string, string[]> = {
+  'Payment & Pricing Confusion': [
+    'promo code', 'deposit', 'weekly rate', 'how much', 'move-in cost',
+    'coupon', 'discount', 'billing', 'pricing', 'overcharged', 'hidden fee',
+    'price confused', 'not sure about the price', 'weekly payment', 'first week',
+  ],
+  'Booking Process Issues': [
+    'how to book', 'confus', 'trouble booking', "can't figure out",
+    'hard to navigate', 'stuck on', 'book a room', 'reserve',
+  ],
+  'Host & Approval Concerns': [
+    'approval', 'approv', 'reject', 'landlord', 'denied', 'pending approval',
+    "haven't heard back", 'no response', 'still waiting', 'property manager',
+  ],
+  'Trust & Legitimacy': [
+    'scam', 'legit', 'trust', 'fraud', 'concern about company', 'suspicious',
+    'legitimate', 'sketchy', 'too good to be true', 'is this a scam',
+    'can i trust', 'is this real', 'reviews', 'reputation',
+  ],
+  'Transportation Barriers': [
+    'transport', 'bus', 'transit', 'commute', 'far from', 'too far',
+    'close to work', 'near work', 'no transportation', "can't get there", 'public transit',
+  ],
+  'Move-In Barriers': [
+    'background check', 'credit check', 'screening', 'eviction',
+    'when can i move', 'criminal', 'failed background', 'denied screening',
+    'move-in', 'move in',
+  ],
+  'Property & Amenity Mismatch': [
+    'noisy', 'neighborhood', 'too small', "doesn't have", 'no parking',
+    'not what i expected', 'wrong room', 'amenity',
+  ],
+  'Financial Constraints': [
+    'budget', "can't afford", 'too expensive', 'unemploy', 'cheaper',
+    'low income', 'fixed income', 'disability', 'ssi', 'ssdi',
+    'not enough money', "can't pay",
+  ],
+};
+
+// Classify a single booking's concerns/objections using keyword matching (2+ matches required)
+function classifyBookingIssues(memberConcerns: string[], objections: string[]): string[] {
+  const allText = [...memberConcerns, ...objections].join(' ').toLowerCase();
+  if (!allText.trim()) return [];
+
+  const detected: string[] = [];
+  for (const [category, keywords] of Object.entries(ISSUE_KEYWORDS)) {
+    const matchCount = keywords.filter(kw => allText.includes(kw.toLowerCase())).length;
+    if (matchCount >= 2) {
+      detected.push(category);
+    }
+  }
+  return detected;
+}
+
 // Constants for batch pagination
 const BATCH_SIZE = 500;
 const FUNCTION_TIMEOUT_MS = 120000; // 2 minutes safety margin from 150s limit
@@ -402,11 +457,48 @@ async function processAnalysis(
       negative: Math.round((sentimentCounts.negative / totalCalls) * 100)
     };
 
+    // Pre-compute issue frequencies using keyword classifier for AI reference
+    const issueCounts: Record<string, number> = {};
+    for (const category of Object.keys(ISSUE_KEYWORDS)) {
+      issueCounts[category] = 0;
+    }
+
+    for (const booking of bookings) {
+      const transcription = Array.isArray(booking.booking_transcriptions)
+        ? booking.booking_transcriptions[0]
+        : booking.booking_transcriptions;
+      const keyPoints = transcription?.call_key_points;
+      if (!keyPoints) continue;
+
+      const detected = classifyBookingIssues(
+        keyPoints.memberConcerns || [],
+        keyPoints.objections || []
+      );
+      for (const issue of detected) {
+        issueCounts[issue] = (issueCounts[issue] || 0) + 1;
+      }
+    }
+
+    const issueFrequencies: Record<string, { count: number; percent: string }> = {};
+    for (const [category, count] of Object.entries(issueCounts)) {
+      issueFrequencies[category] = {
+        count,
+        percent: ((count / totalCalls) * 100).toFixed(1)
+      };
+    }
+
+    console.log(`[Background] Keyword classifier frequencies:`, JSON.stringify(issueFrequencies));
+
     // Build AI prompt for analysis - ENHANCED with source tracking instructions and customer journeys
     // Add note for smaller datasets
     const smallDatasetNote = totalCalls < 30 
       ? `\n\nNOTE: This is a smaller dataset (${totalCalls} calls). Still provide analysis with the data available - do not skip categories. If there isn't enough data for a category, include it with an empty array. ALWAYS return valid JSON.`
       : '';
+
+    // Build keyword classifier reference section for AI prompt
+    const classifierReference = Object.entries(issueFrequencies)
+      .map(([cat, { count, percent }]) => `- ${cat}: ${percent}% (${count} of ${totalCalls} calls)`)
+      .join('\n');
 
     const aiPrompt = `You are analyzing PadSplit member call data. PadSplit provides affordable room rentals for working-class individuals, typically single occupants with weekly budgets of $150-250.
 
@@ -447,6 +539,32 @@ ${previousAnalysis ? `
 PREVIOUS ANALYSIS (${previousAnalysis.date_range_start} to ${previousAnalysis.date_range_end}):
 Previous pain point categories: ${(previousAnalysis.pain_points || []).map((p: any) => `${p.category} (${p.frequency}%)`).join(', ')}
 ` : ''}
+
+KEYWORD CLASSIFIER REFERENCE FREQUENCIES (Hard Counts - Ground Truth):
+These frequencies were computed by a strict keyword-based classifier that requires 2+ keyword matches per category. Use these as your GROUND TRUTH for pain point frequency percentages.
+${classifierReference}
+
+CRITICAL FREQUENCY INSTRUCTIONS:
+- Your pain_points frequency percentages MUST closely align with the keyword classifier counts above.
+- Do NOT estimate higher frequencies based on topic mentions alone.
+- Only count calls where the topic was a GENUINE PAIN POINT, BARRIER, or source of CONFUSION/FRUSTRATION — NOT routine informational questions asked during normal booking flow.
+- Examples of what to count vs. not count:
+
+  PAYMENT & PRICING CONFUSION:
+  - COUNT AS GENUINE: "I'm confused about the move-in costs, how much is the deposit?" / "I was overcharged" / "The pricing doesn't make sense"
+  - DO NOT COUNT: "What's the weekly rate?" / "When is payment due?" (routine information requests)
+
+  TRANSPORTATION BARRIERS:
+  - COUNT AS GENUINE: "I can't get there by bus" / "It's too far from my job" / "There's no public transit nearby"
+  - DO NOT COUNT: "Where is the property located?" / "What's the address?" (general location interest)
+
+  TRUST & LEGITIMACY:
+  - COUNT AS GENUINE: "Is this a scam?" / "I don't trust this company" / "This seems too good to be true"
+  - DO NOT COUNT: "Can you tell me more about PadSplit?" (general inquiry)
+
+  MOVE-IN BARRIERS:
+  - COUNT AS GENUINE: "I failed the background check" / "I have an eviction on my record" / "I can't pass the screening"
+  - DO NOT COUNT: "When can I move in?" (scheduling question)
 
 Analyze this data and return a JSON object with EXACTLY this structure. 
 
@@ -616,7 +734,8 @@ SUB-CATEGORY REQUIREMENTS (MANDATORY FOR ALL INSIGHT SECTIONS):
 - This applies equally to pain_points, payment_insights, transportation_insights, AND move_in_barriers
 
 ADDITIONAL REQUIREMENTS:
-- Frequencies should be percentages of total calls analyzed
+- Frequencies should be percentages of total calls analyzed and MUST align with the KEYWORD CLASSIFIER REFERENCE FREQUENCIES provided above. These are your ground truth — do not override them with your own estimates.
+- Only count a call toward a pain point category if the concern represented a genuine barrier, confusion, or frustration — not a routine informational question.
 - Include at least 3-5 items in each category if data supports it
 - ALWAYS include real verbatim quotes in the "examples" arrays
 - Market breakdown should only include markets with 3+ calls
