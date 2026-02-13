@@ -317,7 +317,7 @@ const LLMCostCalculator = () => {
               </div>
               <div className="flex items-center gap-2">
                 <span className={`text-xs ${config.sttProvider === 'deepgram' ? 'font-bold' : ''}`}>
-                  Deepgram
+                  Provider A
                 </span>
                 <Switch
                   checked={config.sttProvider === 'elevenlabs'}
@@ -326,7 +326,7 @@ const LLMCostCalculator = () => {
                   }
                 />
                 <span className={`text-xs ${config.sttProvider === 'elevenlabs' ? 'font-bold' : ''}`}>
-                  ElevenLabs
+                  Provider B
                 </span>
               </div>
             </div>
@@ -342,9 +342,9 @@ const LLMCostCalculator = () => {
                     className="cursor-pointer"
                     onClick={() => setConfig(prev => ({ ...prev, llmProvider: provider }))}
                   >
-                    {provider === 'deepseek' && 'DeepSeek ($0.0007)'}
+                    {provider === 'deepseek' && 'Economy ($0.0007)'}
                     {provider === 'hybrid' && 'Hybrid (Recommended)'}
-                    {provider === 'gemini_flash' && 'Gemini ($0.009)'}
+                    {provider === 'gemini_flash' && 'Standard ($0.009)'}
                   </Badge>
                 ))}
               </div>
