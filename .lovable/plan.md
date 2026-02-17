@@ -1,53 +1,66 @@
 
 
-## Add Pricing Discussion Detection to Call Analysis
+## Add Affordability Gap Analysis to Market Intelligence
 
-### What This Does
+### What This Solves
 
-Every call already goes through AI analysis that produces a summary, agent feedback, and key points. This change adds a new field -- `pricingDiscussed` -- to that analysis output, so you can see at a glance whether the agent covered pricing on each call.
+Right now, the "Avg Budget" column in Market Intelligence only shows what callers said they could afford. There's no data on what rooms actually cost in each market, so the red/green color coding just compares each market against the system-wide average budget -- which isn't very meaningful.
+
+This change adds a second data point: the **quoted room price** (what the agent actually quoted during the call). With both numbers, we can show a real **affordability gap** per market: are rooms priced above or below what callers can afford?
 
 ### How It Works
 
-The AI model already reads the full transcription. We simply ask it to also flag whether pricing was discussed, with three pieces of info:
-- **mentioned** (yes/no): Did the agent proactively discuss pricing?
-- **details**: What specifically was covered (e.g., "Agent quoted $185/week and explained the deposit structure")
-- **agentInitiated**: Whether the agent brought it up vs. the member asking
+1. The AI already analyzes each call transcription. We add a new numeric field `quotedRoomPrice` to the analysis output, extracted from the pricing discussion details (e.g., "$185/week" becomes 185).
+2. The Market Intelligence backend aggregates both `avgWeeklyBudget` (customer side) and `avgQuotedPrice` (market side) per state and city.
+3. The UI shows both numbers plus an affordability gap indicator.
 
-This adds zero extra API calls -- it's just an additional field in the existing JSON response the AI already generates.
+### What You'll See
 
-### Where You'll See It
+- **State Heat Table**: New "Avg Quoted" column alongside "Avg Budget", plus a color-coded "Gap" column
+  - Green: Market is affordable (budget >= quoted price)
+  - Red: Affordability gap (budget < quoted price, showing the dollar difference)
+- **Top 10 Markets cards**: Both budget and quoted price shown, with gap indicator
+- **City drill-down**: Same dual metrics with gap
+- **Summary cards**: New "Avg Affordability Gap" card at the top level
 
-1. **Booking detail view** (transcription modal): A pricing badge/indicator showing whether pricing was covered
-2. **Reports table**: A small icon or badge on records where pricing was NOT discussed (similar to how detected issues are flagged)
-3. **Agent feedback section**: Listed as a strength or improvement area
+### Technical Details
 
-### Technical Changes
-
-**1. AI Prompt Update** (`supabase/functions/transcribe-call/index.ts`)
-- Add `pricingDiscussed` to the JSON schema in both prompt variants (standard and enhanced)
-- Structure: `{ "mentioned": boolean, "details": "string", "agentInitiated": boolean }`
-- This field will be stored inside the existing `call_key_points` JSONB column -- no database migration needed
-
-**2. TypeScript Types** (`src/types/index.ts`)
-- Add `pricingDiscussed` to the `CallKeyPoints` interface:
+**1. Update AI prompt** (`supabase/functions/transcribe-call/index.ts`)
+- Add `quotedRoomPrice` numeric field to the `pricingDiscussed` object in the JSON schema
+- Instruction: extract the weekly room rate quoted by the agent as a number (null if not quoted)
+- Updated structure:
   ```
-  pricingDiscussed?: {
-    mentioned: boolean;
-    details: string;
-    agentInitiated: boolean;
+  pricingDiscussed: {
+    mentioned: boolean,
+    details: string,
+    agentInitiated: boolean,
+    quotedRoomPrice: number | null  // NEW - weekly rate in dollars
   }
   ```
 
-**3. Transcription Modal UI** (`src/components/booking/TranscriptionModal.tsx`)
-- Add a small badge/section showing pricing discussion status
-- Green badge "Pricing Discussed" with details, or amber "Pricing Not Mentioned" flag
+**2. Update TypeScript types** (`src/types/index.ts`)
+- Add `quotedRoomPrice?: number | null` to the `pricingDiscussed` type in `CallKeyPoints`
 
-**4. Reports Table** (`src/pages/Reports.tsx`)
-- Add an optional pricing indicator icon on records where `call_key_points.pricingDiscussed.mentioned === false` to highlight missed opportunities
+**3. Update backend aggregation** (`supabase/functions/aggregate-market-data/index.ts`)
+- Add `totalQuotedPrice` and `quotedPriceCount` accumulators to both state and city aggregation
+- Extract `kp.pricingDiscussed?.quotedRoomPrice` from transcription data
+- Output new fields: `avgQuotedPrice` and `affordabilityGap` (avgBudget - avgQuotedPrice) per market
 
-### What Won't Change
-- No new database columns or migrations needed (stored in existing JSONB)
-- No additional API calls or cost increase
-- Existing records won't have this field (it only applies to newly transcribed calls)
-- The backfill function (`batch-reanalyze-member-details`) could regenerate analysis for old records if desired later
+**4. Update Market Intelligence hook** (`src/hooks/useMarketIntelligence.ts`)
+- Add `avgQuotedPrice` and `affordabilityGap` to `MarketStateData` and `MarketCityData` interfaces
+- Compute `systemAvgQuotedPrice` alongside `systemAvgBudget`
+
+**5. Update UI components**
+- `StateHeatTable.tsx`: Add "Avg Quoted" and "Gap" columns
+- `MarketComparisonCards.tsx`: Show both budget and quoted price with gap indicator
+- `CityDrillDown.tsx`: Show quoted price and gap alongside budget
+- `MarketIntelligence.tsx`: Add "Avg Quoted Price" and "Avg Affordability Gap" summary cards
+
+**6. Deploy edge functions**
+- Redeploy `transcribe-call` and `aggregate-market-data`
+
+### Data Notes
+- Only newly transcribed calls will have `quotedRoomPrice` (existing records won't until reanalyzed)
+- Markets where no pricing was quoted will show "—" for quoted price and gap
+- The gap is calculated as: `avgBudget - avgQuotedPrice` (positive = affordable, negative = gap)
 
