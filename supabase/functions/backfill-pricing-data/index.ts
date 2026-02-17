@@ -56,7 +56,18 @@ Rules:
     if (cleaned.endsWith('```')) cleaned = cleaned.slice(0, -3);
     cleaned = cleaned.trim();
     
-    const parsed = JSON.parse(cleaned);
+    let parsed;
+    try {
+      parsed = JSON.parse(cleaned);
+    } catch {
+      // Fallback: extract JSON object via regex
+      const match = cleaned.match(/\{[\s\S]*\}/);
+      if (match) {
+        try { parsed = JSON.parse(match[0]); } catch { return null; }
+      } else {
+        return null;
+      }
+    }
     return {
       mentioned: !!parsed.mentioned,
       details: parsed.details || '',
@@ -85,13 +96,32 @@ serve(async (req) => {
     let batchSize = 20;
     try {
       const body = await req.json();
-      batchSize = body.batchSize || 20;
+      batchSize = body.batchSize ?? 20;
     } catch { /* defaults */ }
 
     console.log(`[BackfillPricing] Starting (batchSize: ${batchSize})`);
 
+    // Dry-run mode: just return the count of records needing backfill
+    if (batchSize === 0) {
+      const { data: allMissing } = await supabase
+        .from('booking_transcriptions')
+        .select('id, call_key_points')
+        .not('call_transcription', 'is', null)
+        .not('call_key_points', 'is', null)
+        .limit(5000);
+
+      const remaining = (allMissing || []).filter(r => {
+        const kp = r.call_key_points as any;
+        return !kp?.pricingDiscussed;
+      }).length;
+
+      return new Response(
+        JSON.stringify({ success: true, processed: 0, remaining, message: 'Dry run - count only' }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
     // Find records with transcription + call_key_points but missing pricingDiscussed
-    // We query booking_transcriptions that have call_transcription and call_key_points
     const { data: records, error: queryError } = await supabase
       .from('booking_transcriptions')
       .select('id, booking_id, call_transcription, call_key_points')
@@ -101,7 +131,6 @@ serve(async (req) => {
 
     if (queryError) throw new Error(`Query failed: ${queryError.message}`);
 
-    // Filter in code: only those missing pricingDiscussed
     const needsBackfill = (records || []).filter(r => {
       const kp = r.call_key_points as any;
       return !kp?.pricingDiscussed;

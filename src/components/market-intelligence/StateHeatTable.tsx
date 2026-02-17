@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import React, { useState } from 'react';
 import { ChevronDown, ChevronRight, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { MarketStateData, MarketCityData } from '@/hooks/useMarketIntelligence';
@@ -91,9 +91,8 @@ export function StateHeatTable({ stateData, cityData }: StateHeatTableProps) {
               const isExpanded = expandedState === row.state;
               const cities = cityData.filter(c => c.state === row.state);
               return (
-                <> 
+                <React.Fragment key={row.state}>
                   <tr
-                    key={row.state}
                     className={cn(
                       "border-b border-border cursor-pointer transition-colors hover:bg-muted/30",
                       isExpanded && "bg-muted/20"
@@ -145,7 +144,7 @@ export function StateHeatTable({ stateData, cityData }: StateHeatTableProps) {
                       </td>
                     </tr>
                   )}
-                </>
+                </React.Fragment>
               );
             })}
           </tbody>
