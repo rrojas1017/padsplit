@@ -4,7 +4,7 @@ import { cn } from '@/lib/utils';
 import { MarketStateData, MarketCityData } from '@/hooks/useMarketIntelligence';
 import { CityDrillDown } from './CityDrillDown';
 
-type SortKey = 'state' | 'total' | 'bookings' | 'nonBookings' | 'conversionRate' | 'churnRate' | 'avgCallDuration' | 'dominantSentiment' | 'avgWeeklyBudget';
+type SortKey = 'state' | 'total' | 'bookings' | 'nonBookings' | 'conversionRate' | 'churnRate' | 'avgCallDuration' | 'dominantSentiment' | 'avgWeeklyBudget' | 'avgQuotedPrice' | 'affordabilityGap';
 
 interface StateHeatTableProps {
   stateData: MarketStateData[];
@@ -82,6 +82,8 @@ export function StateHeatTable({ stateData, cityData }: StateHeatTableProps) {
               <SortHeader label="Avg Call (s)" sortKey="avgCallDuration" />
               <SortHeader label="Sentiment" sortKey="dominantSentiment" />
               <SortHeader label="Avg Budget" sortKey="avgWeeklyBudget" />
+              <SortHeader label="Avg Quoted" sortKey="avgQuotedPrice" />
+              <SortHeader label="Gap" sortKey="affordabilityGap" />
             </tr>
           </thead>
           <tbody>
@@ -122,10 +124,23 @@ export function StateHeatTable({ stateData, cityData }: StateHeatTableProps) {
                     <td className="py-3 px-4 text-foreground font-medium">
                       {row.avgWeeklyBudget !== null ? `$${row.avgWeeklyBudget}` : '—'}
                     </td>
+                    <td className="py-3 px-4 text-foreground font-medium">
+                      {row.avgQuotedPrice !== null ? `$${row.avgQuotedPrice}` : '—'}
+                    </td>
+                    <td className="py-3 px-4">
+                      {row.affordabilityGap !== null ? (
+                        <span className={cn(
+                          "px-2 py-0.5 rounded-full text-xs font-semibold",
+                          row.affordabilityGap >= 0 ? "bg-success/20 text-success" : "bg-destructive/20 text-destructive"
+                        )}>
+                          {row.affordabilityGap >= 0 ? '+' : ''}${row.affordabilityGap}
+                        </span>
+                      ) : '—'}
+                    </td>
                   </tr>
                   {isExpanded && cities.length > 0 && (
                     <tr key={`${row.state}-cities`}>
-                      <td colSpan={10} className="p-0 bg-muted/10">
+                      <td colSpan={12} className="p-0 bg-muted/10">
                         <CityDrillDown cities={cities} />
                       </td>
                     </tr>

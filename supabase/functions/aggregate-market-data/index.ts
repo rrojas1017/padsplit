@@ -159,6 +159,7 @@ Deno.serve(async (req) => {
           sentiments: { positive: 0, negative: 0, neutral: 0, mixed: 0 },
           totalBuyerIntent: 0, buyerIntentCount: 0,
           totalBudget: 0, budgetCount: 0,
+          totalQuotedPrice: 0, quotedPriceCount: 0,
           objections: {} as Record<string, number>,
         });
       }
@@ -173,6 +174,7 @@ Deno.serve(async (req) => {
           sentiments: { positive: 0, negative: 0, neutral: 0, mixed: 0 },
           totalBuyerIntent: 0, buyerIntentCount: 0,
           totalBudget: 0, budgetCount: 0,
+          totalQuotedPrice: 0, quotedPriceCount: 0,
           objections: {} as Record<string, number>,
         });
       }
@@ -226,6 +228,13 @@ Deno.serve(async (req) => {
             agg.budgetCount++;
           }
 
+          // Quoted room price
+          const quotedPrice = kp.pricingDiscussed?.quotedRoomPrice;
+          if (typeof quotedPrice === "number" && quotedPrice > 0) {
+            agg.totalQuotedPrice += quotedPrice;
+            agg.quotedPriceCount++;
+          }
+
           // Objections
           const objections = kp.objections;
           if (Array.isArray(objections)) {
@@ -247,6 +256,8 @@ Deno.serve(async (req) => {
       const avgDuration = agg.durationCount > 0 ? agg.totalDuration / agg.durationCount : 0;
       const avgBuyerIntent = agg.buyerIntentCount > 0 ? agg.totalBuyerIntent / agg.buyerIntentCount : null;
       const avgBudget = agg.budgetCount > 0 ? agg.totalBudget / agg.budgetCount : null;
+      const avgQuotedPrice = agg.quotedPriceCount > 0 ? agg.totalQuotedPrice / agg.quotedPriceCount : null;
+      const affordabilityGap = avgBudget !== null && avgQuotedPrice !== null ? avgBudget - avgQuotedPrice : null;
 
       // Dominant sentiment
       const sentimentEntries = Object.entries(agg.sentiments) as [string, number][];
@@ -275,6 +286,8 @@ Deno.serve(async (req) => {
         sentimentBreakdown: agg.sentiments,
         avgBuyerIntent: avgBuyerIntent !== null ? Math.round(avgBuyerIntent) : null,
         avgWeeklyBudget: avgBudget !== null ? Math.round(avgBudget) : null,
+        avgQuotedPrice: avgQuotedPrice !== null ? Math.round(avgQuotedPrice) : null,
+        affordabilityGap: affordabilityGap !== null ? Math.round(affordabilityGap) : null,
         topObjections,
       };
     };

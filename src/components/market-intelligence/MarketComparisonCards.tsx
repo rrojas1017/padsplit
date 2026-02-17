@@ -6,9 +6,10 @@ interface MarketComparisonCardsProps {
   topMarkets: MarketCityData[];
   systemAvgConversion: number;
   systemAvgBudget: number | null;
+  systemAvgQuotedPrice: number | null;
 }
 
-export function MarketComparisonCards({ topMarkets, systemAvgConversion, systemAvgBudget }: MarketComparisonCardsProps) {
+export function MarketComparisonCards({ topMarkets, systemAvgConversion, systemAvgBudget, systemAvgQuotedPrice }: MarketComparisonCardsProps) {
   if (topMarkets.length === 0) return null;
 
   return (
@@ -39,16 +40,37 @@ export function MarketComparisonCards({ topMarkets, systemAvgConversion, systemA
                   {market.conversionRate}%
                 </div>
               </div>
-              <div className="mt-1 text-xs font-medium">
+              <div className="mt-1 text-xs font-medium space-y-0.5">
                 {market.avgWeeklyBudget !== null ? (
-                  <span className={cn(
-                    systemAvgBudget !== null && market.avgWeeklyBudget >= systemAvgBudget ? "text-success" : 
-                    systemAvgBudget !== null ? "text-destructive" : "text-muted-foreground"
-                  )}>
-                    ${market.avgWeeklyBudget}/wk
-                  </span>
+                  <div>
+                    <span className="text-muted-foreground">Budget: </span>
+                    <span className={cn(
+                      systemAvgBudget !== null && market.avgWeeklyBudget >= systemAvgBudget ? "text-success" : 
+                      systemAvgBudget !== null ? "text-destructive" : "text-muted-foreground"
+                    )}>
+                      ${market.avgWeeklyBudget}/wk
+                    </span>
+                  </div>
                 ) : (
-                  <span className="text-muted-foreground">—</span>
+                  <div><span className="text-muted-foreground">Budget: —</span></div>
+                )}
+                {market.avgQuotedPrice !== null ? (
+                  <div>
+                    <span className="text-muted-foreground">Quoted: </span>
+                    <span className="text-foreground">${market.avgQuotedPrice}/wk</span>
+                  </div>
+                ) : (
+                  <div><span className="text-muted-foreground">Quoted: —</span></div>
+                )}
+                {market.affordabilityGap !== null && (
+                  <div>
+                    <span className={cn(
+                      "font-semibold",
+                      market.affordabilityGap >= 0 ? "text-success" : "text-destructive"
+                    )}>
+                      {market.affordabilityGap >= 0 ? '+' : ''}${market.affordabilityGap} gap
+                    </span>
+                  </div>
                 )}
               </div>
             </div>

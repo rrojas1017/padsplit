@@ -1041,7 +1041,8 @@ Return a JSON object with EXACTLY this structure (no markdown, just raw JSON):
   "pricingDiscussed": {
     "mentioned": true,
     "details": "Brief description of what pricing was discussed (e.g., 'Agent quoted $185/week and explained deposit structure', 'Weekly rate of $200 mentioned'). If not discussed, say 'No pricing information was shared during the call'",
-    "agentInitiated": true
+    "agentInitiated": true,
+    "quotedRoomPrice": 185
   }
 }
 
@@ -1050,6 +1051,7 @@ PRICING DISCUSSION DETECTION:
 - "mentioned": false if no pricing was shared during the call
 - "details": Summarize what was specifically covered (amounts quoted, fee structures explained, promo codes mentioned)
 - "agentInitiated": true if the agent proactively brought up pricing; false if only in response to the member asking
+- "quotedRoomPrice": Extract the weekly room rate quoted by the agent as a number (e.g., "$185/week" becomes 185). Use null if no specific room price was quoted. This should be the per-week rate for the room itself, NOT deposits, move-in costs, or approved amounts.
 
 LIFESTYLE SIGNALS EXTRACTION GUIDE:
 - healthcare: mentions of no insurance, needing coverage, ACA/Obamacare, medical needs, uninsured
@@ -1156,7 +1158,8 @@ Return a JSON object with EXACTLY this structure (no markdown, just raw JSON):
   "pricingDiscussed": {
     "mentioned": true,
     "details": "Brief description of what pricing was discussed (e.g., 'Agent quoted $185/week and explained deposit structure', 'Weekly rate of $200 mentioned'). If not discussed, say 'No pricing information was shared during the call'",
-    "agentInitiated": true
+    "agentInitiated": true,
+    "quotedRoomPrice": 185
   }
 }
 
@@ -1165,6 +1168,7 @@ PRICING DISCUSSION DETECTION:
 - "mentioned": false if no pricing was shared during the call
 - "details": Summarize what was specifically covered (amounts quoted, fee structures explained, promo codes mentioned)
 - "agentInitiated": true if the agent proactively brought up pricing; false if only in response to the member asking
+- "quotedRoomPrice": Extract the weekly room rate quoted by the agent as a number (e.g., "$185/week" becomes 185). Use null if no specific room price was quoted. This should be the per-week rate for the room itself, NOT deposits, move-in costs, or approved amounts.
 
 LIFESTYLE SIGNALS EXTRACTION GUIDE:
 - healthcare: mentions of no insurance, needing coverage, ACA/Obamacare, medical needs, uninsured

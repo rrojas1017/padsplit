@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { cn } from '@/lib/utils';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { usePageTracking } from '@/hooks/usePageTracking';
 import { useMarketIntelligence } from '@/hooks/useMarketIntelligence';
@@ -59,7 +60,7 @@ export default function MarketIntelligence() {
   const abortRef = useRef(false);
 
   const { from, to } = getDateRange(dateRange, customDates);
-  const { stateData, cityData, rawTotal, topMarkets, systemAvgConversion, systemAvgBudget, generatedAt, fromCache, isLoading, isRefreshing, refresh } = useMarketIntelligence(from, to, minRecords);
+  const { stateData, cityData, rawTotal, topMarkets, systemAvgConversion, systemAvgBudget, systemAvgQuotedPrice, systemAffordabilityGap, generatedAt, fromCache, isLoading, isRefreshing, refresh } = useMarketIntelligence(from, to, minRecords);
 
   // Fetch unmapped count on mount
   useEffect(() => {
@@ -176,7 +177,7 @@ export default function MarketIntelligence() {
       ) : (
         <div className="space-y-6">
           {/* Summary */}
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4">
             <div className="bg-card rounded-xl p-4 border border-border">
               <p className="text-xs text-muted-foreground font-medium uppercase">States</p>
               <p className="text-2xl font-bold text-foreground">{stateData.length}</p>
@@ -204,10 +205,24 @@ export default function MarketIntelligence() {
               <p className="text-xs text-muted-foreground font-medium uppercase">Avg Weekly Budget</p>
               <p className="text-2xl font-bold text-foreground">{systemAvgBudget !== null ? `$${systemAvgBudget}` : '—'}</p>
             </div>
+            <div className="bg-card rounded-xl p-4 border border-border">
+              <p className="text-xs text-muted-foreground font-medium uppercase">Avg Quoted Price</p>
+              <p className="text-2xl font-bold text-foreground">{systemAvgQuotedPrice !== null ? `$${systemAvgQuotedPrice}` : '—'}</p>
+            </div>
+            <div className="bg-card rounded-xl p-4 border border-border">
+              <p className="text-xs text-muted-foreground font-medium uppercase">Affordability Gap</p>
+              <p className={cn(
+                "text-2xl font-bold",
+                systemAffordabilityGap === null ? "text-foreground" :
+                systemAffordabilityGap >= 0 ? "text-success" : "text-destructive"
+              )}>
+                {systemAffordabilityGap !== null ? `${systemAffordabilityGap >= 0 ? '+' : ''}$${systemAffordabilityGap}` : '—'}
+              </p>
+            </div>
           </div>
 
           {/* Top Markets */}
-          <MarketComparisonCards topMarkets={topMarkets} systemAvgConversion={systemAvgConversion} systemAvgBudget={systemAvgBudget} />
+          <MarketComparisonCards topMarkets={topMarkets} systemAvgConversion={systemAvgConversion} systemAvgBudget={systemAvgBudget} systemAvgQuotedPrice={systemAvgQuotedPrice} />
 
           {/* State Heat Table */}
           <StateHeatTable stateData={stateData} cityData={cityData} />

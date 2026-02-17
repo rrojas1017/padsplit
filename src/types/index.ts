@@ -72,6 +72,7 @@ export interface CallKeyPoints {
     mentioned: boolean;
     details: string;
     agentInitiated: boolean;
+    quotedRoomPrice?: number | null;
   };
 }
 
