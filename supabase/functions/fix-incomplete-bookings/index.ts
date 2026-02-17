@@ -141,22 +141,21 @@ serve(async (req) => {
     for (const ub of untranscribedBookings) {
       incompleteBookings.push({
         booking_id: ub.booking_id,
-        missingSteps: ['transcription', 'jeff_feedback', 'jeff_audio', 'qa_scores', 'katty_audio'],
+        missingSteps: ['transcription', 'jeff_feedback', 'qa_scores'],
         details: [
           { name: 'transcription', missing: true },
           { name: 'jeff_feedback', missing: true, dependency: 'transcription' },
-          { name: 'jeff_audio', missing: true, dependency: 'jeff_feedback' },
           { name: 'qa_scores', missing: true, dependency: 'transcription' },
-          { name: 'katty_audio', missing: true, dependency: 'qa_scores' },
         ],
         kixie_link: ub.kixie_link,
         import_batch_id: ub.import_batch_id,
         site_name: ub.site_name
       });
-      console.log(`[FIX-INCOMPLETE] Untranscribed booking ${ub.booking_id} needs full pipeline`);
+      console.log(`[FIX-INCOMPLETE] Untranscribed booking ${ub.booking_id} needs full pipeline (audio deferred to on-demand)`);
     }
 
     // Analyze existing transcriptions for missing steps
+    // Coaching audio (jeff_audio, katty_audio) is now on-demand — not treated as incomplete
     if (transcriptions) {
       for (const t of transcriptions as Array<IncompleteBooking & { bookings?: { import_batch_id: string | null; agents: { sites: { name: string } | null } | null } | null }>) {
         const steps: ProcessingStep[] = [
@@ -170,19 +169,9 @@ serve(async (req) => {
             dependency: 'transcription'
           },
           { 
-            name: 'jeff_audio', 
-            missing: !t.coaching_audio_url,
-            dependency: 'jeff_feedback'
-          },
-          { 
             name: 'qa_scores', 
             missing: !t.qa_scores,
             dependency: 'transcription'
-          },
-          { 
-            name: 'katty_audio', 
-            missing: !t.qa_coaching_audio_url,
-            dependency: 'qa_scores'
           },
         ];
 
@@ -244,13 +233,10 @@ serve(async (req) => {
           // Determine what needs to run based on dependencies
           const needsTranscription = booking.missingSteps.includes('transcription');
           const needsJeffFeedback = booking.missingSteps.includes('jeff_feedback');
-          const needsJeffAudio = booking.missingSteps.includes('jeff_audio');
           const needsQAScores = booking.missingSteps.includes('qa_scores');
-          const needsKattyAudio = booking.missingSteps.includes('katty_audio');
 
           // Step 0: If missing transcription, trigger transcribe-call
           if (needsTranscription) {
-            // Determine skipTts: imported records skip TTS, only manual Vixicom records get TTS
             const siteName = booking.site_name || '';
             const isVixicom = siteName.toLowerCase().includes('vixicom');
             const isImported = !!booking.import_batch_id;
@@ -270,13 +256,11 @@ serve(async (req) => {
               const errorText = await response.text();
               console.error(`[FIX-INCOMPLETE] FAILED transcribe-call: ${errorText}`);
               failCount++;
-              continue; // Skip this booking - can't proceed without transcription
+              continue;
             }
-            console.log(`[FIX-INCOMPLETE] ✓ Transcription triggered (auto-coaching will handle remaining steps)`);
+            console.log(`[FIX-INCOMPLETE] ✓ Transcription triggered (pipeline will handle feedback + QA)`);
             successCount++;
             
-            // Transcribe-call will auto-trigger the rest of the pipeline via check-auto-transcription
-            // so we can skip to the next booking
             if (i < incompleteBookings.length - 1) {
               console.log('[FIX-INCOMPLETE] Waiting 15 seconds before next booking...');
               await new Promise(resolve => setTimeout(resolve, 15000));
@@ -300,35 +284,14 @@ serve(async (req) => {
               const errorText = await response.text();
               console.error(`[FIX-INCOMPLETE] FAILED reanalyze-call: ${errorText}`);
               failCount++;
-              continue; // Skip this booking
+              continue;
             }
             console.log(`[FIX-INCOMPLETE] ✓ Jeff feedback generated`);
           }
 
-          // Step 2: If missing Jeff audio (and now have feedback), generate audio
-          if (needsJeffFeedback || needsJeffAudio) {
-            console.log(`[FIX-INCOMPLETE] Step 2: Generating Jeff coaching audio...`);
-            const response = await fetch(`${SUPABASE_URL}/functions/v1/generate-coaching-audio`, {
-              method: 'POST',
-              headers: {
-                'Authorization': `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
-                'Content-Type': 'application/json',
-              },
-              body: JSON.stringify({ bookingId: booking.booking_id }),
-            });
-
-            if (!response.ok) {
-              const errorText = await response.text();
-              console.error(`[FIX-INCOMPLETE] FAILED generate-coaching-audio: ${errorText}`);
-              // Continue anyway to try QA pipeline
-            } else {
-              console.log(`[FIX-INCOMPLETE] ✓ Jeff audio generated`);
-            }
-          }
-
-          // Step 3: If missing QA scores, generate them
+          // Step 2: If missing QA scores, generate them
           if (needsQAScores) {
-            console.log(`[FIX-INCOMPLETE] Step 3: Generating QA scores...`);
+            console.log(`[FIX-INCOMPLETE] Step 2: Generating QA scores...`);
             const response = await fetch(`${SUPABASE_URL}/functions/v1/generate-qa-scores`, {
               method: 'POST',
               headers: {
@@ -341,31 +304,12 @@ serve(async (req) => {
             if (!response.ok) {
               const errorText = await response.text();
               console.error(`[FIX-INCOMPLETE] FAILED generate-qa-scores: ${errorText}`);
-              // Continue anyway
             } else {
               console.log(`[FIX-INCOMPLETE] ✓ QA scores generated`);
             }
           }
 
-          // Step 4: If missing Katty audio (and now have QA scores), generate audio
-          if (needsQAScores || needsKattyAudio) {
-            console.log(`[FIX-INCOMPLETE] Step 4: Generating Katty coaching audio...`);
-            const response = await fetch(`${SUPABASE_URL}/functions/v1/generate-qa-coaching-audio`, {
-              method: 'POST',
-              headers: {
-                'Authorization': `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
-                'Content-Type': 'application/json',
-              },
-              body: JSON.stringify({ bookingId: booking.booking_id }),
-            });
-
-            if (!response.ok) {
-              const errorText = await response.text();
-              console.error(`[FIX-INCOMPLETE] FAILED generate-qa-coaching-audio: ${errorText}`);
-            } else {
-              console.log(`[FIX-INCOMPLETE] ✓ Katty audio generated`);
-            }
-          }
+          // Coaching audio (Jeff & Katty) is now on-demand — not auto-generated here
 
           successCount++;
           console.log(`[FIX-INCOMPLETE] ✓ Completed processing booking ${booking.booking_id}`);

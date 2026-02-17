@@ -1892,8 +1892,8 @@ async function processTranscription(bookingId: string, kixieUrl: string, skipTts
     clearTimeout(timeoutId);
     console.log(`[Background] Transcription completed successfully for booking ${bookingId}`);
 
-    // ===== AUTO-GENERATE QA SCORES AND COACHING AUDIO =====
-    console.log(`[Background] Triggering automatic QA scoring ${skipTts ? '(TTS skipped)' : 'and coaching generation'}...`);
+    // ===== AUTO-GENERATE QA SCORES (coaching audio is now on-demand) =====
+    console.log(`[Background] Triggering automatic QA scoring (coaching audio deferred to on-demand)...`);
     
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -1924,9 +1924,7 @@ async function processTranscription(bookingId: string, kixieUrl: string, skipTts
           const errorBody = await response.text();
           console.error(`[Downstream] ${functionName} failed (${response.status}): ${errorBody}`);
 
-          // Don't retry on 4xx client errors (except 429 rate limit)
           if (response.status >= 400 && response.status < 500 && response.status !== 429) {
-            // Log to failed_downstream_calls table for visibility
             try {
               await supabase.from('failed_downstream_calls').insert({
                 booking_id: bookingId,
@@ -1935,23 +1933,20 @@ async function processTranscription(bookingId: string, kixieUrl: string, skipTts
                 error_message: errorBody.substring(0, 1000),
                 attempt_count: attempt + 1,
               });
-              console.log(`[Downstream] Logged failure to failed_downstream_calls table`);
             } catch (logError) {
               console.error(`[Downstream] Failed to log to tracking table:`, logError);
             }
             return { success: false, statusCode: response.status, error: errorBody };
           }
 
-          // Wait before retry on 5xx or 429
           if (attempt < maxRetries) {
-            const delay = Math.pow(2, attempt) * 1000; // 1s, 2s exponential backoff
+            const delay = Math.pow(2, attempt) * 1000;
             console.log(`[Downstream] Retrying ${functionName} in ${delay}ms...`);
             await new Promise(r => setTimeout(r, delay));
           }
         } catch (networkError) {
           console.error(`[Downstream] Network error calling ${functionName}:`, networkError);
           if (attempt === maxRetries) {
-            // Log network failures to tracking table
             try {
               await supabase.from('failed_downstream_calls').insert({
                 booking_id: bookingId,
@@ -1965,7 +1960,6 @@ async function processTranscription(bookingId: string, kixieUrl: string, skipTts
             }
             return { success: false, error: String(networkError) };
           }
-          // Wait before retry on network error
           const delay = Math.pow(2, attempt) * 1000;
           console.log(`[Downstream] Retrying ${functionName} after network error in ${delay}ms...`);
           await new Promise(r => setTimeout(r, delay));
@@ -1974,38 +1968,15 @@ async function processTranscription(bookingId: string, kixieUrl: string, skipTts
       return { success: false, error: 'Max retries exceeded' };
     }
 
-    // Only generate Jeff's coaching audio if TTS is NOT skipped (Vixicom agents only)
-    if (!skipTts) {
-      // Fire-and-forget with retry: Generate Jeff's coaching audio
-      callDownstreamFunction('generate-coaching-audio')
-        .then(result => {
-          if (!result.success) {
-            console.error(`[Background] Jeff coaching failed permanently for ${bookingId}: ${result.error || result.statusCode}`);
-          }
-        });
-    } else {
-      console.log(`[Background] Skipping Jeff audio generation for ${bookingId} (non-Vixicom)`);
-    }
+    // Coaching audio (Jeff & Katty) is NO LONGER auto-generated.
+    // It will be generated on-demand when agents click "Play Coaching".
+    // This saves ~$0.34 per record in TTS costs.
 
-    // QA scoring always runs, but Katty's audio only for Vixicom
-    (async () => {
-      // Step 1: Generate QA scores (always runs) with retry
-      const qaResult = await callDownstreamFunction('generate-qa-scores');
-      
-      if (qaResult.success) {
-        // Step 2: Generate Katty's QA coaching audio only if TTS is NOT skipped
-        if (!skipTts) {
-          const kattyResult = await callDownstreamFunction('generate-qa-coaching-audio');
-          if (!kattyResult.success) {
-            console.error(`[Background] Katty coaching failed permanently for ${bookingId}: ${kattyResult.error || kattyResult.statusCode}`);
-          }
-        } else {
-          console.log(`[Background] Skipping Katty audio generation for ${bookingId} (non-Vixicom)`);
-        }
-      } else {
-        console.error(`[Background] QA scoring failed permanently for ${bookingId}: ${qaResult.error || qaResult.statusCode}`);
-      }
-    })();
+    // QA scoring always runs (cheap text-only AI analysis)
+    const qaResult = await callDownstreamFunction('generate-qa-scores');
+    if (!qaResult.success) {
+      console.error(`[Background] QA scoring failed permanently for ${bookingId}: ${qaResult.error || qaResult.statusCode}`);
+    }
 
     console.log(`[Background] All automation triggers dispatched for booking ${bookingId}`);
 
