@@ -1,31 +1,46 @@
 
 
-## Fix: Pain Point Evolution Chart Not Displaying Data
+## Switch Coaching Audio to On-Demand Generation
 
-### Root Cause
+### What's Changing
 
-The chart requires at least 2 monthly data points to render. Currently:
-- Step 1 fetches only `allTime` analyses -- all of which have `date_range_end` in February 2026
-- Monthly deduplication collapses all February analyses into a single data point
-- Step 2 fallback only adds `manual` period analyses, which don't exist
-- Result: only 1 data point, so the "need 2 analyses" empty state shows
+Currently, every time a call is transcribed, the system automatically generates both Jeff's and Katty's voice coaching audio. This involves calling ElevenLabs for text-to-speech on every single record -- which is the most expensive step in the pipeline (roughly $0.18 per Jeff audio and $0.16 per Katty audio).
 
-Meanwhile, there ARE completed analyses for other periods (`lastMonth` ending Jan 31, `last3months`, `thisMonth`, etc.) that would provide additional monthly data points -- but they're excluded by the filter.
+Going forward, coaching audio will only be generated when an agent actually clicks "Play Coaching" or "Listen to Katty's QA Coaching." This means you only pay for audio that someone actually listens to.
 
-### Solution
+### What Stays the Same
 
-Expand the query strategy in `usePainPointEvolution.ts`:
+- **Transcription** still happens automatically
+- **QA Scoring** still happens automatically (this is cheap AI text analysis, not audio)
+- **Jeff's written feedback** (call key points, agent feedback) still generated automatically
+- **Katty's written QA scores** still generated automatically
+- The coaching audio players already have "generate" buttons built in -- agents won't notice any difference in their workflow
 
-1. **Primary query**: Keep fetching `allTime` analyses first (preferred for consistency)
-2. **Expanded fallback**: If fewer than 2 monthly data points result, broaden the query to include ALL completed analysis periods (`allTime`, `manual`, `lastMonth`, `thisMonth`, `last3months`, `last30days`, `last7days`, `thisWeek`)
-3. **Deduplication stays**: The "latest per month" dedup remains to avoid double-counting, but now it can pull in January (`lastMonth` ending 2026-01-31), November (`last3months` starting 2025-11), etc.
+### Cost Impact
 
-This gives the chart multiple months of evolution data from the analyses that already exist.
+If only 30% of agents actually listen to their coaching audio, this change would reduce TTS costs by roughly 70%. At current volumes, that's a meaningful saving since TTS coaching is the single most expensive line item per record.
 
-### Technical Details
+### Technical Changes
 
-**File**: `src/hooks/usePainPointEvolution.ts`
+**File: `supabase/functions/transcribe-call/index.ts`**
+- Remove the automatic call to `generate-coaching-audio` (Jeff's audio) from the post-transcription pipeline
+- Remove the automatic call to `generate-qa-coaching-audio` (Katty's audio) from the post-transcription pipeline
+- Keep the QA scoring step (`generate-qa-scores`) -- this is text-only analysis and stays automatic
+- The pipeline becomes: Transcription -> AI Analysis -> QA Scoring (done). No more automatic TTS.
 
-**Change**: Update the fallback query (around lines 178-192) to remove the `.in('analysis_period', ['allTime', 'manual'])` filter entirely, fetching all completed analyses regardless of period. The monthly deduplication already handles overlap by keeping only the latest analysis per month.
+**File: `supabase/functions/fix-incomplete-bookings/index.ts`**
+- Update the recovery function to no longer treat "missing coaching audio" as an incomplete booking that needs fixing
+- It should still recover missing transcriptions and QA scores, but not auto-generate audio
 
-**Why this is safe**: The deduplication logic ensures only one analysis per month is used, and it picks the most recent one. Different period types covering the same month won't conflict -- the latest `created_at` wins.
+**No frontend changes needed** -- both `CoachingAudioPlayer` and `QACoachingAudioPlayer` already handle the case where no audio URL exists by showing a "Generate" / "Play Coaching" button that triggers on-demand generation.
+
+### How It Works for Agents
+
+1. Agent opens a booking's details
+2. They see "Listen to your coaching" (Jeff) or "Listen to Katty's QA Coaching" cards
+3. They click to play -- the system generates the audio right then (takes a few seconds)
+4. Audio plays automatically once ready
+5. Quiz flow continues as normal after listening
+
+This is the exact same experience agents already see when audio hasn't been generated yet -- we're just making that the default path instead of the exception.
+
