@@ -1,66 +1,39 @@
 
 
-## Add Affordability Gap Analysis to Market Intelligence
+## Backfill Pricing Data for Existing Records
 
-### What This Solves
+### Current State
+The Market Intelligence dashboard **already shows** Avg Budget, Avg Quoted Price, and Affordability Gap columns at both state and city level. The `aggregate-market-data` function already reads `pricingDiscussed.quotedRoomPrice` from `call_key_points`. However, existing records don't have this field yet -- only newly transcribed calls will populate it.
 
-Right now, the "Avg Budget" column in Market Intelligence only shows what callers said they could afford. There's no data on what rooms actually cost in each market, so the red/green color coding just compares each market against the system-wide average budget -- which isn't very meaningful.
+### What This Change Does
+Create a new backfill edge function that re-reads existing transcriptions and extracts pricing data (`pricingDiscussed`) using the same AI model, then merges it into each record's `call_key_points`. This will populate the Avg Quoted Price and Affordability Gap columns across all historical data.
 
-This change adds a second data point: the **quoted room price** (what the agent actually quoted during the call). With both numbers, we can show a real **affordability gap** per market: are rooms priced above or below what callers can afford?
+### Implementation
 
-### How It Works
+**1. New Edge Function: `backfill-pricing-data`**
+- Fetches `booking_transcriptions` records that have a transcription but are missing `call_key_points.pricingDiscussed`
+- Uses Lovable AI (gemini-2.5-flash) to extract pricing info from each transcription
+- Merges `pricingDiscussed` into the existing `call_key_points` JSONB field
+- Processes in batches with 10-second pacing between records (matching existing batch patterns)
+- Self-retriggering: returns `remaining` count so the frontend can loop
+- Follows the same architecture as `batch-reanalyze-member-details`
 
-1. The AI already analyzes each call transcription. We add a new numeric field `quotedRoomPrice` to the analysis output, extracted from the pricing discussion details (e.g., "$185/week" becomes 185).
-2. The Market Intelligence backend aggregates both `avgWeeklyBudget` (customer side) and `avgQuotedPrice` (market side) per state and city.
-3. The UI shows both numbers plus an affordability gap indicator.
-
-### What You'll See
-
-- **State Heat Table**: New "Avg Quoted" column alongside "Avg Budget", plus a color-coded "Gap" column
-  - Green: Market is affordable (budget >= quoted price)
-  - Red: Affordability gap (budget < quoted price, showing the dollar difference)
-- **Top 10 Markets cards**: Both budget and quoted price shown, with gap indicator
-- **City drill-down**: Same dual metrics with gap
-- **Summary cards**: New "Avg Affordability Gap" card at the top level
+**2. UI: Add "Backfill Pricing" button to Market Intelligence page**
+- Similar to the existing "Backfill Markets" button
+- Shows count of records missing pricing data
+- Progress bar during processing with ability to stop
 
 ### Technical Details
 
-**1. Update AI prompt** (`supabase/functions/transcribe-call/index.ts`)
-- Add `quotedRoomPrice` numeric field to the `pricingDiscussed` object in the JSON schema
-- Instruction: extract the weekly room rate quoted by the agent as a number (null if not quoted)
-- Updated structure:
-  ```
-  pricingDiscussed: {
-    mentioned: boolean,
-    details: string,
-    agentInitiated: boolean,
-    quotedRoomPrice: number | null  // NEW - weekly rate in dollars
-  }
-  ```
+- **AI prompt**: Focused extraction asking only for `pricingDiscussed` fields (mentioned, details, agentInitiated, quotedRoomPrice) -- keeps token usage minimal
+- **Filter**: Only processes records where `call_key_points` exists but `pricingDiscussed` is missing, and `call_transcription` is not null
+- **Batch size**: 20 records per invocation with 5-second delay between AI calls
+- **No migration needed**: Data goes into existing `call_key_points` JSONB column
+- **Config**: Add `verify_jwt = false` entry in `supabase/config.toml` (handled automatically)
 
-**2. Update TypeScript types** (`src/types/index.ts`)
-- Add `quotedRoomPrice?: number | null` to the `pricingDiscussed` type in `CallKeyPoints`
+### Files to Create/Modify
+- **Create**: `supabase/functions/backfill-pricing-data/index.ts` -- new backfill edge function
+- **Modify**: `src/pages/MarketIntelligence.tsx` -- add backfill pricing button + progress UI (mirroring existing backfill markets pattern)
 
-**3. Update backend aggregation** (`supabase/functions/aggregate-market-data/index.ts`)
-- Add `totalQuotedPrice` and `quotedPriceCount` accumulators to both state and city aggregation
-- Extract `kp.pricingDiscussed?.quotedRoomPrice` from transcription data
-- Output new fields: `avgQuotedPrice` and `affordabilityGap` (avgBudget - avgQuotedPrice) per market
-
-**4. Update Market Intelligence hook** (`src/hooks/useMarketIntelligence.ts`)
-- Add `avgQuotedPrice` and `affordabilityGap` to `MarketStateData` and `MarketCityData` interfaces
-- Compute `systemAvgQuotedPrice` alongside `systemAvgBudget`
-
-**5. Update UI components**
-- `StateHeatTable.tsx`: Add "Avg Quoted" and "Gap" columns
-- `MarketComparisonCards.tsx`: Show both budget and quoted price with gap indicator
-- `CityDrillDown.tsx`: Show quoted price and gap alongside budget
-- `MarketIntelligence.tsx`: Add "Avg Quoted Price" and "Avg Affordability Gap" summary cards
-
-**6. Deploy edge functions**
-- Redeploy `transcribe-call` and `aggregate-market-data`
-
-### Data Notes
-- Only newly transcribed calls will have `quotedRoomPrice` (existing records won't until reanalyzed)
-- Markets where no pricing was quoted will show "—" for quoted price and gap
-- The gap is calculated as: `avgBudget - avgQuotedPrice` (positive = affordable, negative = gap)
-
+### After Backfill
+Once pricing data is populated across historical records, the Market Intelligence dashboard will show meaningful Avg Quoted Price and Affordability Gap values per market, enabling real analysis of whether markets are priced above or below what callers can afford.
