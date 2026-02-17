@@ -56,8 +56,11 @@ export function CoachingAudioPlayer({
   // Check if the current user is the owning agent
   const isOwningAgent = agentUserId && user?.id === agentUserId;
 
+  const generateInFlightRef = useRef(false);
+
   const handleGenerateAudio = async () => {
-    if (isGenerating) return;
+    if (isGenerating || generateInFlightRef.current) return;
+    generateInFlightRef.current = true;
     
     setIsGenerating(true);
     
@@ -83,6 +86,7 @@ export function CoachingAudioPlayer({
       toast.error(error instanceof Error ? error.message : 'Failed to generate coaching audio');
     } finally {
       setIsGenerating(false);
+      generateInFlightRef.current = false;
     }
   };
 
