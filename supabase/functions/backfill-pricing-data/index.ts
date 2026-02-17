@@ -121,20 +121,21 @@ serve(async (req) => {
       );
     }
 
-    // Find records with transcription + call_key_points but missing pricingDiscussed
+    // Fetch a larger pool then filter to find records missing pricingDiscussed
+    const fetchLimit = Math.max(batchSize * 10, 200);
     const { data: records, error: queryError } = await supabase
       .from('booking_transcriptions')
       .select('id, booking_id, call_transcription, call_key_points')
       .not('call_transcription', 'is', null)
       .not('call_key_points', 'is', null)
-      .limit(batchSize);
+      .limit(fetchLimit);
 
     if (queryError) throw new Error(`Query failed: ${queryError.message}`);
 
     const needsBackfill = (records || []).filter(r => {
       const kp = r.call_key_points as any;
       return !kp?.pricingDiscussed;
-    });
+    }).slice(0, batchSize);
 
     if (needsBackfill.length === 0) {
       return new Response(
