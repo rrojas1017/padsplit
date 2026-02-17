@@ -34,7 +34,18 @@ export function CityDrillDown({ cities }: CityDrillDownProps) {
                   <span>Intent: <span className="text-foreground font-medium">{city.avgBuyerIntent}/100</span></span>
                 )}
                 {city.avgWeeklyBudget !== null && (
-                  <span>Avg Budget: <span className="text-foreground font-medium">${city.avgWeeklyBudget}/wk</span></span>
+                  <span>Budget: <span className="text-foreground font-medium">${city.avgWeeklyBudget}/wk</span></span>
+                )}
+                {city.avgQuotedPrice !== null && (
+                  <span>Quoted: <span className="text-foreground font-medium">${city.avgQuotedPrice}/wk</span></span>
+                )}
+                {city.affordabilityGap !== null && (
+                  <span className={cn(
+                    "font-medium",
+                    city.affordabilityGap >= 0 ? "text-success" : "text-destructive"
+                  )}>
+                    Gap: {city.affordabilityGap >= 0 ? '+' : ''}${city.affordabilityGap}
+                  </span>
                 )}
                 {city.avgCallDuration > 0 && (
                   <span>Avg Call: {Math.round(city.avgCallDuration / 60)}m</span>

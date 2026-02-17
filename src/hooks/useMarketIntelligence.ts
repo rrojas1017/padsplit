@@ -20,6 +20,8 @@ export interface MarketStateData {
   sentimentBreakdown: { positive: number; negative: number; neutral: number; mixed: number };
   avgBuyerIntent: number | null;
   avgWeeklyBudget: number | null;
+  avgQuotedPrice: number | null;
+  affordabilityGap: number | null;
   topObjections: { label: string; count: number }[];
 }
 
@@ -79,6 +81,20 @@ export function useMarketIntelligence(dateFrom?: string, dateTo?: string, minRec
     return Math.round(sum / withBudget.length);
   })();
 
+  // System-wide average quoted price
+  const systemAvgQuotedPrice = (() => {
+    const states = data?.stateData || [];
+    const withPrice = states.filter(s => s.avgQuotedPrice !== null);
+    if (withPrice.length === 0) return null;
+    const sum = withPrice.reduce((s, st) => s + (st.avgQuotedPrice ?? 0), 0);
+    return Math.round(sum / withPrice.length);
+  })();
+
+  // System-wide affordability gap
+  const systemAffordabilityGap = systemAvgBudget !== null && systemAvgQuotedPrice !== null
+    ? systemAvgBudget - systemAvgQuotedPrice
+    : null;
+
   return {
     stateData: data?.stateData || [],
     cityData: data?.cityData || [],
@@ -86,6 +102,8 @@ export function useMarketIntelligence(dateFrom?: string, dateTo?: string, minRec
     topMarkets,
     systemAvgConversion,
     systemAvgBudget,
+    systemAvgQuotedPrice,
+    systemAffordabilityGap,
     generatedAt: data?.generatedAt,
     fromCache: data?.fromCache || false,
     isLoading,
