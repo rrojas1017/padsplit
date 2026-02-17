@@ -68,6 +68,11 @@ export interface CallKeyPoints {
   memberDetails?: MemberDetails;
   buyerIntent?: BuyerIntent; // Only present for Non-Booking calls
   lifestyleSignals?: LifestyleSignal[]; // Cross-sell/upsell opportunity signals
+  pricingDiscussed?: {
+    mentioned: boolean;
+    details: string;
+    agentInitiated: boolean;
+  };
 }
 
 export interface AgentFeedback {

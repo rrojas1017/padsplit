@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
-import { Loader2, ChevronDown, ChevronUp, Mic, AlertCircle, CheckCircle2, Clock, TrendingUp, MessageSquare, Target, AlertTriangle, Lightbulb, Smile, Meh, Frown, Star, Award, ThumbsUp, GraduationCap, RefreshCw, Ban, Radio, Wrench, ShieldAlert } from 'lucide-react';
+import { Loader2, ChevronDown, ChevronUp, Mic, AlertCircle, CheckCircle2, Clock, TrendingUp, MessageSquare, Target, AlertTriangle, Lightbulb, Smile, Meh, Frown, Star, Award, ThumbsUp, GraduationCap, RefreshCw, Ban, Radio, Wrench, ShieldAlert, DollarSign } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/contexts/AuthContext';
@@ -474,6 +474,20 @@ export function TranscriptionModal({ booking, isOpen, onClose, onTranscriptionCo
                     {formatDuration(booking.callDurationSeconds)}
                   </Badge>
                 )}
+                {/* Pricing Discussion Badge */}
+                {keyPoints?.pricingDiscussed && (
+                  keyPoints.pricingDiscussed.mentioned ? (
+                    <Badge variant="outline" className="bg-success/10 text-success border-success/30">
+                      <DollarSign className="h-3 w-3 mr-1" />
+                      Pricing Discussed
+                    </Badge>
+                  ) : (
+                    <Badge variant="outline" className="bg-warning/10 text-warning border-warning/30">
+                      <DollarSign className="h-3 w-3 mr-1" />
+                      Pricing Not Mentioned
+                    </Badge>
+                  )
+                )}
               </div>
 
               {/* Summary */}
@@ -493,6 +507,24 @@ export function TranscriptionModal({ booking, isOpen, onClose, onTranscriptionCo
                   memberDetails={keyPoints.memberDetails} 
                   memberName={booking.memberName}
                 />
+              )}
+
+              {/* Pricing Discussion Details */}
+              {keyPoints?.pricingDiscussed && (
+                <div className={`rounded-lg p-4 border ${keyPoints.pricingDiscussed.mentioned ? 'bg-success/5 border-success/20' : 'bg-warning/5 border-warning/20'}`}>
+                  <h4 className="font-semibold mb-2 flex items-center gap-2">
+                    <DollarSign className={`h-4 w-4 ${keyPoints.pricingDiscussed.mentioned ? 'text-success' : 'text-warning'}`} />
+                    Pricing Discussion
+                  </h4>
+                  <p className="text-sm text-muted-foreground leading-relaxed">
+                    {keyPoints.pricingDiscussed.details}
+                  </p>
+                  {keyPoints.pricingDiscussed.mentioned && (
+                    <p className="text-xs text-muted-foreground mt-2">
+                      {keyPoints.pricingDiscussed.agentInitiated ? '✓ Agent proactively discussed pricing' : 'Member asked about pricing'}
+                    </p>
+                  )}
+                </div>
               )}
 
               {/* Re-Analyze Button - shows when analysis appears incomplete */}
