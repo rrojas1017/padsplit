@@ -107,19 +107,18 @@ serve(async (req) => {
     const SUPABASE_URL = Deno.env.get('SUPABASE_URL');
     const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
 
-    // Detect if triggered by super_admin
+    // Detect if triggered by a logged-in user (for cost auditing)
     let triggeredByUserId: string | null = null;
     let isInternal = false;
     const authHeader = req.headers.get('Authorization');
     if (authHeader) {
       try {
-        const anonClient = createClient(SUPABASE_URL!, Deno.env.get('SUPABASE_ANON_KEY')!);
+        const serviceClient = createClient(SUPABASE_URL!, SUPABASE_SERVICE_ROLE_KEY!);
         const token = authHeader.replace('Bearer ', '');
-        const { data: { user } } = await anonClient.auth.getUser(token);
+        const { data: { user } } = await serviceClient.auth.getUser(token);
         if (user) {
           triggeredByUserId = user.id;
-          const adminClient = createClient(SUPABASE_URL!, SUPABASE_SERVICE_ROLE_KEY!);
-          const { data: roleData } = await adminClient.from('user_roles').select('role').eq('user_id', user.id).single();
+          const { data: roleData } = await serviceClient.from('user_roles').select('role').eq('user_id', user.id).single();
           isInternal = roleData?.role === 'super_admin';
           if (isInternal) console.log('[Internal] Request triggered by super_admin, marking costs as internal');
         }
