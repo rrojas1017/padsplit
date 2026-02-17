@@ -1,44 +1,49 @@
 
 
-## Fix Backfill Pricing Function Issues
+## Audit Voice Feedback Triggers
 
-### Problems Found
+### Problem
+Every `triggered_by_user_id` in the `api_costs` table is currently NULL for coaching audio generation -- even when a logged-in user clicks "Play" or "Generate" in the UI. This means we can't audit who triggered expensive TTS generations.
 
-1. **Dry-run mode broken**: When the page loads, it calls `backfill-pricing-data` with `batchSize: 0` to get the count of missing records. But the function still processes records because `batchSize` only controls the SQL `.limit()` -- passing 0 causes unexpected behavior (it processed 5 records on what should have been a count-only call).
+### Root Cause
+Both `generate-coaching-audio` and `generate-qa-coaching-audio` edge functions try to resolve the user by creating a Supabase client with `SUPABASE_ANON_KEY`, but that secret **does not exist** in the edge function environment. The `try/catch` silently swallows the error, leaving `triggeredByUserId` as `null`.
 
-2. **JSON parsing failures (~5-10%)**: The AI sometimes returns malformed JSON (unterminated strings), causing `SyntaxError` and skipping those records. The current cleanup only handles markdown fences but doesn't handle other common issues.
-
-3. **React key warning**: The `StateHeatTable` component has a missing `key` prop on list items (unrelated but visible in console).
-
-### Fixes
-
-**1. Add dry-run support to `backfill-pricing-data` edge function**
-- When `batchSize` is 0, skip processing and only return the `remaining` count
-- This prevents accidental processing on page load
-
-**2. Improve JSON parsing resilience**
-- Add a regex-based extraction fallback: if `JSON.parse` fails, try to extract the JSON object using a regex pattern `\{[\s\S]*\}`
-- Add `response_format` hint to the AI prompt asking for strict JSON
-
-**3. Fix StateHeatTable key warning**
-- Add unique `key` props to the list items in StateHeatTable that are missing them
+### Fix
+Replace the failing `anonClient.auth.getUser()` approach with direct JWT decoding using the service role client (which is already available). This is the established pattern used by other edge functions in this project.
 
 ### Technical Details
 
-**File: `supabase/functions/backfill-pricing-data/index.ts`**
-- Add early return when `batchSize === 0`: query only for the count, skip AI processing
-- In `extractPricingFromTranscription`, add fallback JSON extraction after parse failure:
-  ```typescript
-  try {
-    parsed = JSON.parse(cleaned);
-  } catch {
-    // Fallback: try to extract JSON object via regex
-    const match = cleaned.match(/\{[\s\S]*\}/);
-    if (match) parsed = JSON.parse(match[0]);
-    else return null;
-  }
-  ```
+**Files to modify:**
 
-**File: `src/components/market-intelligence/StateHeatTable.tsx`**
-- Identify and add missing `key` props on rendered list elements
+1. **`supabase/functions/generate-coaching-audio/index.ts`** (lines ~99-116)
+   - Replace the `anonClient` approach with the existing service role client
+   - Use `supabase.auth.getUser(token)` with the already-created service role `supabase` client instead of creating a new anon client
+   - This works because the service role client can validate any user's JWT
+
+2. **`supabase/functions/generate-qa-coaching-audio/index.ts`** (lines ~110-127)
+   - Same fix: use the service role client that's already instantiated in the function to call `auth.getUser(token)`
+   - Remove the unnecessary `anonClient` creation
+
+**What changes in each file:**
+```text
+BEFORE:
+  const anonClient = createClient(url, Deno.env.get('SUPABASE_ANON_KEY')!);
+  const { data: { user } } = await anonClient.auth.getUser(token);
+
+AFTER:
+  const { data: { user } } = await supabase.auth.getUser(token);
+```
+
+The service role client (`supabase`) is already created earlier in both functions using `SUPABASE_SERVICE_ROLE_KEY`, which is confirmed to exist. `auth.getUser()` works with the service role client and can resolve any user's JWT token.
+
+**No UI changes needed** -- `supabase.functions.invoke()` already sends the user's auth token automatically.
+
+**Batch functions** (`batch-generate-coaching-audio`, `batch-generate-qa-coaching`) call with the service role key (not a user JWT), so `triggered_by_user_id` will correctly remain null for batch operations, and `is_internal` will default to false (billable).
+
+### Expected Result
+After this fix, every time a user clicks "Play" or "Generate" for Jeff or Katty coaching audio, the `api_costs` record will include:
+- `triggered_by_user_id`: the UUID of the user who clicked
+- `is_internal`: true if the user is a super_admin, false otherwise
+
+This enables full auditability of who triggered each TTS generation and its associated cost.
 
