@@ -1,46 +1,53 @@
 
 
-## Switch Coaching Audio to On-Demand Generation
+## Add Pricing Discussion Detection to Call Analysis
 
-### What's Changing
+### What This Does
 
-Currently, every time a call is transcribed, the system automatically generates both Jeff's and Katty's voice coaching audio. This involves calling ElevenLabs for text-to-speech on every single record -- which is the most expensive step in the pipeline (roughly $0.18 per Jeff audio and $0.16 per Katty audio).
+Every call already goes through AI analysis that produces a summary, agent feedback, and key points. This change adds a new field -- `pricingDiscussed` -- to that analysis output, so you can see at a glance whether the agent covered pricing on each call.
 
-Going forward, coaching audio will only be generated when an agent actually clicks "Play Coaching" or "Listen to Katty's QA Coaching." This means you only pay for audio that someone actually listens to.
+### How It Works
 
-### What Stays the Same
+The AI model already reads the full transcription. We simply ask it to also flag whether pricing was discussed, with three pieces of info:
+- **mentioned** (yes/no): Did the agent proactively discuss pricing?
+- **details**: What specifically was covered (e.g., "Agent quoted $185/week and explained the deposit structure")
+- **agentInitiated**: Whether the agent brought it up vs. the member asking
 
-- **Transcription** still happens automatically
-- **QA Scoring** still happens automatically (this is cheap AI text analysis, not audio)
-- **Jeff's written feedback** (call key points, agent feedback) still generated automatically
-- **Katty's written QA scores** still generated automatically
-- The coaching audio players already have "generate" buttons built in -- agents won't notice any difference in their workflow
+This adds zero extra API calls -- it's just an additional field in the existing JSON response the AI already generates.
 
-### Cost Impact
+### Where You'll See It
 
-If only 30% of agents actually listen to their coaching audio, this change would reduce TTS costs by roughly 70%. At current volumes, that's a meaningful saving since TTS coaching is the single most expensive line item per record.
+1. **Booking detail view** (transcription modal): A pricing badge/indicator showing whether pricing was covered
+2. **Reports table**: A small icon or badge on records where pricing was NOT discussed (similar to how detected issues are flagged)
+3. **Agent feedback section**: Listed as a strength or improvement area
 
 ### Technical Changes
 
-**File: `supabase/functions/transcribe-call/index.ts`**
-- Remove the automatic call to `generate-coaching-audio` (Jeff's audio) from the post-transcription pipeline
-- Remove the automatic call to `generate-qa-coaching-audio` (Katty's audio) from the post-transcription pipeline
-- Keep the QA scoring step (`generate-qa-scores`) -- this is text-only analysis and stays automatic
-- The pipeline becomes: Transcription -> AI Analysis -> QA Scoring (done). No more automatic TTS.
+**1. AI Prompt Update** (`supabase/functions/transcribe-call/index.ts`)
+- Add `pricingDiscussed` to the JSON schema in both prompt variants (standard and enhanced)
+- Structure: `{ "mentioned": boolean, "details": "string", "agentInitiated": boolean }`
+- This field will be stored inside the existing `call_key_points` JSONB column -- no database migration needed
 
-**File: `supabase/functions/fix-incomplete-bookings/index.ts`**
-- Update the recovery function to no longer treat "missing coaching audio" as an incomplete booking that needs fixing
-- It should still recover missing transcriptions and QA scores, but not auto-generate audio
+**2. TypeScript Types** (`src/types/index.ts`)
+- Add `pricingDiscussed` to the `CallKeyPoints` interface:
+  ```
+  pricingDiscussed?: {
+    mentioned: boolean;
+    details: string;
+    agentInitiated: boolean;
+  }
+  ```
 
-**No frontend changes needed** -- both `CoachingAudioPlayer` and `QACoachingAudioPlayer` already handle the case where no audio URL exists by showing a "Generate" / "Play Coaching" button that triggers on-demand generation.
+**3. Transcription Modal UI** (`src/components/booking/TranscriptionModal.tsx`)
+- Add a small badge/section showing pricing discussion status
+- Green badge "Pricing Discussed" with details, or amber "Pricing Not Mentioned" flag
 
-### How It Works for Agents
+**4. Reports Table** (`src/pages/Reports.tsx`)
+- Add an optional pricing indicator icon on records where `call_key_points.pricingDiscussed.mentioned === false` to highlight missed opportunities
 
-1. Agent opens a booking's details
-2. They see "Listen to your coaching" (Jeff) or "Listen to Katty's QA Coaching" cards
-3. They click to play -- the system generates the audio right then (takes a few seconds)
-4. Audio plays automatically once ready
-5. Quiz flow continues as normal after listening
-
-This is the exact same experience agents already see when audio hasn't been generated yet -- we're just making that the default path instead of the exception.
+### What Won't Change
+- No new database columns or migrations needed (stored in existing JSONB)
+- No additional API calls or cost increase
+- Existing records won't have this field (it only applies to newly transcribed calls)
+- The backfill function (`batch-reanalyze-member-details`) could regenerate analysis for old records if desired later
 
