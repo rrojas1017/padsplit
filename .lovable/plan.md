@@ -1,39 +1,44 @@
 
 
-## Backfill Pricing Data for Existing Records
+## Fix Backfill Pricing Function Issues
 
-### Current State
-The Market Intelligence dashboard **already shows** Avg Budget, Avg Quoted Price, and Affordability Gap columns at both state and city level. The `aggregate-market-data` function already reads `pricingDiscussed.quotedRoomPrice` from `call_key_points`. However, existing records don't have this field yet -- only newly transcribed calls will populate it.
+### Problems Found
 
-### What This Change Does
-Create a new backfill edge function that re-reads existing transcriptions and extracts pricing data (`pricingDiscussed`) using the same AI model, then merges it into each record's `call_key_points`. This will populate the Avg Quoted Price and Affordability Gap columns across all historical data.
+1. **Dry-run mode broken**: When the page loads, it calls `backfill-pricing-data` with `batchSize: 0` to get the count of missing records. But the function still processes records because `batchSize` only controls the SQL `.limit()` -- passing 0 causes unexpected behavior (it processed 5 records on what should have been a count-only call).
 
-### Implementation
+2. **JSON parsing failures (~5-10%)**: The AI sometimes returns malformed JSON (unterminated strings), causing `SyntaxError` and skipping those records. The current cleanup only handles markdown fences but doesn't handle other common issues.
 
-**1. New Edge Function: `backfill-pricing-data`**
-- Fetches `booking_transcriptions` records that have a transcription but are missing `call_key_points.pricingDiscussed`
-- Uses Lovable AI (gemini-2.5-flash) to extract pricing info from each transcription
-- Merges `pricingDiscussed` into the existing `call_key_points` JSONB field
-- Processes in batches with 10-second pacing between records (matching existing batch patterns)
-- Self-retriggering: returns `remaining` count so the frontend can loop
-- Follows the same architecture as `batch-reanalyze-member-details`
+3. **React key warning**: The `StateHeatTable` component has a missing `key` prop on list items (unrelated but visible in console).
 
-**2. UI: Add "Backfill Pricing" button to Market Intelligence page**
-- Similar to the existing "Backfill Markets" button
-- Shows count of records missing pricing data
-- Progress bar during processing with ability to stop
+### Fixes
+
+**1. Add dry-run support to `backfill-pricing-data` edge function**
+- When `batchSize` is 0, skip processing and only return the `remaining` count
+- This prevents accidental processing on page load
+
+**2. Improve JSON parsing resilience**
+- Add a regex-based extraction fallback: if `JSON.parse` fails, try to extract the JSON object using a regex pattern `\{[\s\S]*\}`
+- Add `response_format` hint to the AI prompt asking for strict JSON
+
+**3. Fix StateHeatTable key warning**
+- Add unique `key` props to the list items in StateHeatTable that are missing them
 
 ### Technical Details
 
-- **AI prompt**: Focused extraction asking only for `pricingDiscussed` fields (mentioned, details, agentInitiated, quotedRoomPrice) -- keeps token usage minimal
-- **Filter**: Only processes records where `call_key_points` exists but `pricingDiscussed` is missing, and `call_transcription` is not null
-- **Batch size**: 20 records per invocation with 5-second delay between AI calls
-- **No migration needed**: Data goes into existing `call_key_points` JSONB column
-- **Config**: Add `verify_jwt = false` entry in `supabase/config.toml` (handled automatically)
+**File: `supabase/functions/backfill-pricing-data/index.ts`**
+- Add early return when `batchSize === 0`: query only for the count, skip AI processing
+- In `extractPricingFromTranscription`, add fallback JSON extraction after parse failure:
+  ```typescript
+  try {
+    parsed = JSON.parse(cleaned);
+  } catch {
+    // Fallback: try to extract JSON object via regex
+    const match = cleaned.match(/\{[\s\S]*\}/);
+    if (match) parsed = JSON.parse(match[0]);
+    else return null;
+  }
+  ```
 
-### Files to Create/Modify
-- **Create**: `supabase/functions/backfill-pricing-data/index.ts` -- new backfill edge function
-- **Modify**: `src/pages/MarketIntelligence.tsx` -- add backfill pricing button + progress UI (mirroring existing backfill markets pattern)
+**File: `src/components/market-intelligence/StateHeatTable.tsx`**
+- Identify and add missing `key` props on rendered list elements
 
-### After Backfill
-Once pricing data is populated across historical records, the Market Intelligence dashboard will show meaningful Avg Quoted Price and Affordability Gap values per market, enabling real analysis of whether markets are priced above or below what callers can afford.
