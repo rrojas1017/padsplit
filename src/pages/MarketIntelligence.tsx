@@ -52,17 +52,24 @@ export default function MarketIntelligence() {
   const [customDates, setCustomDates] = useState<CustomDateRange | undefined>();
   const [minRecords, setMinRecords] = useState(3);
 
-  // Backfill state
+  // Backfill market state
   const [unmappedCount, setUnmappedCount] = useState<number | null>(null);
   const [backfillRunning, setBackfillRunning] = useState(false);
   const [backfillProcessed, setBackfillProcessed] = useState(0);
   const [backfillTotal, setBackfillTotal] = useState(0);
   const abortRef = useRef(false);
 
+  // Backfill pricing state
+  const [pricingMissingCount, setPricingMissingCount] = useState<number | null>(null);
+  const [pricingBackfillRunning, setPricingBackfillRunning] = useState(false);
+  const [pricingBackfillProcessed, setPricingBackfillProcessed] = useState(0);
+  const [pricingBackfillTotal, setPricingBackfillTotal] = useState(0);
+  const pricingAbortRef = useRef(false);
+
   const { from, to } = getDateRange(dateRange, customDates);
   const { stateData, cityData, rawTotal, topMarkets, systemAvgConversion, systemAvgBudget, systemAvgQuotedPrice, systemAffordabilityGap, generatedAt, fromCache, isLoading, isRefreshing, refresh } = useMarketIntelligence(from, to, minRecords);
 
-  // Fetch unmapped count on mount
+  // Fetch unmapped count and pricing missing count on mount
   useEffect(() => {
     supabase
       .from('bookings')
@@ -71,6 +78,16 @@ export default function MarketIntelligence() {
       .eq('market_backfill_checked', false)
       .is('market_city', null)
       .then(({ count }) => setUnmappedCount(count ?? 0));
+
+    // Check pricing missing count via edge function dry-run
+    supabase.functions.invoke('backfill-pricing-data', {
+      body: { batchSize: 0 },
+    }).then(({ data }) => {
+      // The function returns remaining count even with batchSize 0
+      if (data?.remaining !== undefined) {
+        setPricingMissingCount(data.remaining);
+      }
+    }).catch(() => { /* ignore */ });
   }, []);
 
   const runBackfill = useCallback(async () => {
@@ -106,6 +123,39 @@ export default function MarketIntelligence() {
       setBackfillRunning(false);
     }
   }, [unmappedCount, refresh]);
+
+  const runPricingBackfill = useCallback(async () => {
+    pricingAbortRef.current = false;
+    setPricingBackfillRunning(true);
+    setPricingBackfillProcessed(0);
+    setPricingBackfillTotal(pricingMissingCount || 0);
+    let totalProcessed = 0;
+
+    try {
+      while (!pricingAbortRef.current) {
+        const { data, error } = await supabase.functions.invoke('backfill-pricing-data', {
+          body: { batchSize: 20 },
+        });
+
+        if (error) throw error;
+
+        totalProcessed += data.processed || 0;
+        setPricingBackfillProcessed(totalProcessed);
+
+        if (!data.remaining || data.remaining <= 0) break;
+
+        await new Promise(r => setTimeout(r, 2000));
+      }
+
+      toast({ title: 'Pricing Backfill Complete', description: `Processed ${totalProcessed} records` });
+      setPricingMissingCount(0);
+      refresh();
+    } catch (err: any) {
+      toast({ title: 'Pricing Backfill Error', description: err.message, variant: 'destructive' });
+    } finally {
+      setPricingBackfillRunning(false);
+    }
+  }, [pricingMissingCount, refresh]);
 
   const handleRangeChange = (range: DateFilterValue, dates?: CustomDateRange) => {
     setDateRange(range as DateRange);
@@ -146,6 +196,13 @@ export default function MarketIntelligence() {
           </Button>
         )}
 
+        {pricingMissingCount !== null && pricingMissingCount > 0 && !pricingBackfillRunning && (
+          <Button variant="secondary" size="sm" onClick={runPricingBackfill} className="gap-2">
+            <Database className="w-4 h-4" />
+            Backfill Pricing ({pricingMissingCount.toLocaleString()})
+          </Button>
+        )}
+
         {generatedAt && (
           <span className="text-xs text-muted-foreground flex items-center gap-1 ml-auto">
             <Clock className="w-3 h-3" />
@@ -165,6 +222,20 @@ export default function MarketIntelligence() {
             <Progress value={backfillTotal > 0 ? (backfillProcessed / backfillTotal) * 100 : 0} className="h-2" />
           </div>
           <Button variant="ghost" size="sm" onClick={() => { abortRef.current = true; }}>Stop</Button>
+        </div>
+      )}
+
+      {pricingBackfillRunning && (
+        <div className="flex items-center gap-3 mb-4 p-3 bg-muted/50 rounded-lg border border-border">
+          <RefreshCw className="w-4 h-4 animate-spin text-primary" />
+          <div className="flex-1">
+            <div className="flex justify-between text-sm mb-1">
+              <span className="text-foreground font-medium">Backfilling pricing data…</span>
+              <span className="text-muted-foreground">{pricingBackfillProcessed} / {pricingBackfillTotal}</span>
+            </div>
+            <Progress value={pricingBackfillTotal > 0 ? (pricingBackfillProcessed / pricingBackfillTotal) * 100 : 0} className="h-2" />
+          </div>
+          <Button variant="ghost" size="sm" onClick={() => { pricingAbortRef.current = true; }}>Stop</Button>
         </div>
       )}
 

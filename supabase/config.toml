@@ -125,3 +125,6 @@ verify_jwt = false
 
 [functions.backfill-detected-issues]
 verify_jwt = false
+
+[functions.backfill-pricing-data]
+verify_jwt = false
