@@ -5,7 +5,7 @@ import { useAgents } from '@/contexts/AgentsContext';
 import { useBookings } from '@/contexts/BookingsContext';
 import { useReportsData, ReportsFilters, ReportsPagination, ReportsSorting, SortColumn, SortDirection } from '@/hooks/useReportsData';
 import { Button } from '@/components/ui/button';
-import { Download, Search, PlusCircle, Pencil, ChevronDown, Building2, User, MessageSquare, Tag, CheckCircle, RotateCcw, ArrowUp, ArrowDown, ArrowUpDown, X, ExternalLink, Phone, UserCircle, Headphones, FileText, Loader2, MoreHorizontal, Clock, CalendarX, XCircle, Ban, AlertTriangle, Package, FlaskConical, ShieldAlert } from 'lucide-react';
+import { Download, Search, PlusCircle, Pencil, ChevronDown, Building2, User, MessageSquare, Tag, CheckCircle, RotateCcw, ArrowUp, ArrowDown, ArrowUpDown, X, ExternalLink, Phone, UserCircle, Headphones, FileText, Loader2, MoreHorizontal, Clock, CalendarX, XCircle, Ban, AlertTriangle, Package, FlaskConical, ShieldAlert, DollarSign } from 'lucide-react';
 import { ContactProfileHoverCard } from '@/components/reports/ContactProfileHoverCard';
 import { FollowUpPriorityBadge } from '@/components/reports/FollowUpPriorityBadge';
 import { calculateFollowUpPriority } from '@/utils/followUpPriority';
@@ -874,6 +874,22 @@ export default function Reports() {
                     <td className="py-3 px-4 text-sm text-foreground">
                       <div className="flex items-center gap-1.5">
                         {format(booking.bookingDate, 'MMM d, yyyy')}
+                        {/* Pricing not discussed indicator */}
+                        {booking.callKeyPoints?.pricingDiscussed?.mentioned === false && booking.transcriptionStatus === 'completed' && (
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <span className="inline-flex items-center cursor-help text-warning">
+                                <DollarSign className="h-4 w-4" />
+                              </span>
+                            </TooltipTrigger>
+                            <TooltipContent side="right" className="max-w-xs">
+                              <p className="font-semibold text-xs">Pricing Not Discussed</p>
+                              <p className="text-xs text-muted-foreground mt-1">
+                                Agent did not cover pricing on this call.
+                              </p>
+                            </TooltipContent>
+                          </Tooltip>
+                        )}
                         {(() => {
                           const issues = normalizeDetectedIssues(booking.detectedIssues);
                           return issues.length > 0 && (

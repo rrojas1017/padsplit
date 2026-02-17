@@ -1037,8 +1037,19 @@ Return a JSON object with EXACTLY this structure (no markdown, just raw JSON):
       "confidence": "high (explicitly stated) | medium (strongly implied) | low (loosely inferred)",
       "opportunity": "Brief description of the cross-sell/upsell opportunity (e.g., 'ACA enrollment partnership', 'Pet insurance referral')"
     }
-  ]
+  ],
+  "pricingDiscussed": {
+    "mentioned": true,
+    "details": "Brief description of what pricing was discussed (e.g., 'Agent quoted $185/week and explained deposit structure', 'Weekly rate of $200 mentioned'). If not discussed, say 'No pricing information was shared during the call'",
+    "agentInitiated": true
+  }
 }
+
+PRICING DISCUSSION DETECTION:
+- "mentioned": true if the agent discussed ANY pricing details (weekly rates, deposits, move-in costs, promo codes, payment amounts)
+- "mentioned": false if no pricing was shared during the call
+- "details": Summarize what was specifically covered (amounts quoted, fee structures explained, promo codes mentioned)
+- "agentInitiated": true if the agent proactively brought up pricing; false if only in response to the member asking
 
 LIFESTYLE SIGNALS EXTRACTION GUIDE:
 - healthcare: mentions of no insurance, needing coverage, ACA/Obamacare, medical needs, uninsured
@@ -1141,8 +1152,19 @@ Return a JSON object with EXACTLY this structure (no markdown, just raw JSON):
       "confidence": "high (explicitly stated) | medium (strongly implied) | low (loosely inferred)",
       "opportunity": "Brief description of the cross-sell/upsell opportunity (e.g., 'ACA enrollment partnership', 'Pet insurance referral')"
     }
-  ]
+  ],
+  "pricingDiscussed": {
+    "mentioned": true,
+    "details": "Brief description of what pricing was discussed (e.g., 'Agent quoted $185/week and explained deposit structure', 'Weekly rate of $200 mentioned'). If not discussed, say 'No pricing information was shared during the call'",
+    "agentInitiated": true
+  }
 }
+
+PRICING DISCUSSION DETECTION:
+- "mentioned": true if the agent discussed ANY pricing details (weekly rates, deposits, move-in costs, promo codes, payment amounts)
+- "mentioned": false if no pricing was shared during the call
+- "details": Summarize what was specifically covered (amounts quoted, fee structures explained, promo codes mentioned)
+- "agentInitiated": true if the agent proactively brought up pricing; false if only in response to the member asking
 
 LIFESTYLE SIGNALS EXTRACTION GUIDE:
 - healthcare: mentions of no insurance, needing coverage, ACA/Obamacare, medical needs, uninsured
