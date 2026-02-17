@@ -96,31 +96,30 @@ serve(async (req) => {
     
     console.log("Received request:", { bookingId, body });
 
-    // Detect if triggered by super_admin
-    let triggeredByUserId: string | null = null;
-    let isInternal = false;
-    const authHeader = req.headers.get('Authorization');
-    if (authHeader) {
-      try {
-        const anonClient = createClient(supabaseUrl, Deno.env.get('SUPABASE_ANON_KEY')!);
-        const token = authHeader.replace('Bearer ', '');
-        const { data: { user } } = await anonClient.auth.getUser(token);
-        if (user) {
-          triggeredByUserId = user.id;
-          const adminClient = createClient(supabaseUrl, supabaseServiceKey);
-          const { data: roleData } = await adminClient.from('user_roles').select('role').eq('user_id', user.id).single();
-          isInternal = roleData?.role === 'super_admin';
-          if (isInternal) console.log('[Internal] Request triggered by super_admin, marking costs as internal');
-        }
-      } catch (e) { console.log('[Internal] Could not determine user role:', e); }
-    }
-
     if (!bookingId) {
       throw new Error("Booking ID is required");
     }
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+
+    // Detect if triggered by a logged-in user (for cost auditing)
+    let triggeredByUserId: string | null = null;
+    let isInternal = false;
+    const authHeader = req.headers.get('Authorization');
+    if (authHeader) {
+      try {
+        const serviceClient = createClient(supabaseUrl, supabaseServiceKey);
+        const token = authHeader.replace('Bearer ', '');
+        const { data: { user } } = await serviceClient.auth.getUser(token);
+        if (user) {
+          triggeredByUserId = user.id;
+          const { data: roleData } = await serviceClient.from('user_roles').select('role').eq('user_id', user.id).single();
+          isInternal = roleData?.role === 'super_admin';
+          if (isInternal) console.log('[Internal] Request triggered by super_admin, marking costs as internal');
+        }
+      } catch (e) { console.log('[Internal] Could not determine user role:', e); }
+    }
     const elevenlabsApiKey = Deno.env.get("ELEVENLABS_API_KEY");
     const lovableApiKey = Deno.env.get("LOVABLE_API_KEY");
 
