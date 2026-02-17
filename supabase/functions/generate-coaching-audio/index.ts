@@ -92,7 +92,7 @@ serve(async (req) => {
 
   try {
     const body = await req.json();
-    const { bookingId } = body;
+    const { bookingId, isRegenerate = false } = body;
     
     console.log("Received request:", { bookingId, body });
 
@@ -150,12 +150,25 @@ serve(async (req) => {
     // Fetch transcription data INCLUDING full transcript from booking_transcriptions table
     const { data: transcriptionData, error: transcriptionError } = await supabase
       .from("booking_transcriptions")
-      .select("agent_feedback, call_summary, call_key_points, call_transcription")
+      .select("agent_feedback, call_summary, call_key_points, call_transcription, coaching_audio_url")
       .eq("booking_id", bookingId)
       .single();
 
     if (transcriptionError || !transcriptionData?.agent_feedback) {
       throw new Error("No agent feedback available for this booking");
+    }
+
+    // Skip generation if audio already exists and this isn't a regeneration request
+    if (transcriptionData.coaching_audio_url && !isRegenerate) {
+      console.log(`[Skip] Coaching audio already exists for booking ${bookingId}, returning existing URL`);
+      return new Response(
+        JSON.stringify({
+          success: true,
+          audioUrl: transcriptionData.coaching_audio_url,
+          skipped: true,
+        }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
     }
 
     const agentFeedback = transcriptionData.agent_feedback as AgentFeedback;

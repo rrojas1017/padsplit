@@ -166,6 +166,19 @@ serve(async (req) => {
       throw new Error(`Failed to fetch transcription: ${transcriptionError?.message}`);
     }
 
+    // Skip generation if audio already exists and this isn't a regeneration request
+    if (transcription.qa_coaching_audio_url && !isRegenerate) {
+      console.log(`[Skip] QA coaching audio already exists for booking ${bookingId}, returning existing URL`);
+      return new Response(
+        JSON.stringify({
+          success: true,
+          audioUrl: transcription.qa_coaching_audio_url,
+          skipped: true,
+        }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
     if (!transcription.qa_scores) {
       throw new Error('No QA scores found for this booking');
     }
