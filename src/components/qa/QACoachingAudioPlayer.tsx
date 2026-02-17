@@ -110,7 +110,11 @@ export const QACoachingAudioPlayer: React.FC<QACoachingAudioPlayerProps> = ({
     }
   };
 
+  const generateInFlightRef = useRef(false);
+
   const handleGenerateAudio = async () => {
+    if (isGenerating || generateInFlightRef.current) return;
+    generateInFlightRef.current = true;
     setIsGenerating(true);
     try {
       const { data, error } = await supabase.functions.invoke('generate-qa-coaching-audio', {
@@ -128,6 +132,7 @@ export const QACoachingAudioPlayer: React.FC<QACoachingAudioPlayerProps> = ({
       toast.error('Failed to generate QA coaching audio');
     } finally {
       setIsGenerating(false);
+      generateInFlightRef.current = false;
     }
   };
 
