@@ -1,72 +1,113 @@
 
-## Expand Script Wizard Layout — Both External & Internal Views
+# Research Script Improvements: Call Termination & Yes/No Enforcement
 
-### Problem
-Both the external public view (`PublicScriptView.tsx`) and internal tester dialog (`ScriptTesterDialog.tsx`) waste significant screen real estate. The external page caps its content at `max-w-lg` (512px) centered on screen, while the internal dialog is locked to `sm:max-w-lg` with `max-h-[85vh]` — both forcing agents to read compressed, small-font content.
+## Problem Summary
 
----
+Two issues need to be addressed in the research script wizard (both internal `LogSurveyCall.tsx` and public `PublicScriptView.tsx`):
 
-### Changes
+1. **No "hang up" / termination escape hatch** — The researcher has no way to abruptly end the script mid-flow when the caller hangs up or stops cooperating. The only exit path is completing the full flow.
 
-#### 1. External View — `src/pages/PublicScriptView.tsx`
-
-**Current issues:**
-- `max-w-lg` (512px) wizard container — tiny on desktop
-- `max-w-2xl` header — mismatched with body width
-- `p-6` card padding with `space-y-5` — comfortable but text area is cramped
-- Script block text is `text-base` / `text-lg` — readable but the container squishes it
-
-**Changes:**
-- Expand wizard container from `max-w-lg` → `max-w-3xl` (768px) — uses available horizontal space
-- Match header `max-w-2xl` → `max-w-3xl` for alignment
-- Increase `WizardCard` padding from `p-6` → `p-8` and `space-y-5` → `space-y-6`
-- Upgrade `ScriptBlock` text from `text-base` → `text-lg` and `p-5` → `p-6` for better readability
-- Increase question text in the `bg-muted` block from `text-lg` → `text-xl`, padding `p-5` → `p-6 py-7`
-- Scale Yes/No consent buttons larger: `px-10 py-6 text-xl`
-- Give the `open_ended` Textarea `rows={4}` (was 3)
-- Add `min-h-screen` body layout so the page always fills vertically
-
-#### 2. Internal Dialog — `src/components/research/ScriptTesterDialog.tsx`
-
-**Current issues:**
-- Dialog capped at `sm:max-w-lg` (512px) — far too narrow
-- `max-h-[85vh]` forces scrolling inside a small box
-- Question text, radio items and script blocks have minimal padding
-
-**Changes:**
-- Expand dialog from `sm:max-w-lg` → `sm:max-w-3xl` (768px)
-- Change `max-h-[85vh]` → `max-h-[90vh]` to use more vertical height
-- Increase script text containers from `p-5` → `p-6`
-- Upgrade `text-xl` question text to `text-2xl` for easier reading during live calls
-- Make radio group items (yes_no / multiple_choice) match the external view: border-boxed items with `px-4 py-3` instead of bare `flex items-center gap-2`
-- Expand Yes/No consent buttons to `px-10 py-6 text-xl`
-- Give `open_ended` Textarea `rows={4}` (was 3)
-- Add probing follow-ups section with proper box style (matching external view) — currently the internal tester doesn't show probes
+2. **Yes/No questions are skippable** — The `Next` button on `yes_no` type questions allows advancing without selecting an answer, despite the answer being critical for determining branching logic.
 
 ---
 
-### Visual Result
+## Solution Design
+
+### 1. Call Termination — "End Call" Disposition Button
+
+A persistent **"End Call"** button will appear in the header/toolbar area of every script phase (after the call has started — i.e., past the `setup` phase). When clicked:
+
+- A **confirmation dialog** (or inline panel) appears with a disposition selector:
+  - "Caller Hung Up"
+  - "Caller Asked to Stop"
+  - "Wrong Number"
+  - "Technical Issue"
+- On confirm → the system records the partial responses collected so far, sets the `call_outcome` to the selected disposition, and jumps directly to the **wrapup phase** so the researcher can finalize and submit.
+- The progress made (questions answered so far) is preserved in the submission.
+
+This appears in **both** `LogSurveyCall.tsx` and `PublicScriptView.tsx`.
+
+For `PublicScriptView.tsx` (the token-based external view), since there's no submit/wrapup flow, it will show a simplified "End Call" confirmation and go to the `done` phase with a "Call Ended Early" message instead of "Script Complete."
+
+### 2. Yes/No Answer Enforcement
+
+On `yes_no` type questions, the **Next button will be disabled** until the researcher selects Yes or No. This applies in both views.
+
+Additionally, a subtle hint message will appear below the buttons: *"A Yes or No response is required to determine next steps."*
+
+In `LogSurveyCall.tsx`, the `QuestionInput` component's `yes_no` branch already renders Yes/No buttons — the `Next` button (in the parent card) will check if a response exists for the current question and disable itself when the question type is `yes_no` and no answer is recorded.
+
+---
+
+## Files to Modify
+
+### `src/pages/research/LogSurveyCall.tsx`
+
+**Changes:**
+1. Add a new `WizardPhase` value — no, the existing `wrapup` serves as the landing. We just need to pre-populate `callOutcome` and jump there.
+2. Add a `handleEndCall(disposition: string)` function that:
+   - Sets `callOutcome` to the chosen disposition
+   - Sets `phase` to `'wrapup'`
+3. Add an `EndCallButton` component (or inline trigger) — a red "End Call" button visible in a sticky top strip during active phases (`intro`, `consent`, `question`, `closing`, `rebuttal`).
+4. Add a confirmation dialog using an `AlertDialog` from the existing UI library that shows disposition options before terminating.
+5. Disable the `Next` button when `currentQ?.type === 'yes_no'` and `responses[String(currentQ.id)] === undefined`.
+6. Show a small required hint under yes_no inputs.
+
+### `src/pages/PublicScriptView.tsx`
+
+**Changes:**
+1. Add an `EndCallButton` in the sticky header that's visible from `intro`, `consent`, `question`, `closing`, `rebuttal` phases.
+2. Add an `AlertDialog` confirmation with disposition options (simpler set: "Caller Hung Up", "Caller Asked to Stop", "Other").
+3. On confirm → set a new `endedEarly` state flag + disposition text, then `setPhase('done')`.
+4. Modify the `done` phase card to show a different message when `endedEarly` is true: "Call Ended Early" with the selected disposition shown.
+5. Disable `Next` on `yes_no` questions until a response is selected.
+6. Show required hint under yes_no radio group.
+
+---
+
+## Technical Details
+
+### Disposition Options for LogSurveyCall (maps to existing `outcomeOptions`):
+The existing outcome options already include `'no_answer'`, `'refused'` etc. We'll add two new options to the early-termination dialog that are contextually appropriate:
+- "caller_hung_up" → label "Caller Hung Up"
+- "caller_stopped" → label "Caller Asked to Stop"  
+- "wrong_number" → label "Wrong Number"
+- "technical_issue" → label "Technical Issue"
+
+These map into the existing `callOutcome` string field that feeds into `call_outcome` on submission — no database schema changes needed.
+
+### Yes/No Button Blocking Logic (LogSurveyCall):
+```
+const isNextDisabled = 
+  phase === 'question' && 
+  currentQ?.type === 'yes_no' && 
+  responses[String(currentQ?.id)] === undefined;
+```
+
+### Yes/No Blocking in PublicScriptView:
+```
+const isNextDisabled =
+  phase === 'question' &&
+  currentQ?.type === 'yes_no' &&
+  currentResponse === undefined;
+```
+
+### AlertDialog Usage:
+Already installed via `@radix-ui/react-alert-dialog`. The existing `src/components/ui/alert-dialog.tsx` component will be used directly — no new dependencies needed.
+
+---
+
+## UI Placement
+
+The "End Call" trigger will be placed as a **small red button in the top-right corner of the progress bar row** during active phases — keeping it accessible but not accidentally clickable. It uses a phone-off icon (`PhoneOff` from lucide-react) with the label "End Call."
 
 ```text
-BEFORE (external)                 AFTER (external)
-┌──────────────────────────────┐  ┌────────────────────────────────────────────────────────┐
-│     [narrow 512px card]      │  │           [wide 768px card — fills screen]             │
-│  Q: Did you feel supported?  │  │  Q: Did you feel supported in your PadSplit stay?       │
-│  ○ Yes                       │  │                                                         │
-│  ○ No                        │  │  ┌─────────────────────────────┐                        │
-└──────────────────────────────┘  │  │ ○  Yes                      │                        │
-                                  │  │ ○  No                       │                        │
-                                  │  └─────────────────────────────┘                        │
-                                  └────────────────────────────────────────────────────────┘
+[ Introduction                    12% ] [ 📵 End Call ]
+[████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░]
 ```
 
 ---
 
-### Files Changed
+## No Database Changes Required
 
-| File | Change |
-|---|---|
-| `src/pages/PublicScriptView.tsx` | Widen card container, larger text, bigger padding |
-| `src/components/research/ScriptTesterDialog.tsx` | Widen dialog, bigger text, boxed radio items, add probes |
-
-No logic changes — UI layout and sizing only. No backend changes needed.
+All data flows into the existing `call_outcome` field on `research_calls`. The early termination disposition values are just new string values for that field — fully compatible with the existing schema.
