@@ -1,125 +1,108 @@
 
-# Add Contact Verification Step to Script Wizard
+# Auto-Format Names & Phone Number in Setup
 
 ## What This Does
 
-Inserts a new **"Contact Verify"** phase immediately after the agent fills in caller details (setup) and before the intro/consent script begins. On this screen, the agent:
+Two smart auto-formatting behaviors are added to the **Setup** phase inputs in both `LogSurveyCall.tsx` and `ScriptTesterDialog.tsx`:
 
-1. **Confirms the caller's name** — reads it back to confirm they have the right person
-2. **Confirms or updates the best callback number** — asks "In case the call gets cut, what's the best number to reach you?" with an editable field pre-filled from what was entered in setup
+### 1. Name Auto-Capitalization
+As the agent types each word in the First Name and Last Name fields, the first letter of every word is automatically capitalized on the fly. No manual correction needed.
 
-This happens in both the live wizard (`LogSurveyCall.tsx`) and the script tester (`ScriptTesterDialog.tsx`).
+- `ramon` → `Ramon`
+- `de la cruz` → `De La Cruz`
+- `jean-pierre` → stays as typed (hyphens preserved; only first letter of first word is forced cap)
+
+### 2. Phone Number Auto-Formatting
+As the agent types the phone number, digits are extracted and formatted live into: `+1 XXX-XXX-XXXX`
+
+- User types: `3054332275` → displayed as: `+1 305-433-2275`
+- User types: `(305) 433-2275` → cleaned and displayed as: `+1 305-433-2275`
+- User types: `13054332275` (with leading 1) → still: `+1 305-433-2275`
+- The raw input is replaced immediately so the field always shows the formatted version
 
 ---
 
-## Visual Design
+## Implementation Strategy
 
-A clean, card-style screen — consistent with other phases — with:
+Two small utility functions added directly in each file (no new files needed):
 
-- A subtle `Phone` icon header label ("Confirm Contact Details")
-- The caller's name displayed prominently in a read-back prompt box: *"Am I speaking with **[First] [Last]**?"*
-- A Yes/No toggle for name confirmation (if No, they can type a corrected name)
-- A callback number field, pre-filled with the phone entered in setup, with a prompt: *"In case the call gets cut, what's the best number to reach you back at?"*
-- A "Confirmed — Start Script" button to proceed
+```typescript
+// Auto-capitalize: every word's first letter uppercased
+function autoCapitalizeName(value: string): string {
+  return value
+    .split(' ')
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ');
+}
 
-The step tracker gains a new **"Verify"** node appearing before "Intro" (or "Consent" if no intro).
+// Phone formatter: extract digits, strip leading 1, format as +1 XXX-XXX-XXXX
+function formatPhone(value: string): string {
+  const digits = value.replace(/\D/g, '');
+  // Strip leading country code 1 if present and digits > 10
+  const local = digits.length === 11 && digits.startsWith('1') ? digits.slice(1) : digits;
+  if (local.length === 0) return '';
+  if (local.length <= 3) return `+1 ${local}`;
+  if (local.length <= 6) return `+1 ${local.slice(0, 3)}-${local.slice(3)}`;
+  return `+1 ${local.slice(0, 3)}-${local.slice(3, 6)}-${local.slice(6, 10)}`;
+}
+```
+
+These run inside the `onChange` handlers — no `onBlur` needed, it reformats as the user types.
 
 ---
 
 ## Files to Modify
 
-### 1. `src/components/research/StepTracker.tsx`
-Add `'verify'` as a recognized step ID in `buildSteps`:
-- Insert a `{ id: 'verify', label: 'Verify' }` step as the first node in the track
-- Map `phase === 'verify'` to `activeIndex` on that node
-- It shows as `complete` once the agent moves past it
+### 1. `src/pages/research/LogSurveyCall.tsx`
 
-### 2. `src/pages/research/LogSurveyCall.tsx`
+**First Name field** (line ~524):
+```tsx
+// Before
+onChange={e => setCallerFirstName(e.target.value)}
 
-**State changes:**
-- Add `WizardPhase` union member: `'verify'`
-- Add state: `verifiedPhone` (string, pre-filled from `callerPhone`)
-- Add state: `nameConfirmed` (boolean | null)
-- Add state: `correctedFirstName`, `correctedLastName` (strings, for if the name is wrong)
-
-**Flow change:**
-- `handleStartScript()` → goes to `'verify'` instead of `'intro'` or `'consent'`
-- New `handleVerifyConfirm()` → saves verified phone + name corrections, then goes to `'intro'` or `'consent'`
-
-**UI — new `verify` phase block** (inside the main card):
-```
-┌──────────────────────────────────────────────────────┐
-│  📞 Confirm Contact Details                          │
-│                                                      │
-│  ┌────────────────────────────────────────────────┐  │
-│  │  "Am I speaking with John Smith?"              │  │
-│  └────────────────────────────────────────────────┘  │
-│                                                      │
-│  Name confirmed?   [✓ Yes]   [✗ No — correct it]   │
-│  (if No: First name ___  Last name ___ inputs)       │
-│                                                      │
-│  Callback number                                     │
-│  [  (404) 555-0100          ]  ← editable            │
-│  "In case the call gets cut, what's the best         │
-│   number to reach you?"                              │
-│                                                      │
-│              [← Back]   [Confirmed — Start Script →] │
-└──────────────────────────────────────────────────────┘
+// After
+onChange={e => setCallerFirstName(autoCapitalizeName(e.target.value))}
 ```
 
-**Step tracker:** `buildSteps` called with `hasVerify: true` so "Verify" appears as the first step, active during this phase.
-
-**Submission:** `verifiedPhone` replaces `callerPhone` in the `CallSubmission` payload so the confirmed callback number is what gets saved.
-
-### 3. `src/components/research/ScriptTesterDialog.tsx`
-
-**State changes:**
-- Add `Phase` union member: `'verify'`
-- Add state: `testerFirstName`, `testerLastName`, `testerPhone` (editable fields)
-- Add state: `nameConfirmed` (boolean | null)
-
-**Flow change:**
-- "Start Test" button → goes to `'verify'` instead of `'intro'`/`'consent'`
-- `handleBack()` from `intro`/`consent` → goes back to `'verify'`
-- `restart()` resets all new state fields
-
-**UI — new `verify` phase block:**
-Same design as above but uses placeholder data (`"Test Agent"` name, empty phone pre-filled). Since this is a tester, the fields are clearly marked as simulation inputs. The "Confirmed — Start Script →" button advances to `intro` or `consent`.
-
-**Step tracker:** `buildSteps` called with `hasVerify: true`.
-
-### 4. `src/components/research/StepTracker.tsx` — `buildSteps` signature update
-
-```typescript
-export function buildSteps(params: {
-  hasVerify?: boolean;   // NEW
-  hasIntro: boolean;
-  hasClosing: boolean;
-  questions: unknown[];
-  phase: string;
-  questionIndex: number;
-}): TrackerStep[]
+**Last Name field** (line ~536):
+```tsx
+onChange={e => setCallerLastName(autoCapitalizeName(e.target.value))}
 ```
 
-Inserts `{ id: 'verify', label: 'Verify' }` as the first step when `hasVerify` is true.
-Maps `phase === 'verify'` → `activeIndex` on that node.
+**Phone Number field** (line ~551):
+```tsx
+onChange={e => setCallerPhone(formatPhone(e.target.value))}
+placeholder="+1 305-433-2275"
+```
+
+Also update the **Verify phase** corrected name fields (lines ~641, ~650) to use `autoCapitalizeName` too, since agents can correct names there as well.
+
+**Verify phase callback number field** (line ~663):
+```tsx
+onChange={e => setVerifiedPhone(formatPhone(e.target.value))}
+```
+
+### 2. `src/components/research/ScriptTesterDialog.tsx`
+
+**Tester First Name field** (verify phase):
+```tsx
+onChange={e => setTesterFirstName(autoCapitalizeName(e.target.value))}
+```
+
+**Tester Last Name field**:
+```tsx
+onChange={e => setTesterLastName(autoCapitalizeName(e.target.value))}
+```
+
+**Tester Phone field**:
+```tsx
+onChange={e => setTesterPhone(formatPhone(e.target.value))}
+```
 
 ---
 
 ## What Does NOT Change
-- All branching / yes_no enforcement logic
-- End Call button and AlertDialog
-- Question rendering, probing follow-ups, section navigator
-- Wrapup / submission flow
-- The `callerPhone` field in setup remains the pre-fill source
-
-## Behaviour Summary
-
-| Action | Result |
-|--------|--------|
-| Agent completes setup → clicks "Start Script" | Goes to `verify` phase |
-| Agent confirms name (Yes) + edits/confirms phone → "Start Script" | Moves to `intro` or `consent`, `verifiedPhone` stored |
-| Agent clicks "Back" on verify | Returns to `setup` |
-| Agent clicks "Back" on intro | Returns to `verify` |
-| In tester: "Start Test" | Goes to `verify` simulation screen |
-| Submission payload | Uses `verifiedPhone` (the confirmed number) instead of raw `callerPhone` |
+- All validation logic (`validateSetup`) — the formatted phone value is what gets stored and validated
+- Submission payload — already stores `verifiedPhone`, which will now be pre-formatted
+- No new dependencies, no new files
+- All branching, question flow, and step tracker logic untouched
