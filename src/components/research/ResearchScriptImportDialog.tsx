@@ -54,11 +54,15 @@ export function ResearchScriptImportDialog({ open, onOpenChange, onImported }: P
       // Normalize questions
       const questions: ScriptQuestion[] = (data.questions || []).map((q: any, i: number) => ({
         order: q.order || i + 1,
-        question: q.question,
+        question: q.text || q.question || '',
         type: q.type || 'open_ended',
         options: q.type === 'multiple_choice' ? q.options : undefined,
         required: q.required ?? true,
         ai_extraction_hint: q.ai_extraction_hint || '',
+        section: q.section || undefined,
+        probes: q.probes && q.probes.length > 0 ? q.probes : undefined,
+        branch: q.branch && Object.keys(q.branch).length > 0 ? q.branch : undefined,
+        is_internal: q.is_internal ?? false,
       }));
 
       onImported({
