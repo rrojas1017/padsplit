@@ -20,6 +20,22 @@ import {
   AlertDialogCancel,
 } from '@/components/ui/alert-dialog';
 
+function autoCapitalizeName(value: string): string {
+  return value
+    .split(' ')
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ');
+}
+
+function formatPhone(value: string): string {
+  const digits = value.replace(/\D/g, '');
+  const local = digits.length === 11 && digits.startsWith('1') ? digits.slice(1) : digits;
+  if (local.length === 0) return '';
+  if (local.length <= 3) return `+1 ${local}`;
+  if (local.length <= 6) return `+1 ${local.slice(0, 3)}-${local.slice(3)}`;
+  return `+1 ${local.slice(0, 3)}-${local.slice(3, 6)}-${local.slice(6, 10)}`;
+}
+
 type Phase = 'start' | 'verify' | 'intro' | 'consent' | 'question' | 'closing' | 'rebuttal' | 'done';
 
 interface Props {
@@ -207,13 +223,13 @@ export function ScriptTesterDialog({ open, onOpenChange, script }: Props) {
               <div className="space-y-2">
                 <Label className="text-sm font-medium">Caller Name (simulation)</Label>
                 <div className="grid grid-cols-2 gap-3">
-                  <Input value={testerFirstName} onChange={e => setTesterFirstName(e.target.value)} placeholder="First name" />
-                  <Input value={testerLastName} onChange={e => setTesterLastName(e.target.value)} placeholder="Last name" />
+                  <Input value={testerFirstName} onChange={e => setTesterFirstName(autoCapitalizeName(e.target.value))} placeholder="First name" />
+                  <Input value={testerLastName} onChange={e => setTesterLastName(autoCapitalizeName(e.target.value))} placeholder="Last name" />
                 </div>
               </div>
               <div className="space-y-2">
                 <Label>Callback Number (simulation)</Label>
-                <Input value={testerPhone} onChange={e => setTesterPhone(e.target.value)} placeholder="e.g. (404) 555-0100" />
+                <Input value={testerPhone} onChange={e => setTesterPhone(formatPhone(e.target.value))} placeholder="+1 305-433-2275" />
                 <p className="text-xs text-muted-foreground">
                   "In case the call gets cut, what's the best number to reach you back at?"
                 </p>
