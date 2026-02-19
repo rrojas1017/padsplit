@@ -29,7 +29,8 @@ import {
   RotateCcw,
   FlaskConical,
   ScrollText,
-  FolderKanban
+  FolderKanban,
+  Key
 } from 'lucide-react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
@@ -80,6 +81,7 @@ const menuItems: MenuItem[] = [
   { icon: ScrollText, label: 'Script Builder', path: '/research/scripts', roles: ['super_admin', 'admin'], group: 'admin' },
   { icon: FolderKanban, label: 'Campaign Manager', path: '/research/manage-campaigns', roles: ['super_admin', 'admin'], group: 'admin' },
   { icon: FlaskConical, label: 'Research Insights', path: '/research/insights', roles: ['super_admin', 'admin'], group: 'admin' },
+  { icon: Key, label: 'API Credentials', path: '/api-credentials', roles: ['super_admin', 'admin'], group: 'admin' },
 ];
 
 export function AppSidebar() {

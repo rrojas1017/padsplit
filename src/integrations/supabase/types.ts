@@ -309,6 +309,51 @@ export type Database = {
           },
         ]
       }
+      api_credentials: {
+        Row: {
+          application_name: string
+          client_id: string
+          client_secret_hash: string
+          created_at: string
+          created_by: string | null
+          deleted_at: string | null
+          expires_at: string | null
+          id: string
+          last_used_at: string | null
+          rate_limit: number | null
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          application_name: string
+          client_id: string
+          client_secret_hash: string
+          created_at?: string
+          created_by?: string | null
+          deleted_at?: string | null
+          expires_at?: string | null
+          id?: string
+          last_used_at?: string | null
+          rate_limit?: number | null
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          application_name?: string
+          client_id?: string
+          client_secret_hash?: string
+          created_at?: string
+          created_by?: string | null
+          deleted_at?: string | null
+          expires_at?: string | null
+          id?: string
+          last_used_at?: string | null
+          rate_limit?: number | null
+          status?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       billing_invoices: {
         Row: {
           client_id: string
