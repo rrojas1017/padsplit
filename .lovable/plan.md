@@ -1,31 +1,74 @@
 
-## Fix: Script Token Generation Failing
+## Replace PublicScriptView with an Interactive Wizard
 
-### Root Cause
+### Problem
+The external script link (`/script/:token`) currently renders all questions as a flat, static document. The user expects the same step-by-step wizard experience as the internal `ScriptTesterDialog`: one question at a time, interactive radio buttons, Yes/No branching, probing follow-ups revealed after a selection, Back/Next navigation, and a progress bar.
 
-The `script_access_tokens` table has a broken column default for the `token` field:
+### Solution
+Completely rewrite `src/pages/PublicScriptView.tsx` to replicate the `ScriptTesterDialog` flow as a full-page wizard (no dialog wrapper needed — it owns the whole page).
 
-```sql
-DEFAULT encode(extensions.gen_random_bytes(24), 'base64url'::text)
+---
+
+### Phase State Machine (mirrors ScriptTesterDialog exactly)
+
+```text
+start → intro → consent → question (0…N) → closing → done
+                       ↘ rebuttal → done
 ```
 
-The problem is `'base64url'` — this is **not a valid encoding format** in this version of PostgreSQL. Valid options are `'base64'`, `'hex'`, and `'escape'`. Every INSERT into this table attempts to evaluate this default, fails with a Postgres error, and the hook catches it and shows "Failed to generate link".
+- **start**: Script name, description, badges, "Begin" button
+- **intro**: Full-width intro script card + Back / Next
+- **consent**: "Did the caller agree to continue?" with Yes / No buttons
+- **question**: One question per screen with interactive response input
+- **closing**: Closing script card
+- **rebuttal**: Rebuttal script card (if consent denied)
+- **done**: Completion screen with a "Restart" option
 
-### Fix
+---
 
-Alter the column default to use a working approach. Since `gen_random_bytes` from `pgcrypto` is also unavailable directly, the best approach is to use `gen_random_uuid()` (which is always available) to generate a unique, URL-safe token:
+### Per-Question Interaction (matching the internal tester)
 
-```sql
-ALTER TABLE public.script_access_tokens
-  ALTER COLUMN token SET DEFAULT replace(replace(replace(
-    encode(gen_random_uuid()::text::bytea, 'base64'),
-    '+', '-'), '/', '_'), E'\n', '');
-```
+| Question Type | Widget |
+|---|---|
+| `yes_no` | RadioGroup with Yes / No options |
+| `multiple_choice` | RadioGroup listing each option |
+| `scale` | Slider 1–10 |
+| `open_ended` | Textarea (notes-optional label) |
 
-This generates a ~48-character base64-encoded, URL-safe token (no `+`, `/`, or newlines) from a UUID — cryptographically unique and safe to use in URLs.
+**Branching**: After a `yes_no` question response is selected, show the relevant branch probes (yes_probes / no_probes) inline below the radio group before the user clicks Next.
+
+**Probing follow-ups**: If a question has `probes`, show them in a highlighted box after the main question text (same as the tester).
+
+---
+
+### Progress Bar
+Identical to the tester: total steps = questions + (intro ? 1 : 0) + 1 consent + (closing ? 1 : 0). Progress updates as the user advances.
+
+---
+
+### Layout Changes
+- **Header**: Sticky top bar with PadSplit logo, script name, campaign/audience badges — keep this.
+- **Body**: Replace the static content area with the wizard card (max-w-lg, centered, card-style with shadow, rounded-xl) matching the dialog style from the tester.
+- **Footer**: Show "PadSplit Operations · External View" below the card.
+- No authentication required — same as now.
+
+---
 
 ### Files Changed
 
-1. **New migration** — Alters the `token` column default on `script_access_tokens` to a working expression.
+| File | Change |
+|---|---|
+| `src/pages/PublicScriptView.tsx` | Full rewrite — replace static document with interactive wizard |
 
-No frontend code changes are needed. The hook already sends the insert without a `token` value, correctly relying on the column default.
+No backend changes needed. The `validate-script-token` edge function already returns all question data including `branch`, `probes`, `options`, `type`, `section` etc.
+
+---
+
+### Key Implementation Details
+
+- Import `RadioGroup`, `RadioGroupItem`, `Label`, `Slider`, `Textarea`, `Progress`, `Button` from existing UI components
+- The `phase` state and `questionIndex` state replicate the tester exactly
+- `handleNext` advances phase; `handleBack` goes back — same logic as `ScriptTesterDialog`
+- Branch probes shown conditionally once a yes/no response is selected (using local `responses` state)
+- `currentQ.question` field used (falling back to `currentQ.text`) to match how questions are stored
+- `sortedQuestions` sorted by `order` field before display
