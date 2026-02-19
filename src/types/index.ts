@@ -24,6 +24,7 @@ export interface Agent {
   siteName: string;
   active: boolean;
   avatarUrl?: string;
+  dialerAgentUser?: string;
 }
 
 export interface MemberDetails {

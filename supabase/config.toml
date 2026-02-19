@@ -132,3 +132,6 @@ verify_jwt = false
 [functions.manage-api-credentials]
 verify_jwt = false
 
+[functions.submit-conversation-audio]
+verify_jwt = false
+
