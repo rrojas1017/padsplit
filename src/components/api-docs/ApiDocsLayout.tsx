@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { BookOpen, ChevronRight } from 'lucide-react';
+import { BookOpen, ChevronRight, Download } from 'lucide-react';
+import { downloadPostmanCollection } from '@/utils/postmanCollection';
 
 interface NavItem {
   id: string;
@@ -69,6 +70,13 @@ export function ApiDocsLayout({ navItems, children }: ApiDocsLayoutProps) {
           v1.0
         </div>
         <div className="flex-1" />
+        <button
+          onClick={downloadPostmanCollection}
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium bg-accent text-accent-foreground hover:bg-accent/80 transition-colors"
+        >
+          <Download className="w-3.5 h-3.5" />
+          Postman Collection
+        </button>
         <a
           href="#submit-conversation-audio"
           onClick={(e) => handleNavClick(e, 'submit-conversation-audio')}
