@@ -132,7 +132,7 @@ export function ResearchScriptDialog({ open, onOpenChange, script, onSave, impor
 
   const handleSave = async () => {
     if (!name.trim()) return;
-    const validQuestions = questions.filter(q => q.question.trim());
+    const validQuestions = questions.filter(q => q.question?.trim());
     if (validQuestions.length === 0) return;
 
     setIsSaving(true);
@@ -351,9 +351,10 @@ export function ResearchScriptDialog({ open, onOpenChange, script, onSave, impor
 
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-          <Button onClick={handleSave} disabled={isSaving || !name.trim() || questions.filter(q => q.question.trim()).length === 0}>
-            {isSaving ? 'Saving...' : script ? 'Update Script' : 'Create Script'}
+          <Button onClick={handleSave} disabled={isSaving || !name.trim() || questions.filter(q => q.question?.trim()).length === 0}>
+          {isSaving ? 'Saving...' : script ? 'Update Script' : 'Create Script'}
           </Button>
+
         </DialogFooter>
       </DialogContent>
     </Dialog>
