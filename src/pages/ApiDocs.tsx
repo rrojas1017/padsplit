@@ -136,33 +136,6 @@ X-API-Key: sk_your_client_secret_here`}</CodeBlock>
                 </p>
               </div>
             </div>
-            <div className="mt-3 rounded-lg border border-border overflow-hidden">
-              <div className="bg-muted/50 px-4 py-3 border-b border-border flex items-center gap-3">
-                <Badge variant="green">POST</Badge>
-                <code className="text-sm text-foreground font-mono">/webhooks/calls</code>
-                <Badge variant="amber">Coming soon</Badge>
-              </div>
-              <div className="p-4">
-                <p className="text-sm text-muted-foreground">
-                  Submit call records from external telephony systems (e.g. Kixie, Twilio) into the platform for processing, transcription, and analysis.
-                </p>
-              </div>
-            </div>
-            <div className="mt-3 rounded-lg border border-border overflow-hidden">
-              <div className="bg-muted/50 px-4 py-3 border-b border-border flex items-center gap-3">
-                <Badge variant="green">POST</Badge>
-                <code className="text-sm text-foreground font-mono">/bookings</code>
-                <Badge variant="amber">Coming soon</Badge>
-              </div>
-              <div className="p-4">
-                <p className="text-sm text-muted-foreground">
-                  Create booking records programmatically from external CRM or scheduling systems.
-                </p>
-              </div>
-            </div>
-            <p className="text-sm text-muted-foreground mt-4">
-              Additional endpoints will be documented here as they are released.
-            </p>
           </Section>
 
           <Section id="submit-conversation-audio" title="Submit Conversation Audio" icon={Code2}>
