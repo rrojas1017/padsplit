@@ -8,7 +8,6 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
-import { Progress } from '@/components/ui/progress';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
 import { useResearchCalls, type ScriptQuestion, type CallSubmission } from '@/hooks/useResearchCalls';
@@ -19,6 +18,7 @@ import {
   CheckCircle, Phone, ArrowRight, ArrowLeft, MessageSquare,
   XCircle, ThumbsUp, ThumbsDown, User, GitBranch, PhoneOff
 } from 'lucide-react';
+import { StepTracker, buildSteps } from '@/components/research/StepTracker';
 import { cn } from '@/lib/utils';
 import {
   AlertDialog,
@@ -29,7 +29,6 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-  AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
 
 const callerTypes = [
@@ -354,17 +353,6 @@ export default function LogSurveyCall() {
     setVisitedIndices(new Set());
   };
 
-  // Progress calculation
-  const totalSteps = questions.length + (introScript ? 1 : 0) + 1 + (closingScript ? 1 : 0);
-  const currentStepNum = (() => {
-    if (phase === 'intro') return 1;
-    if (phase === 'consent') return (introScript ? 2 : 1);
-    if (phase === 'question') return (introScript ? 3 : 2) + questionIndex;
-    if (phase === 'closing') return totalSteps;
-    return totalSteps;
-  })();
-  const progressPercent = totalSteps > 0 ? (currentStepNum / totalSteps) * 100 : 0;
-
   const currentQ = questions[questionIndex];
   const showSectionNav = phase === 'question' && sections.length > 1;
 
@@ -392,72 +380,67 @@ export default function LogSurveyCall() {
         <Card><CardContent className="p-6"><Skeleton className="h-64 w-full" /></CardContent></Card>
       ) : (
         <div className="space-y-4">
-          {/* Progress bar + End Call */}
+          {/* Step Tracker */}
           {phase !== 'setup' && phase !== 'wrapup' && (
-            <div className="space-y-1 max-w-2xl mx-auto">
-              <div className="flex justify-between items-center text-xs text-muted-foreground">
-                <span>
-                  {phase === 'question'
-                    ? `Question ${questionIndex + 1} of ${questions.length}`
-                    : phase === 'intro' ? 'Introduction'
-                    : phase === 'consent' ? 'Consent'
-                    : phase === 'closing' ? 'Closing'
-                    : 'Rebuttal'}
-                </span>
-                <div className="flex items-center gap-2">
-                  <span>{Math.round(progressPercent)}%</span>
-                  <AlertDialog open={endCallDialogOpen} onOpenChange={setEndCallDialogOpen}>
-                    <AlertDialogTrigger asChild>
-                      <Button variant="destructive" size="sm" className="h-6 px-2 text-xs gap-1">
-                        <PhoneOff className="w-3 h-3" /> End Call
-                      </Button>
-                    </AlertDialogTrigger>
-                    <AlertDialogContent>
-                      <AlertDialogHeader>
-                        <AlertDialogTitle>End Call Early</AlertDialogTitle>
-                        <AlertDialogDescription>
-                          Select the reason for ending the call. Partial responses collected so far will be saved.
-                        </AlertDialogDescription>
-                      </AlertDialogHeader>
-                      <div className="space-y-2 py-2">
-                        {earlyEndDispositions.map(d => (
-                          <label
-                            key={d.value}
-                            className={cn(
-                              'flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-colors',
-                              selectedEndDisposition === d.value
-                                ? 'border-destructive bg-destructive/5'
-                                : 'hover:bg-muted/50'
-                            )}
-                          >
-                            <input
-                              type="radio"
-                              name="end-disposition"
-                              value={d.value}
-                              checked={selectedEndDisposition === d.value}
-                              onChange={() => setSelectedEndDisposition(d.value)}
-                              className="accent-destructive"
-                            />
-                            <span className="text-sm font-medium">{d.label}</span>
-                          </label>
-                        ))}
-                      </div>
-                      <AlertDialogFooter>
-                        <AlertDialogCancel>Cancel</AlertDialogCancel>
-                        <AlertDialogAction
-                          className="bg-destructive hover:bg-destructive/90"
-                          onClick={() => handleEndCall(selectedEndDisposition)}
-                        >
-                          End Call
-                        </AlertDialogAction>
-                      </AlertDialogFooter>
-                    </AlertDialogContent>
-                  </AlertDialog>
-                </div>
-              </div>
-              <Progress value={progressPercent} className="h-2" />
+            <div className="max-w-2xl mx-auto">
+              <StepTracker
+                steps={buildSteps({
+                  hasIntro: !!introScript,
+                  hasClosing: !!closingScript,
+                  questions,
+                  phase,
+                  questionIndex,
+                })}
+                totalQuestions={questions.length}
+                activeQuestionIndex={questionIndex}
+                onEndCall={() => setEndCallDialogOpen(true)}
+              />
             </div>
           )}
+
+          {/* End Call AlertDialog */}
+          <AlertDialog open={endCallDialogOpen} onOpenChange={setEndCallDialogOpen}>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>End Call Early</AlertDialogTitle>
+                <AlertDialogDescription>
+                  Select the reason for ending the call. Partial responses collected so far will be saved.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <div className="space-y-2 py-2">
+                {earlyEndDispositions.map(d => (
+                  <label
+                    key={d.value}
+                    className={cn(
+                      'flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-colors',
+                      selectedEndDisposition === d.value
+                        ? 'border-destructive bg-destructive/5'
+                        : 'hover:bg-muted/50'
+                    )}
+                  >
+                    <input
+                      type="radio"
+                      name="end-disposition"
+                      value={d.value}
+                      checked={selectedEndDisposition === d.value}
+                      onChange={() => setSelectedEndDisposition(d.value)}
+                      className="accent-destructive"
+                    />
+                    <span className="text-sm font-medium">{d.label}</span>
+                  </label>
+                ))}
+              </div>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogAction
+                  className="bg-destructive hover:bg-destructive/90"
+                  onClick={() => handleEndCall(selectedEndDisposition)}
+                >
+                  End Call
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
 
           {/* Main layout: question phase with optional side navigator */}
           <div className={cn(
