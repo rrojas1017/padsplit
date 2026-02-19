@@ -77,7 +77,7 @@ export default function UserManagement() {
 
   // Edit agent state
   const [isEditAgentDialogOpen, setIsEditAgentDialogOpen] = useState(false);
-  const [editingAgent, setEditingAgent] = useState<{ id: string; name: string; siteId: string } | null>(null);
+  const [editingAgent, setEditingAgent] = useState<{ id: string; name: string; siteId: string; dialerAgentUser: string } | null>(null);
 
   // Form state
   const [newUserName, setNewUserName] = useState('');
@@ -370,6 +370,7 @@ export default function UserManagement() {
       id: agent.id,
       name: agent.name,
       siteId: agent.siteId,
+      dialerAgentUser: agent.dialerAgentUser || '',
     });
     setIsEditAgentDialogOpen(true);
   };
@@ -381,6 +382,7 @@ export default function UserManagement() {
       await updateAgent(editingAgent.id, {
         name: editingAgent.name,
         siteId: editingAgent.siteId,
+        dialerAgentUser: editingAgent.dialerAgentUser,
       });
       toast({
         title: 'Success',
@@ -1236,6 +1238,16 @@ export default function UserManagement() {
                     ))}
                   </SelectContent>
                 </Select>
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="dialerAgentUser">Dialer Agent User</Label>
+                <Input
+                  id="dialerAgentUser"
+                  placeholder="External dialer identifier"
+                  value={editingAgent.dialerAgentUser}
+                  onChange={(e) => setEditingAgent({ ...editingAgent, dialerAgentUser: e.target.value })}
+                />
+                <p className="text-xs text-muted-foreground">Used to match incoming API submissions to this agent.</p>
               </div>
             </div>
           )}

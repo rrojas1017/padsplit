@@ -67,7 +67,7 @@ export function AgentsProvider({ children }: { children: ReactNode }) {
         const { data, error } = await supabase
           .from('agents')
           .select(`
-            id, name, site_id, active, avatar_url, user_id,
+        id, name, site_id, active, avatar_url, user_id, dialer_agent_user,
             sites(name)
           `)
           .order('name')
@@ -92,6 +92,7 @@ export function AgentsProvider({ children }: { children: ReactNode }) {
         siteName: a.sites?.name || 'Unknown',
         active: a.active,
         avatarUrl: a.avatar_url || undefined,
+        dialerAgentUser: a.dialer_agent_user || undefined,
       }));
 
       setAgents(transformedAgents);
@@ -147,6 +148,7 @@ export function AgentsProvider({ children }: { children: ReactNode }) {
       active: agentData.active ?? true,
       user_id: agentData.userId || null,
       avatar_url: agentData.avatarUrl || null,
+      dialer_agent_user: agentData.dialerAgentUser || null,
     });
 
     if (error) {
@@ -165,6 +167,7 @@ export function AgentsProvider({ children }: { children: ReactNode }) {
     if (updates.active !== undefined) updateData.active = updates.active;
     if (updates.userId !== undefined) updateData.user_id = updates.userId;
     if (updates.avatarUrl !== undefined) updateData.avatar_url = updates.avatarUrl;
+    if (updates.dialerAgentUser !== undefined) updateData.dialer_agent_user = updates.dialerAgentUser || null;
 
     const { error } = await supabase
       .from('agents')

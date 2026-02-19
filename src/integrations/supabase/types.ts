@@ -187,6 +187,7 @@ export type Database = {
           active: boolean
           avatar_url: string | null
           created_at: string
+          dialer_agent_user: string | null
           id: string
           name: string
           site_id: string
@@ -197,6 +198,7 @@ export type Database = {
           active?: boolean
           avatar_url?: string | null
           created_at?: string
+          dialer_agent_user?: string | null
           id?: string
           name: string
           site_id: string
@@ -207,6 +209,7 @@ export type Database = {
           active?: boolean
           avatar_url?: string | null
           created_at?: string
+          dialer_agent_user?: string | null
           id?: string
           name?: string
           site_id?: string
@@ -1294,6 +1297,67 @@ export type Database = {
             columns: ["user_id"]
             isOneToOne: false
             referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      conversation_submissions: {
+        Row: {
+          api_credential_id: string | null
+          audio_url: string
+          booking_id: string | null
+          campaign: string
+          created_at: string
+          dialer_agent_user: string
+          id: string
+          matched_agent_id: string | null
+          phone_number: string
+          submission_type: string
+        }
+        Insert: {
+          api_credential_id?: string | null
+          audio_url: string
+          booking_id?: string | null
+          campaign: string
+          created_at?: string
+          dialer_agent_user: string
+          id?: string
+          matched_agent_id?: string | null
+          phone_number: string
+          submission_type?: string
+        }
+        Update: {
+          api_credential_id?: string | null
+          audio_url?: string
+          booking_id?: string | null
+          campaign?: string
+          created_at?: string
+          dialer_agent_user?: string
+          id?: string
+          matched_agent_id?: string | null
+          phone_number?: string
+          submission_type?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "conversation_submissions_api_credential_id_fkey"
+            columns: ["api_credential_id"]
+            isOneToOne: false
+            referencedRelation: "api_credentials"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "conversation_submissions_booking_id_fkey"
+            columns: ["booking_id"]
+            isOneToOne: false
+            referencedRelation: "bookings"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "conversation_submissions_matched_agent_id_fkey"
+            columns: ["matched_agent_id"]
+            isOneToOne: false
+            referencedRelation: "agents"
             referencedColumns: ["id"]
           },
         ]
