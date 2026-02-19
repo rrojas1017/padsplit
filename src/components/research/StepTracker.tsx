@@ -82,22 +82,15 @@ export function StepTracker({
   // Build the rendered nodes list
   const renderNodes = () => {
     const nodes: React.ReactNode[] = [];
+    let lastRenderedStepState: StepState | null = null;
+    let clusterRendered = false;
 
     steps.forEach((step, i) => {
       const isQuestion = step.id.startsWith('q-');
 
-      // In cluster mode, collapse all question dots into a single cluster node
       if (useCluster && isQuestion) {
-        // Only render the cluster once (when we hit the first question step)
-        const firstQIdx = steps.findIndex(s => s.id.startsWith('q-'));
-        if (i !== firstQIdx) return;
-
-        // Cluster: show prev dot, active dot, next dot
-        const qIdx = activeQuestionIndex ?? 0;
-        const dots = questionSteps.map((_, dotI) => {
-          const diff = dotI - qIdx;
-          return diff;
-        });
+        if (clusterRendered) return; // skip remaining q steps
+        clusterRendered = true;
 
         // Determine cluster state
         const clusterState: StepState = questionSteps.every(s => s.state === 'complete')
@@ -113,25 +106,27 @@ export function StepTracker({
             ? `Q ${(activeQuestionIndex ?? 0) + 1}/${questionSteps.length}`
             : `Q 1–${questionSteps.length}`;
 
+        // Add connector before cluster using last rendered state
+        if (nodes.length > 0) {
+          nodes.push(<Connector key="conn-cluster" completed={lastRenderedStepState === 'complete'} />);
+        }
+
         nodes.push(
           <StepNode
             key="q-cluster"
             step={{ id: 'q-cluster', label: clusterLabel, state: clusterState }}
           />
         );
+        lastRenderedStepState = clusterState;
         return;
       }
 
       // Normal node
-      if (!useCluster || !isQuestion) {
-        if (nodes.length > 0) {
-          // Connector: completed if this step is complete or if previous was complete and this is active
-          const prevStep = i > 0 ? steps[i - 1] : null;
-          const connectorCompleted = prevStep?.state === 'complete';
-          nodes.push(<Connector key={`conn-${i}`} completed={connectorCompleted} />);
-        }
-        nodes.push(<StepNode key={step.id} step={step} />);
+      if (nodes.length > 0) {
+        nodes.push(<Connector key={`conn-${i}`} completed={lastRenderedStepState === 'complete'} />);
       }
+      nodes.push(<StepNode key={step.id} step={step} />);
+      lastRenderedStepState = step.state;
     });
 
     return nodes;
