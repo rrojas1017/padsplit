@@ -45,7 +45,7 @@ export default function ApiDocs() {
 
         <div className="mt-8">
           <h3 className="text-xs font-bold uppercase tracking-[0.15em] text-muted-foreground mb-3">Base URL</h3>
-          <CodeBlock title="Base URL">{`https://qwddqoyewtozzdvfmavn.supabase.co/functions/v1`}</CodeBlock>
+          <CodeBlock title="Base URL">{`https://padsplit.tools/functions/v1`}</CodeBlock>
           <p className="text-xs text-muted-foreground mt-2">All endpoint paths are relative to this base URL.</p>
         </div>
 
@@ -118,7 +118,7 @@ X-Client-Secret: sk_your_client_secret_here`}</CodeBlock>
           {/* Example Request */}
           <h3 className="text-xs font-bold uppercase tracking-[0.15em] text-muted-foreground mt-8 mb-3">Example Request</h3>
           <CodeBlock language="bash">{`curl -X POST \\
-  https://qwddqoyewtozzdvfmavn.supabase.co/functions/v1/submit-conversation-audio \\
+  https://padsplit.tools/functions/v1/submit-conversation-audio \\
   -H "Content-Type: application/json" \\
   -H "X-Client-ID: app_your_client_id" \\
   -H "X-Client-Secret: sk_your_secret" \\
