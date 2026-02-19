@@ -1,59 +1,125 @@
 
-# Fix: Dialog Closes & Resets on Outside Click
+# Add Contact Verification Step to Script Wizard
 
-## Root Cause
+## What This Does
 
-In `ScriptTesterDialog.tsx`, line 128:
+Inserts a new **"Contact Verify"** phase immediately after the agent fills in caller details (setup) and before the intro/consent script begins. On this screen, the agent:
 
-```tsx
-<Dialog open={open} onOpenChange={(v) => { onOpenChange(v); if (!v) restart(); }}>
+1. **Confirms the caller's name** — reads it back to confirm they have the right person
+2. **Confirms or updates the best callback number** — asks "In case the call gets cut, what's the best number to reach you?" with an editable field pre-filled from what was entered in setup
+
+This happens in both the live wizard (`LogSurveyCall.tsx`) and the script tester (`ScriptTesterDialog.tsx`).
+
+---
+
+## Visual Design
+
+A clean, card-style screen — consistent with other phases — with:
+
+- A subtle `Phone` icon header label ("Confirm Contact Details")
+- The caller's name displayed prominently in a read-back prompt box: *"Am I speaking with **[First] [Last]**?"*
+- A Yes/No toggle for name confirmation (if No, they can type a corrected name)
+- A callback number field, pre-filled with the phone entered in setup, with a prompt: *"In case the call gets cut, what's the best number to reach you back at?"*
+- A "Confirmed — Start Script" button to proceed
+
+The step tracker gains a new **"Verify"** node appearing before "Intro" (or "Consent" if no intro).
+
+---
+
+## Files to Modify
+
+### 1. `src/components/research/StepTracker.tsx`
+Add `'verify'` as a recognized step ID in `buildSteps`:
+- Insert a `{ id: 'verify', label: 'Verify' }` step as the first node in the track
+- Map `phase === 'verify'` to `activeIndex` on that node
+- It shows as `complete` once the agent moves past it
+
+### 2. `src/pages/research/LogSurveyCall.tsx`
+
+**State changes:**
+- Add `WizardPhase` union member: `'verify'`
+- Add state: `verifiedPhone` (string, pre-filled from `callerPhone`)
+- Add state: `nameConfirmed` (boolean | null)
+- Add state: `correctedFirstName`, `correctedLastName` (strings, for if the name is wrong)
+
+**Flow change:**
+- `handleStartScript()` → goes to `'verify'` instead of `'intro'` or `'consent'`
+- New `handleVerifyConfirm()` → saves verified phone + name corrections, then goes to `'intro'` or `'consent'`
+
+**UI — new `verify` phase block** (inside the main card):
+```
+┌──────────────────────────────────────────────────────┐
+│  📞 Confirm Contact Details                          │
+│                                                      │
+│  ┌────────────────────────────────────────────────┐  │
+│  │  "Am I speaking with John Smith?"              │  │
+│  └────────────────────────────────────────────────┘  │
+│                                                      │
+│  Name confirmed?   [✓ Yes]   [✗ No — correct it]   │
+│  (if No: First name ___  Last name ___ inputs)       │
+│                                                      │
+│  Callback number                                     │
+│  [  (404) 555-0100          ]  ← editable            │
+│  "In case the call gets cut, what's the best         │
+│   number to reach you?"                              │
+│                                                      │
+│              [← Back]   [Confirmed — Start Script →] │
+└──────────────────────────────────────────────────────┘
 ```
 
-And line 129 — the `DialogContent` has no protection against outside clicks. By default, Radix UI Dialog closes (and fires `onOpenChange(false)`) when the user clicks outside it. This triggers `restart()`, wiping all progress.
+**Step tracker:** `buildSteps` called with `hasVerify: true` so "Verify" appears as the first step, active during this phase.
 
-## Fix — Two Changes in One File
+**Submission:** `verifiedPhone` replaces `callerPhone` in the `CallSubmission` payload so the confirmed callback number is what gets saved.
 
-### `src/components/research/ScriptTesterDialog.tsx`
+### 3. `src/components/research/ScriptTesterDialog.tsx`
 
-**Change 1: Block outside-click dismissal**
+**State changes:**
+- Add `Phase` union member: `'verify'`
+- Add state: `testerFirstName`, `testerLastName`, `testerPhone` (editable fields)
+- Add state: `nameConfirmed` (boolean | null)
 
-Add `onInteractOutside` and `onEscapeKeyDown` interceptors to `DialogContent` so neither an accidental click outside nor pressing Escape can close the dialog mid-test:
+**Flow change:**
+- "Start Test" button → goes to `'verify'` instead of `'intro'`/`'consent'`
+- `handleBack()` from `intro`/`consent` → goes back to `'verify'`
+- `restart()` resets all new state fields
 
-```tsx
-<DialogContent
-  className="sm:max-w-3xl max-h-[90vh] overflow-y-auto"
-  onInteractOutside={(e) => e.preventDefault()}
-  onEscapeKeyDown={(e) => e.preventDefault()}
->
+**UI — new `verify` phase block:**
+Same design as above but uses placeholder data (`"Test Agent"` name, empty phone pre-filled). Since this is a tester, the fields are clearly marked as simulation inputs. The "Confirmed — Start Script →" button advances to `intro` or `consent`.
+
+**Step tracker:** `buildSteps` called with `hasVerify: true`.
+
+### 4. `src/components/research/StepTracker.tsx` — `buildSteps` signature update
+
+```typescript
+export function buildSteps(params: {
+  hasVerify?: boolean;   // NEW
+  hasIntro: boolean;
+  hasClosing: boolean;
+  questions: unknown[];
+  phase: string;
+  questionIndex: number;
+}): TrackerStep[]
 ```
 
-This is the standard Radix UI pattern for "sticky" dialogs that must not be accidentally dismissed.
+Inserts `{ id: 'verify', label: 'Verify' }` as the first step when `hasVerify` is true.
+Maps `phase === 'verify'` → `activeIndex` on that node.
 
-**Change 2: Clean up the `onOpenChange` handler**
+---
 
-Remove the auto-`restart()` call from the `onOpenChange` callback. State should only reset when the user explicitly clicks "Restart Test" or "Close":
+## What Does NOT Change
+- All branching / yes_no enforcement logic
+- End Call button and AlertDialog
+- Question rendering, probing follow-ups, section navigator
+- Wrapup / submission flow
+- The `callerPhone` field in setup remains the pre-fill source
 
-```tsx
-// Before
-<Dialog open={open} onOpenChange={(v) => { onOpenChange(v); if (!v) restart(); }}>
+## Behaviour Summary
 
-// After  
-<Dialog open={open} onOpenChange={onOpenChange}>
-```
-
-The `restart()` call stays on the "Restart Test" button (already correct). The "Close" button already calls `onOpenChange(false)` directly — we'll also chain `restart()` there so the dialog resets cleanly for next time it's opened:
-
-```tsx
-<Button variant="outline" onClick={() => { onOpenChange(false); restart(); }}>Close</Button>
-```
-
-## What Changes
-- Clicking outside the dialog → nothing happens, test continues uninterrupted
-- Pressing Escape → nothing happens
-- Clicking "Close" on the done screen → dialog closes and state resets for next open
-- Clicking "Restart Test" → state resets and stays on the start screen (existing behavior, unchanged)
-- The X button in the top-right corner of the dialog will also be blocked from closing mid-test
-
-## No Other Files Need Changes
-
-This is isolated entirely to `ScriptTesterDialog.tsx`. The `LogSurveyCall.tsx` wizard is a full page (not a dialog), so it is not affected by this issue.
+| Action | Result |
+|--------|--------|
+| Agent completes setup → clicks "Start Script" | Goes to `verify` phase |
+| Agent confirms name (Yes) + edits/confirms phone → "Start Script" | Moves to `intro` or `consent`, `verifiedPhone` stored |
+| Agent clicks "Back" on verify | Returns to `setup` |
+| Agent clicks "Back" on intro | Returns to `verify` |
+| In tester: "Start Test" | Goes to `verify` simulation screen |
+| Submission payload | Uses `verifiedPhone` (the confirmed number) instead of raw `callerPhone` |
