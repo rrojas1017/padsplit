@@ -17,9 +17,20 @@ import { SectionJumpNavigator } from '@/components/research/SectionJumpNavigator
 import { ProbingFollowUps } from '@/components/research/ProbingFollowUps';
 import {
   CheckCircle, Phone, ArrowRight, ArrowLeft, MessageSquare,
-  XCircle, ThumbsUp, ThumbsDown, User, GitBranch
+  XCircle, ThumbsUp, ThumbsDown, User, GitBranch, PhoneOff
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
 
 const callerTypes = [
   { value: 'existing_member', label: 'Existing Member' },
@@ -39,6 +50,17 @@ const outcomeOptions = [
   { value: 'refused', label: 'Refused' },
   { value: 'callback_requested', label: 'Callback Requested' },
   { value: 'transferred', label: 'Transferred' },
+  { value: 'caller_hung_up', label: 'Caller Hung Up' },
+  { value: 'caller_stopped', label: 'Caller Asked to Stop' },
+  { value: 'wrong_number', label: 'Wrong Number' },
+  { value: 'technical_issue', label: 'Technical Issue' },
+];
+
+const earlyEndDispositions = [
+  { value: 'caller_hung_up', label: 'Caller Hung Up' },
+  { value: 'caller_stopped', label: 'Caller Asked to Stop' },
+  { value: 'wrong_number', label: 'Wrong Number' },
+  { value: 'technical_issue', label: 'Technical Issue' },
 ];
 
 type WizardPhase = 'setup' | 'intro' | 'consent' | 'question' | 'rebuttal' | 'closing' | 'wrapup';
@@ -89,6 +111,10 @@ export default function LogSurveyCall() {
   const [transferNotes, setTransferNotes] = useState('');
   const [researcherNotes, setResearcherNotes] = useState('');
   const [responses, setResponses] = useState<Record<string, unknown>>({});
+
+  // End Call dialog
+  const [endCallDialogOpen, setEndCallDialogOpen] = useState(false);
+  const [selectedEndDisposition, setSelectedEndDisposition] = useState('caller_hung_up');
 
   const [submitted, setSubmitted] = useState(false);
   const [setupErrors, setSetupErrors] = useState<Record<string, string>>({});
@@ -186,6 +212,12 @@ export default function LogSurveyCall() {
         setPhase('wrapup');
       }
     }
+  };
+
+  const handleEndCall = (disposition: string) => {
+    setCallOutcome(disposition);
+    setPhase('wrapup');
+    setEndCallDialogOpen(false);
   };
 
   // Branch-aware navigation: find next question index based on answer
@@ -360,10 +392,10 @@ export default function LogSurveyCall() {
         <Card><CardContent className="p-6"><Skeleton className="h-64 w-full" /></CardContent></Card>
       ) : (
         <div className="space-y-4">
-          {/* Progress bar */}
+          {/* Progress bar + End Call */}
           {phase !== 'setup' && phase !== 'wrapup' && (
             <div className="space-y-1 max-w-2xl mx-auto">
-              <div className="flex justify-between text-xs text-muted-foreground">
+              <div className="flex justify-between items-center text-xs text-muted-foreground">
                 <span>
                   {phase === 'question'
                     ? `Question ${questionIndex + 1} of ${questions.length}`
@@ -372,7 +404,56 @@ export default function LogSurveyCall() {
                     : phase === 'closing' ? 'Closing'
                     : 'Rebuttal'}
                 </span>
-                <span>{Math.round(progressPercent)}%</span>
+                <div className="flex items-center gap-2">
+                  <span>{Math.round(progressPercent)}%</span>
+                  <AlertDialog open={endCallDialogOpen} onOpenChange={setEndCallDialogOpen}>
+                    <AlertDialogTrigger asChild>
+                      <Button variant="destructive" size="sm" className="h-6 px-2 text-xs gap-1">
+                        <PhoneOff className="w-3 h-3" /> End Call
+                      </Button>
+                    </AlertDialogTrigger>
+                    <AlertDialogContent>
+                      <AlertDialogHeader>
+                        <AlertDialogTitle>End Call Early</AlertDialogTitle>
+                        <AlertDialogDescription>
+                          Select the reason for ending the call. Partial responses collected so far will be saved.
+                        </AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <div className="space-y-2 py-2">
+                        {earlyEndDispositions.map(d => (
+                          <label
+                            key={d.value}
+                            className={cn(
+                              'flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-colors',
+                              selectedEndDisposition === d.value
+                                ? 'border-destructive bg-destructive/5'
+                                : 'hover:bg-muted/50'
+                            )}
+                          >
+                            <input
+                              type="radio"
+                              name="end-disposition"
+                              value={d.value}
+                              checked={selectedEndDisposition === d.value}
+                              onChange={() => setSelectedEndDisposition(d.value)}
+                              className="accent-destructive"
+                            />
+                            <span className="text-sm font-medium">{d.label}</span>
+                          </label>
+                        ))}
+                      </div>
+                      <AlertDialogFooter>
+                        <AlertDialogCancel>Cancel</AlertDialogCancel>
+                        <AlertDialogAction
+                          className="bg-destructive hover:bg-destructive/90"
+                          onClick={() => handleEndCall(selectedEndDisposition)}
+                        >
+                          End Call
+                        </AlertDialogAction>
+                      </AlertDialogFooter>
+                    </AlertDialogContent>
+                  </AlertDialog>
+                </div>
               </div>
               <Progress value={progressPercent} className="h-2" />
             </div>
@@ -648,11 +729,26 @@ export default function LogSurveyCall() {
                       </div>
                     )}
 
+                    {/* Required hint for yes_no */}
+                    {currentQ.type === 'yes_no' && responses[String(currentQ.id)] === undefined && pendingBranchAnswer === null && (
+                      <p className="text-xs text-center text-destructive font-medium">
+                        A Yes or No response is required to determine next steps.
+                      </p>
+                    )}
+
                     <div className="flex justify-between">
                       <Button variant="outline" onClick={handleBack}>
                         <ArrowLeft className="w-4 h-4 mr-2" /> Back
                       </Button>
-                      <Button size="lg" onClick={handleNext}>
+                      <Button
+                        size="lg"
+                        onClick={handleNext}
+                        disabled={
+                          currentQ.type === 'yes_no' &&
+                          responses[String(currentQ.id)] === undefined &&
+                          pendingBranchAnswer === null
+                        }
+                      >
                         {pendingBranchAnswer !== null
                           ? 'Continue →'
                           : questionIndex < questions.length - 1
@@ -871,9 +967,6 @@ function QuestionInput({
             <p className="text-xs text-center text-muted-foreground flex items-center justify-center gap-1">
               <GitBranch className="w-3 h-3" /> Answer determines next question
             </p>
-          )}
-          {!hasBranch && (
-            <p className="text-xs text-center text-muted-foreground">Optional — AI extracts from recording</p>
           )}
         </div>
       );

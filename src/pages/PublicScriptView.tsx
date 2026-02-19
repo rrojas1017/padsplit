@@ -8,8 +8,20 @@ import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Label } from '@/components/ui/label';
 import { Slider } from '@/components/ui/slider';
 import { Textarea } from '@/components/ui/textarea';
-import { ArrowLeft, ArrowRight, ThumbsUp, ThumbsDown, MessageSquare, XCircle, CheckCircle, Play, RotateCcw } from 'lucide-react';
+import { ArrowLeft, ArrowRight, ThumbsUp, ThumbsDown, MessageSquare, XCircle, CheckCircle, Play, RotateCcw, PhoneOff } from 'lucide-react';
 import padsplitLogo from '@/assets/padsplit-logo.jpeg';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
+import { cn } from '@/lib/utils';
 
 interface ScriptQuestion {
   id?: number;
@@ -88,6 +100,9 @@ export default function PublicScriptView() {
   const [phase, setPhase] = useState<Phase>('start');
   const [questionIndex, setQuestionIndex] = useState(0);
   const [responses, setResponses] = useState<Record<number, unknown>>({});
+  const [endedEarly, setEndedEarly] = useState(false);
+  const [earlyDisposition, setEarlyDisposition] = useState('');
+  const [selectedEndDisposition, setSelectedEndDisposition] = useState('caller_hung_up');
 
   useEffect(() => {
     if (!token) { setError('No token provided'); setIsLoading(false); return; }
@@ -100,10 +115,26 @@ export default function PublicScriptView() {
       .finally(() => setIsLoading(false));
   }, [token]);
 
+  const earlyEndDispositions = [
+    { value: 'caller_hung_up', label: 'Caller Hung Up' },
+    { value: 'caller_stopped', label: 'Caller Asked to Stop' },
+    { value: 'other', label: 'Other' },
+  ];
+
+  const handleEndCall = (disposition: string) => {
+    const label = earlyEndDispositions.find(d => d.value === disposition)?.label || disposition;
+    setEarlyDisposition(label);
+    setEndedEarly(true);
+    setPhase('done');
+  };
+
   const restart = useCallback(() => {
     setPhase('start');
     setQuestionIndex(0);
     setResponses({});
+    setEndedEarly(false);
+    setEarlyDisposition('');
+    setSelectedEndDisposition('caller_hung_up');
   }, []);
 
   if (isLoading) {
@@ -205,10 +236,10 @@ export default function PublicScriptView() {
       <div className="flex-1 flex flex-col items-center justify-start py-10 px-4">
         <div className="w-full max-w-3xl space-y-6">
 
-          {/* Progress bar */}
+          {/* Progress bar + End Call */}
           {phase !== 'start' && phase !== 'done' && (
             <div className="space-y-1.5">
-              <div className="flex justify-between text-xs text-muted-foreground">
+              <div className="flex justify-between items-center text-xs text-muted-foreground">
                 <span>
                   {phase === 'intro' ? 'Introduction'
                     : phase === 'consent' ? 'Consent'
@@ -216,7 +247,56 @@ export default function PublicScriptView() {
                     : phase === 'closing' ? 'Closing'
                     : 'Rebuttal'}
                 </span>
-                <span>{Math.round(progressPercent)}%</span>
+                <div className="flex items-center gap-2">
+                  <span>{Math.round(progressPercent)}%</span>
+                  <AlertDialog>
+                    <AlertDialogTrigger asChild>
+                      <Button variant="destructive" size="sm" className="h-6 px-2 text-xs gap-1">
+                        <PhoneOff className="w-3 h-3" /> End Call
+                      </Button>
+                    </AlertDialogTrigger>
+                    <AlertDialogContent>
+                      <AlertDialogHeader>
+                        <AlertDialogTitle>End Call Early</AlertDialogTitle>
+                        <AlertDialogDescription>
+                          Select the reason for ending the call.
+                        </AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <div className="space-y-2 py-2">
+                        {earlyEndDispositions.map(d => (
+                          <label
+                            key={d.value}
+                            className={cn(
+                              'flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-colors',
+                              selectedEndDisposition === d.value
+                                ? 'border-destructive bg-destructive/5'
+                                : 'hover:bg-muted/50'
+                            )}
+                          >
+                            <input
+                              type="radio"
+                              name="pub-end-disposition"
+                              value={d.value}
+                              checked={selectedEndDisposition === d.value}
+                              onChange={() => setSelectedEndDisposition(d.value)}
+                              className="accent-destructive"
+                            />
+                            <span className="text-sm font-medium">{d.label}</span>
+                          </label>
+                        ))}
+                      </div>
+                      <AlertDialogFooter>
+                        <AlertDialogCancel>Cancel</AlertDialogCancel>
+                        <AlertDialogAction
+                          className="bg-destructive hover:bg-destructive/90"
+                          onClick={() => handleEndCall(selectedEndDisposition)}
+                        >
+                          End Call
+                        </AlertDialogAction>
+                      </AlertDialogFooter>
+                    </AlertDialogContent>
+                  </AlertDialog>
+                </div>
               </div>
               <Progress value={progressPercent} className="h-2" />
             </div>
@@ -385,9 +465,19 @@ export default function PublicScriptView() {
                 )}
               </div>
 
+              {/* Required hint for yes_no */}
+              {currentQ.type === 'yes_no' && currentResponse === undefined && (
+                <p className="text-xs text-center text-destructive font-medium">
+                  A Yes or No response is required to determine next steps.
+                </p>
+              )}
+
               <div className="flex justify-between pt-1">
                 <Button variant="outline" onClick={handleBack}><ArrowLeft className="w-4 h-4 mr-2" /> Back</Button>
-                <Button onClick={handleNext}>
+                <Button
+                  onClick={handleNext}
+                  disabled={currentQ.type === 'yes_no' && currentResponse === undefined}
+                >
                   {questionIndex < sortedQuestions.length - 1 ? 'Next' : 'Finish'}
                   <ArrowRight className="w-4 h-4 ml-2" />
                 </Button>
@@ -428,9 +518,21 @@ export default function PublicScriptView() {
           {phase === 'done' && (
             <WizardCard>
               <div className="text-center py-4 space-y-4">
-                <CheckCircle className="w-12 h-12 mx-auto text-primary" />
-                <h3 className="text-lg font-semibold">Script Complete</h3>
-                <p className="text-sm text-muted-foreground">You've walked through the full script flow.</p>
+                {endedEarly ? (
+                  <>
+                    <PhoneOff className="w-12 h-12 mx-auto text-destructive" />
+                    <h3 className="text-lg font-semibold">Call Ended Early</h3>
+                    <p className="text-sm text-muted-foreground">
+                      Disposition: <span className="font-medium text-foreground">{earlyDisposition}</span>
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle className="w-12 h-12 mx-auto text-primary" />
+                    <h3 className="text-lg font-semibold">Script Complete</h3>
+                    <p className="text-sm text-muted-foreground">You've walked through the full script flow.</p>
+                  </>
+                )}
                 <div className="flex gap-3 justify-center">
                   <Button onClick={restart}>
                     <RotateCcw className="w-4 h-4 mr-2" /> Restart
