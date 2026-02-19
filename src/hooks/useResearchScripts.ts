@@ -9,6 +9,15 @@ export interface ScriptQuestion {
   options?: string[];
   required: boolean;
   ai_extraction_hint?: string;
+  section?: string;
+  probes?: string[];
+  branch?: {
+    yes_goto?: number;
+    no_goto?: number;
+    yes_probes?: string[];
+    no_probes?: string[];
+  };
+  is_internal?: boolean;
 }
 
 export interface ResearchScript {
