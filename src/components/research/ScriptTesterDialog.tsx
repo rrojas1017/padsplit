@@ -105,7 +105,7 @@ export function ScriptTesterDialog({ open, onOpenChange, script }: Props) {
 
   return (
     <Dialog open={open} onOpenChange={(v) => { onOpenChange(v); if (!v) restart(); }}>
-      <DialogContent className="sm:max-w-lg max-h-[85vh] overflow-y-auto">
+      <DialogContent className="sm:max-w-3xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Play className="w-5 h-5" />
@@ -173,10 +173,10 @@ export function ScriptTesterDialog({ open, onOpenChange, script }: Props) {
             <h3 className="text-lg font-semibold">Did the caller agree to continue?</h3>
             <p className="text-muted-foreground">"May I ask you a few questions?"</p>
             <div className="flex gap-4 justify-center pt-2">
-              <Button size="lg" className="px-8 py-5 text-lg" onClick={() => handleConsent(true)}>
+              <Button size="lg" className="px-10 py-6 text-xl" onClick={() => handleConsent(true)}>
                 <ThumbsUp className="w-5 h-5 mr-2" /> Yes
               </Button>
-              <Button size="lg" variant="outline" className="px-8 py-5 text-lg" onClick={() => handleConsent(false)}>
+              <Button size="lg" variant="outline" className="px-10 py-6 text-xl" onClick={() => handleConsent(false)}>
                 <ThumbsDown className="w-5 h-5 mr-2" /> No
               </Button>
             </div>
@@ -193,8 +193,8 @@ export function ScriptTesterDialog({ open, onOpenChange, script }: Props) {
               <MessageSquare className="w-4 h-4" />
               <span>Read aloud to the caller</span>
             </div>
-            <div className="bg-muted/50 rounded-xl p-5 border">
-              <p className="text-xl font-medium leading-relaxed">{currentQ.question}</p>
+            <div className="bg-muted/50 rounded-xl p-6 py-7 border">
+              <p className="text-2xl font-medium leading-relaxed">{currentQ.question}</p>
             </div>
 
             {/* Response input simulation */}
@@ -216,20 +216,28 @@ export function ScriptTesterDialog({ open, onOpenChange, script }: Props) {
                 <RadioGroup
                   value={(responses[questionIndex] as string) || ''}
                   onValueChange={v => setResponses(prev => ({ ...prev, [questionIndex]: v }))}
+                  className="space-y-2"
                 >
-                  <div className="flex items-center gap-2"><RadioGroupItem value="yes" id={`yn-yes-${questionIndex}`} /><Label htmlFor={`yn-yes-${questionIndex}`}>Yes</Label></div>
-                  <div className="flex items-center gap-2"><RadioGroupItem value="no" id={`yn-no-${questionIndex}`} /><Label htmlFor={`yn-no-${questionIndex}`}>No</Label></div>
+                  <div className="flex items-center gap-3 border rounded-lg px-4 py-3 cursor-pointer hover:bg-muted/50 transition-colors">
+                    <RadioGroupItem value="yes" id={`yn-yes-${questionIndex}`} />
+                    <Label htmlFor={`yn-yes-${questionIndex}`} className="cursor-pointer font-medium">Yes</Label>
+                  </div>
+                  <div className="flex items-center gap-3 border rounded-lg px-4 py-3 cursor-pointer hover:bg-muted/50 transition-colors">
+                    <RadioGroupItem value="no" id={`yn-no-${questionIndex}`} />
+                    <Label htmlFor={`yn-no-${questionIndex}`} className="cursor-pointer font-medium">No</Label>
+                  </div>
                 </RadioGroup>
               )}
               {currentQ.type === 'multiple_choice' && (
                 <RadioGroup
                   value={(responses[questionIndex] as string) || ''}
                   onValueChange={v => setResponses(prev => ({ ...prev, [questionIndex]: v }))}
+                  className="space-y-2"
                 >
                   {(currentQ.options || []).map((opt, i) => (
-                    <div key={i} className="flex items-center gap-2">
+                    <div key={i} className="flex items-center gap-3 border rounded-lg px-4 py-3 cursor-pointer hover:bg-muted/50 transition-colors">
                       <RadioGroupItem value={opt} id={`mc-${questionIndex}-${i}`} />
-                      <Label htmlFor={`mc-${questionIndex}-${i}`}>{opt}</Label>
+                      <Label htmlFor={`mc-${questionIndex}-${i}`} className="cursor-pointer">{opt}</Label>
                     </div>
                   ))}
                 </RadioGroup>
@@ -239,7 +247,7 @@ export function ScriptTesterDialog({ open, onOpenChange, script }: Props) {
                   placeholder="Quick notes (optional — AI extracts from recording)"
                   value={(responses[questionIndex] as string) || ''}
                   onChange={e => setResponses(prev => ({ ...prev, [questionIndex]: e.target.value }))}
-                  rows={3}
+                  rows={4}
                 />
               )}
             </div>
