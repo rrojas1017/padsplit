@@ -1,80 +1,59 @@
 
-# Script Progression Graph — Visual Step Tracker
+# Fix: Dialog Closes & Resets on Outside Click
 
-## Goal
-Replace the plain percentage progress bar with a visually rich, modern **step-by-step progression track** that shows the agent exactly where they are in the call flow at a glance — without adding noise to the interface.
+## Root Cause
 
-## Design Concept
+In `ScriptTesterDialog.tsx`, line 128:
 
-A horizontal "pill track" of named steps, connected by a thin line, with three visual states:
-
-- **Completed** — filled circle with a checkmark, muted color
-- **Active** — glowing ring (pulse ring animation), primary color, label bold
-- **Upcoming** — empty outlined circle, muted/faded
-
-```text
-  ✓ Intro  ──  ✓ Consent  ──  ● Q 2/5  ──  ○ Closing
-              [filled]          [active]      [empty]
+```tsx
+<Dialog open={open} onOpenChange={(v) => { onOpenChange(v); if (!v) restart(); }}>
 ```
 
-The track is compact — circles are small (20–24px), labels are 10–11px, and the whole component sits between the dialog header and the content area without taking up much vertical space. On mobile/small dialogs it gracefully truncates labels.
+And line 129 — the `DialogContent` has no protection against outside clicks. By default, Radix UI Dialog closes (and fires `onOpenChange(false)`) when the user clicks outside it. This triggers `restart()`, wiping all progress.
 
-## Step Nodes Generated Dynamically
-
-Steps are derived from the script structure:
-1. **Intro** — shown only if `intro_script` exists
-2. **Consent** — always shown
-3. **Q 1, Q 2 … Q n** — one dot per question (dots, no label if more than 5 questions — just a cluster with the active one labeled)
-4. **Closing** — shown only if `closing_script` exists
-
-> For scripts with many questions (>5), the question dots compress into a mini cluster — showing only the active dot enlarged, flanked by neighbor dots, to prevent overflow.
-
-## Visual Details
-
-- Step circles: `w-5 h-5` with `ring-2 ring-offset-2` on active
-- Connecting line: `h-px bg-border flex-1` between circles — turns `bg-primary/40` for completed segments
-- Active node: subtle `animate-pulse` shadow ring in primary color
-- Completed nodes: checkmark icon inside, `bg-primary text-primary-foreground`
-- Upcoming nodes: `border-2 border-muted-foreground/30 bg-background`
-- The "End Call" button is relocated to the right side of this tracker row, keeping it in the same visual band
-
-## Files to Modify
+## Fix — Two Changes in One File
 
 ### `src/components/research/ScriptTesterDialog.tsx`
-- Replace the current `<Progress>` bar + label row with a new inline `StepTracker` sub-component
-- StepTracker builds an array of step objects (label, state: `complete | active | upcoming`) based on `phase` and `questionIndex`
-- Question steps: if ≤ 5 questions, show all individually; if > 5, show a compressed dot cluster
-- End Call button stays in this same row, floated right
 
-### `src/pages/research/LogSurveyCall.tsx`
-- Same StepTracker component pattern applied to the wizard header area, replacing/augmenting the existing `<Progress>` bar in the active phases
-- Since LogSurveyCall has a `setup` phase too, the tracker only appears from `intro` phase onward
+**Change 1: Block outside-click dismissal**
 
-## Technical Details
+Add `onInteractOutside` and `onEscapeKeyDown` interceptors to `DialogContent` so neither an accidental click outside nor pressing Escape can close the dialog mid-test:
 
-The step array builder logic (pseudo):
-
-```typescript
-const steps = [];
-if (introScript) steps.push({ id: 'intro', label: 'Intro' });
-steps.push({ id: 'consent', label: 'Consent' });
-questions.forEach((_, i) => steps.push({ id: `q-${i}`, label: `Q${i + 1}` }));
-if (closingScript) steps.push({ id: 'closing', label: 'Closing' });
-
-// Determine activeIndex based on phase + questionIndex
+```tsx
+<DialogContent
+  className="sm:max-w-3xl max-h-[90vh] overflow-y-auto"
+  onInteractOutside={(e) => e.preventDefault()}
+  onEscapeKeyDown={(e) => e.preventDefault()}
+>
 ```
 
-State assignment per node:
-- index < activeIndex → `complete`
-- index === activeIndex → `active`
-- index > activeIndex → `upcoming`
+This is the standard Radix UI pattern for "sticky" dialogs that must not be accidentally dismissed.
 
-The component is self-contained — no new dependencies. Uses only existing Tailwind classes and `lucide-react` (`Check` icon for completed steps).
+**Change 2: Clean up the `onOpenChange` handler**
 
-## What Does NOT Change
-- All existing logic (branching, yes/no enforcement, End Call disposition)
-- Question content rendering
-- Navigation buttons
-- Submission flow in LogSurveyCall
+Remove the auto-`restart()` call from the `onOpenChange` callback. State should only reset when the user explicitly clicks "Restart Test" or "Close":
 
-The visual tracker is purely additive and replaces only the `<Progress>` bar section.
+```tsx
+// Before
+<Dialog open={open} onOpenChange={(v) => { onOpenChange(v); if (!v) restart(); }}>
+
+// After  
+<Dialog open={open} onOpenChange={onOpenChange}>
+```
+
+The `restart()` call stays on the "Restart Test" button (already correct). The "Close" button already calls `onOpenChange(false)` directly — we'll also chain `restart()` there so the dialog resets cleanly for next time it's opened:
+
+```tsx
+<Button variant="outline" onClick={() => { onOpenChange(false); restart(); }}>Close</Button>
+```
+
+## What Changes
+- Clicking outside the dialog → nothing happens, test continues uninterrupted
+- Pressing Escape → nothing happens
+- Clicking "Close" on the done screen → dialog closes and state resets for next open
+- Clicking "Restart Test" → state resets and stays on the start screen (existing behavior, unchanged)
+- The X button in the top-right corner of the dialog will also be blocked from closing mid-test
+
+## No Other Files Need Changes
+
+This is isolated entirely to `ScriptTesterDialog.tsx`. The `LogSurveyCall.tsx` wizard is a full page (not a dialog), so it is not affected by this issue.
