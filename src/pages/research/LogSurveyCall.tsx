@@ -62,7 +62,7 @@ const earlyEndDispositions = [
   { value: 'technical_issue', label: 'Technical Issue' },
 ];
 
-type WizardPhase = 'setup' | 'intro' | 'consent' | 'question' | 'rebuttal' | 'closing' | 'wrapup';
+type WizardPhase = 'setup' | 'verify' | 'intro' | 'consent' | 'question' | 'rebuttal' | 'closing' | 'wrapup';
 
 // Derive unique sections from questions array
 function deriveSections(questions: ScriptQuestion[]) {
@@ -96,6 +96,12 @@ export default function LogSurveyCall() {
   const [phase, setPhase] = useState<WizardPhase>('setup');
   const [questionIndex, setQuestionIndex] = useState(0);
   const [consent, setConsent] = useState<boolean | null>(null);
+
+  // Verify phase state
+  const [verifiedPhone, setVerifiedPhone] = useState('');
+  const [nameConfirmed, setNameConfirmed] = useState<boolean | null>(null);
+  const [correctedFirstName, setCorrectedFirstName] = useState('');
+  const [correctedLastName, setCorrectedLastName] = useState('');
 
   // Branch state: after yes/no answer, show branch probes before auto-advancing
   const [pendingBranchAnswer, setPendingBranchAnswer] = useState<boolean | null>(null);
@@ -185,6 +191,14 @@ export default function LogSurveyCall() {
 
   const handleStartScript = () => {
     if (!validateSetup()) return;
+    setVerifiedPhone(callerPhone);
+    setNameConfirmed(null);
+    setCorrectedFirstName('');
+    setCorrectedLastName('');
+    setPhase('verify');
+  };
+
+  const handleVerifyConfirm = () => {
     if (introScript) {
       setPhase('intro');
     } else {
@@ -288,8 +302,10 @@ export default function LogSurveyCall() {
       setPhase('consent');
     } else if (phase === 'consent') {
       if (introScript) setPhase('intro');
-      else setPhase('setup');
+      else setPhase('verify');
     } else if (phase === 'intro') {
+      setPhase('verify');
+    } else if (phase === 'verify') {
       setPhase('setup');
     } else if (phase === 'closing') {
       if (questions.length > 0) {
@@ -317,7 +333,7 @@ export default function LogSurveyCall() {
       caller_name: callerName,
       caller_first_name: callerFirstName.trim(),
       caller_last_name: callerLastName.trim(),
-      caller_phone: callerPhone.trim() || undefined,
+      caller_phone: verifiedPhone.trim() || callerPhone.trim() || undefined,
       caller_type: callerType,
       caller_status: callerStatus || undefined,
       call_outcome: callOutcome,
@@ -351,6 +367,10 @@ export default function LogSurveyCall() {
     setPendingBranchAnswer(null);
     setBranchProbesShown(false);
     setVisitedIndices(new Set());
+    setVerifiedPhone('');
+    setNameConfirmed(null);
+    setCorrectedFirstName('');
+    setCorrectedLastName('');
   };
 
   const currentQ = questions[questionIndex];
@@ -385,6 +405,7 @@ export default function LogSurveyCall() {
             <div className="max-w-2xl mx-auto">
               <StepTracker
                 steps={buildSteps({
+                  hasVerify: true,
                   hasIntro: !!introScript,
                   hasClosing: !!closingScript,
                   questions,
@@ -393,7 +414,7 @@ export default function LogSurveyCall() {
                 })}
                 totalQuestions={questions.length}
                 activeQuestionIndex={questionIndex}
-                onEndCall={() => setEndCallDialogOpen(true)}
+                onEndCall={phase !== 'verify' ? () => setEndCallDialogOpen(true) : undefined}
               />
             </div>
           )}
@@ -564,6 +585,98 @@ export default function LogSurveyCall() {
                     <Button className="w-full" size="lg" onClick={handleStartScript} disabled={activeCampaigns.length === 0}>
                       Start Script <ArrowRight className="w-4 h-4 ml-2" />
                     </Button>
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* VERIFY PHASE */}
+              {phase === 'verify' && (
+                <Card>
+                  <CardContent className="p-8 space-y-6">
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                      <Phone className="w-4 h-4" />
+                      <span>Confirm Contact Details</span>
+                    </div>
+
+                    {/* Name read-back prompt */}
+                    <div className="bg-muted/50 rounded-xl p-5 border">
+                      <p className="text-lg leading-relaxed font-medium">
+                        "Am I speaking with{' '}
+                        <span className="text-primary">
+                          {nameConfirmed === false && (correctedFirstName || correctedLastName)
+                            ? `${correctedFirstName} ${correctedLastName}`.trim()
+                            : `${callerFirstName} ${callerLastName}`.trim()}
+                        </span>?"
+                      </p>
+                    </div>
+
+                    {/* Name confirmation */}
+                    <div className="space-y-3">
+                      <Label className="text-sm font-medium">Name confirmed?</Label>
+                      <div className="flex gap-3">
+                        <Button
+                          size="sm"
+                          variant={nameConfirmed === true ? 'default' : 'outline'}
+                          onClick={() => setNameConfirmed(true)}
+                          className="gap-1.5"
+                        >
+                          <ThumbsUp className="w-3.5 h-3.5" /> Yes
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant={nameConfirmed === false ? 'destructive' : 'outline'}
+                          onClick={() => setNameConfirmed(false)}
+                          className="gap-1.5"
+                        >
+                          <ThumbsDown className="w-3.5 h-3.5" /> No — correct it
+                        </Button>
+                      </div>
+
+                      {nameConfirmed === false && (
+                        <div className="grid grid-cols-2 gap-3 pt-1">
+                          <div>
+                            <Label className="text-xs text-muted-foreground">Corrected First Name</Label>
+                            <Input
+                              value={correctedFirstName}
+                              onChange={e => setCorrectedFirstName(e.target.value)}
+                              placeholder={callerFirstName}
+                              className="mt-1"
+                            />
+                          </div>
+                          <div>
+                            <Label className="text-xs text-muted-foreground">Corrected Last Name</Label>
+                            <Input
+                              value={correctedLastName}
+                              onChange={e => setCorrectedLastName(e.target.value)}
+                              placeholder={callerLastName}
+                              className="mt-1"
+                            />
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Callback number */}
+                    <div className="space-y-2">
+                      <Label>Callback Number</Label>
+                      <Input
+                        value={verifiedPhone}
+                        onChange={e => setVerifiedPhone(e.target.value)}
+                        placeholder="e.g. (404) 555-0100"
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        "In case the call gets cut, what's the best number to reach you back at?"
+                      </p>
+                    </div>
+
+                    <div className="flex justify-between pt-2">
+                      <Button variant="outline" onClick={handleBack}>
+                        <ArrowLeft className="w-4 h-4 mr-2" /> Back
+                      </Button>
+                      <Button size="lg" onClick={handleVerifyConfirm}>
+                        Confirmed — Start Script <ArrowRight className="w-4 h-4 ml-2" />
+                      </Button>
+                    </div>
                   </CardContent>
                 </Card>
               )}

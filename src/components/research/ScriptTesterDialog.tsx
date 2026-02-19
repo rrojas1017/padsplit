@@ -6,7 +6,8 @@ import { Slider } from '@/components/ui/slider';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { ArrowRight, ArrowLeft, MessageSquare, XCircle, ThumbsUp, ThumbsDown, RotateCcw, Play, CheckCircle, PhoneOff } from 'lucide-react';
+import { Input } from '@/components/ui/input';
+import { ArrowRight, ArrowLeft, MessageSquare, XCircle, ThumbsUp, ThumbsDown, RotateCcw, Play, CheckCircle, PhoneOff, Phone } from 'lucide-react';
 import { StepTracker, buildSteps } from '@/components/research/StepTracker';
 import type { ResearchScript, ScriptQuestion } from '@/hooks/useResearchScripts';
 import {
@@ -19,7 +20,7 @@ import {
   AlertDialogCancel,
 } from '@/components/ui/alert-dialog';
 
-type Phase = 'start' | 'intro' | 'consent' | 'question' | 'closing' | 'rebuttal' | 'done';
+type Phase = 'start' | 'verify' | 'intro' | 'consent' | 'question' | 'closing' | 'rebuttal' | 'done';
 
 interface Props {
   open: boolean;
@@ -42,6 +43,12 @@ export function ScriptTesterDialog({ open, onOpenChange, script }: Props) {
   const [earlyDisposition, setEarlyDisposition] = useState<string | null>(null);
   const [selectedEndDisposition, setSelectedEndDisposition] = useState('caller_hung_up');
 
+  // Verify phase state
+  const [testerFirstName, setTesterFirstName] = useState('Test');
+  const [testerLastName, setTesterLastName] = useState('Caller');
+  const [testerPhone, setTesterPhone] = useState('');
+  const [nameConfirmed, setNameConfirmed] = useState<boolean | null>(null);
+
   const questions = script.questions;
   const introScript = script.intro_script || '';
   const rebuttalScript = script.rebuttal_script || '';
@@ -55,7 +62,12 @@ export function ScriptTesterDialog({ open, onOpenChange, script }: Props) {
     setEndedEarly(false);
     setEarlyDisposition(null);
     setSelectedEndDisposition('caller_hung_up');
+    setTesterFirstName('Test');
+    setTesterLastName('Caller');
+    setTesterPhone('');
+    setNameConfirmed(null);
   }, []);
+
 
   const handleEndCall = (disposition: string) => {
     setEndedEarly(true);
@@ -106,8 +118,10 @@ export function ScriptTesterDialog({ open, onOpenChange, script }: Props) {
       setPhase('consent');
     } else if (phase === 'consent') {
       if (introScript) setPhase('intro');
-      else setPhase('start');
+      else setPhase('verify');
     } else if (phase === 'intro') {
+      setPhase('verify');
+    } else if (phase === 'verify') {
       setPhase('start');
     } else if (phase === 'closing') {
       if (questions.length > 0) {
@@ -145,6 +159,7 @@ export function ScriptTesterDialog({ open, onOpenChange, script }: Props) {
           {phase !== 'start' && phase !== 'done' && (
             <StepTracker
               steps={buildSteps({
+                hasVerify: true,
                 hasIntro: !!introScript,
                 hasClosing: !!closingScript,
                 questions,
@@ -153,7 +168,7 @@ export function ScriptTesterDialog({ open, onOpenChange, script }: Props) {
               })}
               totalQuestions={questions.length}
               activeQuestionIndex={questionIndex}
-              onEndCall={() => setEndCallOpen(true)}
+              onEndCall={phase !== 'verify' ? () => setEndCallOpen(true) : undefined}
             />
           )}
 
@@ -170,13 +185,49 @@ export function ScriptTesterDialog({ open, onOpenChange, script }: Props) {
                   {rebuttalScript && <Badge variant="secondary">Has rebuttal</Badge>}
                 </div>
               </div>
-              <Button size="lg" onClick={() => setPhase(introScript ? 'intro' : 'consent')}>
+              <Button size="lg" onClick={() => { setNameConfirmed(null); setPhase('verify'); }}>
                 <Play className="w-4 h-4 mr-2" /> Start Test
               </Button>
             </div>
           )}
 
-          {/* INTRO */}
+          {/* VERIFY */}
+          {phase === 'verify' && (
+            <div className="space-y-5">
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Phone className="w-4 h-4" />
+                <span>Confirm Contact Details — simulation</span>
+              </div>
+              <div className="bg-muted/50 rounded-xl p-5 border">
+                <p className="text-lg leading-relaxed font-medium">
+                  "Am I speaking with{' '}
+                  <span className="text-primary">{`${testerFirstName} ${testerLastName}`.trim() || 'Test Caller'}</span>?"
+                </p>
+              </div>
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">Caller Name (simulation)</Label>
+                <div className="grid grid-cols-2 gap-3">
+                  <Input value={testerFirstName} onChange={e => setTesterFirstName(e.target.value)} placeholder="First name" />
+                  <Input value={testerLastName} onChange={e => setTesterLastName(e.target.value)} placeholder="Last name" />
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label>Callback Number (simulation)</Label>
+                <Input value={testerPhone} onChange={e => setTesterPhone(e.target.value)} placeholder="e.g. (404) 555-0100" />
+                <p className="text-xs text-muted-foreground">
+                  "In case the call gets cut, what's the best number to reach you back at?"
+                </p>
+              </div>
+              <div className="flex justify-between">
+                <Button variant="outline" onClick={handleBack}><ArrowLeft className="w-4 h-4 mr-2" /> Back</Button>
+                <Button onClick={() => setPhase(introScript ? 'intro' : 'consent')}>
+                  Confirmed — Start Script <ArrowRight className="w-4 h-4 ml-2" />
+                </Button>
+              </div>
+            </div>
+          )}
+
+
           {phase === 'intro' && (
             <div className="space-y-4">
               <div className="flex items-center gap-2 text-sm text-muted-foreground">
