@@ -125,8 +125,12 @@ export function ScriptTesterDialog({ open, onOpenChange, script }: Props) {
 
   return (
     <>
-      <Dialog open={open} onOpenChange={(v) => { onOpenChange(v); if (!v) restart(); }}>
-        <DialogContent className="sm:max-w-3xl max-h-[90vh] overflow-y-auto">
+      <Dialog open={open} onOpenChange={onOpenChange}>
+        <DialogContent
+          className="sm:max-w-3xl max-h-[90vh] overflow-y-auto"
+          onInteractOutside={(e) => e.preventDefault()}
+          onEscapeKeyDown={(e) => e.preventDefault()}
+        >
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Play className="w-5 h-5" />
@@ -343,7 +347,7 @@ export function ScriptTesterDialog({ open, onOpenChange, script }: Props) {
                 <Button onClick={restart}>
                   <RotateCcw className="w-4 h-4 mr-2" /> Restart Test
                 </Button>
-                <Button variant="outline" onClick={() => onOpenChange(false)}>Close</Button>
+                <Button variant="outline" onClick={() => { onOpenChange(false); restart(); }}>Close</Button>
               </div>
             </div>
           )}
