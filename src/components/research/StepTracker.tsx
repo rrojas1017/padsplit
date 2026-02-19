@@ -162,16 +162,18 @@ export function StepTracker({
 
 /** Build TrackerStep array from script structure + current phase info */
 export function buildSteps(params: {
+  hasVerify?: boolean;
   hasIntro: boolean;
   hasClosing: boolean;
   questions: unknown[];
   phase: string;
   questionIndex: number;
 }): TrackerStep[] {
-  const { hasIntro, hasClosing, questions, phase, questionIndex } = params;
+  const { hasVerify, hasIntro, hasClosing, questions, phase, questionIndex } = params;
 
   const steps: TrackerStep[] = [];
 
+  if (hasVerify) steps.push({ id: 'verify', label: 'Verify', state: 'upcoming' });
   if (hasIntro) steps.push({ id: 'intro', label: 'Intro', state: 'upcoming' });
   steps.push({ id: 'consent', label: 'Consent', state: 'upcoming' });
   questions.forEach((_, i) =>
@@ -181,7 +183,8 @@ export function buildSteps(params: {
 
   // Determine active index
   let activeIndex = -1;
-  if (phase === 'intro') activeIndex = steps.findIndex(s => s.id === 'intro');
+  if (phase === 'verify') activeIndex = steps.findIndex(s => s.id === 'verify');
+  else if (phase === 'intro') activeIndex = steps.findIndex(s => s.id === 'intro');
   else if (phase === 'consent') activeIndex = steps.findIndex(s => s.id === 'consent');
   else if (phase === 'question') activeIndex = steps.findIndex(s => s.id === `q-${questionIndex}`);
   else if (phase === 'closing') activeIndex = steps.findIndex(s => s.id === 'closing');
