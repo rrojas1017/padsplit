@@ -31,6 +31,22 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 
+function autoCapitalizeName(value: string): string {
+  return value
+    .split(' ')
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ');
+}
+
+function formatPhone(value: string): string {
+  const digits = value.replace(/\D/g, '');
+  const local = digits.length === 11 && digits.startsWith('1') ? digits.slice(1) : digits;
+  if (local.length === 0) return '';
+  if (local.length <= 3) return `+1 ${local}`;
+  if (local.length <= 6) return `+1 ${local.slice(0, 3)}-${local.slice(3)}`;
+  return `+1 ${local.slice(0, 3)}-${local.slice(3, 6)}-${local.slice(6, 10)}`;
+}
+
 const callerTypes = [
   { value: 'existing_member', label: 'Existing Member' },
   { value: 'former_booking', label: 'Former Booking' },
@@ -520,11 +536,11 @@ export default function LogSurveyCall() {
                       <div className="grid grid-cols-2 gap-4">
                         <div>
                           <Label>First Name *</Label>
-                          <Input
-                            value={callerFirstName}
-                            onChange={e => setCallerFirstName(e.target.value)}
-                            className={setupErrors.callerFirstName ? 'border-destructive' : ''}
-                            placeholder="First name"
+                            <Input
+                              value={callerFirstName}
+                              onChange={e => setCallerFirstName(autoCapitalizeName(e.target.value))}
+                              className={setupErrors.callerFirstName ? 'border-destructive' : ''}
+                              placeholder="First name"
                           />
                           {setupErrors.callerFirstName && (
                             <p className="text-sm text-destructive mt-1">{setupErrors.callerFirstName}</p>
@@ -532,11 +548,11 @@ export default function LogSurveyCall() {
                         </div>
                         <div>
                           <Label>Last Name *</Label>
-                          <Input
-                            value={callerLastName}
-                            onChange={e => setCallerLastName(e.target.value)}
-                            className={setupErrors.callerLastName ? 'border-destructive' : ''}
-                            placeholder="Last name"
+                            <Input
+                              value={callerLastName}
+                              onChange={e => setCallerLastName(autoCapitalizeName(e.target.value))}
+                              className={setupErrors.callerLastName ? 'border-destructive' : ''}
+                              placeholder="Last name"
                           />
                           {setupErrors.callerLastName && (
                             <p className="text-sm text-destructive mt-1">{setupErrors.callerLastName}</p>
@@ -548,9 +564,9 @@ export default function LogSurveyCall() {
                         <Label>Phone Number *</Label>
                         <Input
                           value={callerPhone}
-                          onChange={e => setCallerPhone(e.target.value)}
+                          onChange={e => setCallerPhone(formatPhone(e.target.value))}
                           className={setupErrors.callerPhone ? 'border-destructive' : ''}
-                          placeholder="e.g. (404) 555-0100"
+                          placeholder="+1 305-433-2275"
                         />
                         {setupErrors.callerPhone && (
                           <p className="text-sm text-destructive mt-1">{setupErrors.callerPhone}</p>
@@ -638,7 +654,7 @@ export default function LogSurveyCall() {
                             <Label className="text-xs text-muted-foreground">Corrected First Name</Label>
                             <Input
                               value={correctedFirstName}
-                              onChange={e => setCorrectedFirstName(e.target.value)}
+                              onChange={e => setCorrectedFirstName(autoCapitalizeName(e.target.value))}
                               placeholder={callerFirstName}
                               className="mt-1"
                             />
@@ -647,7 +663,7 @@ export default function LogSurveyCall() {
                             <Label className="text-xs text-muted-foreground">Corrected Last Name</Label>
                             <Input
                               value={correctedLastName}
-                              onChange={e => setCorrectedLastName(e.target.value)}
+                              onChange={e => setCorrectedLastName(autoCapitalizeName(e.target.value))}
                               placeholder={callerLastName}
                               className="mt-1"
                             />
@@ -661,8 +677,8 @@ export default function LogSurveyCall() {
                       <Label>Callback Number</Label>
                       <Input
                         value={verifiedPhone}
-                        onChange={e => setVerifiedPhone(e.target.value)}
-                        placeholder="e.g. (404) 555-0100"
+                        onChange={e => setVerifiedPhone(formatPhone(e.target.value))}
+                        placeholder="+1 305-433-2275"
                       />
                       <p className="text-xs text-muted-foreground">
                         "In case the call gets cut, what's the best number to reach you back at?"
