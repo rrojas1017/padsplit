@@ -63,7 +63,7 @@ export function ApiDocsLayout({ navItems, children }: ApiDocsLayoutProps) {
           <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center">
             <BookOpen className="w-4 h-4 text-primary-foreground" />
           </div>
-          <span className="font-semibold text-foreground text-sm tracking-tight">Appendify API</span>
+          <span className="font-semibold text-foreground text-sm tracking-tight">Padsplit API</span>
         </div>
         <div className="ml-3 px-2 py-0.5 rounded-full bg-accent text-accent-foreground text-[10px] font-semibold uppercase tracking-wider">
           v1.0
