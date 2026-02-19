@@ -2270,6 +2270,50 @@ export type Database = {
         }
         Relationships: []
       }
+      script_access_tokens: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          expires_at: string | null
+          id: string
+          is_active: boolean
+          label: string | null
+          last_accessed_at: string | null
+          script_id: string
+          token: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          expires_at?: string | null
+          id?: string
+          is_active?: boolean
+          label?: string | null
+          last_accessed_at?: string | null
+          script_id: string
+          token?: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          expires_at?: string | null
+          id?: string
+          is_active?: boolean
+          label?: string | null
+          last_accessed_at?: string | null
+          script_id?: string
+          token?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "script_access_tokens_script_id_fkey"
+            columns: ["script_id"]
+            isOneToOne: false
+            referencedRelation: "research_scripts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       script_templates: {
         Row: {
           call_type_id: string | null

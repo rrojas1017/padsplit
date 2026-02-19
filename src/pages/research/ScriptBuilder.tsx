@@ -5,12 +5,15 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
-import { Plus, Pencil, Trash2, FileText, ClipboardList, Eye, Upload, Play } from 'lucide-react';
-import { useResearchScripts, type ResearchScript, type ScriptQuestion } from '@/hooks/useResearchScripts';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Plus, Pencil, Trash2, FileText, ClipboardList, Eye, Upload, Play, Link, Copy, RefreshCw, X } from 'lucide-react';
+import { useResearchScripts, type ResearchScript } from '@/hooks/useResearchScripts';
+import { useScriptTokens, getScriptPublicUrl } from '@/hooks/useScriptTokens';
 import { ResearchScriptDialog } from '@/components/research/ResearchScriptDialog';
 import { ResearchScriptImportDialog } from '@/components/research/ResearchScriptImportDialog';
 import { ScriptTesterDialog } from '@/components/research/ScriptTesterDialog';
 import { Skeleton } from '@/components/ui/skeleton';
+import { toast } from 'sonner';
 
 const CAMPAIGN_TYPE_LABELS: Record<string, string> = {
   satisfaction: 'Satisfaction',
@@ -26,15 +29,17 @@ const AUDIENCE_LABELS: Record<string, string> = {
 
 export default function ScriptBuilder() {
   const { scripts, isLoading, createScript, updateScript, deleteScript } = useResearchScripts();
+  const scriptIds = scripts.map(s => s.id);
+  const { tokens, generateToken, copyToken, revokeToken, regenerateToken } = useScriptTokens(scriptIds);
+
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingScript, setEditingScript] = useState<ResearchScript | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<ResearchScript | null>(null);
   const [filterType, setFilterType] = useState('all');
   const [importOpen, setImportOpen] = useState(false);
   const [testScript, setTestScript] = useState<ResearchScript | null>(null);
-
-  // State for pre-populating dialog from AI import
   const [importedData, setImportedData] = useState<any>(null);
+  const [linkLoadingId, setLinkLoadingId] = useState<string | null>(null);
 
   const filtered = filterType === 'all' ? scripts : scripts.filter(s => s.campaign_type === filterType);
 
@@ -56,6 +61,12 @@ export default function ScriptBuilder() {
     setImportedData(data);
     setEditingScript(null);
     setDialogOpen(true);
+  };
+
+  const handleGenerateLink = async (scriptId: string) => {
+    setLinkLoadingId(scriptId);
+    await generateToken(scriptId);
+    setLinkLoadingId(null);
   };
 
   return (
@@ -119,48 +130,105 @@ export default function ScriptBuilder() {
         {/* Script cards */}
         {!isLoading && filtered.length > 0 && (
           <div className="grid gap-4 md:grid-cols-2">
-            {filtered.map(script => (
-              <Card key={script.id} className="relative group hover:shadow-md transition-shadow">
-                <CardHeader className="pb-3">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex items-center gap-3 min-w-0">
-                      <div className="p-2 rounded-lg bg-primary/10 shrink-0">
-                        <FileText className="w-4 h-4 text-primary" />
+            {filtered.map(script => {
+              const token = tokens[script.id];
+              const hasToken = !!token;
+
+              return (
+                <Card key={script.id} className="relative group hover:shadow-md transition-shadow">
+                  <CardHeader className="pb-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className="p-2 rounded-lg bg-primary/10 shrink-0">
+                          <FileText className="w-4 h-4 text-primary" />
+                        </div>
+                        <div className="min-w-0">
+                          <CardTitle className="text-base font-medium truncate">{script.name}</CardTitle>
+                          {script.description && (
+                            <p className="text-xs text-muted-foreground mt-0.5 line-clamp-1">{script.description}</p>
+                          )}
+                        </div>
                       </div>
-                      <div className="min-w-0">
-                        <CardTitle className="text-base font-medium truncate">{script.name}</CardTitle>
-                        {script.description && (
-                          <p className="text-xs text-muted-foreground mt-0.5 line-clamp-1">{script.description}</p>
+                      <div className="flex gap-0.5 shrink-0">
+                        <Button variant="ghost" size="icon" className="h-8 w-8" title="Test Script" onClick={() => setTestScript(script)}>
+                          <Play className="w-4 h-4" />
+                        </Button>
+                        <Button variant="ghost" size="icon" className="h-8 w-8" title="Edit" onClick={() => { setEditingScript(script); setImportedData(null); setDialogOpen(true); }}>
+                          <Pencil className="w-4 h-4" />
+                        </Button>
+
+                        {/* External Link button */}
+                        {hasToken ? (
+                          <Popover>
+                            <PopoverTrigger asChild>
+                              <Button variant="ghost" size="icon" className="h-8 w-8 text-primary" title="External Link">
+                                <Link className="w-4 h-4" />
+                              </Button>
+                            </PopoverTrigger>
+                            <PopoverContent className="w-80 p-4 space-y-3" align="end">
+                              <div className="space-y-1">
+                                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Public Script Link</p>
+                                <p className="text-xs text-muted-foreground break-all bg-muted rounded px-2 py-1 font-mono">
+                                  {getScriptPublicUrl(token.token)}
+                                </p>
+                                {token.last_accessed_at && (
+                                  <p className="text-xs text-muted-foreground">
+                                    Last accessed: {new Date(token.last_accessed_at).toLocaleDateString()}
+                                  </p>
+                                )}
+                              </div>
+                              <div className="flex gap-2">
+                                <Button size="sm" variant="outline" className="flex-1" onClick={() => copyToken(token)}>
+                                  <Copy className="w-3 h-3 mr-1.5" /> Copy Link
+                                </Button>
+                                <Button size="sm" variant="outline" className="flex-1" onClick={() => regenerateToken(script.id)}>
+                                  <RefreshCw className="w-3 h-3 mr-1.5" /> Regenerate
+                                </Button>
+                                <Button size="sm" variant="ghost" className="text-destructive hover:text-destructive" onClick={() => revokeToken(token.id, script.id)}>
+                                  <X className="w-3 h-3" />
+                                </Button>
+                              </div>
+                            </PopoverContent>
+                          </Popover>
+                        ) : (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 text-muted-foreground"
+                            title="Generate External Link"
+                            disabled={linkLoadingId === script.id}
+                            onClick={() => handleGenerateLink(script.id)}
+                          >
+                            <Link className="w-4 h-4" />
+                          </Button>
                         )}
+
+                        <Button variant="ghost" size="icon" className="h-8 w-8" title="Delete" onClick={() => setDeleteTarget(script)}>
+                          <Trash2 className="w-4 h-4 text-destructive" />
+                        </Button>
                       </div>
                     </div>
-                    <div className="flex gap-0.5 shrink-0">
-                      <Button variant="ghost" size="icon" className="h-8 w-8" title="Test Script" onClick={() => setTestScript(script)}>
-                        <Play className="w-4 h-4" />
-                      </Button>
-                      <Button variant="ghost" size="icon" className="h-8 w-8" title="Edit" onClick={() => { setEditingScript(script); setImportedData(null); setDialogOpen(true); }}>
-                        <Pencil className="w-4 h-4" />
-                      </Button>
-                      <Button variant="ghost" size="icon" className="h-8 w-8" title="Delete" onClick={() => setDeleteTarget(script)}>
-                        <Trash2 className="w-4 h-4 text-destructive" />
-                      </Button>
+                  </CardHeader>
+                  <CardContent className="pt-0">
+                    <div className="flex flex-wrap gap-1.5 mb-3">
+                      <Badge variant="outline" className="text-xs">{CAMPAIGN_TYPE_LABELS[script.campaign_type] || script.campaign_type}</Badge>
+                      <Badge variant="secondary" className="text-xs">{AUDIENCE_LABELS[script.target_audience] || script.target_audience}</Badge>
+                      <Badge variant={script.is_active ? 'default' : 'secondary'} className="text-xs">
+                        {script.is_active ? 'Active' : 'Inactive'}
+                      </Badge>
+                      {hasToken && (
+                        <Badge variant="outline" className="text-xs border-primary/50 text-primary">
+                          <Link className="w-2.5 h-2.5 mr-1" /> Public Link Active
+                        </Badge>
+                      )}
                     </div>
-                  </div>
-                </CardHeader>
-                <CardContent className="pt-0">
-                  <div className="flex flex-wrap gap-1.5 mb-3">
-                    <Badge variant="outline" className="text-xs">{CAMPAIGN_TYPE_LABELS[script.campaign_type] || script.campaign_type}</Badge>
-                    <Badge variant="secondary" className="text-xs">{AUDIENCE_LABELS[script.target_audience] || script.target_audience}</Badge>
-                    <Badge variant={script.is_active ? 'default' : 'secondary'} className="text-xs">
-                      {script.is_active ? 'Active' : 'Inactive'}
-                    </Badge>
-                  </div>
-                  <p className="text-xs text-muted-foreground">
-                    {script.questions.length} question{script.questions.length !== 1 ? 's' : ''} • Created {new Date(script.created_at).toLocaleDateString()}
-                  </p>
-                </CardContent>
-              </Card>
-            ))}
+                    <p className="text-xs text-muted-foreground">
+                      {script.questions.length} question{script.questions.length !== 1 ? 's' : ''} • Created {new Date(script.created_at).toLocaleDateString()}
+                    </p>
+                  </CardContent>
+                </Card>
+              );
+            })}
           </div>
         )}
       </div>
