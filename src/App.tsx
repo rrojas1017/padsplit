@@ -25,6 +25,7 @@ import UserManagement from "./pages/UserManagement";
 
 import DisplayLinks from "./pages/DisplayLinks";
 import PublicWallboard from "./pages/PublicWallboard";
+import PublicScriptView from "./pages/PublicScriptView";
 import AuditLog from "./pages/AuditLog";
 import Settings from "./pages/Settings";
 import ImportBookings from "./pages/ImportBookings";
@@ -86,6 +87,7 @@ const App = () => (
               <Route path="/" element={<Index />} />
               <Route path="/login" element={<Login />} />
               <Route path="/display/:token" element={<PublicWallboard />} />
+              <Route path="/script/:token" element={<PublicScriptView />} />
               
               {/* Protected routes - wrapped with data providers */}
               <Route path="/dashboard" element={
