@@ -318,14 +318,14 @@ const App = () => (
                 </ProtectedRoute>
               } />
               <Route path="/research/log-call" element={
-                <ProtectedRoute allowedRoles={['researcher']}>
+                <ProtectedRoute allowedRoles={['researcher', 'super_admin', 'admin']}>
                   <DataProviders>
                     <LogSurveyCall />
                   </DataProviders>
                 </ProtectedRoute>
               } />
               <Route path="/research/history" element={
-                <ProtectedRoute allowedRoles={['researcher']}>
+                <ProtectedRoute allowedRoles={['researcher', 'super_admin', 'admin']}>
                   <DataProviders>
                     <MyCallHistory />
                   </DataProviders>
