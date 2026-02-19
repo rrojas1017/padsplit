@@ -41,6 +41,7 @@ export default function ApiDocs() {
   const navItems = [
     { id: 'authentication', label: 'Authentication' },
     { id: 'endpoints', label: 'Endpoints' },
+    { id: 'submit-conversation-audio', label: 'Submit Conversation Audio' },
     { id: 'rate-limiting', label: 'Rate Limiting' },
     { id: 'error-codes', label: 'Error Codes' },
   ];
@@ -126,6 +127,18 @@ X-API-Key: sk_your_client_secret_here`}</CodeBlock>
             <div className="mt-6 rounded-lg border border-border overflow-hidden">
               <div className="bg-muted/50 px-4 py-3 border-b border-border flex items-center gap-3">
                 <Badge variant="green">POST</Badge>
+                <code className="text-sm text-foreground font-mono">/submit-conversation-audio</code>
+                <Badge variant="green">Live</Badge>
+              </div>
+              <div className="p-4">
+                <p className="text-sm text-muted-foreground">
+                  Submit conversation audio recordings from external dialer systems for processing, transcription, and research reporting.
+                </p>
+              </div>
+            </div>
+            <div className="mt-3 rounded-lg border border-border overflow-hidden">
+              <div className="bg-muted/50 px-4 py-3 border-b border-border flex items-center gap-3">
+                <Badge variant="green">POST</Badge>
                 <code className="text-sm text-foreground font-mono">/webhooks/calls</code>
                 <Badge variant="amber">Coming soon</Badge>
               </div>
@@ -150,6 +163,105 @@ X-API-Key: sk_your_client_secret_here`}</CodeBlock>
             <p className="text-sm text-muted-foreground mt-4">
               Additional endpoints will be documented here as they are released.
             </p>
+          </Section>
+
+          <Section id="submit-conversation-audio" title="Submit Conversation Audio" icon={Code2}>
+            <div className="mb-4">
+              <div className="flex items-center gap-3 mb-2">
+                <Badge variant="green">POST</Badge>
+                <code className="text-sm text-foreground font-mono">/submit-conversation-audio</code>
+              </div>
+              <p className="text-muted-foreground text-sm">
+                Submit conversation audio recordings from external dialer platforms. Records are stored for auditing and automatically appear in the Reports tab under the <strong className="text-foreground">Research</strong> category.
+              </p>
+            </div>
+
+            <h3 className="text-sm font-semibold text-foreground mt-6 mb-2">Authentication</h3>
+            <p className="text-muted-foreground text-sm mb-3">
+              Requires <code className="text-sm bg-muted px-1.5 py-0.5 rounded">X-Client-ID</code> and{' '}
+              <code className="text-sm bg-muted px-1.5 py-0.5 rounded">X-Client-Secret</code> headers.
+            </p>
+
+            <h3 className="text-sm font-semibold text-foreground mt-6 mb-2">Request Headers</h3>
+            <CodeBlock>{`Content-Type: application/json
+X-Client-ID: app_your_client_id_here
+X-Client-Secret: sk_your_client_secret_here`}</CodeBlock>
+
+            <h3 className="text-sm font-semibold text-foreground mt-6 mb-2">Request Body</h3>
+            <div className="rounded-lg border border-border overflow-hidden mb-4">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="bg-muted/50 border-b border-border">
+                    <th className="text-left px-4 py-3 font-medium text-foreground">Field</th>
+                    <th className="text-left px-4 py-3 font-medium text-foreground">Type</th>
+                    <th className="text-left px-4 py-3 font-medium text-foreground">Required</th>
+                    <th className="text-left px-4 py-3 font-medium text-foreground">Description</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border">
+                  {[
+                    { field: 'audioUrl', type: 'string', required: 'Yes', desc: 'Publicly accessible URL to the audio recording.' },
+                    { field: 'dialerAgentUser', type: 'string', required: 'Yes', desc: 'Identifier of the agent in the external dialer system. Must match an agent\'s dialerAgentUser in the platform.' },
+                    { field: 'phoneNumber', type: 'string', required: 'Yes', desc: 'Customer phone number associated with the conversation.' },
+                    { field: 'campaign', type: 'string', required: 'Yes', desc: 'Campaign name or identifier tied to the conversation.' },
+                    { field: 'type', type: 'string', required: 'Yes', desc: 'Must be "research". Any other value is rejected.' },
+                  ].map(row => (
+                    <tr key={row.field} className="hover:bg-muted/30 transition-colors">
+                      <td className="px-4 py-3"><code className="text-xs text-foreground">{row.field}</code></td>
+                      <td className="px-4 py-3"><code className="text-xs text-muted-foreground">{row.type}</code></td>
+                      <td className="px-4 py-3"><Badge variant="red">{row.required}</Badge></td>
+                      <td className="px-4 py-3 text-muted-foreground">{row.desc}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <h3 className="text-sm font-semibold text-foreground mt-6 mb-2">Example Request</h3>
+            <CodeBlock>{`curl -X POST \\
+  https://qwddqoyewtozzdvfmavn.supabase.co/functions/v1/submit-conversation-audio \\
+  -H "Content-Type: application/json" \\
+  -H "X-Client-ID: app_your_client_id" \\
+  -H "X-Client-Secret: sk_your_secret" \\
+  -d '{
+    "audioUrl": "https://storage.example.com/recordings/call-123.mp3",
+    "dialerAgentUser": "agent_john_doe",
+    "phoneNumber": "+14155551234",
+    "campaign": "Q1-Research-2026",
+    "type": "research"
+  }'`}</CodeBlock>
+
+            <h3 className="text-sm font-semibold text-foreground mt-6 mb-2">Success Response</h3>
+            <p className="text-muted-foreground text-sm mb-2">
+              <Badge variant="green">201</Badge> Created
+            </p>
+            <CodeBlock>{`{
+  "success": true,
+  "bookingId": "uuid-of-created-record",
+  "matchedAgent": {
+    "id": "uuid-of-agent",
+    "name": "John Doe"
+  }
+}`}</CodeBlock>
+
+            <h3 className="text-sm font-semibold text-foreground mt-6 mb-2">Error Responses</h3>
+            <div className="space-y-3">
+              <div>
+                <p className="text-sm text-muted-foreground mb-1"><Badge variant="red">400</Badge> Validation failed</p>
+                <CodeBlock>{`{
+  "error": "Validation failed",
+  "details": ["audioUrl is required", "type must be \\"research\\""]
+}`}</CodeBlock>
+              </div>
+              <div>
+                <p className="text-sm text-muted-foreground mb-1"><Badge variant="red">401</Badge> Authentication failed</p>
+                <CodeBlock>{`{ "error": "Unauthorized: invalid API credentials" }`}</CodeBlock>
+              </div>
+              <div>
+                <p className="text-sm text-muted-foreground mb-1"><Badge variant="amber">400</Badge> Agent not found</p>
+                <CodeBlock>{`{ "error": "Agent not found for dialerAgentUser: unknown_agent" }`}</CodeBlock>
+              </div>
+            </div>
           </Section>
 
           <Section id="rate-limiting" title="Rate Limiting" icon={Zap}>
