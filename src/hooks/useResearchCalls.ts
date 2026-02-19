@@ -22,12 +22,25 @@ export interface ResearchCallCampaign {
   completed_calls: number;
 }
 
+export interface ScriptQuestionBranch {
+  yes_goto?: number;
+  no_goto?: number;
+  yes_probes?: string[];
+  no_probes?: string[];
+}
+
 export interface ScriptQuestion {
   id: number;
+  order?: number;
   text: string;
   type: 'scale' | 'open_ended' | 'multiple_choice' | 'yes_no';
   required?: boolean;
   options?: string[];
+  probes?: string[];
+  branch?: ScriptQuestionBranch;
+  section?: string;
+  is_internal?: boolean;
+  ai_extraction_hint?: string;
 }
 
 export interface ResearchCall {
@@ -52,6 +65,8 @@ export interface ResearchCall {
 export interface CallSubmission {
   campaign_id: string;
   caller_name: string;
+  caller_first_name?: string;
+  caller_last_name?: string;
   caller_phone?: string;
   caller_type: string;
   caller_status?: string;
@@ -59,6 +74,7 @@ export interface CallSubmission {
   call_duration_seconds?: number;
   transferred_to_agent_id?: string;
   transfer_notes?: string;
+  researcher_name?: string;
   responses?: Record<string, unknown>;
   researcher_notes?: string;
 }
@@ -177,6 +193,14 @@ export function useResearchCalls() {
     }
 
     setIsSubmitting(true);
+
+    // Enrich responses with researcher and caller metadata
+    const enrichedResponses: Record<string, unknown> = {
+      ...(submission.responses || {}),
+      _researcher_name: submission.researcher_name || '',
+      _caller_first_name: submission.caller_first_name || '',
+      _caller_last_name: submission.caller_last_name || '',
+    };
     
     // Step 1: Insert into research_calls
     const { data: researchCallData, error } = await supabase.from('research_calls').insert({
@@ -190,7 +214,7 @@ export function useResearchCalls() {
       call_duration_seconds: submission.call_duration_seconds || null,
       transferred_to_agent_id: submission.transferred_to_agent_id || null,
       transfer_notes: submission.transfer_notes || null,
-      responses: (submission.responses || null) as Json,
+      responses: enrichedResponses as Json,
       researcher_notes: submission.researcher_notes || null,
     }).select('id').single();
 
