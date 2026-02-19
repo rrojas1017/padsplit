@@ -45,6 +45,8 @@ import HistoricalImport from "./pages/HistoricalImport";
 import BroadcastMessages from "./pages/BroadcastMessages";
 import MarketIntelligence from "./pages/MarketIntelligence";
 import NotFound from "./pages/NotFound";
+import ApiCredentials from "./pages/ApiCredentials";
+import ApiDocs from "./pages/ApiDocs";
 
 // Research module pages
 import ResearchDashboard from "./pages/research/ResearchDashboard";
@@ -352,7 +354,18 @@ const App = () => (
                   </DataProviders>
                 </ProtectedRoute>
               } />
-              
+
+              <Route path="/api-credentials" element={
+                <ProtectedRoute allowedRoles={['super_admin', 'admin']}>
+                  <DataProviders>
+                    <ApiCredentials />
+                  </DataProviders>
+                </ProtectedRoute>
+              } />
+
+              {/* Public route - no auth required */}
+              <Route path="/api-docs" element={<ApiDocs />} />
+
               <Route path="*" element={<NotFound />} />
             </Routes>
           </BrowserRouter>
