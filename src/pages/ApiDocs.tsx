@@ -43,15 +43,20 @@ export default function ApiDocs() {
           payloads into the platform. Use this reference to integrate your dialer, CRM, or automation tools.
         </p>
 
-        <div className="mt-8 grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div className="mt-8">
+          <h3 className="text-xs font-bold uppercase tracking-[0.15em] text-muted-foreground mb-3">Base URL</h3>
+          <CodeBlock title="Base URL">{`https://qwddqoyewtozzdvfmavn.supabase.co/functions/v1`}</CodeBlock>
+          <p className="text-xs text-muted-foreground mt-2">All endpoint paths are relative to this base URL.</p>
+        </div>
+
+        <div className="mt-6 grid grid-cols-1 sm:grid-cols-2 gap-4">
           {[
-            { label: 'Base URL', value: 'Supabase Edge Functions', mono: false },
-            { label: 'Auth', value: 'API Key + Secret', mono: false },
-            { label: 'Format', value: 'application/json', mono: true },
+            { label: 'Auth', value: 'API Key + Secret' },
+            { label: 'Format', value: 'application/json' },
           ].map(c => (
             <div key={c.label} className="rounded-xl border border-border bg-card p-4">
               <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground mb-1">{c.label}</p>
-              <p className={`text-sm font-medium text-foreground ${c.mono ? 'font-mono' : ''}`}>{c.value}</p>
+              <p className="text-sm font-medium text-foreground">{c.value}</p>
             </div>
           ))}
         </div>
