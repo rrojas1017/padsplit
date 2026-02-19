@@ -1,107 +1,31 @@
 
+## Fix: Script Token Generation Failing
 
-## API Credentials Module + Public API Docs Page
+### Root Cause
 
-### Overview
-A new admin-only module for generating and managing API credentials (Client ID / Client Secret) for external integrations, plus a lightweight public API documentation page.
+The `script_access_tokens` table has a broken column default for the `token` field:
 
----
+```sql
+DEFAULT encode(extensions.gen_random_bytes(24), 'base64url'::text)
+```
 
-### 1. Database: `api_credentials` table
+The problem is `'base64url'` — this is **not a valid encoding format** in this version of PostgreSQL. Valid options are `'base64'`, `'hex'`, and `'escape'`. Every INSERT into this table attempts to evaluate this default, fails with a Postgres error, and the hook catches it and shows "Failed to generate link".
 
-Create via migration:
+### Fix
 
-- `id` UUID primary key
-- `application_name` text, not null
-- `client_id` text, unique, not null (cryptographically generated)
-- `client_secret_hash` text, not null (bcrypt/SHA-256 hash -- never plaintext)
-- `status` text, not null, default `'active'` (values: `active`, `revoked`, `expired`)
-- `rate_limit` integer, nullable
-- `last_used_at` timestamptz, nullable
-- `expires_at` timestamptz, nullable
-- `created_by` UUID, nullable (references the creating admin's user ID)
-- `created_at` timestamptz, default `now()`
-- `updated_at` timestamptz, default `now()`
-- `deleted_at` timestamptz, nullable (soft delete)
+Alter the column default to use a working approach. Since `gen_random_bytes` from `pgcrypto` is also unavailable directly, the best approach is to use `gen_random_uuid()` (which is always available) to generate a unique, URL-safe token:
 
-RLS policies:
-- SELECT/INSERT/UPDATE/DELETE restricted to `super_admin` and `admin` roles using `has_role()`
-- Soft-deleted rows excluded from SELECT by default (`deleted_at IS NULL`)
+```sql
+ALTER TABLE public.script_access_tokens
+  ALTER COLUMN token SET DEFAULT replace(replace(replace(
+    encode(gen_random_uuid()::text::bytea, 'base64'),
+    '+', '-'), '/', '_'), E'\n', '');
+```
 
-Trigger: `update_updated_at_column` on UPDATE.
+This generates a ~48-character base64-encoded, URL-safe token (no `+`, `/`, or newlines) from a UUID — cryptographically unique and safe to use in URLs.
 
----
+### Files Changed
 
-### 2. Edge Function: `manage-api-credentials`
+1. **New migration** — Alters the `token` column default on `script_access_tokens` to a working expression.
 
-A single edge function handling all operations via POST with an `action` field:
-
-- **create**: Generates a cryptographically secure `client_id` (prefix `app_`) and `client_secret` (prefix `sk_`). Hashes the secret with SHA-256 before storing. Returns the plaintext secret exactly once.
-- **revoke**: Sets `status = 'revoked'`, logs to `access_logs`.
-- **regenerate**: Generates a new secret, hashes and stores it, returns the new plaintext secret once. Logs to `access_logs`.
-- **delete**: Sets `deleted_at = now()` (soft delete). Logs to `access_logs`.
-
-All actions verify the caller is `super_admin` or `admin` via JWT claims. All mutations are logged to the existing `access_logs` table with action like `api_credential_created`, `api_credential_revoked`, etc.
-
----
-
-### 3. New Page: `src/pages/ApiCredentials.tsx`
-
-Admin-only page at route `/api-credentials`.
-
-**UI Components:**
-
-- **Credentials Table**: Lists all non-deleted credentials with columns: Application Name, Client ID (copyable), Status badge (green/red/amber), Created At, Last Used, Expires At, Actions (Revoke/Regenerate/Delete).
-- **Create Credential Dialog**: Form with Application Name (required), optional Expiration Date, optional Rate Limit. On submit, calls the edge function and shows the Secret Display Modal.
-- **Secret Display Modal**: Shows the plaintext secret once with copy-to-clipboard, a prominent warning ("This secret will not be shown again"), and a confirmation checkbox before closing.
-- **Confirmation Dialogs**: For revoke, regenerate, and delete actions with clear warnings.
-
----
-
-### 4. New Page: `src/pages/ApiDocs.tsx`
-
-Public (unauthenticated) page at route `/api-docs`.
-
-- Clean, documentation-friendly layout (no sidebar, no auth required)
-- Page title: "API Documentation"
-- Placeholder sections: Authentication, Endpoints, Rate Limiting, Error Codes
-- Easily extendable structure for future content
-
----
-
-### 5. Routing and Navigation
-
-**App.tsx changes:**
-- Add protected route `/api-credentials` with `allowedRoles: ['super_admin', 'admin']`
-- Add public route `/api-docs` (no ProtectedRoute wrapper)
-
-**AppSidebar.tsx changes:**
-- Add `{ icon: Key, label: 'API Credentials', path: '/api-credentials', roles: ['super_admin', 'admin'], group: 'admin' }` to the menu items array
-
----
-
-### 6. Files to Create/Modify
-
-| File | Action |
-|------|--------|
-| Migration SQL | Create `api_credentials` table with RLS |
-| `supabase/functions/manage-api-credentials/index.ts` | New edge function |
-| `supabase/config.toml` | Add `verify_jwt = false` for the new function |
-| `src/pages/ApiCredentials.tsx` | New page with credentials table + dialogs |
-| `src/pages/ApiDocs.tsx` | New public documentation page |
-| `src/hooks/useApiCredentials.ts` | New hook for CRUD operations via edge function |
-| `src/App.tsx` | Add two new routes |
-| `src/components/layout/AppSidebar.tsx` | Add sidebar menu item |
-
----
-
-### 7. Security Considerations
-
-- Client secrets are SHA-256 hashed before storage; plaintext is never persisted
-- Secrets displayed only once at creation/regeneration
-- All credential lifecycle events are audit-logged
-- RLS restricts table access to admin roles only
-- Edge function validates JWT claims before any operation
-- Soft delete preserves audit trail
-- Rate limit field stored per credential for future enforcement
-
+No frontend code changes are needed. The hook already sends the insert without a `token` value, correctly relying on the column default.
