@@ -59,7 +59,7 @@ const AUDIENCE_LABELS: Record<string, string> = {
 
 function WizardCard({ children }: { children: React.ReactNode }) {
   return (
-    <div className="bg-card border border-border rounded-2xl shadow-lg p-6 space-y-5">
+    <div className="bg-card border border-border rounded-2xl shadow-lg p-8 space-y-6">
       {children}
     </div>
   );
@@ -73,8 +73,8 @@ function ScriptBlock({ children, variant = 'default' }: { children: React.ReactN
     red: 'bg-destructive/5 border-destructive/20',
   };
   return (
-    <div className={`rounded-xl border p-5 ${styles[variant]}`}>
-      <p className="text-base leading-relaxed whitespace-pre-wrap">{children}</p>
+    <div className={`rounded-xl border p-6 ${styles[variant]}`}>
+      <p className="text-lg leading-relaxed whitespace-pre-wrap">{children}</p>
     </div>
   );
 }
@@ -186,7 +186,7 @@ export default function PublicScriptView() {
     <div className="min-h-screen bg-background flex flex-col">
       {/* Sticky header */}
       <div className="border-b bg-card sticky top-0 z-10">
-        <div className="max-w-2xl mx-auto px-6 py-4 flex items-center gap-4">
+        <div className="max-w-3xl mx-auto px-6 py-4 flex items-center gap-4">
           <img src={padsplitLogo} alt="PadSplit" className="h-8 w-8 rounded object-cover shrink-0" />
           <div className="flex-1 min-w-0">
             <h1 className="text-sm font-bold truncate">{script.name}</h1>
@@ -203,7 +203,7 @@ export default function PublicScriptView() {
 
       {/* Wizard body */}
       <div className="flex-1 flex flex-col items-center justify-start py-10 px-4">
-        <div className="w-full max-w-lg space-y-5">
+        <div className="w-full max-w-3xl space-y-6">
 
           {/* Progress bar */}
           {phase !== 'start' && phase !== 'done' && (
@@ -265,10 +265,10 @@ export default function PublicScriptView() {
                 <h3 className="text-lg font-semibold">Did the caller agree to continue?</h3>
                 <p className="text-muted-foreground text-sm">"May I ask you a few questions?"</p>
                 <div className="flex gap-4 justify-center pt-2">
-                  <Button size="lg" className="px-8 py-5 text-lg" onClick={() => handleConsent(true)}>
+                  <Button size="lg" className="px-10 py-6 text-xl" onClick={() => handleConsent(true)}>
                     <ThumbsUp className="w-5 h-5 mr-2" /> Yes
                   </Button>
-                  <Button size="lg" variant="outline" className="px-8 py-5 text-lg" onClick={() => handleConsent(false)}>
+                  <Button size="lg" variant="outline" className="px-10 py-6 text-xl" onClick={() => handleConsent(false)}>
                     <ThumbsDown className="w-5 h-5 mr-2" /> No
                   </Button>
                 </div>
@@ -291,8 +291,8 @@ export default function PublicScriptView() {
               </div>
 
               {/* Question text */}
-              <div className="bg-muted/50 rounded-xl p-5 border">
-                <p className="text-lg font-medium leading-relaxed">{currentQ.question || currentQ.text}</p>
+              <div className="bg-muted/50 rounded-xl p-6 py-7 border">
+                <p className="text-xl font-medium leading-relaxed">{currentQ.question || currentQ.text}</p>
               </div>
 
               {/* Probing follow-ups */}
@@ -380,7 +380,7 @@ export default function PublicScriptView() {
                     placeholder="Quick notes (optional — AI extracts from recording)"
                     value={(currentResponse as string) || ''}
                     onChange={e => setResponses(prev => ({ ...prev, [questionIndex]: e.target.value }))}
-                    rows={3}
+                    rows={4}
                   />
                 )}
               </div>
