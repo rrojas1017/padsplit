@@ -34,13 +34,12 @@ export default function ApiDocs() {
             <Code2 className="w-6 h-6 text-primary" />
           </div>
           <div>
-            <h1 className="text-3xl font-bold text-foreground tracking-tight">API Reference</h1>
-            <p className="mt-1 text-muted-foreground text-base">Appendify Operations Platform</p>
+            <h1 className="text-3xl font-bold text-foreground tracking-tight">Padsplit v1</h1>
+            <p className="mt-1 text-muted-foreground text-base">API Reference</p>
           </div>
         </div>
         <p className="text-muted-foreground leading-relaxed max-w-2xl">
-          The Appendify Operations API lets external applications submit call data, booking records, and integration
-          payloads into the platform. Use this reference to integrate your dialer, CRM, or automation tools.
+          The Padsplit API lets external applications submit call data into the platform. Use this reference to integrate your dialer or automation tools.
         </p>
 
         <div className="mt-8">
