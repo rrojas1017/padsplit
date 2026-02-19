@@ -2,12 +2,12 @@ import { useState, useCallback } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Progress } from '@/components/ui/progress';
 import { Slider } from '@/components/ui/slider';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { ArrowRight, ArrowLeft, MessageSquare, XCircle, ThumbsUp, ThumbsDown, RotateCcw, Play, CheckCircle, PhoneOff } from 'lucide-react';
+import { StepTracker, buildSteps } from '@/components/research/StepTracker';
 import type { ResearchScript, ScriptQuestion } from '@/hooks/useResearchScripts';
 import {
   AlertDialog,
@@ -119,17 +119,6 @@ export function ScriptTesterDialog({ open, onOpenChange, script }: Props) {
     }
   };
 
-  // Progress
-  const totalSteps = questions.length + (introScript ? 1 : 0) + 1 + (closingScript ? 1 : 0);
-  const currentStep = (() => {
-    if (phase === 'intro') return 1;
-    if (phase === 'consent') return (introScript ? 2 : 1);
-    if (phase === 'question') return (introScript ? 3 : 2) + questionIndex;
-    if (phase === 'closing') return totalSteps;
-    return totalSteps;
-  })();
-  const progressPercent = totalSteps > 0 ? (currentStep / totalSteps) * 100 : 0;
-
   const currentQ = questions[questionIndex];
   const isActivePhase = phase !== 'start' && phase !== 'done';
   const isNextDisabled = phase === 'question' && currentQ?.type === 'yes_no' && responses[questionIndex] === undefined;
@@ -148,29 +137,20 @@ export function ScriptTesterDialog({ open, onOpenChange, script }: Props) {
             </DialogDescription>
           </DialogHeader>
 
-          {/* Progress bar + End Call */}
+          {/* Step Tracker */}
           {phase !== 'start' && phase !== 'done' && (
-            <div className="space-y-1">
-              <div className="flex justify-between items-center text-xs text-muted-foreground">
-                <span>
-                  {phase === 'question' ? `Question ${questionIndex + 1} of ${questions.length}` :
-                    phase === 'intro' ? 'Introduction' : phase === 'consent' ? 'Consent' :
-                    phase === 'closing' ? 'Closing' : 'Rebuttal'}
-                </span>
-                <div className="flex items-center gap-2">
-                  <span>{Math.round(progressPercent)}%</span>
-                  <Button
-                    variant="destructive"
-                    size="sm"
-                    className="h-6 px-2 text-xs"
-                    onClick={() => setEndCallOpen(true)}
-                  >
-                    <PhoneOff className="w-3 h-3 mr-1" /> End Call
-                  </Button>
-                </div>
-              </div>
-              <Progress value={progressPercent} className="h-2" />
-            </div>
+            <StepTracker
+              steps={buildSteps({
+                hasIntro: !!introScript,
+                hasClosing: !!closingScript,
+                questions,
+                phase,
+                questionIndex,
+              })}
+              totalQuestions={questions.length}
+              activeQuestionIndex={questionIndex}
+              onEndCall={() => setEndCallOpen(true)}
+            />
           )}
 
           {/* START */}
