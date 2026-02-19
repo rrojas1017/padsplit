@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { Key, Shield, Zap, AlertCircle, Code2, Send } from 'lucide-react';
 import { ApiDocsLayout } from '@/components/api-docs/ApiDocsLayout';
 import {
@@ -25,6 +26,11 @@ const NAV_ITEMS = [
 ];
 
 export default function ApiDocs() {
+  useEffect(() => {
+    document.title = 'Padsplit API v1';
+    return () => { document.title = 'PadSplit Sales Dashboard | Vixicom Performance Tracking'; };
+  }, []);
+
   return (
     <ApiDocsLayout navItems={NAV_ITEMS}>
       {/* ── Introduction ── */}
