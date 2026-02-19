@@ -14,7 +14,7 @@ export function generatePostmanCollection() {
       ],
     },
     variable: [
-      { key: "base_url", value: "https://qwddqoyewtozzdvfmavn.supabase.co/functions/v1", type: "string" },
+      { key: "base_url", value: "https://api.padsplit.tools/functions/v1", type: "string" },
       { key: "client_id", value: "app_your_client_id_here", type: "string" },
       { key: "client_secret", value: "sk_your_client_secret_here", type: "string" },
     ],
