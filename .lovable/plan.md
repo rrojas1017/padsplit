@@ -1,132 +1,93 @@
 
-# Add a Call Timer to the Research Script Wizard
+# Force Deepgram + Skip QA Scoring for Research Records
 
-## What the User Wants
+## The Problem
 
-A live elapsed-time clock visible while the researcher is on a script call, with a 10-minute target. The agent can see how long they've been on the call at a glance.
+When a researcher logs a call and it gets transcribed, the `transcribe-call` edge function currently:
 
-## Where It Lives
+1. **Picks an STT provider using A/B weights** — this could select ElevenLabs at $0.034/min instead of Deepgram at $0.0043/min. For a 20-minute research call, that's $0.68 vs $0.086 — nearly 8x more expensive.
+2. **Auto-triggers QA scoring** at the end of every transcription, including research records. The QA rubric is a PadSplit sales call rubric (greeting, objection handling, booking attempt) — none of which applies to a survey call.
+3. **Does not fetch `record_type`** from the booking, so it has no way to branch on whether this is a research record or a standard booking.
 
-The clock should appear **next to the StepTracker bar** — the thin progress bar already shown at the top of the active wizard. This is the most natural place: the researcher can glance up to see both their position in the script and how long the call has been running.
+## The Fix — Two Changes to `transcribe-call/index.ts`
 
-The clock needs to be added in two places:
-1. **`LogSurveyCall.tsx`** — the real call logging wizard (primary)
-2. **`ScriptTesterDialog.tsx`** — the test mode dialog (for consistency)
+### Change 1: Fetch `record_type` from the booking
 
-## Timer Behavior
-
-- **Starts** the moment the script phase begins (when the researcher clicks "Start Script" and transitions from `setup` → `verify`)
-- **Counts up** — shows elapsed time as `M:SS` format (e.g. `3:45`)
-- **Color changes** based on progress toward the 10-minute target:
-  - **Green** `0:00 – 8:59` — on track
-  - **Amber** `9:00 – 10:59` — approaching target
-  - **Red** `11:00+` — over target
-- **Target label** shows `/ 10:00` next to the elapsed time so the agent always knows the goal
-- **Resets** when the form is reset (new call)
-- **Stops** on the wrapup/done phase (call is over) but keeps showing the final time so the researcher knows how long it took
-
-## Visual Design
-
-The timer sits to the right of the step tracker, before the "End Call" button. It's a small compact chip:
-
-```
-[ Verify ] ——— [ Consent ] ——— [ Q 3/8 ] ——— [ Closing ]    ⏱ 3:45 / 10:00    [End Call]
-```
-
-The timer chip is small (`text-xs`) with a clock icon and colour-coded text, consistent with the rest of the tracker bar's design language.
-
-## Implementation Details
-
-### Timer Logic in `LogSurveyCall.tsx`
-
-- Add a `callStartTime` state (`Date | null`) — set to `new Date()` when `handleStartScript()` is called
-- Add a `elapsedSeconds` state updated every second via `setInterval`, but only when the phase is active (not `setup` or `wrapup`)
-- Reset `callStartTime` to `null` in `resetForm()`
+The booking query at line 1453 currently selects `call_type_id, agent_id, status, agents(site_id)`. We add `record_type` to that query so it is available for the rest of the function.
 
 ```typescript
-const [callStartTime, setCallStartTime] = useState<Date | null>(null);
-const [elapsedSeconds, setElapsedSeconds] = useState(0);
+// Before (line 1453)
+.select('call_type_id, agent_id, status, agents(site_id)')
 
-// In handleStartScript():
-setCallStartTime(new Date());
-setElapsedSeconds(0);
-
-// In resetForm():
-setCallStartTime(null);
-setElapsedSeconds(0);
+// After
+.select('call_type_id, agent_id, status, record_type, agents(site_id)')
 ```
 
-The interval runs while `callStartTime` is set and phase is not `wrapup`:
+Then capture it:
 ```typescript
-useEffect(() => {
-  if (!callStartTime || phase === 'wrapup' || phase === 'setup') return;
-  const interval = setInterval(() => {
-    setElapsedSeconds(Math.floor((Date.now() - callStartTime.getTime()) / 1000));
-  }, 1000);
-  return () => clearInterval(interval);
-}, [callStartTime, phase]);
+const recordType = bookingData?.record_type || null;
+const isResearch = recordType === 'research';
 ```
 
-### Timer Display Component
+### Change 2: Force Deepgram for research records (skip A/B selection)
 
-A small inline helper that formats seconds and applies colour:
+Replace the single `selectSTTProvider()` call with a branch:
 
 ```typescript
-function CallTimer({ elapsedSeconds }: { elapsedSeconds: number }) {
-  const mins = Math.floor(elapsedSeconds / 60);
-  const secs = elapsedSeconds % 60;
-  const display = `${mins}:${String(secs).padStart(2, '0')}`;
-  const TARGET = 600; // 10 min in seconds
-  
-  const color =
-    elapsedSeconds >= 660   ? 'text-red-600'    // 11+ min
-    : elapsedSeconds >= 540 ? 'text-amber-600'  // 9–11 min
-    : 'text-green-600';                         // < 9 min
-  
-  return (
-    <div className={`flex items-center gap-1 text-xs font-mono font-semibold ${color} shrink-0`}>
-      <Clock className="w-3 h-3" />
-      <span>{display}</span>
-      <span className="text-muted-foreground font-normal">/ 10:00</span>
-    </div>
-  );
+// Before (line 1487)
+const selectedProvider = await selectSTTProvider(supabase);
+
+// After
+const selectedProvider = isResearch
+  ? 'deepgram'
+  : await selectSTTProvider(supabase);
+
+if (isResearch) {
+  console.log('[Background] Research record — forcing Deepgram (ElevenLabs never used for research)');
 }
 ```
 
-### Passing the Timer into StepTracker
+This completely bypasses the A/B weight table for research records. Deepgram is always used, regardless of how the weights are configured.
 
-Rather than restructuring the `StepTracker` component (which is already complex with cluster mode), the timer is rendered **alongside** the `StepTracker` in the parent component, wrapped in a flex container. This keeps `StepTracker` clean.
+### Change 3: Skip QA scoring for research records
 
-In `LogSurveyCall.tsx`, the StepTracker block changes from:
-```tsx
-<div className="max-w-2xl mx-auto">
-  <StepTracker ... />
-</div>
+At line 2002, the QA scoring trigger runs unconditionally. We wrap it with the `isResearch` flag:
+
+```typescript
+// Before
+const qaResult = await callDownstreamFunction('generate-qa-scores');
+
+// After
+if (!isResearch) {
+  const qaResult = await callDownstreamFunction('generate-qa-scores');
+  if (!qaResult.success) {
+    console.error(`[Background] QA scoring failed permanently for ${bookingId}: ${qaResult.error || qaResult.statusCode}`);
+  }
+} else {
+  console.log('[Background] Research record — skipping QA scoring (not applicable for survey calls)');
+}
 ```
-
-To:
-```tsx
-<div className="max-w-2xl mx-auto">
-  <div className="flex items-center gap-3">
-    <div className="flex-1">
-      <StepTracker ... />
-    </div>
-    {callStartTime && (
-      <CallTimer elapsedSeconds={elapsedSeconds} />
-    )}
-  </div>
-</div>
-```
-
-### ScriptTesterDialog
-
-Same pattern — `callStartTime` is set when the phase moves past `start`, and reset when `restart()` is called. Since the tester dialog already has its own StepTracker block, the same wrapper approach applies.
 
 ## Files to Change
 
 | File | Change |
 |---|---|
-| `src/pages/research/LogSurveyCall.tsx` | Add `callStartTime` + `elapsedSeconds` state, set on `handleStartScript`, reset in `resetForm`, add interval effect, add `CallTimer` component, wrap StepTracker in flex row with timer |
-| `src/components/research/ScriptTesterDialog.tsx` | Same — add timer state, set on phase transition from `start`, reset in `restart()`, wrap StepTracker with `CallTimer` |
+| `supabase/functions/transcribe-call/index.ts` | 1) Add `record_type` to booking SELECT, 2) Force `deepgram` when `isResearch`, 3) Skip `generate-qa-scores` call when `isResearch` |
 
-No changes needed to `StepTracker.tsx` — the timer sits beside it, not inside it.
+## Cost Impact
+
+For a 10-minute research call:
+
+| | Before | After |
+|---|---|---|
+| STT (if ElevenLabs selected by A/B) | $0.34 | $0.043 (always Deepgram) |
+| QA Scoring | ~$0.0001 wasted | $0.00 (skipped) |
+| **Saving per call (worst case)** | — | **~$0.30** |
+
+With a team doing 20 research calls/day, this saves up to ~$6/day or ~$180/month purely from provider selection enforcement.
+
+## No Other Files Needed
+
+- `check-auto-transcription` does not need changing — it just triggers transcription and passes `skipTts: true` for non-Vixicom records (which research records already are).
+- `generate-qa-scores` does not need changing — it simply won't be called for research records.
+- No DB migration required — `record_type` already exists in the `bookings` table.
