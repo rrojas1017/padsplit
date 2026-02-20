@@ -2865,6 +2865,14 @@ export type Database = {
         Args: { _site_id: string }
         Returns: string[]
       }
+      get_daily_coaching_gate: {
+        Args: never
+        Returns: {
+          is_blocked: boolean
+          record_count: number
+          today_avg: number
+        }[]
+      }
       get_import_batch_counts: {
         Args: never
         Returns: {

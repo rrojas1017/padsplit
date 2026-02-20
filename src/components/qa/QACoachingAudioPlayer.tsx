@@ -1,12 +1,13 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Play, Pause, Volume2, Loader2, CheckCircle, Sparkles, Target } from 'lucide-react';
+import { Play, Pause, Volume2, Loader2, CheckCircle, Sparkles, Target, Lock } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/contexts/AuthContext';
 import { CoachingQuizModal } from '@/components/coaching/CoachingQuizModal';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 
 interface QACoachingAudioPlayerProps {
   bookingId: string;
@@ -19,6 +20,7 @@ interface QACoachingAudioPlayerProps {
   agentUserId?: string;
   quizPassedAt?: string | null;
   onQuizPassed?: () => void;
+  coachingBlocked?: boolean; // When true, new audio generation is disabled
 }
 
 export const QACoachingAudioPlayer: React.FC<QACoachingAudioPlayerProps> = ({
@@ -32,8 +34,10 @@ export const QACoachingAudioPlayer: React.FC<QACoachingAudioPlayerProps> = ({
   agentUserId,
   quizPassedAt,
   onQuizPassed,
+  coachingBlocked = false,
 }) => {
-  const { user } = useAuth();
+  const { user, hasRole } = useAuth();
+  const isSuperAdmin = hasRole(['super_admin']);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -177,6 +181,8 @@ export const QACoachingAudioPlayer: React.FC<QACoachingAudioPlayerProps> = ({
     return null;
   };
 
+  const BLOCKED_TOOLTIP = "Voice coaching paused — today's avg processing cost exceeds the $0.07 threshold. Audio generation will resume when costs normalize.";
+
   // Button variant - matches Jeff's coaching button style
   if (variant === 'button') {
     return (
@@ -207,6 +213,20 @@ export const QACoachingAudioPlayer: React.FC<QACoachingAudioPlayerProps> = ({
               </>
             )}
           </Button>
+        ) : coachingBlocked && !isSuperAdmin ? (
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button size="sm" variant="outline" disabled className="gap-2 opacity-60 cursor-not-allowed">
+                  <Lock className="h-4 w-4" />
+                  Paused
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="top" className="max-w-xs text-xs">
+                {BLOCKED_TOOLTIP}
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
         ) : (
           <Button
             variant="outline"
@@ -220,41 +240,68 @@ export const QACoachingAudioPlayer: React.FC<QACoachingAudioPlayerProps> = ({
             ) : (
               <Sparkles className="h-4 w-4" />
             )}
-            Generate
+            {coachingBlocked && isSuperAdmin ? 'Generate (Override)' : 'Generate'}
           </Button>
         )}
       </div>
     );
   }
 
-  // No audio - show generate card (matching Jeff's style)
+  // No audio - show generate card (or blocked card)
   if (!currentAudioUrl) {
+    if (coachingBlocked && !isSuperAdmin) {
+      return (
+        <div className={cn(
+          "flex items-center gap-3 p-3 rounded-lg border border-muted bg-muted/30"
+        )}>
+          <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center flex-shrink-0">
+            <Lock className="h-5 w-5 text-muted-foreground" />
+          </div>
+          <div className="flex-1">
+            <p className="text-sm font-medium text-muted-foreground">Voice coaching paused</p>
+            <p className="text-xs text-muted-foreground/70">
+              Today's avg cost exceeds $0.07 threshold. Generation resumes when costs normalize.
+            </p>
+          </div>
+        </div>
+      );
+    }
+
     return (
-      <div 
-        onClick={!isGenerating ? handleGenerateAudio : undefined}
-        className={cn(
-          "flex items-center gap-3 p-3 rounded-lg border border-accent/30 bg-accent/5 cursor-pointer hover:bg-accent/10 transition-colors",
-          isGenerating && "cursor-wait"
-        )}
-      >
-        <div className="w-10 h-10 rounded-full bg-accent/20 flex items-center justify-center">
-          {isGenerating ? (
-            <Loader2 className="h-5 w-5 text-accent animate-spin" />
-          ) : (
-            <Sparkles className="h-5 w-5 text-accent" />
+      <div className="space-y-1">
+        <div
+          onClick={!isGenerating ? handleGenerateAudio : undefined}
+          className={cn(
+            "flex items-center gap-3 p-3 rounded-lg border border-accent/30 bg-accent/5 cursor-pointer hover:bg-accent/10 transition-colors",
+            isGenerating && "cursor-wait"
           )}
+        >
+          <div className="w-10 h-10 rounded-full bg-accent/20 flex items-center justify-center">
+            {isGenerating ? (
+              <Loader2 className="h-5 w-5 text-accent animate-spin" />
+            ) : (
+              <Sparkles className="h-5 w-5 text-accent" />
+            )}
+          </div>
+          <div className="flex-1">
+            <p className="text-sm font-medium">
+              {isGenerating ? "Katty is preparing your coaching..." : "Listen to Katty's QA Coaching"}
+            </p>
+            <p className="text-xs text-muted-foreground">
+              {isGenerating ? 'This may take a few seconds' : 'Get personalized feedback on this call'}
+            </p>
+          </div>
         </div>
-        <div className="flex-1">
-          <p className="text-sm font-medium">
-            {isGenerating ? "Katty is preparing your coaching..." : "Listen to Katty's QA Coaching"}
+        {coachingBlocked && isSuperAdmin && (
+          <p className="text-xs text-amber-600 dark:text-amber-400 flex items-center gap-1">
+            <Lock className="h-3 w-3" />
+            Admin override — costs above threshold today
           </p>
-          <p className="text-xs text-muted-foreground">
-            {isGenerating ? 'This may take a few seconds' : 'Get personalized feedback on this call'}
-          </p>
-        </div>
+        )}
       </div>
     );
   }
+
 
   // Audio exists - show player (matching Jeff's card style)
   return (

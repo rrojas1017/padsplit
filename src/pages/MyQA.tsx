@@ -15,6 +15,7 @@ import {
   Trophy, ArrowUp, ArrowDown, AlertTriangle
 } from 'lucide-react';
 import { useState, useMemo } from 'react';
+import { useDailyCostGate } from '@/hooks/useDailyCostGate';
 import { format, isWithinInterval, startOfDay, endOfDay, startOfWeek, startOfMonth, subDays } from 'date-fns';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Cell } from 'recharts';
 
@@ -22,6 +23,7 @@ export default function MyQA() {
   usePageTracking('view_my_qa');
   const { user } = useAuth();
   const { agents } = useAgents();
+  const { coachingBlocked } = useDailyCostGate();
   const [dateRange, setDateRange] = useState<DateFilterValue>('today');
   const [customDates, setCustomDates] = useState<CustomDateRange | undefined>(undefined);
 

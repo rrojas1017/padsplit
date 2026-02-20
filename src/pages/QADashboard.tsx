@@ -16,6 +16,7 @@ import {
   Users, Trophy, ChevronRight, Loader2, Zap, Headphones, Volume2, CheckCircle
 } from 'lucide-react';
 import { useState, useMemo } from 'react';
+import { useDailyCostGate } from '@/hooks/useDailyCostGate';
 import { format, isWithinInterval, startOfDay, endOfDay, startOfWeek, startOfMonth, subDays } from 'date-fns';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Cell } from 'recharts';
 import { supabase } from '@/integrations/supabase/client';
@@ -29,6 +30,7 @@ export default function QADashboard() {
   usePageTracking('view_qa_dashboard');
   const { user, hasRole } = useAuth();
   const { agents } = useAgents();
+  const { coachingBlocked } = useDailyCostGate();
   const [dateRange, setDateRange] = useState<DateFilterValue>('today');
   const [customDates, setCustomDates] = useState<CustomDateRange | undefined>(undefined);
   const [selectedAgent, setSelectedAgent] = useState<string>('all');

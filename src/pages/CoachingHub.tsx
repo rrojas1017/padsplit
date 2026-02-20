@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { useDailyCostGate } from '@/hooks/useDailyCostGate';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { usePageTracking } from '@/hooks/usePageTracking';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -57,6 +58,7 @@ export default function CoachingHub() {
   const { coachingBookings, isLoading: coachingLoading } = useCoachingData();
   const { agents } = useAgents();
   const { user } = useAuth();
+  const { coachingBlocked } = useDailyCostGate();
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
   const [dateRange, setDateRange] = useState<DateRangeFilterType>('today');
   const [customDates, setCustomDates] = useState<CalcCustomDateRange | undefined>(undefined);
@@ -729,6 +731,14 @@ export default function CoachingHub() {
                           {/* Audio Player */}
                           {coachingBooking && (
                             <CoachingAudioPlayer
+                              bookingId={booking.id}
+                              audioUrl={coachingBooking.coachingAudioUrl}
+                              variant="button"
+                              listenedAt={coachingBooking.coachingAudioListenedAt}
+                              agentUserId={coachingBooking.agentUserId}
+                              quizPassedAt={coachingBooking.coachingQuizPassedAt}
+                              coachingBlocked={coachingBlocked}
+                            />
                               bookingId={booking.id}
                               audioUrl={coachingBooking.coachingAudioUrl}
                               variant="inline"
