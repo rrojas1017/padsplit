@@ -1,43 +1,132 @@
 
-# Fix: Exclude Research Calls from the Daily Cost Gate
+# Add a Call Timer to the Research Script Wizard
 
-## The Problem
+## What the User Wants
 
-The `get_daily_coaching_gate()` database function calculates today's average cost per record to decide whether to block voice coaching generation. Currently it looks at **all** `api_costs` rows linked to any `booking_id`, including research calls.
+A live elapsed-time clock visible while the researcher is on a script call, with a 10-minute target. The agent can see how long they've been on the call at a glance.
 
-Research calls:
-- Are often very long (20+ min survey calls)
-- Generate significant STT costs (e.g. a 25-min call = ~$0.107 in STT alone at Deepgram rates, or ~$0.85 with ElevenLabs)
-- **Never** have voice coaching generated — it is not a feature for research records at all
+## Where It Lives
 
-This means a single long research call today could push the daily average above $0.07 and wrongly block voice coaching for the entire sales team — even though research calls have nothing to do with the coaching pipeline.
+The clock should appear **next to the StepTracker bar** — the thin progress bar already shown at the top of the active wizard. This is the most natural place: the researcher can glance up to see both their position in the script and how long the call has been running.
 
-## The Fix
+The clock needs to be added in two places:
+1. **`LogSurveyCall.tsx`** — the real call logging wizard (primary)
+2. **`ScriptTesterDialog.tsx`** — the test mode dialog (for consistency)
 
-A single migration that updates `get_daily_coaching_gate()` to join `api_costs` against `bookings` and filter out any row where `record_type = 'research'`.
+## Timer Behavior
 
-The SQL change is minimal — add one JOIN and one WHERE clause:
+- **Starts** the moment the script phase begins (when the researcher clicks "Start Script" and transitions from `setup` → `verify`)
+- **Counts up** — shows elapsed time as `M:SS` format (e.g. `3:45`)
+- **Color changes** based on progress toward the 10-minute target:
+  - **Green** `0:00 – 8:59` — on track
+  - **Amber** `9:00 – 10:59` — approaching target
+  - **Red** `11:00+` — over target
+- **Target label** shows `/ 10:00` next to the elapsed time so the agent always knows the goal
+- **Resets** when the form is reset (new call)
+- **Stops** on the wrapup/done phase (call is over) but keeps showing the final time so the researcher knows how long it took
 
-```sql
-FROM api_costs c
-JOIN bookings b ON b.id = c.booking_id   -- NEW
-WHERE c.is_internal = false
-  AND c.service_type NOT LIKE 'tts_%'
-  AND c.booking_id IS NOT NULL
-  AND c.created_at >= v_today_start
-  AND b.record_type != 'research'         -- NEW: exclude research records
+## Visual Design
+
+The timer sits to the right of the step tracker, before the "End Call" button. It's a small compact chip:
+
+```
+[ Verify ] ——— [ Consent ] ——— [ Q 3/8 ] ——— [ Closing ]    ⏱ 3:45 / 10:00    [End Call]
 ```
 
-No frontend changes are needed — the hook (`useDailyCostGate`) and all the player components already consume the RPC correctly. The fix is entirely in the DB function.
+The timer chip is small (`text-xs`) with a clock icon and colour-coded text, consistent with the rest of the tracker bar's design language.
 
-## Why Only a Migration?
+## Implementation Details
 
-The `get_daily_coaching_gate()` function uses `SECURITY DEFINER`, meaning it runs with elevated privileges internally. The `bookings` table is readable at this level, so the join is safe. No RLS changes are needed.
+### Timer Logic in `LogSurveyCall.tsx`
+
+- Add a `callStartTime` state (`Date | null`) — set to `new Date()` when `handleStartScript()` is called
+- Add a `elapsedSeconds` state updated every second via `setInterval`, but only when the phase is active (not `setup` or `wrapup`)
+- Reset `callStartTime` to `null` in `resetForm()`
+
+```typescript
+const [callStartTime, setCallStartTime] = useState<Date | null>(null);
+const [elapsedSeconds, setElapsedSeconds] = useState(0);
+
+// In handleStartScript():
+setCallStartTime(new Date());
+setElapsedSeconds(0);
+
+// In resetForm():
+setCallStartTime(null);
+setElapsedSeconds(0);
+```
+
+The interval runs while `callStartTime` is set and phase is not `wrapup`:
+```typescript
+useEffect(() => {
+  if (!callStartTime || phase === 'wrapup' || phase === 'setup') return;
+  const interval = setInterval(() => {
+    setElapsedSeconds(Math.floor((Date.now() - callStartTime.getTime()) / 1000));
+  }, 1000);
+  return () => clearInterval(interval);
+}, [callStartTime, phase]);
+```
+
+### Timer Display Component
+
+A small inline helper that formats seconds and applies colour:
+
+```typescript
+function CallTimer({ elapsedSeconds }: { elapsedSeconds: number }) {
+  const mins = Math.floor(elapsedSeconds / 60);
+  const secs = elapsedSeconds % 60;
+  const display = `${mins}:${String(secs).padStart(2, '0')}`;
+  const TARGET = 600; // 10 min in seconds
+  
+  const color =
+    elapsedSeconds >= 660   ? 'text-red-600'    // 11+ min
+    : elapsedSeconds >= 540 ? 'text-amber-600'  // 9–11 min
+    : 'text-green-600';                         // < 9 min
+  
+  return (
+    <div className={`flex items-center gap-1 text-xs font-mono font-semibold ${color} shrink-0`}>
+      <Clock className="w-3 h-3" />
+      <span>{display}</span>
+      <span className="text-muted-foreground font-normal">/ 10:00</span>
+    </div>
+  );
+}
+```
+
+### Passing the Timer into StepTracker
+
+Rather than restructuring the `StepTracker` component (which is already complex with cluster mode), the timer is rendered **alongside** the `StepTracker` in the parent component, wrapped in a flex container. This keeps `StepTracker` clean.
+
+In `LogSurveyCall.tsx`, the StepTracker block changes from:
+```tsx
+<div className="max-w-2xl mx-auto">
+  <StepTracker ... />
+</div>
+```
+
+To:
+```tsx
+<div className="max-w-2xl mx-auto">
+  <div className="flex items-center gap-3">
+    <div className="flex-1">
+      <StepTracker ... />
+    </div>
+    {callStartTime && (
+      <CallTimer elapsedSeconds={elapsedSeconds} />
+    )}
+  </div>
+</div>
+```
+
+### ScriptTesterDialog
+
+Same pattern — `callStartTime` is set when the phase moves past `start`, and reset when `restart()` is called. Since the tester dialog already has its own StepTracker block, the same wrapper approach applies.
 
 ## Files to Change
 
 | File | Change |
 |---|---|
-| New migration | `CREATE OR REPLACE FUNCTION public.get_daily_coaching_gate()` — add `JOIN bookings b ON b.id = c.booking_id` and `AND b.record_type != 'research'` to the WHERE clause |
+| `src/pages/research/LogSurveyCall.tsx` | Add `callStartTime` + `elapsedSeconds` state, set on `handleStartScript`, reset in `resetForm`, add interval effect, add `CallTimer` component, wrap StepTracker in flex row with timer |
+| `src/components/research/ScriptTesterDialog.tsx` | Same — add timer state, set on phase transition from `start`, reset in `restart()`, wrap StepTracker with `CallTimer` |
 
-That's it. One migration, no frontend changes required.
+No changes needed to `StepTracker.tsx` — the timer sits beside it, not inside it.
