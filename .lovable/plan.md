@@ -1,55 +1,71 @@
 
-# Auto-Email on "Moved In" Status Change
+## Updated Plan: Auto-Email on "Moved In" — Trimmed Email Fields
 
-## What This Does
+### What Changes
 
-Every time a booking's status is changed from "Pending Move-In" to "Moved In" — whether via the Edit Booking form or the quick "Mark as Moved In" button in Reports — the system will automatically send an email to a configured destination address containing the full record details: member name, contact email, phone, agent, market, booking date, move-in date, notes, HubSpot link, Kixie link, and Admin Profile link.
+The email format is being updated based on your feedback. The last 5 fields are removed. The email will stop at **Communication Method**.
+
+**Fields included in the email (7 total):**
+
+| # | Field | Source Column |
+|---|---|---|
+| 1 | Member Name | `member_name` |
+| 2 | Contact Email | `contact_email` |
+| 3 | Contact Phone | `contact_phone` |
+| 4 | Agent | joined from `agents` table |
+| 5 | Market | `market_city`, `market_state` |
+| 6 | Booking Date | `booking_date` |
+| 7 | Communication Method | `communication_method` |
+
+**Fields removed (compared to original plan):**
+- Notes
+- HubSpot Link
+- Kixie Recording Link
+- Admin Profile Link
+- Status Changed timestamp
 
 ---
 
-## How It Works (Architecture)
+### Updated Email Preview
 
-The trigger point is a **database-level trigger** (the most reliable approach — it fires regardless of which part of the UI made the change):
+```
+Subject: [Moved In] Ramon Rojas — Atlanta, GA
 
-```text
-User changes status → bookings table UPDATE → DB Trigger fires → Edge Function called → SendGrid email sent
+Member Name:          Ramon Rojas
+Contact Email:        ramon.rojas@gmail.com
+Contact Phone:        678-463-1178
+Agent:                Maria Garcia
+Market:               Atlanta, GA
+Booking Date:         Feb 15, 2026
+Communication:        Phone
 ```
 
-This means it works automatically whether the status is changed from:
-- The Edit Booking page
-- The "Mark as Moved In" dropdown in Reports
-- Any future code path that updates the bookings table
+Clean, concise, and focused on the contact and context details only.
 
 ---
 
-## Technical Plan
+### Implementation (unchanged architecture, updated content only)
 
-### 1. New Edge Function: `notify-moved-in`
+**1. Edge Function — `supabase/functions/notify-moved-in/index.ts` (new file)**
 
-A new backend function that:
-- Receives a `bookingId` from the database trigger
-- Fetches the full booking record from the database (member name, email, phone, agent name, market, dates, notes, all links)
-- Builds a formatted HTML email with all record details
-- Sends it via SendGrid to the configured destination email address
-- Logs the outcome
+- Called by the database trigger (no JWT required — `verify_jwt = false`)
+- Uses the service role key to fetch the full booking record + agent name via a join
+- Builds the 7-field HTML email
+- Sends via SendGrid (`SENDGRID_API_KEY` already configured as a secret)
+- Destination address read from `MOVED_IN_NOTIFICATION_EMAIL` secret
 
-**Email contents will include:**
-- Member Name
-- Contact Email & Phone
-- Agent Name
-- Market (City, State)
-- Booking Date & Move-In Date
-- Booking Type & Communication Method
-- Notes
-- HubSpot Link, Kixie Recording Link, Admin Profile Link
-- Timestamp of when the status changed
+**2. `supabase/config.toml` — add entry**
 
-### 2. New Database Trigger: `on_booking_moved_in`
+```toml
+[functions.notify-moved-in]
+verify_jwt = false
+```
 
-A PostgreSQL trigger that fires `AFTER UPDATE` on the `bookings` table, specifically when `status` changes TO `'Moved In'`. It uses `net.http_post` to call the new edge function (same pattern as the existing `trigger_auto_transcription_on_update` trigger already in the codebase).
+**3. Database Migration — new trigger**
+
+Follows the exact same pattern as the existing `trigger_auto_transcription_on_update` function already in the codebase:
 
 ```sql
--- Fires only when: old status != 'Moved In' AND new status = 'Moved In'
 CREATE OR REPLACE FUNCTION public.trigger_notify_moved_in()
 RETURNS trigger AS $$
 BEGIN
@@ -63,56 +79,25 @@ BEGIN
   RETURN NEW;
 END;
 $$ LANGUAGE plpgsql SET search_path TO 'public';
+
+CREATE TRIGGER on_booking_moved_in
+  AFTER UPDATE ON public.bookings
+  FOR EACH ROW
+  EXECUTE FUNCTION public.trigger_notify_moved_in();
 ```
 
-### 3. Configuration: Destination Email Address
+**4. Secret needed before deployment**
 
-The destination email will be stored as a **backend secret** (`MOVED_IN_NOTIFICATION_EMAIL`) so it can be changed without touching code. You will be prompted to enter the email address during implementation.
-
-The `supabase/config.toml` will have `verify_jwt = false` added for the new function (it's called by the DB trigger, not a browser user).
+You will need to provide the destination email address — the address that receives every "Moved In" notification. This will be stored securely as `MOVED_IN_NOTIFICATION_EMAIL`. You will be prompted to enter it when implementation begins.
 
 ---
 
-## Files Changed
+### Files Changed
 
 | File | Change |
 |---|---|
-| `supabase/functions/notify-moved-in/index.ts` | New edge function |
-| `supabase/config.toml` | Add `[functions.notify-moved-in]` with `verify_jwt = false` |
-| Database migration | Add trigger function + trigger on `bookings` table |
+| `supabase/functions/notify-moved-in/index.ts` | New edge function (7-field email) |
+| `supabase/config.toml` | Add `[functions.notify-moved-in]` entry |
+| Database migration | Add trigger function + trigger on `bookings` |
 
-No frontend files need to change — the trigger is invisible to the UI.
-
----
-
-## Email Format Preview
-
-The email sent will look like this:
-
-```
-Subject: [Moved In] Ramon Rojas — ATL, GA
-
-Member Name:       Ramon Rojas
-Contact Email:     ramon.rojas@gmail.com
-Contact Phone:     678-463-1178
-Agent:             Maria Garcia
-Market:            Atlanta, GA
-Booking Date:      Feb 15, 2026
-Move-In Date:      Feb 20, 2026
-Booking Type:      Inbound
-Communication:     Phone
-Notes:             Member confirmed. First payment ready.
-HubSpot:           https://app.hubspot.com/...
-Kixie Recording:   https://kixie.com/...
-Admin Profile:     https://admin.padsplit.com/...
-Status Changed:    Feb 20, 2026 at 3:42 PM
-```
-
----
-
-## No Changes Needed To
-
-- `BookingsContext.tsx` — trigger fires at DB level, not app level
-- `EditBooking.tsx` — no changes
-- `Reports.tsx` — no changes
-- Any existing RLS policies — edge function uses service role key (same as other notification functions)
+No frontend files change. The trigger fires at the database level from any code path that updates the status to "Moved In".
