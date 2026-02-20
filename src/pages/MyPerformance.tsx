@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useDailyCostGate } from '@/hooks/useDailyCostGate';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { usePageTracking } from '@/hooks/usePageTracking';
 import { KPICard } from '@/components/dashboard/KPICard';
@@ -137,6 +138,7 @@ export default function MyPerformance() {
   const { goal: myGoal, isLoading: goalLoading } = useMyGoal();
   
   const isLoading = bookingsLoading || agentsLoading || coachingLoading || goalLoading;
+  const { coachingBlocked } = useDailyCostGate();
   
   const today = new Date();
   const { start: periodStart, end: periodEnd } = getDateRangeFromFilterLocal(dateFilter, customDates);
@@ -551,6 +553,7 @@ export default function MyPerformance() {
                           variant="button"
                           listenedAt={coachingData.coachingAudioListenedAt}
                           agentUserId={myAgent?.userId}
+                          coachingBlocked={coachingBlocked}
                         />
                       ) : (
                         <span className="text-xs text-muted-foreground italic">No coaching yet</span>
@@ -619,6 +622,14 @@ export default function MyPerformance() {
                 </div>
               </div>
               <CoachingAudioPlayer
+                bookingId={latestWithFeedback.id}
+                audioUrl={latestWithFeedback.coachingAudioUrl}
+                variant="card"
+                listenedAt={latestWithFeedback.coachingAudioListenedAt}
+                agentUserId={myAgent?.userId}
+                quizPassedAt={latestWithFeedback.coachingQuizPassedAt}
+                coachingBlocked={coachingBlocked}
+              />
                 bookingId={latestWithFeedback.id}
                 audioUrl={latestWithFeedback.coachingAudioUrl}
                 variant="card"

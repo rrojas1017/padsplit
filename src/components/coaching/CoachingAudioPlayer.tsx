@@ -3,10 +3,11 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
-import { Headphones, Play, Pause, Loader2, Volume2, CheckCircle, Target } from 'lucide-react';
+import { Headphones, Play, Pause, Loader2, Volume2, CheckCircle, Target, Lock } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/contexts/AuthContext';
 import { CoachingQuizModal } from './CoachingQuizModal';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 
 interface CoachingAudioPlayerProps {
   bookingId: string;
@@ -19,6 +20,7 @@ interface CoachingAudioPlayerProps {
   agentUserId?: string; // The user_id of the agent this coaching belongs to
   quizPassedAt?: string | null; // When the quiz was passed
   onQuizPassed?: () => void;
+  coachingBlocked?: boolean; // When true, new audio generation is disabled
 }
 
 export function CoachingAudioPlayer({
@@ -32,8 +34,10 @@ export function CoachingAudioPlayer({
   agentUserId,
   quizPassedAt,
   onQuizPassed,
+  coachingBlocked = false,
 }: CoachingAudioPlayerProps) {
-  const { user } = useAuth();
+  const { user, hasRole } = useAuth();
+  const isSuperAdmin = hasRole(['super_admin']);
   const [isGenerating, setIsGenerating] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentAudioUrl, setCurrentAudioUrl] = useState<string | null>(audioUrl || null);
@@ -181,9 +185,29 @@ export function CoachingAudioPlayer({
     return null;
   };
 
-  // If no audio exists, show generate button
+  // If no audio exists, show generate button (or blocked state)
   if (!currentAudioUrl) {
+    const BLOCKED_TOOLTIP = "Voice coaching paused — today's avg processing cost exceeds the $0.07 threshold. Audio generation will resume when costs normalize.";
+
     if (variant === 'button') {
+      // Blocked state — no audio, generation disabled
+      if (coachingBlocked && !isSuperAdmin) {
+        return (
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button size="sm" variant="outline" disabled className={cn("gap-2 opacity-60 cursor-not-allowed", className)}>
+                  <Lock className="h-4 w-4" />
+                  Paused
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="top" className="max-w-xs text-xs">
+                {BLOCKED_TOOLTIP}
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+        );
+      }
       return (
         <Button
           onClick={handleGenerateAudio}
@@ -207,33 +231,65 @@ export function CoachingAudioPlayer({
       );
     }
 
-    return (
-      <div 
-        onClick={!isGenerating ? handleGenerateAudio : undefined}
-        className={cn(
-          "flex items-center gap-3 p-3 rounded-lg border border-primary/30 bg-primary/5 cursor-pointer hover:bg-primary/10 transition-colors",
-          isGenerating && "cursor-wait",
+    // Card/inline variant blocked state
+    if (coachingBlocked && !isSuperAdmin) {
+      return (
+        <div className={cn(
+          "flex items-center gap-3 p-3 rounded-lg border border-muted bg-muted/30",
           className
-        )}
-      >
-        <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center">
-          {isGenerating ? (
-            <Loader2 className="h-5 w-5 text-primary animate-spin" />
-          ) : (
-            <Headphones className="h-5 w-5 text-primary" />
+        )}>
+          <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center flex-shrink-0">
+            <Lock className="h-5 w-5 text-muted-foreground" />
+          </div>
+          <div className="flex-1">
+            <p className="text-sm font-medium text-muted-foreground">Voice coaching paused</p>
+            <p className="text-xs text-muted-foreground/70">
+              Today's avg cost exceeds $0.07 threshold. Generation resumes when costs normalize.
+            </p>
+          </div>
+        </div>
+      );
+    }
+
+    // Super admin override note when blocked
+    const showOverrideNote = coachingBlocked && isSuperAdmin;
+
+    return (
+      <div className="space-y-1">
+        <div
+          onClick={!isGenerating ? handleGenerateAudio : undefined}
+          className={cn(
+            "flex items-center gap-3 p-3 rounded-lg border border-primary/30 bg-primary/5 cursor-pointer hover:bg-primary/10 transition-colors",
+            isGenerating && "cursor-wait",
+            className
           )}
+        >
+          <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center">
+            {isGenerating ? (
+              <Loader2 className="h-5 w-5 text-primary animate-spin" />
+            ) : (
+              <Headphones className="h-5 w-5 text-primary" />
+            )}
+          </div>
+          <div className="flex-1">
+            <p className="text-sm font-medium">
+              {isGenerating ? 'Generating your coaching...' : 'Listen to your coaching'}
+            </p>
+            <p className="text-xs text-muted-foreground">
+              {isGenerating ? 'This may take a few seconds' : 'Get personalized audio feedback'}
+            </p>
+          </div>
         </div>
-        <div className="flex-1">
-          <p className="text-sm font-medium">
-            {isGenerating ? 'Generating your coaching...' : 'Listen to your coaching'}
+        {showOverrideNote && (
+          <p className="text-xs text-amber-600 dark:text-amber-400 flex items-center gap-1">
+            <Lock className="h-3 w-3" />
+            Admin override — costs above threshold today
           </p>
-          <p className="text-xs text-muted-foreground">
-            {isGenerating ? 'This may take a few seconds' : 'Get personalized audio feedback'}
-          </p>
-        </div>
+        )}
       </div>
     );
   }
+
 
   // Audio exists - show player
   return (
