@@ -53,7 +53,7 @@ export function CostAlertBanner() {
                 {styles.label}
               </span>
               <span className="font-semibold text-sm">
-                Rolling Avg Cost Per Record (last {recordCount} records, excl. TTS)
+                Today's Avg Cost Per Record ({recordCount} records today, excl. TTS)
               </span>
             </div>
             <div className="mt-1 flex flex-wrap gap-4 text-sm">
@@ -133,12 +133,12 @@ export function CostAlertBanner() {
       {/* Alert message */}
       {alertLevel === 'critical' && (
         <p className="mt-2 text-xs font-medium opacity-80">
-          ⚠️ Avg cost exceeds ${threshold.toFixed(2)}/record — PadSplit margin is below {((threshold / padSplitCharge) * 100).toFixed(0)}%. Investigate high-cost records immediately.
+          ⚠️ Today's avg cost exceeds ${threshold.toFixed(2)}/record — PadSplit margin is below {((threshold / padSplitCharge) * 100).toFixed(0)}%. Investigate today's {recordCount} high-cost records immediately.
         </p>
       )}
       {alertLevel === 'warning' && (
         <p className="mt-2 text-xs font-medium opacity-80">
-          Avg cost is approaching the ${threshold.toFixed(2)} limit. Monitor closely — above ${warningThreshold.toFixed(2)} for the last {recordCount} records.
+          Today's avg cost is approaching the ${threshold.toFixed(2)} limit. Monitor closely — above ${warningThreshold.toFixed(2)} across today's {recordCount} records.
         </p>
       )}
     </div>
