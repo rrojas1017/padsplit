@@ -1,69 +1,55 @@
 
-# Scope Cost Alert to Today's Records Only
+# Fix: PostgREST Schema Cache is Stale
 
-## What's Changing
+## Root Cause
 
-The `CostAlertBanner` and its hook `useCostAlertMonitor` currently look back at the last 500 rows across **all time**, then pick the 20 most recent unique bookings. This means the alert can be driven by data from yesterday or last week — it doesn't reflect today's actual pipeline cost health.
+The `check-auto-transcription` edge function is **failing on every new booking** with:
 
-The fix scopes the query to records created **since midnight UTC today**, matching exactly what the `get_daily_coaching_gate` DB function already does for the gate logic.
-
-## Changes to `src/hooks/useCostAlertMonitor.ts`
-
-### 1 — Remove the rolling window constant (no longer needed)
-
-The `ROLLING_WINDOW = 20` constant and the `.slice(0, ROLLING_WINDOW)` call are removed. Today's records naturally bound the dataset — there's no need to artificially cap at 20.
-
-### 2 — Add a `todayStart` filter to the Supabase query
-
-```typescript
-// Compute start of today in UTC
-const todayStart = new Date();
-todayStart.setUTCHours(0, 0, 0, 0);
-
-const { data: costs, error } = await supabase
-  .from('api_costs')
-  .select('booking_id, estimated_cost_usd, created_at')
-  .eq('is_internal', false)
-  .not('service_type', 'like', 'tts_%')
-  .not('booking_id', 'is', null)
-  .gte('created_at', todayStart.toISOString())   // ← NEW: today only
-  .order('created_at', { ascending: false })
-  .limit(500);
+```
+column bookings.transcription_status does not exist
 ```
 
-### 3 — Remove the `.slice(0, ROLLING_WINDOW)` cap
+Debugging findings:
+- The `transcription_status` column **does exist** in the database (confirmed via direct SQL)
+- The DB trigger fires correctly (logs show it was called for all 5 stuck bookings)
+- The edge function crashes at the **atomic claim step** (line 76-79) when it tries to `UPDATE bookings SET transcription_status = 'queued' WHERE transcription_status IS NULL`
+- PostgREST (the API layer the Supabase JS client uses) has a **stale schema cache** and doesn't recognize the column yet
 
-```typescript
-// Before
-const allRecords = Array.from(bookingMap.entries())
-  .slice(0, ROLLING_WINDOW)   // ← remove this
-  .map(...)
+This is why 2 bookings processed earlier today worked fine — they likely ran after a prior cache reload — and the last 5 added after that cache drifted are all stuck.
 
-// After — all of today's unique bookings
-const allRecords = Array.from(bookingMap.entries()).map(...)
+## What Needs to Happen
+
+### 1. Reload the PostgREST Schema Cache (immediate fix)
+
+The fastest fix is to signal PostgREST to reload its schema cache by calling:
+
+```sql
+NOTIFY pgrst, 'reload schema';
 ```
 
-### 4 — Update the banner label in `CostAlertBanner.tsx`
+This is a built-in PostgREST mechanism — sending this NOTIFY instantly makes PostgREST pick up any schema changes (new columns, tables, etc.) without any restart needed.
 
-The subtitle currently reads:
-> "Rolling Avg Cost Per Record (last {recordCount} records, excl. TTS)"
+### 2. Re-trigger the 5 Stuck Bookings
 
-It will be updated to:
-> "Today's Avg Cost Per Record ({recordCount} records today, excl. TTS)"
+After the cache is reloaded, the 5 stuck bookings still won't process on their own (the trigger already fired and won't re-fire). We need to manually invoke `check-auto-transcription` for each stuck booking ID:
 
-And the warning/critical messages will say "today's {recordCount} records" instead of "last {recordCount} records".
+- `bc4354ef-5ca0-4da5-9711-ef3dd7a09757`
+- `015908f2-a4dc-4a9f-a1ae-0c7664158681`
+- `6147573b-7510-41d4-a9d5-26731f72655c`
+- `d8203b74-e101-439f-9604-4e5f5cdad812`
+- `b4fbf950-2880-49b3-881a-2c3fd38aa92d`
+
+This can be done directly via a SQL call using `pg_net` (the same mechanism the DB trigger uses), so no frontend change is needed.
+
+### 3. Future-Proof: Add NOTIFY to Migrations
+
+To prevent this from happening again after future schema changes, we'll add `NOTIFY pgrst, 'reload schema';` at the end of the SQL migration file so the cache refreshes automatically when a migration runs.
 
 ## Files to Change
 
-| File | Change |
+| Action | What |
 |---|---|
-| `src/hooks/useCostAlertMonitor.ts` | Add `gte('created_at', todayStart)` filter; remove `ROLLING_WINDOW` slice; update label string |
-| `src/components/billing/CostAlertBanner.tsx` | Update subtitle and alert message copy to say "today" |
+| SQL migration | Run `NOTIFY pgrst, 'reload schema'` to reload the cache |
+| SQL migration | Re-trigger stuck bookings using `pg_net.http_post` for each of the 5 booking IDs |
 
-## No DB Migration Needed
-
-This is a pure query filter change on the client side. The `api_costs` table already has a `created_at` column with a timestamp — no schema changes required.
-
-## Behaviour When There Are No Records Today
-
-If today has zero records (e.g. before any calls are processed), `recordCount` will be 0, `rollingAvg` will be 0, and the banner will correctly show **HEALTHY** — same as the daily gate logic.
+No edge function code changes are needed — the function itself is correct, it's purely a schema cache staleness issue.
