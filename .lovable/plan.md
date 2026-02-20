@@ -1,119 +1,118 @@
 
-# Fix: Step Tracker Progress Indicator Not Moving
+# Auto-Email on "Moved In" Status Change
 
-## Root Cause — Two Bugs in `StepTracker.tsx`
+## What This Does
 
-### Bug 1: Missing connector before the cluster node
-In `renderNodes()`, when `useCluster` is true and we hit the first question step (`i === firstQIdx`), the function renders the cluster node and returns early. However, the connector that should appear **before** the cluster (between the last non-question step and the cluster) is never added — because the connector insertion logic lives in the "Normal node" branch that the cluster path bypasses.
+Every time a booking's status is changed from "Pending Move-In" to "Moved In" — whether via the Edit Booking form or the quick "Mark as Moved In" button in Reports — the system will automatically send an email to a configured destination address containing the full record details: member name, contact email, phone, agent, market, booking date, move-in date, notes, HubSpot link, Kixie link, and Admin Profile link.
 
-### Bug 2: Connector after the cluster reads the wrong step
-When `useCluster` is true and the loop reaches the "Closing" step (a non-question step after the cluster), it tries to look up the connector state using `steps[i - 1]` — but `i` is the **original index** in the full `steps` array (e.g., index 8 for Closing if there are 6 questions). `steps[i-1]` is the **last `q-` step object**, not the cluster node. Since the individual question steps are all set to a valid state in `buildSteps`, this may accidentally show the wrong color, but more critically the label `Q X/Y` on the cluster node never updates visually because the `activeQuestionIndex` prop is being ignored by the cluster's state derivation — the cluster state is set to `'active'` as soon as any question is not complete, but the label depends on `activeQuestionIndex ?? 0`, which **is** being passed. Let me re-examine more carefully.
+---
 
-Actually, re-reading the code more carefully:
+## How It Works (Architecture)
 
-```ts
-const clusterLabel =
-  clusterState === 'active'
-    ? `Q ${(activeQuestionIndex ?? 0) + 1}/${questionSteps.length}`
-    : ...
+The trigger point is a **database-level trigger** (the most reliable approach — it fires regardless of which part of the UI made the change):
+
+```text
+User changes status → bookings table UPDATE → DB Trigger fires → Edge Function called → SendGrid email sent
 ```
 
-The label **does** use `activeQuestionIndex`. So the label text should update. The visual state (filled dot vs. ring) for the cluster stays `'active'` throughout all questions — that part is correct.
+This means it works automatically whether the status is changed from:
+- The Edit Booking page
+- The "Mark as Moved In" dropdown in Reports
+- Any future code path that updates the bookings table
 
-The real visible symptom is: **the connectors between nodes are not lighting up** as the user progresses through non-question phases. Here is the precise failure:
+---
 
-In non-cluster mode (≤5 questions), each non-question step's connector uses:
-```ts
-const prevStep = i > 0 ? steps[i - 1] : null;
-const connectorCompleted = prevStep?.state === 'complete';
+## Technical Plan
+
+### 1. New Edge Function: `notify-moved-in`
+
+A new backend function that:
+- Receives a `bookingId` from the database trigger
+- Fetches the full booking record from the database (member name, email, phone, agent name, market, dates, notes, all links)
+- Builds a formatted HTML email with all record details
+- Sends it via SendGrid to the configured destination email address
+- Logs the outcome
+
+**Email contents will include:**
+- Member Name
+- Contact Email & Phone
+- Agent Name
+- Market (City, State)
+- Booking Date & Move-In Date
+- Booking Type & Communication Method
+- Notes
+- HubSpot Link, Kixie Recording Link, Admin Profile Link
+- Timestamp of when the status changed
+
+### 2. New Database Trigger: `on_booking_moved_in`
+
+A PostgreSQL trigger that fires `AFTER UPDATE` on the `bookings` table, specifically when `status` changes TO `'Moved In'`. It uses `net.http_post` to call the new edge function (same pattern as the existing `trigger_auto_transcription_on_update` trigger already in the codebase).
+
+```sql
+-- Fires only when: old status != 'Moved In' AND new status = 'Moved In'
+CREATE OR REPLACE FUNCTION public.trigger_notify_moved_in()
+RETURNS trigger AS $$
+BEGIN
+  IF NEW.status = 'Moved In' AND OLD.status IS DISTINCT FROM 'Moved In' THEN
+    PERFORM net.http_post(
+      'https://qwddqoyewtozzdvfmavn.supabase.co/functions/v1/notify-moved-in',
+      jsonb_build_object('bookingId', NEW.id),
+      jsonb_build_object('Content-Type', 'application/json')
+    );
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SET search_path TO 'public';
 ```
 
-This is correct in non-cluster mode. But in **cluster mode**, when rendering "Closing" at array index `i` (say, `i = 8` for 6 questions), `steps[i-1]` = `steps[7]` = the last `q-6` step object. Its state is determined by `buildSteps` which correctly marks it `complete` when past it — so the connector *should* light up. Let me check if the connector before the cluster is missing.
+### 3. Configuration: Destination Email Address
 
-In cluster mode:
-- Steps array: `[verify(0), consent(1), q-0(2), q-1(3), q-2(4), q-3(5), q-4(6), q-5(7), closing(8)]`
-- Loop iteration at `i=2` (first question): enters cluster branch → pushes cluster node, **returns without pushing a connector first**
-- Loop iteration at `i=3..7` (remaining questions): returns early (not first q), no nodes added
-- Loop iteration at `i=8` (closing): enters normal branch. `nodes.length > 0` ✓, so pushes connector. `prevStep = steps[7]` = last q step. Its state reflects `buildSteps` output.
+The destination email will be stored as a **backend secret** (`MOVED_IN_NOTIFICATION_EMAIL`) so it can be changed without touching code. You will be prompted to enter the email address during implementation.
 
-**The missing connector is between `consent` and the cluster node.** When `i=2` (first question), the code pushes the cluster node but skips the `if (nodes.length > 0) { push connector }` step because that's in the "Normal node" branch. So there is a visible gap — no connecting line between Consent and Q cluster.
+The `supabase/config.toml` will have `verify_jwt = false` added for the new function (it's called by the DB trigger, not a browser user).
 
-### The Fix
+---
 
-Rewrite `renderNodes()` in `StepTracker.tsx` to track a `previousRenderedStep` variable that always references the last **rendered** node's step data (whether normal or cluster), so connectors are always correctly placed and colored.
+## Files Changed
 
-## Implementation Plan
+| File | Change |
+|---|---|
+| `supabase/functions/notify-moved-in/index.ts` | New edge function |
+| `supabase/config.toml` | Add `[functions.notify-moved-in]` with `verify_jwt = false` |
+| Database migration | Add trigger function + trigger on `bookings` table |
 
-**File:** `src/components/research/StepTracker.tsx` — only this one file needs changing.
+No frontend files need to change — the trigger is invisible to the UI.
 
-### New `renderNodes()` logic:
+---
 
-```typescript
-const renderNodes = () => {
-  const nodes: React.ReactNode[] = [];
-  let lastRenderedStepState: StepState | null = null;
-  let clusterRendered = false;
+## Email Format Preview
 
-  steps.forEach((step, i) => {
-    const isQuestion = step.id.startsWith('q-');
+The email sent will look like this:
 
-    if (useCluster && isQuestion) {
-      if (clusterRendered) return; // skip remaining q steps
-      clusterRendered = true;
+```
+Subject: [Moved In] Ramon Rojas — ATL, GA
 
-      // Determine cluster state
-      const clusterState: StepState = questionSteps.every(s => s.state === 'complete')
-        ? 'complete'
-        : questionSteps.every(s => s.state === 'upcoming')
-        ? 'upcoming'
-        : 'active';
-
-      const clusterLabel =
-        clusterState === 'complete'
-          ? `Q ${questionSteps.length}/${questionSteps.length}`
-          : clusterState === 'active'
-          ? `Q ${(activeQuestionIndex ?? 0) + 1}/${questionSteps.length}`
-          : `Q 1–${questionSteps.length}`;
-
-      // Add connector before cluster using last rendered state
-      if (nodes.length > 0) {
-        nodes.push(<Connector key="conn-cluster" completed={lastRenderedStepState === 'complete'} />);
-      }
-
-      nodes.push(
-        <StepNode key="q-cluster" step={{ id: 'q-cluster', label: clusterLabel, state: clusterState }} />
-      );
-      lastRenderedStepState = clusterState;
-      return;
-    }
-
-    // Normal node
-    if (nodes.length > 0) {
-      nodes.push(<Connector key={`conn-${i}`} completed={lastRenderedStepState === 'complete'} />);
-    }
-    nodes.push(<StepNode key={step.id} step={step} />);
-    lastRenderedStepState = step.state;
-  });
-
-  return nodes;
-};
+Member Name:       Ramon Rojas
+Contact Email:     ramon.rojas@gmail.com
+Contact Phone:     678-463-1178
+Agent:             Maria Garcia
+Market:            Atlanta, GA
+Booking Date:      Feb 15, 2026
+Move-In Date:      Feb 20, 2026
+Booking Type:      Inbound
+Communication:     Phone
+Notes:             Member confirmed. First payment ready.
+HubSpot:           https://app.hubspot.com/...
+Kixie Recording:   https://kixie.com/...
+Admin Profile:     https://admin.padsplit.com/...
+Status Changed:    Feb 20, 2026 at 3:42 PM
 ```
 
-Key changes:
-1. `lastRenderedStepState` tracks the state of the **last actually rendered** node (not the raw `steps[i-1]`)
-2. The connector before the cluster node is now correctly inserted using `lastRenderedStepState` (the state of "Consent" or whichever preceding step)
-3. After rendering the cluster, `lastRenderedStepState` is set to `clusterState` so the connector after the cluster (before "Closing") uses the correct value
-4. `clusterRendered` boolean replaces the `i !== firstQIdx` check — simpler and clearer
+---
 
-## What This Fixes
+## No Changes Needed To
 
-| Scenario | Before | After |
-|---|---|---|
-| Moving from Consent → Question phase | Connector before cluster missing (visual gap) | Connector appears and lights up correctly |
-| Moving through questions | Cluster label updates (`Q 1/6`, `Q 2/6`, …) ✓ already worked | Same — still works |
-| Questions all done → Closing | Connector between cluster and Closing may read wrong step | Reads cluster state, lights up correctly |
-| ≤5 questions (no cluster) | Connectors worked correctly | Still works (code path unchanged) |
-
-## No Other Files Need Changes
-
-`buildSteps` in `StepTracker.tsx` is correct — it properly marks steps as `complete`/`active`/`upcoming` based on `phase` and `questionIndex`. The `LogSurveyCall.tsx` passes `phase` and `questionIndex` correctly. Only the rendering logic inside `renderNodes()` needs the fix.
+- `BookingsContext.tsx` — trigger fires at DB level, not app level
+- `EditBooking.tsx` — no changes
+- `Reports.tsx` — no changes
+- Any existing RLS policies — edge function uses service role key (same as other notification functions)
