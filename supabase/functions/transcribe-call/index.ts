@@ -1450,7 +1450,7 @@ async function processTranscription(bookingId: string, kixieUrl: string, skipTts
     // Fetch booking to get call_type_id, agent_id, site_id, and status
     const { data: bookingData, error: bookingError } = await supabase
       .from('bookings')
-      .select('call_type_id, agent_id, status, agents(site_id)')
+      .select('call_type_id, agent_id, status, record_type, agents(site_id)')
       .eq('id', bookingId)
       .maybeSingle();
 
@@ -1459,7 +1459,8 @@ async function processTranscription(bookingId: string, kixieUrl: string, skipTts
     }
 
     const callTypeId = bookingData?.call_type_id || null;
-    agentId = bookingData?.agent_id || null;
+    const recordType = bookingData?.record_type || null;
+    const isResearch = recordType === 'research';
     siteId = (bookingData?.agents as any)?.site_id || null;
     const bookingStatus = bookingData?.status || null;
     const isNonBooking = bookingStatus === 'Non Booking';
@@ -1484,7 +1485,13 @@ async function processTranscription(bookingId: string, kixieUrl: string, skipTts
     console.log(`[Background] Audio validated, estimated size: ${fileSizeMB.toFixed(2)} MB`);
 
     // Step 2: Select STT provider and transcribe using A/B testing
-    const selectedProvider = await selectSTTProvider(supabase);
+    // Research records always use Deepgram — ElevenLabs is never used for survey calls
+    const selectedProvider = isResearch
+      ? 'deepgram'
+      : await selectSTTProvider(supabase);
+    if (isResearch) {
+      console.log('[Background] Research record — forcing Deepgram (ElevenLabs never used for research)');
+    }
     console.log(`[Background] Using STT provider: ${selectedProvider}`);
     
     let sttResult: STTResult;
@@ -1998,10 +2005,14 @@ async function processTranscription(bookingId: string, kixieUrl: string, skipTts
     // It will be generated on-demand when agents click "Play Coaching".
     // This saves ~$0.34 per record in TTS costs.
 
-    // QA scoring always runs (cheap text-only AI analysis)
-    const qaResult = await callDownstreamFunction('generate-qa-scores');
-    if (!qaResult.success) {
-      console.error(`[Background] QA scoring failed permanently for ${bookingId}: ${qaResult.error || qaResult.statusCode}`);
+    // QA scoring only runs for non-research records (rubric is PadSplit sales-specific)
+    if (!isResearch) {
+      const qaResult = await callDownstreamFunction('generate-qa-scores');
+      if (!qaResult.success) {
+        console.error(`[Background] QA scoring failed permanently for ${bookingId}: ${qaResult.error || qaResult.statusCode}`);
+      }
+    } else {
+      console.log('[Background] Research record — skipping QA scoring (not applicable for survey calls)');
     }
 
     console.log(`[Background] All automation triggers dispatched for booking ${bookingId}`);
