@@ -79,19 +79,13 @@ serve(async (req) => {
       .select('id')
       .maybeSingle();
 
-    // Handle schema cache errors (e.g., after migrations, PostgREST may not recognize columns)
+    // Any claim error is a hard stop — we cannot safely proceed without the claim
     if (claimError) {
-      if (claimError.code === '42703') {
-        // Column not found -- stale schema cache. Skip claim and proceed directly.
-        // transcribe-call has its own idempotency checks so this is safe.
-        console.warn(`[check-auto-transcription] Schema cache stale (42703) for booking ${bookingId}. Bypassing claim and proceeding directly.`);
-      } else {
-        console.error(`[check-auto-transcription] Claim error:`, claimError);
-        return new Response(
-          JSON.stringify({ triggered: false, reason: 'Claim error' }),
-          { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
-      }
+      console.error(`[check-auto-transcription] Claim error (code: ${claimError.code}):`, claimError);
+      return new Response(
+        JSON.stringify({ triggered: false, reason: `Claim error: ${claimError.code}` }),
+        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
     } else if (!claimResult) {
       console.log(`[check-auto-transcription] Booking ${bookingId} already claimed by another invocation, skipping`);
       return new Response(

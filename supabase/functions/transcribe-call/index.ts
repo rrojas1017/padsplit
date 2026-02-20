@@ -2165,6 +2165,24 @@ serve(async (req) => {
     
     console.log(`Received transcription request for booking ${bookingId} (skipTts: ${skipTts})`);
 
+    // === IDEMPOTENCY GUARD: abort if already processing or completed ===
+    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    const supabaseCheck = createClient(supabaseUrl, supabaseServiceKey);
+    const { data: statusCheck } = await supabaseCheck
+      .from('bookings')
+      .select('transcription_status')
+      .eq('id', bookingId)
+      .maybeSingle();
+
+    if (statusCheck?.transcription_status === 'processing' || statusCheck?.transcription_status === 'completed') {
+      console.warn(`[transcribe-call] Idempotency guard: booking ${bookingId} already has status '${statusCheck.transcription_status}'. Aborting duplicate.`);
+      return new Response(
+        JSON.stringify({ success: false, reason: `Already ${statusCheck.transcription_status}` }),
+        { status: 409, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
     // Validate required env vars before starting
     const elevenLabsApiKey = Deno.env.get('ELEVENLABS_API_KEY');
     const deepgramApiKey = Deno.env.get('DEEPGRAM_API_KEY');
