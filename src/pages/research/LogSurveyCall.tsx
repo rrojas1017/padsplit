@@ -16,7 +16,7 @@ import { SectionJumpNavigator } from '@/components/research/SectionJumpNavigator
 import { ProbingFollowUps } from '@/components/research/ProbingFollowUps';
 import {
   CheckCircle, Phone, ArrowRight, ArrowLeft, MessageSquare,
-  XCircle, ThumbsUp, ThumbsDown, User, GitBranch, PhoneOff
+  XCircle, ThumbsUp, ThumbsDown, User, GitBranch, PhoneOff, Clock
 } from 'lucide-react';
 import { StepTracker, buildSteps } from '@/components/research/StepTracker';
 import { cn } from '@/lib/utils';
@@ -80,6 +80,23 @@ const earlyEndDispositions = [
 
 type WizardPhase = 'setup' | 'verify' | 'intro' | 'consent' | 'question' | 'rebuttal' | 'closing' | 'wrapup';
 
+function CallTimer({ elapsedSeconds }: { elapsedSeconds: number }) {
+  const mins = Math.floor(elapsedSeconds / 60);
+  const secs = elapsedSeconds % 60;
+  const display = `${mins}:${String(secs).padStart(2, '0')}`;
+  const colorClass =
+    elapsedSeconds >= 660 ? 'text-destructive' :
+    elapsedSeconds >= 540 ? 'text-yellow-600 dark:text-yellow-400' :
+    'text-green-600 dark:text-green-400';
+  return (
+    <div className={`flex items-center gap-1 text-xs font-mono font-semibold shrink-0 ${colorClass}`}>
+      <Clock className="w-3 h-3" />
+      <span>{display}</span>
+      <span className="text-muted-foreground font-normal">/ 10:00</span>
+    </div>
+  );
+}
+
 // Derive unique sections from questions array
 function deriveSections(questions: ScriptQuestion[]) {
   const sections: { name: string; firstQuestionIndex: number }[] = [];
@@ -137,6 +154,10 @@ export default function LogSurveyCall() {
   const [endCallDialogOpen, setEndCallDialogOpen] = useState(false);
   const [selectedEndDisposition, setSelectedEndDisposition] = useState('caller_hung_up');
 
+  // Call timer
+  const [callStartTime, setCallStartTime] = useState<Date | null>(null);
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+
   const [submitted, setSubmitted] = useState(false);
   const [setupErrors, setSetupErrors] = useState<Record<string, string>>({});
 
@@ -176,6 +197,15 @@ export default function LogSurveyCall() {
     }
   }, [searchParams, activeCampaigns]);
 
+  // Call timer interval
+  useEffect(() => {
+    if (!callStartTime || phase === 'wrapup' || phase === 'setup') return;
+    const interval = setInterval(() => {
+      setElapsedSeconds(Math.floor((Date.now() - callStartTime.getTime()) / 1000));
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [callStartTime, phase]);
+
   // Keyboard navigation
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -211,6 +241,8 @@ export default function LogSurveyCall() {
     setNameConfirmed(null);
     setCorrectedFirstName('');
     setCorrectedLastName('');
+    setCallStartTime(new Date());
+    setElapsedSeconds(0);
     setPhase('verify');
   };
 
@@ -387,6 +419,8 @@ export default function LogSurveyCall() {
     setNameConfirmed(null);
     setCorrectedFirstName('');
     setCorrectedLastName('');
+    setCallStartTime(null);
+    setElapsedSeconds(0);
   };
 
   const currentQ = questions[questionIndex];
@@ -419,19 +453,24 @@ export default function LogSurveyCall() {
           {/* Step Tracker */}
           {phase !== 'setup' && phase !== 'wrapup' && (
             <div className="max-w-2xl mx-auto">
-              <StepTracker
-                steps={buildSteps({
-                  hasVerify: true,
-                  hasIntro: !!introScript,
-                  hasClosing: !!closingScript,
-                  questions,
-                  phase,
-                  questionIndex,
-                })}
-                totalQuestions={questions.length}
-                activeQuestionIndex={questionIndex}
-                onEndCall={phase !== 'verify' ? () => setEndCallDialogOpen(true) : undefined}
-              />
+              <div className="flex items-center gap-3">
+                <div className="flex-1">
+                  <StepTracker
+                    steps={buildSteps({
+                      hasVerify: true,
+                      hasIntro: !!introScript,
+                      hasClosing: !!closingScript,
+                      questions,
+                      phase,
+                      questionIndex,
+                    })}
+                    totalQuestions={questions.length}
+                    activeQuestionIndex={questionIndex}
+                    onEndCall={phase !== 'verify' ? () => setEndCallDialogOpen(true) : undefined}
+                  />
+                </div>
+                {callStartTime && <CallTimer elapsedSeconds={elapsedSeconds} />}
+              </div>
             </div>
           )}
 

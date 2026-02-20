@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -7,7 +7,7 @@ import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Input } from '@/components/ui/input';
-import { ArrowRight, ArrowLeft, MessageSquare, XCircle, ThumbsUp, ThumbsDown, RotateCcw, Play, CheckCircle, PhoneOff, Phone } from 'lucide-react';
+import { ArrowRight, ArrowLeft, MessageSquare, XCircle, ThumbsUp, ThumbsDown, RotateCcw, Play, CheckCircle, PhoneOff, Phone, Clock } from 'lucide-react';
 import { StepTracker, buildSteps } from '@/components/research/StepTracker';
 import type { ResearchScript, ScriptQuestion } from '@/hooks/useResearchScripts';
 import {
@@ -25,6 +25,23 @@ function autoCapitalizeName(value: string): string {
     .split(' ')
     .map(word => word.charAt(0).toUpperCase() + word.slice(1))
     .join(' ');
+}
+
+function CallTimer({ elapsedSeconds }: { elapsedSeconds: number }) {
+  const mins = Math.floor(elapsedSeconds / 60);
+  const secs = elapsedSeconds % 60;
+  const display = `${mins}:${String(secs).padStart(2, '0')}`;
+  const colorClass =
+    elapsedSeconds >= 660 ? 'text-destructive' :
+    elapsedSeconds >= 540 ? 'text-yellow-600 dark:text-yellow-400' :
+    'text-green-600 dark:text-green-400';
+  return (
+    <div className={`flex items-center gap-1 text-xs font-mono font-semibold shrink-0 ${colorClass}`}>
+      <Clock className="w-3 h-3" />
+      <span>{display}</span>
+      <span className="text-muted-foreground font-normal">/ 10:00</span>
+    </div>
+  );
 }
 
 function formatPhone(value: string): string {
@@ -65,11 +82,24 @@ export function ScriptTesterDialog({ open, onOpenChange, script }: Props) {
   const [testerPhone, setTesterPhone] = useState('');
   const [nameConfirmed, setNameConfirmed] = useState<boolean | null>(null);
 
+  // Call timer
+  const [callStartTime, setCallStartTime] = useState<Date | null>(null);
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+
   const questions = script.questions;
   const introScript = script.intro_script || '';
   const rebuttalScript = script.rebuttal_script || '';
   const closingScript = script.closing_script || '';
   const renderedIntro = introScript.replace(/\{agent_name\}/gi, 'Test Agent');
+
+  // Timer interval
+  useEffect(() => {
+    if (!callStartTime || phase === 'done' || phase === 'start') return;
+    const interval = setInterval(() => {
+      setElapsedSeconds(Math.floor((Date.now() - callStartTime.getTime()) / 1000));
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [callStartTime, phase]);
 
   const restart = useCallback(() => {
     setPhase('start');
@@ -82,6 +112,8 @@ export function ScriptTesterDialog({ open, onOpenChange, script }: Props) {
     setTesterLastName('Caller');
     setTesterPhone('');
     setNameConfirmed(null);
+    setCallStartTime(null);
+    setElapsedSeconds(0);
   }, []);
 
 
@@ -173,19 +205,24 @@ export function ScriptTesterDialog({ open, onOpenChange, script }: Props) {
 
           {/* Step Tracker */}
           {phase !== 'start' && phase !== 'done' && (
-            <StepTracker
-              steps={buildSteps({
-                hasVerify: true,
-                hasIntro: !!introScript,
-                hasClosing: !!closingScript,
-                questions,
-                phase,
-                questionIndex,
-              })}
-              totalQuestions={questions.length}
-              activeQuestionIndex={questionIndex}
-              onEndCall={phase !== 'verify' ? () => setEndCallOpen(true) : undefined}
-            />
+            <div className="flex items-center gap-3">
+              <div className="flex-1">
+                <StepTracker
+                  steps={buildSteps({
+                    hasVerify: true,
+                    hasIntro: !!introScript,
+                    hasClosing: !!closingScript,
+                    questions,
+                    phase,
+                    questionIndex,
+                  })}
+                  totalQuestions={questions.length}
+                  activeQuestionIndex={questionIndex}
+                  onEndCall={phase !== 'verify' ? () => setEndCallOpen(true) : undefined}
+                />
+              </div>
+              {callStartTime && <CallTimer elapsedSeconds={elapsedSeconds} />}
+            </div>
           )}
 
           {/* START */}
@@ -201,7 +238,7 @@ export function ScriptTesterDialog({ open, onOpenChange, script }: Props) {
                   {rebuttalScript && <Badge variant="secondary">Has rebuttal</Badge>}
                 </div>
               </div>
-              <Button size="lg" onClick={() => { setNameConfirmed(null); setPhase('verify'); }}>
+              <Button size="lg" onClick={() => { setNameConfirmed(null); setCallStartTime(new Date()); setElapsedSeconds(0); setPhase('verify'); }}>
                 <Play className="w-4 h-4 mr-2" /> Start Test
               </Button>
             </div>
