@@ -1,93 +1,69 @@
 
-# Force Deepgram + Skip QA Scoring for Research Records
+# Scope Cost Alert to Today's Records Only
 
-## The Problem
+## What's Changing
 
-When a researcher logs a call and it gets transcribed, the `transcribe-call` edge function currently:
+The `CostAlertBanner` and its hook `useCostAlertMonitor` currently look back at the last 500 rows across **all time**, then pick the 20 most recent unique bookings. This means the alert can be driven by data from yesterday or last week — it doesn't reflect today's actual pipeline cost health.
 
-1. **Picks an STT provider using A/B weights** — this could select ElevenLabs at $0.034/min instead of Deepgram at $0.0043/min. For a 20-minute research call, that's $0.68 vs $0.086 — nearly 8x more expensive.
-2. **Auto-triggers QA scoring** at the end of every transcription, including research records. The QA rubric is a PadSplit sales call rubric (greeting, objection handling, booking attempt) — none of which applies to a survey call.
-3. **Does not fetch `record_type`** from the booking, so it has no way to branch on whether this is a research record or a standard booking.
+The fix scopes the query to records created **since midnight UTC today**, matching exactly what the `get_daily_coaching_gate` DB function already does for the gate logic.
 
-## The Fix — Two Changes to `transcribe-call/index.ts`
+## Changes to `src/hooks/useCostAlertMonitor.ts`
 
-### Change 1: Fetch `record_type` from the booking
+### 1 — Remove the rolling window constant (no longer needed)
 
-The booking query at line 1453 currently selects `call_type_id, agent_id, status, agents(site_id)`. We add `record_type` to that query so it is available for the rest of the function.
+The `ROLLING_WINDOW = 20` constant and the `.slice(0, ROLLING_WINDOW)` call are removed. Today's records naturally bound the dataset — there's no need to artificially cap at 20.
 
-```typescript
-// Before (line 1453)
-.select('call_type_id, agent_id, status, agents(site_id)')
-
-// After
-.select('call_type_id, agent_id, status, record_type, agents(site_id)')
-```
-
-Then capture it:
-```typescript
-const recordType = bookingData?.record_type || null;
-const isResearch = recordType === 'research';
-```
-
-### Change 2: Force Deepgram for research records (skip A/B selection)
-
-Replace the single `selectSTTProvider()` call with a branch:
+### 2 — Add a `todayStart` filter to the Supabase query
 
 ```typescript
-// Before (line 1487)
-const selectedProvider = await selectSTTProvider(supabase);
+// Compute start of today in UTC
+const todayStart = new Date();
+todayStart.setUTCHours(0, 0, 0, 0);
 
-// After
-const selectedProvider = isResearch
-  ? 'deepgram'
-  : await selectSTTProvider(supabase);
-
-if (isResearch) {
-  console.log('[Background] Research record — forcing Deepgram (ElevenLabs never used for research)');
-}
+const { data: costs, error } = await supabase
+  .from('api_costs')
+  .select('booking_id, estimated_cost_usd, created_at')
+  .eq('is_internal', false)
+  .not('service_type', 'like', 'tts_%')
+  .not('booking_id', 'is', null)
+  .gte('created_at', todayStart.toISOString())   // ← NEW: today only
+  .order('created_at', { ascending: false })
+  .limit(500);
 ```
 
-This completely bypasses the A/B weight table for research records. Deepgram is always used, regardless of how the weights are configured.
-
-### Change 3: Skip QA scoring for research records
-
-At line 2002, the QA scoring trigger runs unconditionally. We wrap it with the `isResearch` flag:
+### 3 — Remove the `.slice(0, ROLLING_WINDOW)` cap
 
 ```typescript
 // Before
-const qaResult = await callDownstreamFunction('generate-qa-scores');
+const allRecords = Array.from(bookingMap.entries())
+  .slice(0, ROLLING_WINDOW)   // ← remove this
+  .map(...)
 
-// After
-if (!isResearch) {
-  const qaResult = await callDownstreamFunction('generate-qa-scores');
-  if (!qaResult.success) {
-    console.error(`[Background] QA scoring failed permanently for ${bookingId}: ${qaResult.error || qaResult.statusCode}`);
-  }
-} else {
-  console.log('[Background] Research record — skipping QA scoring (not applicable for survey calls)');
-}
+// After — all of today's unique bookings
+const allRecords = Array.from(bookingMap.entries()).map(...)
 ```
+
+### 4 — Update the banner label in `CostAlertBanner.tsx`
+
+The subtitle currently reads:
+> "Rolling Avg Cost Per Record (last {recordCount} records, excl. TTS)"
+
+It will be updated to:
+> "Today's Avg Cost Per Record ({recordCount} records today, excl. TTS)"
+
+And the warning/critical messages will say "today's {recordCount} records" instead of "last {recordCount} records".
 
 ## Files to Change
 
 | File | Change |
 |---|---|
-| `supabase/functions/transcribe-call/index.ts` | 1) Add `record_type` to booking SELECT, 2) Force `deepgram` when `isResearch`, 3) Skip `generate-qa-scores` call when `isResearch` |
+| `src/hooks/useCostAlertMonitor.ts` | Add `gte('created_at', todayStart)` filter; remove `ROLLING_WINDOW` slice; update label string |
+| `src/components/billing/CostAlertBanner.tsx` | Update subtitle and alert message copy to say "today" |
 
-## Cost Impact
+## No DB Migration Needed
 
-For a 10-minute research call:
+This is a pure query filter change on the client side. The `api_costs` table already has a `created_at` column with a timestamp — no schema changes required.
 
-| | Before | After |
-|---|---|---|
-| STT (if ElevenLabs selected by A/B) | $0.34 | $0.043 (always Deepgram) |
-| QA Scoring | ~$0.0001 wasted | $0.00 (skipped) |
-| **Saving per call (worst case)** | — | **~$0.30** |
+## Behaviour When There Are No Records Today
 
-With a team doing 20 research calls/day, this saves up to ~$6/day or ~$180/month purely from provider selection enforcement.
-
-## No Other Files Needed
-
-- `check-auto-transcription` does not need changing — it just triggers transcription and passes `skipTts: true` for non-Vixicom records (which research records already are).
-- `generate-qa-scores` does not need changing — it simply won't be called for research records.
-- No DB migration required — `record_type` already exists in the `bookings` table.
+If today has zero records (e.g. before any calls are processed), `recordCount` will be 0, `rollingAvg` will be 0, and the banner will correctly show **HEALTHY** — same as the daily gate logic.
