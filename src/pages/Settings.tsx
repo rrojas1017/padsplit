@@ -20,6 +20,7 @@ import { STTComparisonPanel } from '@/components/ai-management/STTComparisonPane
 import { LLMComparisonPanel } from '@/components/ai-management/LLMComparisonPanel';
 import { KattyQASettings } from '@/components/ai-management/KattyQASettings';
 import { IPAllowlistManager } from '@/components/security/IPAllowlistManager';
+import { MovedInNotificationSettings } from '@/components/settings/MovedInNotificationSettings';
 import { BulkProcessingTab } from '@/components/import/BulkProcessingTab';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
@@ -471,6 +472,11 @@ export default function Settings() {
                 </div>
                 <IPAllowlistManager />
               </div>
+
+              {/* Move-In Notifications — super_admin only */}
+              {hasRole(['super_admin']) && (
+                <MovedInNotificationSettings />
+              )}
             </TabsContent>
           )}
 
