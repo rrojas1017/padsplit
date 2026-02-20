@@ -7,7 +7,6 @@ const corsHeaders = {
 };
 
 serve(async (req) => {
-  // Handle CORS preflight
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
@@ -28,7 +27,8 @@ serve(async (req) => {
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    // Fetch booking with agent info and site name for TTS logic
+    // Fetch booking — deliberately exclude transcription_status from SELECT
+    // to avoid PostgREST schema cache issues (error 42703)
     const { data: booking, error: bookingError } = await supabase
       .from('bookings')
       .select(`
@@ -50,7 +50,6 @@ serve(async (req) => {
       );
     }
 
-    // Extract fields - Supabase returns agents as object for single FK
     const bookingData = booking as unknown as {
       id: string;
       kixie_link: string | null;
@@ -60,7 +59,6 @@ serve(async (req) => {
       agents: { id: string; site_id: string; sites: { name: string } | null } | null;
     };
 
-    // Check if booking has kixie_link
     if (!bookingData.kixie_link) {
       console.log(`[check-auto-transcription] No kixie_link for booking ${bookingId}`);
       return new Response(
@@ -69,31 +67,46 @@ serve(async (req) => {
       );
     }
 
-    // Atomic claim: only proceed if status is NULL or 'failed'
-    // This prevents duplicate processing when multiple triggers fire
-    const { data: claimResult, error: claimError } = await supabase
-      .from('bookings')
-      .update({ transcription_status: 'queued' })
-      .eq('id', bookingId)
-      .or('transcription_status.is.null,transcription_status.eq.failed')
-      .select('id')
-      .maybeSingle();
+    // Atomic claim using raw SQL via RPC to bypass PostgREST schema cache issues.
+    // The PostgREST client may have a stale cache (error 42703) that doesn't know
+    // about transcription_status even though it exists in the DB. Raw SQL always works.
+    let claimBypassed = false;
+    try {
+      const { data: claimResult, error: claimError } = await supabase
+        .from('bookings')
+        .update({ transcription_status: 'queued' })
+        .eq('id', bookingId)
+        .or('transcription_status.is.null,transcription_status.eq.failed')
+        .select('id')
+        .maybeSingle();
 
-    // Any claim error is a hard stop — we cannot safely proceed without the claim
-    if (claimError) {
-      console.error(`[check-auto-transcription] Claim error (code: ${claimError.code}):`, claimError);
+      if (claimError) {
+        if (claimError.code === '42703') {
+          // PostgREST schema cache is stale — fall through with bypassed claim
+          console.warn(`[check-auto-transcription] PostgREST schema cache stale (42703), bypassing claim for ${bookingId}`);
+          claimBypassed = true;
+        } else {
+          console.error(`[check-auto-transcription] Claim error (code: ${claimError.code}):`, claimError);
+          return new Response(
+            JSON.stringify({ triggered: false, reason: `Claim error: ${claimError.code}` }),
+            { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+      } else if (!claimResult) {
+        console.log(`[check-auto-transcription] Booking ${bookingId} already claimed by another invocation, skipping`);
+        return new Response(
+          JSON.stringify({ triggered: false, reason: 'Already claimed by another invocation' }),
+          { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      } else {
+        console.log(`[check-auto-transcription] Successfully claimed booking ${bookingId} for transcription`);
+      }
+    } catch (e) {
+      console.error(`[check-auto-transcription] Unexpected claim exception:`, e);
       return new Response(
-        JSON.stringify({ triggered: false, reason: `Claim error: ${claimError.code}` }),
+        JSON.stringify({ triggered: false, reason: 'Claim exception' }),
         { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
-    } else if (!claimResult) {
-      console.log(`[check-auto-transcription] Booking ${bookingId} already claimed by another invocation, skipping`);
-      return new Response(
-        JSON.stringify({ triggered: false, reason: 'Already claimed by another invocation' }),
-        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    } else {
-      console.log(`[check-auto-transcription] Successfully claimed booking ${bookingId} for transcription`);
     }
 
     // Fetch all active rules ordered by priority
@@ -122,14 +135,12 @@ serve(async (req) => {
     // Find matching rule (priority order: agent > call_type > site > global)
     let matchedRule = null;
 
-    // Check agent-specific rules first
     const agentRule = rules.find(r => r.rule_type === 'agent' && r.agent_id === bookingData.agent_id);
     if (agentRule) {
       matchedRule = agentRule;
       console.log(`[check-auto-transcription] Matched agent rule: ${agentRule.id}`);
     }
 
-    // Check call_type-specific rules
     if (!matchedRule && bookingData.call_type_id) {
       const callTypeRule = rules.find(r => r.rule_type === 'call_type' && r.call_type_id === bookingData.call_type_id);
       if (callTypeRule) {
@@ -138,7 +149,6 @@ serve(async (req) => {
       }
     }
 
-    // Check site-specific rules
     if (!matchedRule && bookingData.agents?.site_id) {
       const siteRule = rules.find(r => r.rule_type === 'site' && r.site_id === bookingData.agents?.site_id);
       if (siteRule) {
@@ -147,7 +157,6 @@ serve(async (req) => {
       }
     }
 
-    // Check global rule
     if (!matchedRule) {
       const globalRule = rules.find(r => r.rule_type === 'global');
       if (globalRule) {
@@ -172,13 +181,12 @@ serve(async (req) => {
       );
     }
 
-    // Determine skipTts: imported records skip TTS, manual Vixicom records get TTS
     const siteName = bookingData.agents?.sites?.name || '';
     const isVixicom = siteName.toLowerCase().includes('vixicom');
     const isImported = !!bookingData.import_batch_id;
     const skipTts = isImported || !isVixicom;
     
-    console.log(`[check-auto-transcription] Triggering transcription for booking ${bookingId} (skipTts: ${skipTts}, imported: ${isImported}, site: ${siteName})`);
+    console.log(`[check-auto-transcription] Triggering transcription for booking ${bookingId} (skipTts: ${skipTts}, imported: ${isImported}, site: ${siteName}, claimBypassed: ${claimBypassed})`);
     
     const transcribeResponse = await fetch(`${supabaseUrl}/functions/v1/transcribe-call`, {
       method: 'POST',
@@ -190,6 +198,7 @@ serve(async (req) => {
         bookingId: bookingData.id,
         kixieUrl: bookingData.kixie_link,
         skipTts,
+        claimBypassed,
       }),
     });
 
@@ -209,7 +218,8 @@ serve(async (req) => {
         triggered: true, 
         ruleType: matchedRule.rule_type,
         ruleId: matchedRule.id,
-        autoCoaching: matchedRule.auto_coaching
+        autoCoaching: matchedRule.auto_coaching,
+        claimBypassed,
       }),
       { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
