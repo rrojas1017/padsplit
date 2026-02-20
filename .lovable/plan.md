@@ -1,122 +1,54 @@
 
-# Moved-In Notification Settings — Super Admin UI
+# Fix Duplicate Cost Logging in transcribe-call
 
-## What This Adds
+## Root Cause
 
-A new card in **Settings → Security tab** (super admins only) that lets super admins:
+The `check-auto-transcription` function has an atomic "claim" that sets `transcription_status = 'queued'` before proceeding, which correctly prevents duplicate transcriptions. However, there is a **silent bypass** at line 83-88: if a `42703` (schema cache) error occurs during the claim, the function logs a warning and **skips the claim entirely**, allowing both concurrent invocations to proceed to `transcribe-call` simultaneously.
 
-1. **View the current recipient email** — shows a masked/readable version of the currently configured notification address
-2. **Update the recipient email** — an input field + save button that updates the `MOVED_IN_NOTIFICATION_EMAIL` backend secret via an edge function
-3. **Send a test notification** — a "Send Test" button that calls `notify-moved-in` with any recent booking ID so the super admin can confirm the email is arriving correctly
+This causes every service within `transcribe-call` to be logged twice:
+- `stt_transcription` ×2 (biggest cost impact)
+- `transcript_polishing` ×2
+- `speaker_identification` ×2
+- `ai_qa_scoring` ×2 (from `generate-qa-scores` called inside `transcribe-call`)
 
----
+## Two Fixes Required
 
-## Why Security Tab (Not a New Tab)
+### Fix 1: Remove the 42703 bypass in `check-auto-transcription`
 
-The Security tab already exists and is already restricted to `super_admin` / `admin` roles. This feature naturally fits there as it's a system-level notification configuration. However, since updating a backend secret requires super_admin-only access (not just admin), the card will be further guarded with `hasRole(['super_admin'])`.
-
----
-
-## Architecture
-
-### 1. New Edge Function: `manage-notification-settings`
-
-Since backend secrets can't be read back by the frontend (they're encrypted), we need a different approach. The email address will be stored in a **new database table** `notification_settings` (not a secret) so it can be read and updated through the UI. The backend function will read from this table at send time instead of from `MOVED_IN_NOTIFICATION_EMAIL`.
-
-Wait — reconsidering. The secret `MOVED_IN_NOTIFICATION_EMAIL` is already created and working. The cleanest approach is:
-
-- **Store the email in a new `notification_settings` table** (one-row config table, super-admin only RLS)
-- The edge function reads from this table instead of the secret
-- The UI reads from and writes to this table directly
-- Test button calls the edge function with a real recent booking ID
-
-This avoids creating more edge functions and gives the UI full read/write access.
-
-### 2. New Database Table: `notification_settings`
-
-```sql
-CREATE TABLE public.notification_settings (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  key text NOT NULL UNIQUE,
-  value text,
-  updated_by uuid REFERENCES auth.users(id),
-  updated_at timestamptz NOT NULL DEFAULT now()
-);
-
--- Seed the moved_in_notification_email row
-INSERT INTO public.notification_settings (key, value)
-VALUES ('moved_in_notification_email', '');
-
-ALTER TABLE public.notification_settings ENABLE ROW LEVEL SECURITY;
-
--- Only super admins can read or write
-CREATE POLICY "Super admins can manage notification settings"
-ON public.notification_settings
-FOR ALL
-USING (has_role(auth.uid(), 'super_admin'::app_role))
-WITH CHECK (has_role(auth.uid(), 'super_admin'::app_role));
+The current code at lines 83-88 has:
+```
+if (claimError.code === '42703') {
+  // bypass the claim and proceed directly
+}
 ```
 
-### 3. Update `notify-moved-in` Edge Function
+This bypass is dangerous. The fix is to **always treat a claim error as a hard stop** — if we can't safely claim the booking, we do not proceed. The 42703 error was a one-time post-migration issue; it should not be a permanent bypass.
 
-Change the function to read the recipient email from `notification_settings` table instead of `MOVED_IN_NOTIFICATION_EMAIL` secret. This makes the email configurable from the UI without touching secrets.
+Change the error handling to return early on ANY claim error, including 42703. This is safe because if the claim truly fails, the booking will stay in `null` status and can be manually re-triggered.
 
-```typescript
-// Instead of:
-const recipientEmail = Deno.env.get('MOVED_IN_NOTIFICATION_EMAIL')!;
+### Fix 2: Add idempotency guard inside `transcribe-call` itself
 
-// Use:
-const { data: setting } = await supabase
-  .from('notification_settings')
-  .select('value')
-  .eq('key', 'moved_in_notification_email')
-  .single();
-const recipientEmail = setting?.value;
-```
+Even with the claim fixed, `transcribe-call` should have its own second layer of protection. Before starting transcription, it should:
 
-### 4. New Component: `MovedInNotificationSettings`
+1. Check `transcription_status` of the booking
+2. If status is already `processing` or `completed`, return early with a 409 Conflict
 
-A self-contained card component added to the Security tab, only rendered when `hasRole(['super_admin'])`:
-
-- Fetches current email from `notification_settings`
-- Editable input field pre-filled with the current value
-- **Save** button: UPDATEs the row in `notification_settings`
-- **Send Test Email** button: fetches the most recent booking, then calls `supabase.functions.invoke('notify-moved-in', { body: { bookingId } })` directly, so the super admin gets a live test email
-- Shows success/error toasts for both actions
-
-### 5. Settings Page Update
-
-Add the new component inside the Security tab, wrapped in `hasRole(['super_admin'])` check (stricter than the existing `canAccessAIManagement` which includes admins).
-
----
+This gives defense in depth — even if a duplicate somehow gets through `check-auto-transcription`, `transcribe-call` itself will refuse to run twice.
 
 ## Files Changed
 
 | File | Change |
 |---|---|
-| Database migration | New `notification_settings` table + seed row + RLS |
-| `supabase/functions/notify-moved-in/index.ts` | Read email from DB table instead of secret |
-| `src/components/billing/MovedInNotificationSettings.tsx` | New UI card component |
-| `src/pages/Settings.tsx` | Add component to Security tab (super_admin only) |
+| `supabase/functions/check-auto-transcription/index.ts` | Remove the 42703 bypass — treat all claim errors as hard stops |
+| `supabase/functions/transcribe-call/index.ts` | Add idempotency check at entry: abort if `transcription_status` is already `processing` or `completed` |
 
----
+## What This Fixes
 
-## How Testing Works (for the super admin)
+- Eliminates the duplicate STT charges ($0.022-$0.111 wasted per call)
+- Eliminates duplicate polish, speaker ID, and QA scoring charges
+- Reduces per-booking cost from ~$0.124 back to the expected ~$0.047-0.070 (depending on call length)
+- The 26-minute call outlier is normal variance — long calls legitimately cost more; the fix just stops counting them twice
 
-1. Navigate to **Settings → Security**
-2. Scroll to the **Move-In Notifications** card
-3. Confirm or update the recipient email address and hit **Save**
-4. Click **Send Test Email** — the system fetches the most recent booking in the database and fires a real notification email to the configured address
-5. Check your inbox — the email should arrive within seconds
+## Note on Today's Duplicate Charges
 
----
-
-## Access Control Summary
-
-| Role | Can see the card | Can edit email | Can send test |
-|---|---|---|---|
-| super_admin | Yes | Yes | Yes |
-| admin | No | No | No |
-| supervisor | No | No | No |
-| agent | No | No | No |
-
+The 3 bookings processed today have already been billed twice in `api_costs`. The actual Deepgram API was only called once (Deepgram billing is correct) — it's the **cost logging** that doubled, not the actual API spend. So today's real spend was ~$0.187 total across 3 bookings, not $0.373 as logged.
