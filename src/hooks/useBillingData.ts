@@ -137,34 +137,20 @@ export function useBillingData(dateRange: DateRangeType = 'thisMonth', customSta
 
     try {
       const { start, end } = getDateRange();
-      const startDate = start.toISOString().split('T')[0];
-      const endDate = end.toISOString().split('T')[0];
 
-      // Get booking IDs within the date range
-      const { data: bookingsData, error: bookingsError } = await supabase
-        .from('bookings')
-        .select('id')
-        .gte('booking_date', startDate)
-        .lte('booking_date', endDate);
+      // Fetch costs filtered by when the cost was logged (created_at), not booking_date.
+      // This ensures "today" shows costs processed today regardless of when the booking was made.
+      const { data: costsRaw, error: costsError } = await supabase
+        .from('api_costs')
+        .select('*')
+        .gte('created_at', start.toISOString())
+        .lte('created_at', end.toISOString())
+        .eq('is_internal', false)
+        .order('created_at', { ascending: false })
+        .limit(5000);
 
-      if (bookingsError) throw bookingsError;
-
-      const bookingIds = bookingsData?.map(b => b.id) || [];
-
-      // Fetch costs for those specific bookings
-      let costsData: any[] = [];
-      if (bookingIds.length > 0) {
-        const { data, error: costsError } = await supabase
-          .from('api_costs')
-          .select('*')
-          .in('booking_id', bookingIds)
-          .eq('is_internal', false)
-          .order('created_at', { ascending: false })
-          .limit(5000);
-
-        if (costsError) throw costsError;
-        costsData = data || [];
-      }
+      if (costsError) throw costsError;
+      let costsData: any[] = costsRaw || [];
 
       // Fetch clients, invoices, SOW pricing, and communications in parallel
       const [clientsRes, invoicesRes, sowRes, commsRes] = await Promise.all([
