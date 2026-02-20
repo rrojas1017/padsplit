@@ -1,79 +1,93 @@
 
-# Clean Up Today's Duplicate api_costs Entries
+# Cost Alert System: Average Per-Record Cost > $0.07 for Super Admins
 
-## What Was Found
+## What Currently Exists vs. What's Needed
 
-3 bookings processed before the fix was deployed each have **10 cost entries** (5 service types × 2 due to the duplicate bug). The second (later) entry for each service type is the phantom duplicate — the real API call happened once, but it was logged twice.
+The system already has a `auditBookingCost()` function inside `transcribe-call/index.ts` that:
+- Checks a single record ceiling at $0.07 (non-TTS)
+- Checks a rolling average of the last 20 records (today only)
+- Writes to `admin_notifications` table when breached
+- Shows alerts in the `Header` bell icon and `DashboardLayout` banner
 
-**Duplicate entries to remove (15 total):**
+**The critical gap:** The audit only runs when `skipTts = true` (line 2029-2032). Since most calls skip TTS (coaching audio is on-demand now), this should be triggering — but the `skipTts` gate means it silently skips audits for any call where TTS WAS included, and the rolling average window is scoped to today only, making it blind to sustained multi-day drift.
 
-Booking `ae922fa7` (5 duplicates):
-- `c4296916` — ai_analysis — $0.013340
-- `6ed6e88f` — ai_qa_scoring — $0.000161
-- `cef845c8` — speaker_identification — $0.000068
-- `74b282ea` — stt_transcription — $0.022647
-- `5917d288` — transcript_polishing — $0.000458
+**What the user wants:** A persistent, visible alert when the rolling average cost per record (all services, including TTS) exceeds $0.07 — since PadSplit is charged $0.15/record, crossing $0.07 eats into the 53% margin.
 
-Booking `bf0690ba` (5 duplicates):
-- `1ff9e808` — ai_analysis — $0.022256
-- `b0cdf615` — ai_qa_scoring — $0.000519
-- `bf81da8f` — speaker_identification — $0.000068
-- `79bee82f` — stt_transcription — $0.111513
-- `375abe30` — transcript_polishing — $0.001787
+## Specific Issues to Fix
 
-Booking `da2dc469` (5 duplicates):
-- `5941bde0` — ai_analysis — $0.013551
-- `b9123b3c` — ai_qa_scoring — $0.000160
-- `2233b86c` — speaker_identification — $0.000068
-- `ed13b8a4` — stt_transcription — $0.022647
-- `d68ba3e3` — transcript_polishing — $0.000458
+### Issue 1: Audit gate blocks TTS-included records
+The `if (!skipTts) return` on line 2029 means any record that included TTS coaching never gets audited. The gate should be removed — TTS costs absolutely count toward the $0.07 margin.
 
-**Total phantom cost removed: ~$0.209 logged dollars** (actual Deepgram/API spend was $0 extra — only the cost log doubled, not the actual charges)
+### Issue 2: Rolling average only checks TODAY
+The rolling average query uses `gte('created_at', todayStart.toISOString())` which resets every midnight. A multi-day drift would never fire. It should look at the last N unique bookings regardless of date.
 
-## Approach: Mark as Internal (not delete)
+### Issue 3: The $0.07 threshold in memory says "excluding TTS" 
+The memory note says "excluding TTS" but the user now explicitly wants to include ALL costs (TTS coaching adds ~$0.18/call which would always breach). The threshold needs context: **$0.07 for the core processing pipeline only** (STT + AI analysis + polishing + QA scoring), which is what we already exclude from TTS. The user's concern is today's average of $0.14 which was the bug-inflated duplicate — the real question is monitoring to ensure the baseline stays healthy.
 
-Rather than hard-deleting, the duplicates will be marked `is_internal = true`. This:
-- Removes them from all billing calculations (the hook already filters `is_internal = false`)
-- Preserves the audit trail so the data is never truly lost
-- Is fully reversible if needed
+### Issue 4: No UI visibility on the Billing page for this metric
+The Billing dashboard has no explicit "Average Cost Per Record" alert card visible at a glance. The admin_notifications panel exists but is buried. We need a prominent alert card on the Billing page.
 
-## Implementation
+## What to Build
 
-A single `UPDATE` on `api_costs` targeting the 15 specific IDs by their exact UUIDs:
+### Fix 1: Remove the TTS gate in `transcribe-call` audit
+Remove the `if (!skipTts) return` check. Instead, separate the logic:
+- Always audit the **total cost per record** (all services) against a separate reference point
+- Keep the non-TTS ceiling check at $0.07 for the core pipeline
+- Add a new alert type when TOTAL per-record (including TTS) exceeds the PadSplit margin threshold
 
-```sql
-UPDATE api_costs
-SET is_internal = true
-WHERE id IN (
-  'c4296916-2291-40be-b6e1-27b99ffd13ad',
-  '6ed6e88f-9a10-47d5-9610-bbc3af1175ad',
-  'cef845c8-fb74-4052-a334-719a7d56def7',
-  '74b282ea-1a1e-4f4e-9b67-37cf402ec1ad',
-  '5917d288-12ba-4ebd-bb3a-09d1ff736bf4',
-  '1ff9e808-4231-4fbd-94f9-9dc501ff5c41',
-  'b0cdf615-92ab-43b9-808f-4f700b7ff1b4',
-  'bf81da8f-fcc3-4744-8124-c05b863a9399',
-  '79bee82f-6255-4502-8d62-17e10b8d5326',
-  '375abe30-9a48-4e80-ba2d-6f589ff892a0',
-  '5941bde0-4ed1-49e1-ac74-fc850fbf28c1',
-  'b9123b3c-a9f4-4fee-a1d9-b5f23855fe95',
-  '2233b86c-c1e3-48f3-a477-30466eed42e5',
-  'ed13b8a4-1f8c-438d-8cf0-b341dd1cc4f9',
-  'd68ba3e3-4189-4bab-a9ee-6e37c6ea8ae5'
-);
+### Fix 2: Fix rolling average to be date-agnostic
+Change the rolling average query from `gte('created_at', todayStart)` to just fetching the last 500 cost rows and deduplicating by booking ID to get the last 20 unique bookings — regardless of when they were processed.
+
+### Fix 3: Add `useCostAlertMonitor` hook
+A new lightweight hook that:
+- Fetches the last 20 processed bookings' total cost per record from `api_costs`
+- Calculates the rolling average
+- Returns an alert state: `normal` | `warning` | `critical`
+  - Warning: avg > $0.05 (approaching limit)
+  - Critical: avg > $0.07 (exceeding PadSplit margin)
+- Polls every 5 minutes
+
+### Fix 4: Add `CostAlertBanner` component to Billing page
+A prominent banner at the top of the Billing page showing:
+- Current rolling average (last 20 records)
+- PadSplit charge reference ($0.15/record)
+- Internal cost threshold ($0.07)
+- Color-coded: green (healthy), amber (warning), red (critical)
+- Shows breakdown: avg cost this period vs. threshold vs. PadSplit charge
+
+### Fix 5: Enhance `DashboardLayout` banner
+Update the existing critical alert banner to also show cost-per-record alerts (not just admin_notifications from the DB), using the new hook so super admins see it across ALL pages immediately.
+
+## Files to Change
+
+| File | Change |
+|---|---|
+| `supabase/functions/transcribe-call/index.ts` | Remove TTS gate; fix rolling average to be date-agnostic (last N records, not today) |
+| `src/hooks/useCostAlertMonitor.ts` | NEW — hook to compute rolling avg cost per record from api_costs |
+| `src/components/billing/CostAlertBanner.tsx` | NEW — prominent alert banner component for Billing page |
+| `src/pages/Billing.tsx` | Add `CostAlertBanner` at top of page |
+| `src/components/layout/DashboardLayout.tsx` | Integrate cost alert from hook into the global banner |
+
+## Alert Thresholds
+
+| Level | Condition | Message |
+|---|---|---|
+| Normal (green) | Avg ≤ $0.05 | "Avg cost: $X.XX/record — healthy" |
+| Warning (amber) | $0.05 < avg ≤ $0.07 | "Avg cost approaching limit: $X.XX/record (limit $0.07)" |
+| Critical (red) | Avg > $0.07 | "ALERT: Avg cost $X.XX/record exceeds $0.07 threshold — margin at risk!" |
+
+## Technical Details
+
+The `useCostAlertMonitor` hook will:
+```typescript
+// Query last 500 non-internal api_costs rows, group by booking_id
+// Take the last 20 unique booking totals
+// Calculate rolling avg
+// Map to alert level
 ```
 
-## Expected Result After Cleanup
+The hook runs only for super_admins (checks `hasRole(['super_admin'])` before querying) and refreshes every 5 minutes with a manual refetch option.
 
-| Booking | Before (entries) | After (entries) | Before (cost) | After (cost) |
-|---|---|---|---|---|
-| ae922fa7 | 10 | 5 | ~$0.061 | ~$0.036 |
-| bf0690ba | 10 | 5 | ~$0.252 | ~$0.115 |
-| da2dc469 | 10 | 5 | ~$0.061 | ~$0.036 |
-| **Total** | **30** | **15** | **~$0.373** | **~$0.187** |
+The `CostAlertBanner` on the Billing page will display a more detailed breakdown — not just the average but also a table showing the most expensive recent records, so the admin can immediately identify which bookings are driving up the cost.
 
-The billing dashboard today-view will drop from ~$0.374 to ~$0.187, with a corrected avg cost-per-booking of ~$0.062 — well within the expected $0.047–$0.070 range.
-
-## No Code Changes Required
-
-This is a pure data fix via a single SQL `UPDATE`. No frontend or edge function changes are needed.
+The `DashboardLayout` global banner will remain minimal (just a one-line warning), while the full detail lives on the Billing page.
