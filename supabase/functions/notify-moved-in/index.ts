@@ -23,17 +23,25 @@ Deno.serve(async (req) => {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const sendgridApiKey = Deno.env.get('SENDGRID_API_KEY')!;
-    const recipientEmail = Deno.env.get('MOVED_IN_NOTIFICATION_EMAIL')!;
+
+    const supabase = createClient(supabaseUrl, serviceRoleKey);
+
+    // Read recipient email from notification_settings table (configurable via UI)
+    const { data: setting, error: settingError } = await supabase
+      .from('notification_settings')
+      .select('value')
+      .eq('key', 'moved_in_notification_email')
+      .single();
+
+    const recipientEmail = setting?.value?.trim();
 
     if (!recipientEmail) {
-      console.error('[notify-moved-in] MOVED_IN_NOTIFICATION_EMAIL secret is not set');
-      return new Response(JSON.stringify({ error: 'Notification email not configured' }), {
+      console.error('[notify-moved-in] No recipient email configured in notification_settings');
+      return new Response(JSON.stringify({ error: 'Notification email not configured. Please set it in Settings → Security.' }), {
         status: 500,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
-
-    const supabase = createClient(supabaseUrl, serviceRoleKey);
 
     // Fetch booking + agent name via join
     const { data: booking, error: bookingError } = await supabase
