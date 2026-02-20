@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Bell, Send, Save, Loader2, CheckCircle } from 'lucide-react';
+import { Bell, Send, Save, Loader2, CheckCircle, AlertTriangle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -8,6 +8,7 @@ import { toast } from 'sonner';
 
 export function MovedInNotificationSettings() {
   const [email, setEmail] = useState('');
+  const [savedEmail, setSavedEmail] = useState(''); // tracks what's actually in DB
   const [isSaving, setIsSaving] = useState(false);
   const [isTesting, setIsTesting] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
@@ -27,6 +28,7 @@ export function MovedInNotificationSettings() {
 
       if (!error && data?.value) {
         setEmail(data.value);
+        setSavedEmail(data.value);
       }
     } catch (err) {
       console.error('Failed to load notification email:', err);
@@ -48,6 +50,7 @@ export function MovedInNotificationSettings() {
         .eq('key', 'moved_in_notification_email');
 
       if (error) throw error;
+      setSavedEmail(email.trim());
       toast.success('Notification email saved successfully.');
     } catch (err) {
       console.error('Failed to save notification email:', err);
@@ -58,8 +61,8 @@ export function MovedInNotificationSettings() {
   };
 
   const handleSendTest = async () => {
-    if (!email.trim()) {
-      toast.error('Save a recipient email first before sending a test.');
+    if (!savedEmail) {
+      toast.error('Enter and save a recipient email before sending a test.');
       return;
     }
     setIsTesting(true);
@@ -87,11 +90,14 @@ export function MovedInNotificationSettings() {
       toast.success(`Test email sent using booking for "${booking.member_name}". Check your inbox.`, { duration: 8000 });
     } catch (err) {
       console.error('Test email failed:', err);
-      toast.error('Failed to send test email. Check the edge function logs.');
+      toast.error('Failed to send test email. Check that an email is saved first.');
     } finally {
       setIsTesting(false);
     }
   };
+
+  const hasUnsavedChanges = email.trim() !== savedEmail;
+  const canTest = !!savedEmail && !hasUnsavedChanges;
 
   return (
     <div className="bg-card rounded-xl border border-border p-6 shadow-card">
@@ -123,13 +129,28 @@ export function MovedInNotificationSettings() {
               className="max-w-md"
             />
           )}
-          <p className="text-xs text-muted-foreground">
-            This address will receive an automated email each time a member is marked as Moved In.
-          </p>
+          {savedEmail && !hasUnsavedChanges && (
+            <p className="text-xs text-green-600 dark:text-green-400 flex items-center gap-1">
+              <CheckCircle className="w-3 h-3" />
+              Currently sending to: {savedEmail}
+            </p>
+          )}
+          {hasUnsavedChanges && email.trim() && (
+            <p className="text-xs text-amber-600 dark:text-amber-400 flex items-center gap-1">
+              <AlertTriangle className="w-3 h-3" />
+              Unsaved changes — click Save Email before testing
+            </p>
+          )}
+          {!savedEmail && !isLoading && (
+            <p className="text-xs text-muted-foreground flex items-center gap-1">
+              <AlertTriangle className="w-3 h-3" />
+              No email configured yet — enter an address and click Save Email
+            </p>
+          )}
         </div>
 
         <div className="flex gap-3 flex-wrap">
-          <Button onClick={handleSave} disabled={isSaving || isLoading} className="gap-2">
+          <Button onClick={handleSave} disabled={isSaving || isLoading || !email.trim()} className="gap-2">
             {isSaving ? (
               <>
                 <Loader2 className="w-4 h-4 animate-spin" />
@@ -145,9 +166,10 @@ export function MovedInNotificationSettings() {
 
           <Button
             onClick={handleSendTest}
-            disabled={isTesting || isLoading}
+            disabled={isTesting || isLoading || !canTest}
             variant="outline"
             className="gap-2"
+            title={!canTest ? 'Save a recipient email first' : 'Send a test notification email'}
           >
             {isTesting ? (
               <>
@@ -167,7 +189,7 @@ export function MovedInNotificationSettings() {
           <p className="flex items-start gap-2">
             <CheckCircle className="w-4 h-4 text-green-500 shrink-0 mt-0.5" />
             <span>
-              The test email uses the most recent booking in the database and sends a real notification to the configured address. Make sure to <strong>Save Email</strong> before testing.
+              The test uses the most recent booking and fires a real notification. <strong>Save Email</strong> first — the Send Test button will enable once an address is saved.
             </span>
           </p>
         </div>
