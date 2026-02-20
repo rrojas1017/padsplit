@@ -2023,19 +2023,16 @@ async function processTranscription(bookingId: string, kixieUrl: string, skipTts
 }
 
 // === HARD-WIRED COST AUDIT FUNCTION ===
-async function auditBookingCost(supabase: any, bookingId: string, skipTts: boolean) {
+// Audits EVERY booking regardless of whether TTS was included.
+// Non-TTS ceiling protects core pipeline; rolling average is date-agnostic.
+async function auditBookingCost(supabase: any, bookingId: string, _skipTts: boolean) {
   try {
-    // Only audit non-TTS cost ceiling when TTS was skipped
-    if (!skipTts) {
-      console.log(`[CostAudit] Skipping audit for ${bookingId} - TTS was included (different cost profile)`);
-      return;
-    }
-
-    // Query all api_costs for this booking
+    // Query all api_costs for this booking (all services, including TTS)
     const { data: costs, error } = await supabase
       .from('api_costs')
       .select('service_type, estimated_cost_usd, service_provider')
-      .eq('booking_id', bookingId);
+      .eq('booking_id', bookingId)
+      .eq('is_internal', false);
 
     if (error) {
       console.error(`[CostAudit] Failed to query costs for ${bookingId}:`, error);
@@ -2047,11 +2044,10 @@ async function auditBookingCost(supabase: any, bookingId: string, skipTts: boole
       return;
     }
 
-    // Sum non-TTS costs
+    // --- CHECK 1: Core pipeline ceiling (non-TTS only) ---
     const nonTtsCosts = costs.filter((c: any) => !c.service_type.startsWith('tts_'));
     const totalNonTts = nonTtsCosts.reduce((sum: number, c: any) => sum + (c.estimated_cost_usd || 0), 0);
 
-    // Build breakdown by service type
     const breakdown: Record<string, number> = {};
     for (const c of nonTtsCosts) {
       breakdown[c.service_type] = (breakdown[c.service_type] || 0) + (c.estimated_cost_usd || 0);
@@ -2059,7 +2055,6 @@ async function auditBookingCost(supabase: any, bookingId: string, skipTts: boole
 
     console.log(`[CostAudit] Booking ${bookingId}: $${totalNonTts.toFixed(4)} non-TTS (limit: $${MAX_COST_PER_RECORD_NO_TTS})`);
 
-    // CHECK 1: Single record ceiling breach
     if (totalNonTts > MAX_COST_PER_RECORD_NO_TTS) {
       const breakdownStr = Object.entries(breakdown)
         .map(([k, v]) => `${k}: $${v.toFixed(4)}`)
@@ -2083,24 +2078,23 @@ async function auditBookingCost(supabase: any, bookingId: string, skipTts: boole
       });
     }
 
-    // CHECK 2: Rolling average of last N records today
-    const todayStart = new Date();
-    todayStart.setHours(0, 0, 0, 0);
-
+    // --- CHECK 2: Date-agnostic rolling average (last N unique bookings) ---
+    // Fetch last 500 non-internal, non-TTS cost rows regardless of date
     const { data: recentCosts, error: recentError } = await supabase
       .from('api_costs')
       .select('booking_id, estimated_cost_usd, service_type')
-      .gte('created_at', todayStart.toISOString())
+      .eq('is_internal', false)
       .not('service_type', 'like', 'tts_%')
+      .not('booking_id', 'is', null)
       .order('created_at', { ascending: false })
-      .limit(500); // Grab enough to find N unique bookings
+      .limit(500);
 
     if (recentError || !recentCosts) {
       console.error(`[CostAudit] Failed to query rolling average:`, recentError);
       return;
     }
 
-    // Group by booking_id, take last N unique bookings
+    // Group by booking_id — insertion order preserves recency
     const bookingTotals = new Map<string, number>();
     for (const c of recentCosts) {
       if (!c.booking_id) continue;
@@ -2114,15 +2108,17 @@ async function auditBookingCost(supabase: any, bookingId: string, skipTts: boole
     }
 
     const rollingAvg = recentBookingCosts.reduce((a, b) => a + b, 0) / recentBookingCosts.length;
-    console.log(`[CostAudit] Rolling avg (${recentBookingCosts.length} records): $${rollingAvg.toFixed(4)}`);
+    console.log(`[CostAudit] Rolling avg (${recentBookingCosts.length} records, date-agnostic): $${rollingAvg.toFixed(4)}`);
 
     if (rollingAvg > MAX_COST_PER_RECORD_NO_TTS) {
-      // Check if we already fired this alert today
+      // Throttle: only fire once per hour to avoid spamming
+      const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+
       const { data: existingAlert } = await supabase
         .from('admin_notifications')
         .select('id')
         .eq('notification_type', 'cost_rolling_avg_breach')
-        .gte('created_at', todayStart.toISOString())
+        .gte('created_at', oneHourAgo)
         .eq('is_resolved', false)
         .maybeSingle();
 
@@ -2131,7 +2127,7 @@ async function auditBookingCost(supabase: any, bookingId: string, skipTts: boole
           notification_type: 'cost_rolling_avg_breach',
           service: 'billing',
           title: `Rolling Average Cost Alert`,
-          message: `Average cost per record today: $${rollingAvg.toFixed(4)} across ${recentBookingCosts.length} records (limit: $${MAX_COST_PER_RECORD_NO_TTS})`,
+          message: `Average core cost per record: $${rollingAvg.toFixed(4)} across last ${recentBookingCosts.length} records (limit: $${MAX_COST_PER_RECORD_NO_TTS})`,
           severity: 'critical',
           metadata: {
             rolling_average: rollingAvg,
@@ -2142,7 +2138,7 @@ async function auditBookingCost(supabase: any, bookingId: string, skipTts: boole
         });
         console.error(`[CostAudit] ROLLING AVERAGE BREACH: $${rollingAvg.toFixed(4)} > $${MAX_COST_PER_RECORD_NO_TTS}`);
       } else {
-        console.log(`[CostAudit] Rolling average breach already alerted today`);
+        console.log(`[CostAudit] Rolling average breach already alerted in last hour`);
       }
     }
   } catch (err) {

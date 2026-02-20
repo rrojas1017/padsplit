@@ -16,6 +16,7 @@ import ClientManagement from '@/components/billing/ClientManagement';
 import InvoiceGenerator from '@/components/billing/InvoiceGenerator';
 import InvoiceHistory from '@/components/billing/InvoiceHistory';
 import { AdminNotifications } from '@/components/billing/AdminNotifications';
+import { CostAlertBanner } from '@/components/billing/CostAlertBanner';
 import RealtimeCostDashboard from '@/components/billing/RealtimeCostDashboard';
 import LLMCostCalculator from '@/components/billing/LLMCostCalculator';
 import SOWPricingConfig from '@/components/billing/SOWPricingConfig';
@@ -144,6 +145,7 @@ const Billing = () => {
 
           {/* Costs Tab */}
           <TabsContent value="costs" className="space-y-6">
+            <CostAlertBanner />
             <AdminNotifications />
             <CostOverviewCards summary={summary} costs={costs} dateRange={dateFilter} sowPricing={sowPricing} />
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
