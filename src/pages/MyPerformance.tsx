@@ -627,13 +627,7 @@ export default function MyPerformance() {
                 variant="card"
                 listenedAt={latestWithFeedback.coachingAudioListenedAt}
                 agentUserId={myAgent?.userId}
-                quizPassedAt={latestWithFeedback.coachingQuizPassedAt}
                 coachingBlocked={coachingBlocked}
-              />
-                bookingId={latestWithFeedback.id}
-                audioUrl={latestWithFeedback.coachingAudioUrl}
-                variant="card"
-                agentUserId={myAgent?.userId}
               />
             </div>
           </div>

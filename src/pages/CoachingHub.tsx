@@ -735,15 +735,8 @@ export default function CoachingHub() {
                               audioUrl={coachingBooking.coachingAudioUrl}
                               variant="button"
                               listenedAt={coachingBooking.coachingAudioListenedAt}
-                              agentUserId={coachingBooking.agentUserId}
-                              quizPassedAt={coachingBooking.coachingQuizPassedAt}
+                              agentUserId={agents.find(a => a.id === coachingBooking.agentId)?.userId ?? undefined}
                               coachingBlocked={coachingBlocked}
-                            />
-                              bookingId={booking.id}
-                              audioUrl={coachingBooking.coachingAudioUrl}
-                              variant="inline"
-                              listenedAt={coachingBooking.coachingAudioListenedAt}
-                              agentUserId={agents.find(a => a.id === booking.agentId)?.userId}
                             />
                           )}
                         </div>
