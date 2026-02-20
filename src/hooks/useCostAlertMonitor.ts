@@ -27,7 +27,6 @@ export interface CostAlertData {
 const THRESHOLD_CRITICAL = 0.07;   // $0.07 — exceeds margin
 const THRESHOLD_WARNING = 0.05;    // $0.05 — approaching limit
 const PADSPLIT_CHARGE = 0.15;      // $0.15 charged to PadSplit per record
-const ROLLING_WINDOW = 20;         // last N unique bookings
 const POLL_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
 
 function classifyLevel(avg: number): CostAlertLevel {
@@ -60,13 +59,18 @@ export function useCostAlertMonitor(): CostAlertData {
     }
 
     try {
-      // Fetch last 500 non-internal cost rows — enough to find 20 unique bookings
+      // Compute start of today in UTC
+      const todayStart = new Date();
+      todayStart.setUTCHours(0, 0, 0, 0);
+
+      // Fetch today's non-internal cost rows
       const { data: costs, error } = await supabase
         .from('api_costs')
         .select('booking_id, estimated_cost_usd, created_at')
         .eq('is_internal', false)
         .not('service_type', 'like', 'tts_%') // exclude TTS for core pipeline avg
         .not('booking_id', 'is', null)
+        .gte('created_at', todayStart.toISOString()) // today only
         .order('created_at', { ascending: false })
         .limit(500);
 
@@ -87,9 +91,8 @@ export function useCostAlertMonitor(): CostAlertData {
         }
       }
 
-      // Take the last ROLLING_WINDOW unique bookings
+      // All of today's unique bookings
       const allRecords: BookingCostRecord[] = Array.from(bookingMap.entries())
-        .slice(0, ROLLING_WINDOW)
         .map(([booking_id, { total, created_at }]) => ({
           booking_id,
           total_cost: total,
