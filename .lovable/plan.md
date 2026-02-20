@@ -1,54 +1,79 @@
 
-# Fix Duplicate Cost Logging in transcribe-call
+# Clean Up Today's Duplicate api_costs Entries
 
-## Root Cause
+## What Was Found
 
-The `check-auto-transcription` function has an atomic "claim" that sets `transcription_status = 'queued'` before proceeding, which correctly prevents duplicate transcriptions. However, there is a **silent bypass** at line 83-88: if a `42703` (schema cache) error occurs during the claim, the function logs a warning and **skips the claim entirely**, allowing both concurrent invocations to proceed to `transcribe-call` simultaneously.
+3 bookings processed before the fix was deployed each have **10 cost entries** (5 service types × 2 due to the duplicate bug). The second (later) entry for each service type is the phantom duplicate — the real API call happened once, but it was logged twice.
 
-This causes every service within `transcribe-call` to be logged twice:
-- `stt_transcription` ×2 (biggest cost impact)
-- `transcript_polishing` ×2
-- `speaker_identification` ×2
-- `ai_qa_scoring` ×2 (from `generate-qa-scores` called inside `transcribe-call`)
+**Duplicate entries to remove (15 total):**
 
-## Two Fixes Required
+Booking `ae922fa7` (5 duplicates):
+- `c4296916` — ai_analysis — $0.013340
+- `6ed6e88f` — ai_qa_scoring — $0.000161
+- `cef845c8` — speaker_identification — $0.000068
+- `74b282ea` — stt_transcription — $0.022647
+- `5917d288` — transcript_polishing — $0.000458
 
-### Fix 1: Remove the 42703 bypass in `check-auto-transcription`
+Booking `bf0690ba` (5 duplicates):
+- `1ff9e808` — ai_analysis — $0.022256
+- `b0cdf615` — ai_qa_scoring — $0.000519
+- `bf81da8f` — speaker_identification — $0.000068
+- `79bee82f` — stt_transcription — $0.111513
+- `375abe30` — transcript_polishing — $0.001787
 
-The current code at lines 83-88 has:
+Booking `da2dc469` (5 duplicates):
+- `5941bde0` — ai_analysis — $0.013551
+- `b9123b3c` — ai_qa_scoring — $0.000160
+- `2233b86c` — speaker_identification — $0.000068
+- `ed13b8a4` — stt_transcription — $0.022647
+- `d68ba3e3` — transcript_polishing — $0.000458
+
+**Total phantom cost removed: ~$0.209 logged dollars** (actual Deepgram/API spend was $0 extra — only the cost log doubled, not the actual charges)
+
+## Approach: Mark as Internal (not delete)
+
+Rather than hard-deleting, the duplicates will be marked `is_internal = true`. This:
+- Removes them from all billing calculations (the hook already filters `is_internal = false`)
+- Preserves the audit trail so the data is never truly lost
+- Is fully reversible if needed
+
+## Implementation
+
+A single `UPDATE` on `api_costs` targeting the 15 specific IDs by their exact UUIDs:
+
+```sql
+UPDATE api_costs
+SET is_internal = true
+WHERE id IN (
+  'c4296916-2291-40be-b6e1-27b99ffd13ad',
+  '6ed6e88f-9a10-47d5-9610-bbc3af1175ad',
+  'cef845c8-fb74-4052-a334-719a7d56def7',
+  '74b282ea-1a1e-4f4e-9b67-37cf402ec1ad',
+  '5917d288-12ba-4ebd-bb3a-09d1ff736bf4',
+  '1ff9e808-4231-4fbd-94f9-9dc501ff5c41',
+  'b0cdf615-92ab-43b9-808f-4f700b7ff1b4',
+  'bf81da8f-fcc3-4744-8124-c05b863a9399',
+  '79bee82f-6255-4502-8d62-17e10b8d5326',
+  '375abe30-9a48-4e80-ba2d-6f589ff892a0',
+  '5941bde0-4ed1-49e1-ac74-fc850fbf28c1',
+  'b9123b3c-a9f4-4fee-a1d9-b5f23855fe95',
+  '2233b86c-c1e3-48f3-a477-30466eed42e5',
+  'ed13b8a4-1f8c-438d-8cf0-b341dd1cc4f9',
+  'd68ba3e3-4189-4bab-a9ee-6e37c6ea8ae5'
+);
 ```
-if (claimError.code === '42703') {
-  // bypass the claim and proceed directly
-}
-```
 
-This bypass is dangerous. The fix is to **always treat a claim error as a hard stop** — if we can't safely claim the booking, we do not proceed. The 42703 error was a one-time post-migration issue; it should not be a permanent bypass.
+## Expected Result After Cleanup
 
-Change the error handling to return early on ANY claim error, including 42703. This is safe because if the claim truly fails, the booking will stay in `null` status and can be manually re-triggered.
+| Booking | Before (entries) | After (entries) | Before (cost) | After (cost) |
+|---|---|---|---|---|
+| ae922fa7 | 10 | 5 | ~$0.061 | ~$0.036 |
+| bf0690ba | 10 | 5 | ~$0.252 | ~$0.115 |
+| da2dc469 | 10 | 5 | ~$0.061 | ~$0.036 |
+| **Total** | **30** | **15** | **~$0.373** | **~$0.187** |
 
-### Fix 2: Add idempotency guard inside `transcribe-call` itself
+The billing dashboard today-view will drop from ~$0.374 to ~$0.187, with a corrected avg cost-per-booking of ~$0.062 — well within the expected $0.047–$0.070 range.
 
-Even with the claim fixed, `transcribe-call` should have its own second layer of protection. Before starting transcription, it should:
+## No Code Changes Required
 
-1. Check `transcription_status` of the booking
-2. If status is already `processing` or `completed`, return early with a 409 Conflict
-
-This gives defense in depth — even if a duplicate somehow gets through `check-auto-transcription`, `transcribe-call` itself will refuse to run twice.
-
-## Files Changed
-
-| File | Change |
-|---|---|
-| `supabase/functions/check-auto-transcription/index.ts` | Remove the 42703 bypass — treat all claim errors as hard stops |
-| `supabase/functions/transcribe-call/index.ts` | Add idempotency check at entry: abort if `transcription_status` is already `processing` or `completed` |
-
-## What This Fixes
-
-- Eliminates the duplicate STT charges ($0.022-$0.111 wasted per call)
-- Eliminates duplicate polish, speaker ID, and QA scoring charges
-- Reduces per-booking cost from ~$0.124 back to the expected ~$0.047-0.070 (depending on call length)
-- The 26-minute call outlier is normal variance — long calls legitimately cost more; the fix just stops counting them twice
-
-## Note on Today's Duplicate Charges
-
-The 3 bookings processed today have already been billed twice in `api_costs`. The actual Deepgram API was only called once (Deepgram billing is correct) — it's the **cost logging** that doubled, not the actual API spend. So today's real spend was ~$0.187 total across 3 bookings, not $0.373 as logged.
+This is a pure data fix via a single SQL `UPDATE`. No frontend or edge function changes are needed.
