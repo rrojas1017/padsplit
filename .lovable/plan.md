@@ -1,90 +1,77 @@
 
 
-# Fix Duplicate Transcription Processing
+# Fix Dashboard Cost Breakdown Accuracy
 
 ## Problem
 
-The `transcribe-call` edge function has a race condition that allows the same booking to be processed twice, causing duplicate Deepgram charges.
+The Cost Breakdown section on the Dashboard is misleading because:
 
-The current flow has two layers of deduplication, but neither is fully race-safe at the entry point:
+1. **QA coaching generation costs ($0.14 TTS + $0.003 script gen) appear as "booking processing" costs** — a super_admin manually triggered QA coaching audio for an old Feb 11 booking (Nicholas Jackson), but it shows as "1 booking processed at $0.1429/each" on today's dashboard.
 
-1. **Serve handler (line 2179-2191)**: Uses a SELECT to read `transcription_status`, then checks if it's `processing` or `completed`. Two near-simultaneous requests can both read `queued` and both pass this check.
+2. **The `is_internal` flag was not set** on these costs even though a super_admin triggered them — the `generate-qa-coaching-audio` edge function may not be correctly detecting internal usage.
 
-2. **Background task (line 1421-1448)**: Has an atomic UPDATE claim, but includes a `claimBypassed` fallback for schema cache errors (42703) that weakens the guarantee.
+3. **TTS coaching costs distort the "Per Booking" average** — mixing $0.14 TTS costs with $0.05 transcription costs makes the per-booking metric unreliable for cost monitoring.
 
 ## Root Cause
 
-When a booking is created/updated, database triggers fire `check-auto-transcription`. If two triggers fire close together (e.g., INSERT + UPDATE on the same row, or webhook retry), both calls reach `transcribe-call` before either background task has atomically claimed the record.
+The dashboard's `useBillingData` hook fetches ALL non-internal `api_costs` by `created_at`. It doesn't distinguish between:
+- **Core pipeline costs** (STT, AI analysis, QA scoring) — the actual cost of processing a booking
+- **Optional add-on costs** (TTS coaching audio, QA coaching audio) — manually triggered, expensive, and not representative of per-record cost
 
-## Solution
+## Proposed Fix (Two Parts)
 
-Replace the serve handler's SELECT-based check with an **atomic UPDATE...RETURNING** claim directly in the request handler, BEFORE the background task fires. This ensures only one request can ever start background processing.
+### Part 1: Exclude TTS costs from the dashboard Cost Breakdown
 
-### Changes
+The dashboard Cost Breakdown should show **core processing costs only** (what it costs to process a booking), not optional TTS coaching generation. This matches how the Cost Alert Monitor already works — it excludes `tts_%` service types.
 
-**File: `supabase/functions/transcribe-call/index.ts`**
+**File: `src/hooks/useBillingData.ts`**
 
-Replace the idempotency guard section (lines 2175-2191) with an atomic claim:
+In the `fetchData` function, after fetching `costsRaw`, filter out TTS-related service types before setting state:
 
 ```typescript
-// === ATOMIC DEDUP CLAIM: only one invocation can proceed ===
-const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-const supabaseCheck = createClient(supabaseUrl, supabaseServiceKey);
-
-const { data: claimResult, error: claimError } = await supabaseCheck
-  .from('bookings')
-  .update({ 
-    transcription_status: 'processing',
-    transcription_error_message: null 
-  })
-  .eq('id', bookingId)
-  .in('transcription_status', ['queued', 'failed'])
-  .select('id')
-  .maybeSingle();
-
-// Also handle NULL status (new records)
-let claimed = !!claimResult;
-if (!claimed && !claimError) {
-  const { data: nullClaim } = await supabaseCheck
-    .from('bookings')
-    .update({ 
-      transcription_status: 'processing',
-      transcription_error_message: null 
-    })
-    .eq('id', bookingId)
-    .is('transcription_status', null)
-    .select('id')
-    .maybeSingle();
-  claimed = !!nullClaim;
-}
-
-if (!claimed) {
-  console.warn(`[transcribe-call] Dedup: booking ${bookingId} already claimed. Aborting.`);
-  return new Response(
-    JSON.stringify({ success: false, reason: 'Already processing or completed' }),
-    { status: 409, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-  );
-}
+// Filter out TTS coaching costs for dashboard summary — these are optional
+// add-ons, not core processing costs. Matches cost alert monitor behavior.
+costsData = (costsRaw || []).filter(
+  (c: any) => !c.service_type?.startsWith('tts_') && c.service_type !== 'qa_script_generation'
+);
 ```
 
-Then remove the redundant claim inside `processTranscription` (lines 1419-1448) since the claim already happened in the handler. The background task should just proceed directly, and if it fails, set status back to `failed`.
+This means the dashboard will show the actual cost of processing bookings (STT + AI analysis + QA scoring), giving an accurate "Per Booking" metric.
 
-Additionally, remove the `claimBypassed` escape hatch from `processTranscription` -- this was a workaround for schema cache issues but it defeats the deduplication. If the claim fails due to 42703, the handler should return a 503 retry-later response rather than silently bypassing the guard.
+### Part 2: Fix `is_internal` flagging on QA coaching generation
 
-### Summary of Changes
+**File: `supabase/functions/generate-qa-coaching-audio/index.ts`**
 
-| What | Why |
-|---|---|
-| Move atomic claim from background task to serve handler | Blocks duplicates before any work starts |
-| Remove `claimBypassed` escape hatch | Eliminates the bypass that allowed duplicates through |
-| Use `UPDATE...WHERE status IN (null, queued, failed)` | Only one concurrent request can win the atomic update |
-| Remove redundant claim in `processTranscription` | Claim already happened; avoids double-update |
+Verify and fix the logic that checks whether the requesting user is a super_admin and sets `is_internal: true` on the `api_costs` insert. The two cost records for booking `57cf6b62` today were logged with `is_internal: false` despite being triggered by a super_admin — this suggests the identity resolution is failing or missing in this function.
 
-### Impact
+### Part 3: Add an `excludeTTS` option to `useBillingData` (optional, cleaner approach)
 
-- Prevents duplicate Deepgram STT charges
-- Prevents duplicate LLM analysis charges  
-- No changes to the frontend or database schema
-- The `check-auto-transcription` function's existing claim remains as a first-layer guard (unchanged)
+Rather than always filtering TTS costs, add a parameter so the Dashboard can exclude them while the Billing page still shows all costs:
+
+```typescript
+export function useBillingData(
+  dateRange: DateRangeType = 'thisMonth',
+  customStart?: Date,
+  customEnd?: Date,
+  options?: { excludeTTS?: boolean }
+)
+```
+
+The Dashboard would call `useBillingData(..., { excludeTTS: true })` while the Billing page continues to show everything.
+
+## Impact
+
+- Dashboard "Per Booking" metric will accurately reflect core processing cost (~$0.05) instead of being inflated by TTS ($0.14)
+- "Bookings processed" count will only reflect bookings that went through the transcription/analysis pipeline
+- The full Billing page remains unchanged — all costs including TTS are still visible there
+- No database changes needed
+
+## Technical Details
+
+| Metric | Current (wrong) | After fix |
+|---|---|---|
+| Total Cost (today) | $0.1429 | $0.00 (no core processing today) |
+| Bookings Processed | 1 | 0 |
+| Per Booking | $0.1429 | — (no bookings) |
+| Talk Time | 0m | 0m |
 
