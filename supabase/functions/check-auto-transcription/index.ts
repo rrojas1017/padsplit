@@ -70,7 +70,6 @@ serve(async (req) => {
     // Atomic claim using raw SQL via RPC to bypass PostgREST schema cache issues.
     // The PostgREST client may have a stale cache (error 42703) that doesn't know
     // about transcription_status even though it exists in the DB. Raw SQL always works.
-    let claimBypassed = false;
     try {
       const { data: claimResult, error: claimError } = await supabase
         .from('bookings')
@@ -81,26 +80,22 @@ serve(async (req) => {
         .maybeSingle();
 
       if (claimError) {
-        if (claimError.code === '42703') {
-          // PostgREST schema cache is stale — fall through with bypassed claim
-          console.warn(`[check-auto-transcription] PostgREST schema cache stale (42703), bypassing claim for ${bookingId}`);
-          claimBypassed = true;
-        } else {
-          console.error(`[check-auto-transcription] Claim error (code: ${claimError.code}):`, claimError);
-          return new Response(
-            JSON.stringify({ triggered: false, reason: `Claim error: ${claimError.code}` }),
-            { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-          );
-        }
-      } else if (!claimResult) {
+        console.error(`[check-auto-transcription] Claim error (code: ${claimError.code}):`, claimError);
+        return new Response(
+          JSON.stringify({ triggered: false, reason: `Claim error: ${claimError.code}` }),
+          { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+      
+      if (!claimResult) {
         console.log(`[check-auto-transcription] Booking ${bookingId} already claimed by another invocation, skipping`);
         return new Response(
           JSON.stringify({ triggered: false, reason: 'Already claimed by another invocation' }),
           { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
-      } else {
-        console.log(`[check-auto-transcription] Successfully claimed booking ${bookingId} for transcription`);
       }
+      
+      console.log(`[check-auto-transcription] Successfully claimed booking ${bookingId} for transcription`);
     } catch (e) {
       console.error(`[check-auto-transcription] Unexpected claim exception:`, e);
       return new Response(
@@ -186,7 +181,7 @@ serve(async (req) => {
     const isImported = !!bookingData.import_batch_id;
     const skipTts = isImported || !isVixicom;
     
-    console.log(`[check-auto-transcription] Triggering transcription for booking ${bookingId} (skipTts: ${skipTts}, imported: ${isImported}, site: ${siteName}, claimBypassed: ${claimBypassed})`);
+    console.log(`[check-auto-transcription] Triggering transcription for booking ${bookingId} (skipTts: ${skipTts}, imported: ${isImported}, site: ${siteName})`);
     
     const transcribeResponse = await fetch(`${supabaseUrl}/functions/v1/transcribe-call`, {
       method: 'POST',
@@ -198,7 +193,6 @@ serve(async (req) => {
         bookingId: bookingData.id,
         kixieUrl: bookingData.kixie_link,
         skipTts,
-        claimBypassed,
       }),
     });
 
@@ -219,7 +213,6 @@ serve(async (req) => {
         ruleType: matchedRule.rule_type,
         ruleId: matchedRule.id,
         autoCoaching: matchedRule.auto_coaching,
-        claimBypassed,
       }),
       { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );

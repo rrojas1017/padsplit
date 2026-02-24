@@ -1416,36 +1416,9 @@ async function processTranscription(bookingId: string, kixieUrl: string, skipTts
   let siteId: string | null = null;
 
   try {
-    // Deduplication guard: atomically claim processing status
-    // Only proceed if status is 'queued' or NULL (belt-and-suspenders with check-auto-transcription)
-    const { data: claimResult, error: claimError } = await supabase
-      .from('bookings')
-      .update({ 
-        transcription_status: 'processing',
-        transcription_error_message: null 
-      })
-      .eq('id', bookingId)
-      .or('transcription_status.is.null,transcription_status.eq.queued,transcription_status.eq.failed')
-      .select('id')
-      .maybeSingle();
-
-    let claimBypassed = false;
-    if (claimError) {
-      if (claimError.code === '42703') {
-        claimBypassed = true;
-        console.warn(`[Background] Schema cache stale (42703) for ${bookingId}. Bypassing claim and proceeding.`);
-      } else {
-        console.error(`[Background] Claim error for ${bookingId}:`, claimError);
-        clearTimeout(timeoutId);
-        return;
-      }
-    }
-
-    if (!claimResult && !claimBypassed) {
-      console.log(`[Background] Booking ${bookingId} already processing/completed, skipping duplicate`);
-      clearTimeout(timeoutId);
-      return;
-    }
+    // Claim already happened atomically in the serve handler.
+    // The background task just proceeds directly.
+    console.log(`[Background] Processing booking ${bookingId} (claim was established in serve handler)`);
 
     // Fetch booking to get call_type_id, agent_id, site_id, and status
     const { data: bookingData, error: bookingError } = await supabase
@@ -2172,23 +2145,55 @@ serve(async (req) => {
     
     console.log(`Received transcription request for booking ${bookingId} (skipTts: ${skipTts})`);
 
-    // === IDEMPOTENCY GUARD: abort if already processing or completed ===
+    // === ATOMIC DEDUP CLAIM: only one invocation can proceed ===
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabaseCheck = createClient(supabaseUrl, supabaseServiceKey);
-    const { data: statusCheck } = await supabaseCheck
+
+    const { data: claimResult, error: claimError } = await supabaseCheck
       .from('bookings')
-      .select('transcription_status')
+      .update({ 
+        transcription_status: 'processing',
+        transcription_error_message: null 
+      })
       .eq('id', bookingId)
+      .in('transcription_status', ['queued', 'failed'])
+      .select('id')
       .maybeSingle();
 
-    if (statusCheck?.transcription_status === 'processing' || statusCheck?.transcription_status === 'completed') {
-      console.warn(`[transcribe-call] Idempotency guard: booking ${bookingId} already has status '${statusCheck.transcription_status}'. Aborting duplicate.`);
+    // Also handle NULL status (new records that bypassed check-auto-transcription claim)
+    let claimed = !!claimResult;
+    if (!claimed && !claimError) {
+      const { data: nullClaim } = await supabaseCheck
+        .from('bookings')
+        .update({ 
+          transcription_status: 'processing',
+          transcription_error_message: null 
+        })
+        .eq('id', bookingId)
+        .is('transcription_status', null)
+        .select('id')
+        .maybeSingle();
+      claimed = !!nullClaim;
+    }
+
+    if (claimError) {
+      console.error(`[transcribe-call] Claim error for booking ${bookingId}:`, claimError);
       return new Response(
-        JSON.stringify({ success: false, reason: `Already ${statusCheck.transcription_status}` }),
+        JSON.stringify({ success: false, reason: `Claim error: ${claimError.code}` }),
+        { status: 503, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    if (!claimed) {
+      console.warn(`[transcribe-call] Dedup: booking ${bookingId} already claimed (processing or completed). Aborting.`);
+      return new Response(
+        JSON.stringify({ success: false, reason: 'Already processing or completed' }),
         { status: 409, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
+
+    console.log(`[transcribe-call] Successfully claimed booking ${bookingId} for processing`);
 
     // Validate required env vars before starting
     const elevenLabsApiKey = Deno.env.get('ELEVENLABS_API_KEY');
