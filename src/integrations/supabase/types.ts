@@ -2860,6 +2860,10 @@ export type Database = {
     }
     Functions: {
       can_view_booking: { Args: { booking_agent_id: string }; Returns: boolean }
+      claim_booking_for_transcription: {
+        Args: { p_booking_id: string }
+        Returns: string
+      }
       generate_invoice_number: { Args: never; Returns: string }
       get_agent_user_ids_for_site: {
         Args: { _site_id: string }
