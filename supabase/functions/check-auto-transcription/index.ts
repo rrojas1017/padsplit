@@ -67,27 +67,21 @@ serve(async (req) => {
       );
     }
 
-    // Atomic claim using raw SQL via RPC to bypass PostgREST schema cache issues.
-    // The PostgREST client may have a stale cache (error 42703) that doesn't know
-    // about transcription_status even though it exists in the DB. Raw SQL always works.
+    // Atomic claim via RPC to bypass PostgREST schema cache issues (error 42703).
+    // The RPC function uses raw SQL which always works regardless of cache state.
     try {
-      const { data: claimResult, error: claimError } = await supabase
-        .from('bookings')
-        .update({ transcription_status: 'queued' })
-        .eq('id', bookingId)
-        .or('transcription_status.is.null,transcription_status.eq.failed')
-        .select('id')
-        .maybeSingle();
+      const { data: claimedId, error: claimError } = await supabase
+        .rpc('claim_booking_for_transcription', { p_booking_id: bookingId });
 
       if (claimError) {
-        console.error(`[check-auto-transcription] Claim error (code: ${claimError.code}):`, claimError);
+        console.error(`[check-auto-transcription] Claim RPC error:`, claimError);
         return new Response(
-          JSON.stringify({ triggered: false, reason: `Claim error: ${claimError.code}` }),
+          JSON.stringify({ triggered: false, reason: `Claim error: ${claimError.message}` }),
           { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
       
-      if (!claimResult) {
+      if (!claimedId) {
         console.log(`[check-auto-transcription] Booking ${bookingId} already claimed by another invocation, skipping`);
         return new Response(
           JSON.stringify({ triggered: false, reason: 'Already claimed by another invocation' }),
