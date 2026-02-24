@@ -90,7 +90,7 @@ export interface CostSummary {
   telephonyMinutes: number;
 }
 
-export function useBillingData(dateRange: DateRangeType = 'thisMonth', customStart?: Date, customEnd?: Date) {
+export function useBillingData(dateRange: DateRangeType = 'thisMonth', customStart?: Date, customEnd?: Date, options?: { excludeTTS?: boolean }) {
   const { user, hasRole } = useAuth();
   const [costs, setCosts] = useState<ApiCost[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
@@ -151,6 +151,15 @@ export function useBillingData(dateRange: DateRangeType = 'thisMonth', customSta
 
       if (costsError) throw costsError;
       let costsData: any[] = costsRaw || [];
+
+      // When excludeTTS is enabled (e.g. Dashboard), filter out optional add-on costs
+      // (TTS coaching audio, QA script generation) to show only core processing costs.
+      // This matches the cost alert monitor behavior.
+      if (options?.excludeTTS) {
+        costsData = costsData.filter(
+          (c: any) => !c.service_type?.startsWith('tts_') && c.service_type !== 'qa_script_generation'
+        );
+      }
 
       // Fetch clients, invoices, SOW pricing, and communications in parallel
       const [clientsRes, invoicesRes, sowRes, commsRes] = await Promise.all([
