@@ -45,7 +45,8 @@ export default function Dashboard() {
   const { summary: costSummary, costs, isLoading: costsLoading, isSuperAdmin } = useBillingData(
     getBillingDateRange(dateRange),
     customDates?.from,
-    customDates?.to
+    customDates?.to,
+    { excludeTTS: true }
   );
 
   // Redirect agents to their performance page
