@@ -2157,7 +2157,7 @@ serve(async (req) => {
         transcription_error_message: null 
       })
       .eq('id', bookingId)
-      .in('transcription_status', ['queued', 'failed'])
+      .in('transcription_status', ['queued', 'failed', 'pending'])
       .select('id')
       .maybeSingle();
 
