@@ -4,7 +4,7 @@ import { validatePassword, getPasswordErrorMessage } from '@/utils/passwordValid
 import { PasswordStrengthIndicator } from '@/components/PasswordStrengthIndicator';
 import { usePageTracking } from '@/hooks/usePageTracking';
 import { Button } from '@/components/ui/button';
-import { Plus, MoreVertical, Shield, ShieldCheck, User, Crown, Loader2, Link, Pencil, Trash2, ChevronDown, ChevronUp, Mail, MessageSquare, Mic } from 'lucide-react';
+import { Plus, MoreVertical, Shield, ShieldCheck, User, Crown, Loader2, Link, Pencil, Trash2, ChevronDown, ChevronUp, Mail, MessageSquare, Mic, Search } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
@@ -103,6 +103,8 @@ export default function UserManagement() {
   const [editRoleValue, setEditRoleValue] = useState<string>('');
   const [editRoleSiteId, setEditRoleSiteId] = useState<string>('');
   const [isUpdatingRole, setIsUpdatingRole] = useState(false);
+
+  const [searchQuery, setSearchQuery] = useState('');
 
   const isSuperAdmin = hasRole(['super_admin']);
   const isAdmin = hasRole(['admin']);
@@ -653,13 +655,30 @@ export default function UserManagement() {
         {/* Non-Agents Tab */}
         <TabsContent value="non-agents">
           {(() => {
-            const nonAgentUsers = users.filter(u => ['super_admin', 'admin', 'supervisor', 'researcher'].includes(u.role));
+            const allNonAgentUsers = users.filter(u => ['super_admin', 'admin', 'supervisor', 'researcher'].includes(u.role));
+            const query = searchQuery.toLowerCase();
+            const nonAgentUsers = query
+              ? allNonAgentUsers.filter(u => 
+                  u.name?.toLowerCase().includes(query) || u.email?.toLowerCase().includes(query)
+                )
+              : allNonAgentUsers;
             return (
               <>
                 <div className="flex items-center justify-between mb-6">
-                  <p className="text-muted-foreground">
-                    {loading ? 'Loading...' : `${nonAgentUsers.length} administrators, supervisors & researchers`}
-                  </p>
+                  <div className="flex items-center gap-4">
+                    <p className="text-muted-foreground">
+                      {loading ? 'Loading...' : `${nonAgentUsers.length} administrators, supervisors & researchers`}
+                    </p>
+                    <div className="relative">
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                      <Input
+                        placeholder="Search by name or email..."
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        className="pl-9 w-64 bg-background/50"
+                      />
+                    </div>
+                  </div>
             <Button 
               className="gap-2"
               onClick={() => setIsDialogOpen(true)}
@@ -803,19 +822,36 @@ export default function UserManagement() {
         <TabsContent value="agents">
           {(() => {
             // Supervisors only see agents from their site
-            const agentUsers = users.filter(u => {
+            const allAgentUsers = users.filter(u => {
               if (u.role !== 'agent') return false;
               if (isSupervisor && currentUserSiteId) {
                 return u.site_id === currentUserSiteId;
               }
               return true;
             });
+            const query = searchQuery.toLowerCase();
+            const agentUsers = query
+              ? allAgentUsers.filter(u => 
+                  u.name?.toLowerCase().includes(query) || u.email?.toLowerCase().includes(query)
+                )
+              : allAgentUsers;
             return (
               <>
                 <div className="flex items-center justify-between mb-6">
-                  <p className="text-muted-foreground">
-                    {loading ? 'Loading...' : `${agentUsers.length} agents`}
-                  </p>
+                  <div className="flex items-center gap-4">
+                    <p className="text-muted-foreground">
+                      {loading ? 'Loading...' : `${agentUsers.length} agents`}
+                    </p>
+                    <div className="relative">
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                      <Input
+                        placeholder="Search by name or email..."
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        className="pl-9 w-64 bg-background/50"
+                      />
+                    </div>
+                  </div>
                   <Button 
                     className="gap-2"
                     onClick={() => {
