@@ -176,7 +176,7 @@ Deno.serve(async (req) => {
 
         if (cleanPhone.length === 10) {
           const coverallParams = new URLSearchParams();
-          coverallParams.append('source', 'PadSplit');
+          coverallParams.append('source', 'ps');
           coverallParams.append('status', '2');
           coverallParams.append('name', booking.member_name ?? 'Unknown');
           coverallParams.append('phonenumber', cleanPhone);
