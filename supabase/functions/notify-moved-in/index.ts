@@ -175,24 +175,23 @@ Deno.serve(async (req) => {
         const cleanPhone = rawPhone.replace(/\D/g, '').slice(-10);
 
         if (cleanPhone.length === 10) {
-          const coverallBody = {
-            source: 'PadSplit',
-            status: 2,
-            name: booking.member_name ?? 'Unknown',
-            phonenumber: cleanPhone,
-            email: booking.contact_email ?? undefined,
-            city: booking.market_city ?? undefined,
-            state: booking.market_state ?? undefined,
-            description: `Moved In on ${formatDate(booking.move_in_date)}. Agent: ${agentName}. Communication: ${booking.communication_method ?? 'N/A'}.`,
-          };
+          const coverallParams = new URLSearchParams();
+          coverallParams.append('source', 'PadSplit');
+          coverallParams.append('status', '2');
+          coverallParams.append('name', booking.member_name ?? 'Unknown');
+          coverallParams.append('phonenumber', cleanPhone);
+          if (booking.contact_email) coverallParams.append('email', booking.contact_email);
+          if (booking.market_city) coverallParams.append('city', booking.market_city);
+          if (booking.market_state) coverallParams.append('state', booking.market_state);
+          coverallParams.append('description', `Moved In on ${formatDate(booking.move_in_date)}. Agent: ${agentName}. Communication: ${booking.communication_method ?? 'N/A'}.`);
 
           const coverallRes = await fetch('https://app.coverallhc.com/api/leads', {
             method: 'POST',
             headers: {
               'authtoken': coverallToken,
-              'Content-Type': 'application/json',
+              'Content-Type': 'application/x-www-form-urlencoded',
             },
-            body: JSON.stringify(coverallBody),
+            body: coverallParams.toString(),
           });
 
           const coverallData = await coverallRes.json();
