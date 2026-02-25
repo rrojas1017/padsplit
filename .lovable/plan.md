@@ -1,25 +1,27 @@
 
 
-## The Problem
+## Add User Search to User Management
 
-The Dashboard Cost Breakdown correctly shows low per-record API costs ($0.0098 today). The user's $20/day spend is on **Lovable Cloud platform charges** (compute, hosting, AI models), which are completely separate and NOT displayed anywhere in the app.
+### Problem
+The User Management page has no search functionality, making it difficult to find specific users when the list grows large.
 
-## What Needs to Happen
+### Plan
 
-There is no code fix needed here - the dashboard is showing accurate data. However, to reduce the Lovable Cloud spend ($446 Cloud + $153 AI per month), we should optimize edge function usage since that's what drives Cloud compute costs.
+**Add a search input** to both the "Non-Agents" and "Agents" tabs that filters users by name or email in real-time (client-side filtering).
 
-### Key Cost Drivers (Lovable Cloud)
-- **60+ deployed edge functions** - each deployment and invocation costs compute
-- **Realtime subscriptions** - continuous database connections
-- **AI model calls** (Gemini/DeepSeek) via edge functions like `analyze-member-insights`, `generate-qa-scores`, `compare-llm-providers`
+### Changes to `src/pages/UserManagement.tsx`
 
-### Optimization Options
+1. **Add search state**: Add a `searchQuery` state variable at the top of the component alongside existing state.
 
-1. **Consolidate edge functions** - Merge similar functions to reduce deployment overhead (e.g., batch processors)
-2. **Add response caching** - Cache AI analysis results to avoid redundant LLM calls for the same data
-3. **Reduce polling intervals** - The realtime cost monitor polls every 30 seconds; increase to 60s or rely solely on realtime subscriptions
-4. **Add Lovable Cloud cost visibility** - Add a note or widget on the Billing page explaining that Lovable platform costs are separate from API costs, with a link to workspace settings
+2. **Add search input UI**: In the header area of each tab (lines ~659-670 for Non-Agents, and the equivalent area in the Agents tab), add a search `Input` with a `Search` icon, placed between the count text and the "Add User" button.
 
-### Recommended First Step
-Add a "Platform Costs" info banner on the Billing page that clarifies the distinction between tracked API costs and Lovable Cloud infrastructure costs, so the user doesn't confuse them again.
+3. **Filter users by search**: Apply the search filter to the `nonAgentUsers` list and the `agents` list before rendering, matching against `name` and `email` (case-insensitive). The displayed count will reflect filtered results.
+
+### Technical Details
+
+- Import `Search` from `lucide-react` (already imported in `Header.tsx` pattern)
+- Single `searchQuery` state shared across both tabs, or separate per tab — will use a single state that resets when switching tabs for simplicity
+- Filter logic: `user.name.toLowerCase().includes(query) || user.email.toLowerCase().includes(query)`
+- For the Agents tab, filter on `agent.name` and linked user email if available
+- No database changes needed — purely client-side filtering
 
