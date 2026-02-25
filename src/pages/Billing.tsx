@@ -20,6 +20,7 @@ import { CostAlertBanner } from '@/components/billing/CostAlertBanner';
 import RealtimeCostDashboard from '@/components/billing/RealtimeCostDashboard';
 import LLMCostCalculator from '@/components/billing/LLMCostCalculator';
 import SOWPricingConfig from '@/components/billing/SOWPricingConfig';
+import PlatformCostBanner from '@/components/billing/PlatformCostBanner';
 
 const Billing = () => {
   const { hasRole, isLoading: authLoading } = useAuth();
@@ -145,6 +146,7 @@ const Billing = () => {
 
           {/* Costs Tab */}
           <TabsContent value="costs" className="space-y-6">
+            <PlatformCostBanner />
             <CostAlertBanner />
             <AdminNotifications />
             <CostOverviewCards summary={summary} costs={costs} dateRange={dateFilter} sowPricing={sowPricing} />
