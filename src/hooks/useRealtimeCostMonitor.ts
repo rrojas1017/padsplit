@@ -189,8 +189,8 @@ export function useRealtimeCostMonitor() {
     // Initial fetch
     fetchCosts();
 
-    // Setup polling every 30 seconds
-    const pollInterval = setInterval(fetchCosts, 30000);
+    // Setup polling every 60 seconds (reduced from 30s to lower compute costs)
+    const pollInterval = setInterval(fetchCosts, 60000);
 
     // Setup realtime subscription
     channelRef.current = supabase
