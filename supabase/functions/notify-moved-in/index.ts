@@ -164,7 +164,59 @@ Deno.serve(async (req) => {
 
     console.log(`[notify-moved-in] Email sent for booking ${bookingId} → ${recipientEmail}`);
 
-    return new Response(JSON.stringify({ success: true, bookingId }), {
+    // --- Post lead to Coverall CRM ---
+    let coverallResult: { success: boolean; leadId?: number; error?: string } = { success: false };
+    const coverallToken = Deno.env.get('COVERALL_API_TOKEN');
+
+    if (coverallToken) {
+      try {
+        // Format phone: strip non-digits, take last 10
+        const rawPhone = booking.contact_phone ?? '';
+        const cleanPhone = rawPhone.replace(/\D/g, '').slice(-10);
+
+        if (cleanPhone.length === 10) {
+          const coverallBody = {
+            source: 'PadSplit',
+            status: 2,
+            name: booking.member_name ?? 'Unknown',
+            phonenumber: cleanPhone,
+            email: booking.contact_email ?? undefined,
+            city: booking.market_city ?? undefined,
+            state: booking.market_state ?? undefined,
+            description: `Moved In on ${formatDate(booking.move_in_date)}. Agent: ${agentName}. Communication: ${booking.communication_method ?? 'N/A'}.`,
+          };
+
+          const coverallRes = await fetch('https://app.coverallhc.com/api/leads', {
+            method: 'POST',
+            headers: {
+              'authtoken': coverallToken,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(coverallBody),
+          });
+
+          const coverallData = await coverallRes.json();
+          console.log('[notify-moved-in] Coverall CRM response:', JSON.stringify(coverallData));
+
+          if (coverallData.status === true) {
+            coverallResult = { success: true, leadId: coverallData.leadid };
+          } else {
+            coverallResult = { success: false, error: coverallData.message || 'Unknown error' };
+          }
+        } else {
+          coverallResult = { success: false, error: `Invalid phone number: "${rawPhone}" (must be 10 digits)` };
+          console.warn('[notify-moved-in] Skipped Coverall CRM: invalid phone number');
+        }
+      } catch (coverallErr) {
+        console.error('[notify-moved-in] Coverall CRM error:', coverallErr);
+        coverallResult = { success: false, error: String(coverallErr) };
+      }
+    } else {
+      console.warn('[notify-moved-in] COVERALL_API_TOKEN not configured, skipping CRM post');
+      coverallResult = { success: false, error: 'COVERALL_API_TOKEN not configured' };
+    }
+
+    return new Response(JSON.stringify({ success: true, bookingId, coverall: coverallResult }), {
       status: 200,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
