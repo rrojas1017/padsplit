@@ -91,7 +91,7 @@ const InvoiceGenerator = ({
     const quantityMap: Record<string, number> = {
       voice_processing: periodData.voiceRecordCount,
       text_processing: periodData.textRecordCount,
-      voice_coaching: periodData.voiceCoachingCount,
+      
       email_delivery: periodData.emailDeliveryCount,
       sms_delivery: periodData.smsDeliveryCount,
       telephony: periodData.telephonyMinutes,
@@ -150,7 +150,7 @@ const InvoiceGenerator = ({
           })),
           voiceRecords: periodData?.voiceRecordCount || 0,
           textRecords: periodData?.textRecordCount || 0,
-          voiceCoaching: periodData?.voiceCoachingCount || 0,
+          
           internalCost: totalInternalCost,
         },
         notes: notes || undefined,
