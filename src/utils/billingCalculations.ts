@@ -27,7 +27,7 @@ export const SOW_PRICING = {
   sms_delivery: { rate: 0.05, unit: 'per_segment' },
   chat_delivery: { rate: 0.02, unit: 'per_interaction' },
   telephony: { rate: 0.012, unit: 'per_minute' },
-  voice_coaching: { rate: 0.55, unit: 'per_record' },
+  
 } as const;
 
 export const SOW_CATEGORY_LABELS: Record<string, string> = {
@@ -38,7 +38,7 @@ export const SOW_CATEGORY_LABELS: Record<string, string> = {
   sms_delivery: 'Outbound SMS Delivery',
   chat_delivery: 'Chat/Messaging Delivery',
   telephony: 'Telephony Services',
-  voice_coaching: 'Voice Feedback, QA & Sales Coaching',
+  
 };
 
 export const SOW_UNIT_LABELS: Record<string, string> = {

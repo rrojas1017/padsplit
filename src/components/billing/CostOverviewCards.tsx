@@ -26,7 +26,7 @@ const CostOverviewCards = ({ summary, costs, dateRange, sowPricing }: CostOvervi
   const billableRevenue = 
     summary.voiceRecordCount * getRate('voice_processing') +
     summary.textRecordCount * getRate('text_processing') +
-    summary.voiceCoachingCount * getRate('voice_coaching') +
+    
     summary.emailDeliveryCount * getRate('email_delivery') +
     summary.smsDeliveryCount * getRate('sms_delivery') +
     summary.telephonyMinutes * getRate('telephony');

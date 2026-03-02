@@ -36,7 +36,7 @@ const SERVICE_DEFS = [
   { key: 'sms_delivery', label: 'Communication Delivery – SMS', basis: 'Per Segment' },
   { key: 'email_delivery', label: 'Communication Delivery – Email', basis: 'Per Email' },
   { key: 'telephony', label: 'Telephony Usage', basis: 'Per Minute' },
-  { key: 'voice_coaching', label: 'Voice Feedback, QA, and Sales Coaching', basis: 'Per Record' },
+  
 ];
 
 const TOTAL_PAGES = 5;

@@ -195,9 +195,6 @@ export function useBillingData(dateRange: DateRangeType = 'thisMonth', customSta
   const voiceRecordIds = new Set(
     costs.filter(c => c.service_type === 'stt_transcription' && c.booking_id).map(c => c.booking_id)
   );
-  const voiceCoachingIds = new Set(
-    costs.filter(c => ['tts_coaching', 'tts_qa_coaching'].includes(c.service_type) && c.booking_id).map(c => c.booking_id)
-  );
   // Text records = bookings processed that DON'T have STT
   const allProcessedBookingIds = new Set(costs.filter(c => c.booking_id).map(c => c.booking_id));
   const textRecordCount = [...allProcessedBookingIds].filter(id => !voiceRecordIds.has(id)).length;
@@ -223,7 +220,7 @@ export function useBillingData(dateRange: DateRangeType = 'thisMonth', customSta
     costPerMinute,
     voiceRecordCount: voiceRecordIds.size,
     textRecordCount,
-    voiceCoachingCount: voiceCoachingIds.size,
+    voiceCoachingCount: 0,
     emailDeliveryCount: 0,
     smsDeliveryCount: 0,
     telephonyMinutes: 0,
@@ -381,7 +378,7 @@ export function useBillingData(dateRange: DateRangeType = 'thisMonth', customSta
     }
 
     const voiceIds = new Set(periodCosts.filter(c => c.service_type === 'stt_transcription' && c.booking_id).map(c => c.booking_id));
-    const coachingIds = new Set(periodCosts.filter(c => ['tts_coaching', 'tts_qa_coaching'].includes(c.service_type) && c.booking_id).map(c => c.booking_id));
+    
     const allIds = new Set(periodCosts.filter(c => c.booking_id).map(c => c.booking_id));
     const textCount = [...allIds].filter(id => !voiceIds.has(id)).length;
     // Only bill telephony for platform-originated calls (not imported/uploaded)
@@ -403,7 +400,7 @@ export function useBillingData(dateRange: DateRangeType = 'thisMonth', customSta
     return {
       voiceRecordCount: voiceIds.size,
       textRecordCount: textCount,
-      voiceCoachingCount: coachingIds.size,
+      voiceCoachingCount: 0,
       emailDeliveryCount: emailCount,
       smsDeliveryCount: smsCount,
       telephonyMinutes: telephonyMins,
