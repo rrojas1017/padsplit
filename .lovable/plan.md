@@ -1,19 +1,34 @@
 
 
-## Grant supervisors access to researcher module
+## Add Filters to User Management
 
-### Changes
+### Current State
+The User Management page has two tabs (Non-Agents and Agents) with a text search by name/email. No filters for role, site, or status exist.
 
-**File: `src/App.tsx`**
+### Plan
 
-Add `'supervisor'` to the `allowedRoles` array for all researcher-facing routes:
+**File: `src/pages/UserManagement.tsx`**
 
-1. `/research/dashboard` — add `'supervisor'`
-2. `/research/campaigns` — add `'supervisor'`
-3. `/research/log-call` — add `'supervisor'`
-4. `/research/history` — add `'supervisor'`
+1. **Add filter state variables** (around line 107):
+   - `roleFilter: string` (default `'all'`) — filter by role
+   - `siteFilter: string` (default `'all'`) — filter by site
+   - `statusFilter: string` (default `'all'`) — filter by status (active/inactive)
 
-These four routes currently allow `['researcher', 'super_admin', 'admin']`. Each will become `['researcher', 'super_admin', 'admin', 'supervisor']`.
+2. **Add filter dropdowns to the Non-Agents tab toolbar** (around line 668-681):
+   - Role filter: Select with options All, Super Admin, Admin, Supervisor, Researcher
+   - Site filter: Select populated from `sites` state
+   - Status filter: Select with Active / Inactive
 
-No database or RLS changes needed — supervisors don't have direct RLS access to `research_calls`, but the existing policies allow viewing via the admin/supervisor hierarchy already in place for bookings with `record_type = 'research'`.
+3. **Add filter dropdowns to the Agents tab toolbar** (around line 840-854):
+   - Site filter: Select populated from `sites` state
+   - Status filter: Select with Active / Inactive
+
+4. **Update filtering logic** in both tabs' IIFE blocks:
+   - Non-Agents (line ~658-664): chain role, site, and status filters after the existing search filter
+   - Agents (line ~823-837): chain site and status filters after the existing search filter
+
+5. **Reset filters when switching tabs** — clear filter state on tab change via `onValueChange` on the `Tabs` component
+
+### UI Layout
+Filters will appear as compact Select dropdowns inline next to the existing search input, maintaining the current toolbar style.
 
