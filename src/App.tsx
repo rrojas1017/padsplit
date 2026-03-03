@@ -304,28 +304,28 @@ const App = () => (
               } />
               {/* Research routes - Researcher role */}
               <Route path="/research/dashboard" element={
-                <ProtectedRoute allowedRoles={['researcher', 'super_admin', 'admin']}>
+                <ProtectedRoute allowedRoles={['researcher', 'super_admin', 'admin', 'supervisor']}>
                   <DataProviders>
                     <ResearchDashboard />
                   </DataProviders>
                 </ProtectedRoute>
               } />
               <Route path="/research/campaigns" element={
-                <ProtectedRoute allowedRoles={['researcher', 'super_admin', 'admin']}>
+                <ProtectedRoute allowedRoles={['researcher', 'super_admin', 'admin', 'supervisor']}>
                   <DataProviders>
                     <MyCampaigns />
                   </DataProviders>
                 </ProtectedRoute>
               } />
               <Route path="/research/log-call" element={
-                <ProtectedRoute allowedRoles={['researcher', 'super_admin', 'admin']}>
+                <ProtectedRoute allowedRoles={['researcher', 'super_admin', 'admin', 'supervisor']}>
                   <DataProviders>
                     <LogSurveyCall />
                   </DataProviders>
                 </ProtectedRoute>
               } />
               <Route path="/research/history" element={
-                <ProtectedRoute allowedRoles={['researcher', 'super_admin', 'admin']}>
+                <ProtectedRoute allowedRoles={['researcher', 'super_admin', 'admin', 'supervisor']}>
                   <DataProviders>
                     <MyCallHistory />
                   </DataProviders>
