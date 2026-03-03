@@ -79,6 +79,10 @@ export default function UserManagement() {
   const [isEditAgentDialogOpen, setIsEditAgentDialogOpen] = useState(false);
   const [editingAgent, setEditingAgent] = useState<{ id: string; name: string; siteId: string; dialerAgentUser: string } | null>(null);
 
+  // Edit researcher state
+  const [isEditResearcherDialogOpen, setIsEditResearcherDialogOpen] = useState(false);
+  const [editingResearcher, setEditingResearcher] = useState<{ id: string; name: string; siteId: string } | null>(null);
+
   // Form state
   const [newUserName, setNewUserName] = useState('');
   const [newUserEmail, setNewUserEmail] = useState('');
@@ -406,6 +410,35 @@ export default function UserManagement() {
         description: 'Failed to update agent',
         variant: 'destructive',
       });
+    }
+  };
+
+  const handleEditResearcher = (user: UserWithRole) => {
+    setEditingResearcher({
+      id: user.id,
+      name: user.name,
+      siteId: user.site_id || '',
+    });
+    setIsEditResearcherDialogOpen(true);
+  };
+
+  const handleSaveResearcher = async () => {
+    if (!editingResearcher) return;
+    try {
+      const { error } = await supabase
+        .from('profiles')
+        .update({
+          name: editingResearcher.name,
+          site_id: editingResearcher.siteId || null,
+        })
+        .eq('id', editingResearcher.id);
+      if (error) throw error;
+      toast({ title: 'Success', description: 'Researcher updated successfully' });
+      setIsEditResearcherDialogOpen(false);
+      setEditingResearcher(null);
+      fetchUsers();
+    } catch (error) {
+      toast({ title: 'Error', description: 'Failed to update researcher', variant: 'destructive' });
     }
   };
 
@@ -1096,6 +1129,12 @@ export default function UserManagement() {
                                           Edit Agent
                                         </DropdownMenuItem>
                                       )}
+                                      {!linkedAgent && user.role === 'researcher' && (isSuperAdmin || isAdmin) && (
+                                        <DropdownMenuItem onClick={() => handleEditResearcher(user)}>
+                                          <Pencil className="w-4 h-4 mr-2" />
+                                          Edit Researcher
+                                        </DropdownMenuItem>
+                                      )}
                                       {(isSuperAdmin || isAdmin) && user.id !== currentUser?.id && (
                                         <DropdownMenuItem onClick={() => handleOpenEditRoleDialog(user)}>
                                           <Shield className="w-4 h-4 mr-2" />
@@ -1420,6 +1459,56 @@ export default function UserManagement() {
               Cancel
             </Button>
             <Button onClick={handleSaveAgent}>
+              Save Changes
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Researcher Dialog */}
+      <Dialog open={isEditResearcherDialogOpen} onOpenChange={setIsEditResearcherDialogOpen}>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle>Edit Researcher</DialogTitle>
+            <DialogDescription>
+              Update researcher details.
+            </DialogDescription>
+          </DialogHeader>
+          {editingResearcher && (
+            <div className="grid gap-4 py-4">
+              <div className="grid gap-2">
+                <Label htmlFor="researcherName">Name</Label>
+                <Input
+                  id="researcherName"
+                  value={editingResearcher.name}
+                  onChange={(e) => setEditingResearcher({ ...editingResearcher, name: e.target.value })}
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="researcherSite">Site</Label>
+                <Select
+                  value={editingResearcher.siteId}
+                  onValueChange={(value) => setEditingResearcher({ ...editingResearcher, siteId: value })}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select a site" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {agentSites.map(site => (
+                      <SelectItem key={site.id} value={site.id}>
+                        {site.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsEditResearcherDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleSaveResearcher}>
               Save Changes
             </Button>
           </DialogFooter>
