@@ -5,13 +5,14 @@ import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
-import { FileText, Check, Send, Clock, Download, ChevronDown, AlertCircle, BarChart3 } from 'lucide-react';
+import { FileText, Check, Send, Clock, Download, ChevronDown, AlertCircle, BarChart3, ClipboardList } from 'lucide-react';
 import { format, parseISO, isPast } from 'date-fns';
 import { BillingInvoice, Client, InvoiceLineItem } from '@/hooks/useBillingData';
 import { formatCurrency, SOW_CATEGORY_LABELS } from '@/utils/billingCalculations';
 import { toast } from 'sonner';
 import { generateInvoicePDF } from '@/components/billing/InvoicePDFGenerator';
 import { generateUsageDetailPDF } from '@/components/billing/UsageDetailPDFGenerator';
+import { generateRecordsProcessingPDF } from '@/components/billing/RecordsProcessingPDFGenerator';
 
 interface InvoiceHistoryProps {
   invoices: BillingInvoice[];
@@ -30,6 +31,7 @@ const InvoiceHistory = ({ invoices, clients, onUpdateStatus, onFetchLineItems }:
   const [expandedInvoice, setExpandedInvoice] = useState<string | null>(null);
   const [lineItemsCache, setLineItemsCache] = useState<Record<string, InvoiceLineItem[]>>({});
   const [generatingUsageReport, setGeneratingUsageReport] = useState<string | null>(null);
+  const [generatingProcessingReport, setGeneratingProcessingReport] = useState<string | null>(null);
 
   const getClientName = (clientId: string) => {
     return clients.find(c => c.id === clientId)?.name || 'Unknown';
@@ -75,6 +77,18 @@ const InvoiceHistory = ({ invoices, clients, onUpdateStatus, onFetchLineItems }:
       toast.error('Failed to generate usage report');
     } finally {
       setGeneratingUsageReport(null);
+    }
+  };
+
+  const handleDownloadProcessingReport = async (invoice: BillingInvoice) => {
+    setGeneratingProcessingReport(invoice.id);
+    try {
+      await generateRecordsProcessingPDF(invoice.period_start, invoice.period_end, invoice.invoice_number || undefined);
+      toast.success('Processing detail report downloaded');
+    } catch (error) {
+      toast.error('Failed to generate processing report');
+    } finally {
+      setGeneratingProcessingReport(null);
     }
   };
 
@@ -208,6 +222,16 @@ const InvoiceHistory = ({ invoices, clients, onUpdateStatus, onFetchLineItems }:
                           title="Download Usage Detail Report"
                         >
                           <BarChart3 className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-8 w-8 p-0"
+                          onClick={() => handleDownloadProcessingReport(invoice)}
+                          disabled={generatingProcessingReport === invoice.id}
+                          title="Download Records Processing Report"
+                        >
+                          <ClipboardList className="h-4 w-4" />
                         </Button>
                         <Select
                           value={invoice.status}
