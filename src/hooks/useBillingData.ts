@@ -357,7 +357,8 @@ export function useBillingData(dateRange: DateRangeType = 'thisMonth', customSta
       .from('bookings')
       .select('id, import_batch_id')
       .gte('booking_date', startDate)
-      .lte('booking_date', endDate);
+      .lte('booking_date', endDate)
+      .neq('record_type', 'research');
 
     if (bErr) throw bErr;
     const periodBookingIds = (periodBookings || []).map(b => b.id);

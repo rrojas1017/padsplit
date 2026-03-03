@@ -78,15 +78,18 @@ async function fetchProcessingData(periodStart: string, periodEnd: string) {
     .order('booking_date', { ascending: true })
     .limit(5000);
 
-  // API costs grouped by booking
-  const { data: costs } = await supabase
-    .from('api_costs')
-    .select('booking_id, service_type')
-    .gte('created_at', `${periodStart}T00:00:00`)
-    .lte('created_at', `${periodEnd}T23:59:59`)
-    .eq('is_internal', false)
-    .not('booking_id', 'is', null)
-    .limit(10000);
+  // API costs joined by booking_id (anchored to booking_date, not created_at)
+  const bookingIds = (bookings || []).map((b: any) => b.id);
+  let costs: any[] = [];
+  if (bookingIds.length > 0) {
+    const { data } = await supabase
+      .from('api_costs')
+      .select('booking_id, service_type')
+      .in('booking_id', bookingIds)
+      .eq('is_internal', false)
+      .limit(10000);
+    costs = data || [];
+  }
 
   // Build service map per booking
   const serviceMap = new Map<string, Set<string>>();
