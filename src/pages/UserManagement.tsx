@@ -274,8 +274,12 @@ export default function UserManagement() {
 
   const handleRoleChange = (role: string) => {
     setNewUserRole(role);
-    if (role === 'super_admin' || role === 'admin' || role === 'researcher') {
+    if (role === 'super_admin' || role === 'admin') {
       setNewUserSiteId('none');
+      setLinkedAgentId('');
+    } else if (role === 'researcher') {
+      const vixicomSite = sites.find(s => s.name.toLowerCase().includes('vixicom'));
+      setNewUserSiteId(vixicomSite?.id || 'none');
       setLinkedAgentId('');
     }
   };
@@ -325,7 +329,7 @@ export default function UserManagement() {
           password: newUserPassword,
           name: newUserName,
           role: newUserRole,
-          siteId: newUserSiteId === 'none' ? null : newUserSiteId || null,
+          siteId: (newUserRole === 'supervisor' || newUserRole === 'agent' || newUserRole === 'researcher') && newUserSiteId !== 'none' ? newUserSiteId : null,
           linkedAgentId: linkedAgentId && linkedAgentId !== 'none' ? linkedAgentId : null,
         },
       });
@@ -495,7 +499,7 @@ export default function UserManagement() {
         body: {
           userId: userToEditRole.id,
           newRole: editRoleValue,
-          siteId: (editRoleValue === 'supervisor' || editRoleValue === 'agent') ? editRoleSiteId : null,
+          siteId: (editRoleValue === 'supervisor' || editRoleValue === 'agent' || editRoleValue === 'researcher') ? editRoleSiteId : null,
         },
       });
 
@@ -1279,8 +1283,11 @@ export default function UserManagement() {
                 <Label htmlFor="newRole">New Role</Label>
                 <Select value={editRoleValue} onValueChange={(value) => {
                   setEditRoleValue(value);
-                  if (value === 'super_admin' || value === 'admin' || value === 'researcher') {
+                  if (value === 'super_admin' || value === 'admin') {
                     setEditRoleSiteId('');
+                  } else if (value === 'researcher') {
+                    const vixicomSite = sites.find(s => s.name.toLowerCase().includes('vixicom'));
+                    setEditRoleSiteId(vixicomSite?.id || '');
                   }
                 }}>
                   <SelectTrigger>
