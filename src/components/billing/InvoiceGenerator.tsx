@@ -94,7 +94,6 @@ const InvoiceGenerator = ({
       
       email_delivery: periodData.emailDeliveryCount,
       sms_delivery: periodData.smsDeliveryCount,
-      telephony: periodData.telephonyMinutes,
       data_appending: 0,
       chat_delivery: 0,
     };
