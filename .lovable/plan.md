@@ -1,22 +1,25 @@
 
 
-## Add Agent Type Column to Agents Tab
+## Fix Researcher Role & Default Vixicom Site Assignment
 
-The Agents tab now contains both `agent` and `researcher` roles but doesn't visually distinguish them. We'll add a "Type" column showing the role badge.
+### Issues Found
+
+1. **Bug**: The `update-user-role` edge function has `validRoles = ['super_admin', 'admin', 'supervisor', 'agent']` — missing `'researcher'`. Any role change to researcher will fail with "Invalid role."
+2. **Missing**: When creating or changing a role to researcher, there's no auto-assignment to the Vixicom site. The frontend currently clears the site when researcher is selected.
 
 ### Changes
 
-**File: `src/pages/UserManagement.tsx`**
+**1. Edge Function (`supabase/functions/update-user-role/index.ts`)**
+- Line 106: Add `'researcher'` to `validRoles` array.
+- After site validation: when `newRole === 'researcher'`, look up the Vixicom site (`name ILIKE '%vixicom%'`) and auto-assign it as the `siteId` for the profile update.
 
-1. **Add a "Type" filter dropdown** next to the existing Site/Status filters in the Agents tab toolbar (around line 906). Options: All Types, Booking Agent, Researcher.
+**2. Frontend (`src/pages/UserManagement.tsx`)**
 
-2. **Apply the type filter** in the filtering logic (around line 883-888): filter by `u.role === 'agent'` for "Booking Agent" and `u.role === 'researcher'` for "Researcher".
+- **Create User flow** (line 275-280): When researcher is selected, instead of setting site to `'none'`, auto-select the Vixicom site from the `sites` array.
+- **Edit Role dialog** (line 1282-1284): Same — when researcher is selected, auto-set `editRoleSiteId` to the Vixicom site.
+- **handleUpdateRole** (line 498): Send the `siteId` for researcher role too (not just supervisor/agent).
+- **handleCreateUser** (line 328): Send the Vixicom site ID for researcher role.
 
-3. **Add a "Type" column** to the agents table header (around line 949, after "Agent" column).
-
-4. **Add the type cell** in each agent row (around line 986, after the name cell), displaying a colored badge:
-   - `agent` role → "Booking Agent" badge (blue)
-   - `researcher` role → "Researcher" badge (purple)
-
-5. **Update colspan** values in loading/empty states to account for the new column.
+**3. Edge Function site handling**
+- When `newRole === 'researcher'` and no `siteId` is provided, query `sites` for Vixicom and use that ID for the profile update. This ensures backend safety even if frontend doesn't send it.
 
