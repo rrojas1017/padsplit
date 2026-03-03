@@ -64,13 +64,15 @@ Deno.serve(async (req) => {
 
     console.log(`Requesting user role: ${roleData?.role}`)
 
-    if (roleError || roleData?.role !== 'super_admin') {
-      console.log('Permission denied - not a super_admin')
+    if (roleError || !roleData?.role || !['super_admin', 'admin'].includes(roleData.role)) {
+      console.log('Permission denied - not a super_admin or admin')
       return new Response(
-        JSON.stringify({ error: 'Only super admins can change user roles' }),
+        JSON.stringify({ error: 'Only super admins and admins can change user roles' }),
         { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
     }
+
+    const requestingRole = roleData.role
 
     // Parse request body
     const { userId, newRole, siteId } = await req.json()
@@ -117,6 +119,17 @@ Deno.serve(async (req) => {
       )
     }
 
+    // Admin-specific restrictions
+    if (requestingRole === 'admin') {
+      // Admins can only assign agent, supervisor, researcher
+      if (['super_admin', 'admin'].includes(newRole)) {
+        return new Response(
+          JSON.stringify({ error: 'Admins can only assign agent, supervisor, or researcher roles' }),
+          { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        )
+      }
+    }
+
     if (siteId && !uuidRegex.test(siteId)) {
       return new Response(
         JSON.stringify({ error: 'Invalid site ID format' }),
@@ -140,6 +153,14 @@ Deno.serve(async (req) => {
     }
 
     const previousRole = currentRoleData.role
+
+    // Block admins from changing roles of super_admin or admin users
+    if (requestingRole === 'admin' && ['super_admin', 'admin'].includes(previousRole)) {
+      return new Response(
+        JSON.stringify({ error: 'Admins cannot change the role of super admins or other admins' }),
+        { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
+    }
 
     // Update the role
     const { error: updateRoleError } = await supabaseAdmin
