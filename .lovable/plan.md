@@ -1,71 +1,35 @@
 
 
-## Detailed Usage Report for PadSplit
+## Remove Telephony from Billing
 
-### What we're building
+### Why
+No telephony provider (Telnyx, Twilio, etc.) is integrated. The telephony line item was added preemptively but has never produced real costs. It should be removed from all billing surfaces to avoid confusion.
 
-A **Usage Detail Report** PDF that supplements the existing invoice with per-record evidence. This will be a new PDF generator that produces a supporting document showing every booking processed during the billing period, categorized by processing type (voice vs text), with individual record details.
+### Changes
 
-### Report structure (PDF pages)
+**1. `src/utils/billingCalculations.ts`**
+- Remove `telephony` entry from `SOW_PRICING`
+- Remove `telephony` from `SOW_CATEGORY_LABELS` and `SOW_UNIT_LABELS` (`per_minute`)
 
-```text
-Page 1: Cover + Summary
-  - "Usage Detail Report" title
-  - Appendify, LLC → PadSplit, Inc. header
-  - Billing period
-  - Summary table: total voice records, text records, emails, SMS, telephony minutes
-  - Grand totals matching the invoice
+**2. `src/components/billing/UsageDetailPDFGenerator.ts`**
+- Remove the entire "Telephony Detail" page/section that queries platform-originated calls and calculates billable minutes
+- Remove telephony from the cover summary table
 
-Page 2+: Voice Record Detail
-  - Table: Record Date | Member Name | Market | Call Duration | Processing Type | SOW Rate
-  - Sorted by date ascending
-  - Subtotal row
+**3. `src/components/billing/InvoiceGenerator.tsx`** (if it references telephony)
+- Remove telephony line item generation
 
-Page N: Text Record Detail
-  - Same table format for text-only records (no STT transcription)
-  - Subtotal row
+**4. Database: `sow_pricing_config` table**
+- If a `telephony` row exists, deactivate it (`is_active = false`) via migration
 
-Page N+1: Communication Detail
-  - Emails sent: date, recipient, status
-  - SMS sent: date, recipient, status
+### What stays
+- `call_duration_seconds` on bookings remains (it's used for STT cost calculation, not telephony billing)
+- The `api_costs` table structure is unchanged
 
-Page N+2: Telephony Detail
-  - Platform-originated calls only (excluding imports)
-  - Date | Duration | Agent
-
-Final Page: Reconciliation Summary
-  - Category totals matching invoice line items
-  - Statement: "This report supports Invoice INV-XXXX-XXX"
-```
-
-### Technical approach
-
-1. **New component**: `src/components/billing/UsageDetailPDFGenerator.ts`
-   - Export a `generateUsageDetailPDF(periodStart, periodEnd, invoiceNumber?)` function
-   - Fetches data directly from database (bookings + api_costs + contact_communications for the period)
-   - Uses jsPDF (already installed) to render the multi-page report
-   - Handles pagination automatically for large datasets
-
-2. **Data queries** (inside the generator, called on-demand):
-   - Bookings in period with agent name, market, call duration, transcription status
-   - API costs joined to bookings to classify voice vs text
-   - Contact communications for email/SMS counts
-   - Platform-originated bookings (no `import_batch_id`) for telephony
-
-3. **UI integration**: Add a "Download Usage Report" button on the Billing page's Costs tab or Invoice History, next to the existing PDF download button.
-
-### Files to create/modify
-
+### Files to modify
 | File | Change |
 |------|--------|
-| `src/components/billing/UsageDetailPDFGenerator.ts` | New — PDF generation logic |
-| `src/components/billing/InvoiceHistory.tsx` | Add "Usage Report" download button per invoice |
-| `src/pages/Billing.tsx` | Add standalone "Generate Usage Report" button on Costs tab |
-
-### Key design decisions
-
-- Reuses the same visual style (navy headers, zebra stripes, Appendify branding) as the existing invoice PDF for consistency
-- Fetches data on-demand when the button is clicked (not pre-loaded) to avoid performance impact
-- Limits to 5,000 records per query (matching existing billing data limits)
-- Voice vs text classification uses the same logic already in `useBillingData`: a booking with an `stt_transcription` cost entry = voice; otherwise = text
+| `src/utils/billingCalculations.ts` | Remove telephony from SOW constants |
+| `src/components/billing/UsageDetailPDFGenerator.ts` | Remove telephony section from PDF |
+| `src/components/billing/InvoiceGenerator.tsx` | Remove telephony line if present |
+| Database migration | Set `is_active = false` on telephony SOW row |
 
