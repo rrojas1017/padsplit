@@ -1,28 +1,21 @@
 
 
-## Add Edit Option for Researchers in Agents Tab
+## Fix: Vici API Submissions Failing
 
 ### Problem
-Researchers don't have linked records in the `agents` table, so the "Edit Agent" menu item (guarded by `linkedAgent &&`) never renders for them. Admins/super admins cannot edit researcher details.
+Every submission from Vici Dial is being rejected. The `bookings` table has a CHECK constraint that only allows `booking_type` values of `Inbound`, `Outbound`, or `Referral`. The `submit-conversation-audio` edge function inserts `booking_type: 'Research'`, which violates this constraint.
 
-### Solution
-Add an "Edit Researcher" option for users with `role === 'researcher'` who don't have a `linkedAgent`. This will open a dialog to edit their name and site directly on the `profiles` table.
+All recent submissions (visible in logs) are failing with:
+> `new row for relation "bookings" violates check constraint "bookings_booking_type_check"`
 
-### Changes
+### Fix
+**Database migration**: Update the CHECK constraint to include `'Research'` as an allowed `booking_type` value.
 
-**File: `src/pages/UserManagement.tsx`**
+```sql
+ALTER TABLE public.bookings DROP CONSTRAINT bookings_booking_type_check;
+ALTER TABLE public.bookings ADD CONSTRAINT bookings_booking_type_check
+  CHECK (booking_type = ANY (ARRAY['Inbound','Outbound','Referral','Research']));
+```
 
-1. **Add state for editing researcher**: Add `isEditResearcherDialogOpen` and `editingResearcher` (with `id`, `name`, `siteId`) state variables.
-
-2. **Add `handleEditResearcher` function**: Populates edit state from the user's profile data (`user.id`, `user.name`, `user.siteId`).
-
-3. **Add `handleSaveResearcher` function**: Updates the `profiles` table with new `name` and `site_id`, then refreshes users.
-
-4. **Update dropdown menu** (line 1093): Add an `else` branch for researchers without a `linkedAgent`:
-   ```
-   {linkedAgent && ( <Edit Agent> )}
-   {!linkedAgent && user.role === 'researcher' && (isSuperAdmin || isAdmin) && ( <Edit Researcher> )}
-   ```
-
-5. **Add Edit Researcher Dialog**: Simple dialog with Name input and Site dropdown, similar to the existing Edit Agent dialog but updating the `profiles` table instead of the `agents` table.
+No code changes needed -- the edge function is already correctly inserting `'Research'`. This is purely a database constraint issue.
 
