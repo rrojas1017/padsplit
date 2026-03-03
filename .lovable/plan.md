@@ -1,53 +1,27 @@
 
 
-## Records Processing Detail Report
+## Fix: Invoice vs Detail Report Record Count Mismatch
 
-A new standalone PDF report that lists every record processed during a billing period with a breakdown of **what processing was performed** on each one -- not just "Voice" or "Text" classification, but the actual services applied (transcription, AI analysis, QA scoring, coaching audio, etc.).
+### Root cause (two bugs)
 
-### How it differs from the existing Usage Detail Report
+**Bug 1 -- Missing `record_type` filter on invoice counts.**
+`fetchPeriodCounts` in `useBillingData.ts` queries all bookings in the period without excluding research records. The Records Processing Detail report correctly filters `.neq('record_type', 'research')`. So the invoice may be billing for research records that the detail report omits.
 
-| Existing Usage Detail Report | New Processing Detail Report |
-|-----|-----|
-| Groups records by Voice vs Text | Lists ALL records in one table |
-| Shows SOW rate per record | Shows which services were applied to each record |
-| Billing-focused (rates, subtotals) | Evidence-focused (what was done) |
-| Summary + reconciliation pages | Per-record processing breakdown |
+**Bug 2 -- Different join strategy for `api_costs`.**
+- Invoice (`fetchPeriodCounts`): fetches bookings by `booking_date`, then fetches `api_costs` by `.in('booking_id', periodBookingIds)` -- correct approach, anchored to the booking date.
+- Detail report (`RecordsProcessingPDFGenerator`): fetches `api_costs` by `created_at` timestamp range, which may not align with the booking's `booking_date`. A call booked on Jan 31 but transcribed on Feb 2 would show in the invoice (anchored to booking_date) but the cost entry might not match the detail report's `created_at` filter.
 
-### Report structure
+### Fix
 
-```text
-Page 1: Cover
-  - "Records Processing Detail Report"
-  - Appendify → PadSplit header
-  - Period, generation date
-  - Summary stats: total records, with transcription, with QA, with coaching
+**1. `src/hooks/useBillingData.ts` -- `fetchPeriodCounts`**
+- Add `.neq('record_type', 'research')` to the bookings query so research records are excluded from invoice totals.
 
-Page 2+: Processing Detail Table (landscape)
-  - # | Date | Member | Market | Agent | Duration | Transcribed | AI Analysis | QA Scored | Coaching | Classification
-  - Each processing step shown as ✓ or — 
-  - Derived from api_costs entries linked to each booking
+**2. `src/components/billing/RecordsProcessingPDFGenerator.ts` -- `fetchProcessingData`**
+- Change `api_costs` query from filtering by `created_at` date range to filtering by `.in('booking_id', bookingIds)` -- matching the invoice's approach of anchoring everything to booking_date.
 
-Final Page: Processing Summary
-  - Count of records by processing type
-  - Total records with each service applied
-```
+**3. `src/components/billing/UsageDetailPDFGenerator.ts` -- `fetchUsageData`**
+- Same fix: change `api_costs` query from `created_at` range to `.in('booking_id', bookingIds)`.
 
-### Data approach
-
-Query `api_costs` grouped by `booking_id` and `service_type` to build a map of which services were applied to each booking. Join with `bookings` for record metadata. Also pull from `booking_transcriptions` for transcription/QA/coaching status.
-
-### Files
-
-| File | Change |
-|------|--------|
-| `src/components/billing/RecordsProcessingPDFGenerator.ts` | **New** -- generates the processing detail PDF |
-| `src/components/billing/InvoiceHistory.tsx` | Add a third download button for this report |
-
-### Technical details
-
-- New generator: `generateRecordsProcessingPDF(periodStart, periodEnd, invoiceNumber?)`
-- Fetches `bookings` (non-research) + `api_costs` grouped by booking_id + `booking_transcriptions` for status flags
-- Uses landscape orientation for wider table
-- Same visual style (navy headers, zebra rows, Appendify branding)
-- Processing columns derived from `service_type` values in `api_costs`: `stt_transcription`, `ai_analysis`, `ai_coaching`, `ai_qa_scoring`, `tts_coaching`, `tts_qa_coaching`
+### Result
+All three surfaces (invoice total, usage detail report, records processing report) will use the same data: bookings filtered by `booking_date` + `record_type != research`, with costs joined by `booking_id`.
 
