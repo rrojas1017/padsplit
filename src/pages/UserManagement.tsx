@@ -532,6 +532,25 @@ export default function UserManagement() {
     }
   };
 
+  // Handle toggling user profile status (for researchers without linked agents)
+  const handleToggleUserStatus = async (userId: string) => {
+    try {
+      const user = users.find(u => u.id === userId);
+      if (!user) return;
+      const newStatus = user.status === 'active' ? 'inactive' : 'active';
+      const { error } = await supabase
+        .from('profiles')
+        .update({ status: newStatus })
+        .eq('id', userId);
+      if (error) throw error;
+      toast({ title: 'Status Updated', description: `User is now ${newStatus}` });
+      fetchUsers();
+    } catch (error) {
+      console.error('Error toggling user status:', error);
+      toast({ title: 'Error', description: 'Failed to update status', variant: 'destructive' });
+    }
+  };
+
   // Handle toggling communication permission (master toggle)
   const handleToggleCommunicationPermission = async (userId: string, userName: string, currentValue: boolean) => {
     try {
@@ -1035,14 +1054,18 @@ export default function UserManagement() {
                                       </span>
                                     </div>
                                   ) : (
-                                    <span className={cn(
-                                      "px-2 py-1 rounded-full text-xs font-medium",
-                                      user.status === 'active' 
-                                        ? "bg-success/20 text-success" 
-                                        : "bg-muted text-muted-foreground"
-                                    )}>
-                                      {user.status}
-                                    </span>
+                                    <div className="flex items-center gap-2">
+                                      <Switch
+                                        checked={user.status === 'active'}
+                                        onCheckedChange={() => handleToggleUserStatus(user.id)}
+                                      />
+                                      <span className={cn(
+                                        "text-xs font-medium",
+                                        user.status === 'active' ? "text-success" : "text-muted-foreground"
+                                      )}>
+                                        {user.status === 'active' ? 'Active' : 'Inactive'}
+                                      </span>
+                                    </div>
                                   )}
                                 </td>
                                 {(isSuperAdmin || isAdmin) && (
