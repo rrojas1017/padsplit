@@ -73,7 +73,7 @@ export default function UserManagement() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const { toast } = useToast();
   const { user: currentUser, hasRole } = useAuth();
-  const { agents, sites: agentSites, updateAgent, toggleAgentStatus } = useAgents();
+  const { agents, sites: agentSites, addAgent, updateAgent, toggleAgentStatus } = useAgents();
 
   // Edit agent state
   const [isEditAgentDialogOpen, setIsEditAgentDialogOpen] = useState(false);
@@ -81,7 +81,7 @@ export default function UserManagement() {
 
   // Edit researcher state
   const [isEditResearcherDialogOpen, setIsEditResearcherDialogOpen] = useState(false);
-  const [editingResearcher, setEditingResearcher] = useState<{ id: string; name: string; siteId: string } | null>(null);
+  const [editingResearcher, setEditingResearcher] = useState<{ id: string; name: string; siteId: string; dialerAgentUser: string } | null>(null);
 
   // Form state
   const [newUserName, setNewUserName] = useState('');
@@ -414,10 +414,13 @@ export default function UserManagement() {
   };
 
   const handleEditResearcher = (user: UserWithRole) => {
+    // Find if researcher has a linked agent record
+    const linkedAgent = agents.find(a => a.userId === user.id);
     setEditingResearcher({
       id: user.id,
       name: user.name,
       siteId: user.site_id || '',
+      dialerAgentUser: linkedAgent?.dialerAgentUser || '',
     });
     setIsEditResearcherDialogOpen(true);
   };
@@ -425,14 +428,37 @@ export default function UserManagement() {
   const handleSaveResearcher = async () => {
     if (!editingResearcher) return;
     try {
-      const { error } = await supabase
+      // Update profile
+      const { error: profileError } = await supabase
         .from('profiles')
         .update({
           name: editingResearcher.name,
           site_id: editingResearcher.siteId || null,
         })
         .eq('id', editingResearcher.id);
-      if (error) throw error;
+      if (profileError) throw profileError;
+
+      // Check if researcher has an existing agent record
+      const linkedAgent = agents.find(a => a.userId === editingResearcher.id);
+      if (linkedAgent) {
+        // Update existing agent record
+        await updateAgent(linkedAgent.id, {
+          name: editingResearcher.name,
+          siteId: editingResearcher.siteId,
+          dialerAgentUser: editingResearcher.dialerAgentUser,
+        });
+      } else if (editingResearcher.siteId && editingResearcher.dialerAgentUser) {
+        // Create agent record if dialer user is provided
+        await addAgent({
+          name: editingResearcher.name,
+          siteId: editingResearcher.siteId,
+          siteName: agentSites.find(s => s.id === editingResearcher.siteId)?.name || '',
+          active: true,
+          userId: editingResearcher.id,
+          dialerAgentUser: editingResearcher.dialerAgentUser,
+        });
+      }
+
       toast({ title: 'Success', description: 'Researcher updated successfully' });
       setIsEditResearcherDialogOpen(false);
       setEditingResearcher(null);
@@ -1501,6 +1527,16 @@ export default function UserManagement() {
                     ))}
                   </SelectContent>
                 </Select>
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="researcherDialerUser">Dialer Agent User</Label>
+                <Input
+                  id="researcherDialerUser"
+                  placeholder="External dialer identifier"
+                  value={editingResearcher.dialerAgentUser}
+                  onChange={(e) => setEditingResearcher({ ...editingResearcher, dialerAgentUser: e.target.value })}
+                />
+                <p className="text-xs text-muted-foreground">Used to match incoming API submissions to this researcher.</p>
               </div>
             </div>
           )}
