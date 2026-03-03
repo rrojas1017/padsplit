@@ -105,6 +105,9 @@ export default function UserManagement() {
   const [isUpdatingRole, setIsUpdatingRole] = useState(false);
 
   const [searchQuery, setSearchQuery] = useState('');
+  const [roleFilter, setRoleFilter] = useState('all');
+  const [siteFilter, setSiteFilter] = useState('all');
+  const [statusFilter, setStatusFilter] = useState('all');
 
   const isSuperAdmin = hasRole(['super_admin']);
   const isAdmin = hasRole(['admin']);
@@ -646,7 +649,7 @@ export default function UserManagement() {
       title="User Management" 
       subtitle="Manage users, roles, and agents"
     >
-      <Tabs defaultValue={isSupervisor ? "agents" : "non-agents"} className="w-full">
+      <Tabs defaultValue={isSupervisor ? "agents" : "non-agents"} className="w-full" onValueChange={() => { setRoleFilter('all'); setSiteFilter('all'); setStatusFilter('all'); setSearchQuery(''); }}>
         <TabsList className="mb-6">
           {!isSupervisor && <TabsTrigger value="non-agents">Non-Agents</TabsTrigger>}
           <TabsTrigger value="agents">Agents</TabsTrigger>
@@ -655,13 +658,23 @@ export default function UserManagement() {
         {/* Non-Agents Tab */}
         <TabsContent value="non-agents">
           {(() => {
-            const allNonAgentUsers = users.filter(u => ['super_admin', 'admin', 'supervisor', 'researcher'].includes(u.role));
+            let filteredNonAgents = users.filter(u => ['super_admin', 'admin', 'supervisor', 'researcher'].includes(u.role));
             const query = searchQuery.toLowerCase();
-            const nonAgentUsers = query
-              ? allNonAgentUsers.filter(u => 
-                  u.name?.toLowerCase().includes(query) || u.email?.toLowerCase().includes(query)
-                )
-              : allNonAgentUsers;
+            if (query) {
+              filteredNonAgents = filteredNonAgents.filter(u => 
+                u.name?.toLowerCase().includes(query) || u.email?.toLowerCase().includes(query)
+              );
+            }
+            if (roleFilter !== 'all') {
+              filteredNonAgents = filteredNonAgents.filter(u => u.role === roleFilter);
+            }
+            if (siteFilter !== 'all') {
+              filteredNonAgents = filteredNonAgents.filter(u => u.site_id === siteFilter);
+            }
+            if (statusFilter !== 'all') {
+              filteredNonAgents = filteredNonAgents.filter(u => u.status === statusFilter);
+            }
+            const nonAgentUsers = filteredNonAgents;
             return (
               <>
                 <div className="flex items-center justify-between mb-6">
@@ -669,7 +682,7 @@ export default function UserManagement() {
                     <p className="text-muted-foreground">
                       {loading ? 'Loading...' : `${nonAgentUsers.length} administrators, supervisors & researchers`}
                     </p>
-                    <div className="relative">
+                     <div className="relative">
                       <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                       <Input
                         placeholder="Search by name or email..."
@@ -678,6 +691,39 @@ export default function UserManagement() {
                         className="pl-9 w-64 bg-background/50"
                       />
                     </div>
+                    <Select value={roleFilter} onValueChange={setRoleFilter}>
+                      <SelectTrigger className="w-40 bg-background/50">
+                        <SelectValue placeholder="Role" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All Roles</SelectItem>
+                        <SelectItem value="super_admin">Super Admin</SelectItem>
+                        <SelectItem value="admin">Admin</SelectItem>
+                        <SelectItem value="supervisor">Supervisor</SelectItem>
+                        <SelectItem value="researcher">Researcher</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <Select value={siteFilter} onValueChange={setSiteFilter}>
+                      <SelectTrigger className="w-40 bg-background/50">
+                        <SelectValue placeholder="Site" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All Sites</SelectItem>
+                        {sites.map(site => (
+                          <SelectItem key={site.id} value={site.id}>{site.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <Select value={statusFilter} onValueChange={setStatusFilter}>
+                      <SelectTrigger className="w-36 bg-background/50">
+                        <SelectValue placeholder="Status" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All Status</SelectItem>
+                        <SelectItem value="active">Active</SelectItem>
+                        <SelectItem value="inactive">Inactive</SelectItem>
+                      </SelectContent>
+                    </Select>
                   </div>
             <Button 
               className="gap-2"
@@ -822,7 +868,7 @@ export default function UserManagement() {
         <TabsContent value="agents">
           {(() => {
             // Supervisors only see agents from their site
-            const allAgentUsers = users.filter(u => {
+            let filteredAgents = users.filter(u => {
               if (u.role !== 'agent') return false;
               if (isSupervisor && currentUserSiteId) {
                 return u.site_id === currentUserSiteId;
@@ -830,11 +876,18 @@ export default function UserManagement() {
               return true;
             });
             const query = searchQuery.toLowerCase();
-            const agentUsers = query
-              ? allAgentUsers.filter(u => 
-                  u.name?.toLowerCase().includes(query) || u.email?.toLowerCase().includes(query)
-                )
-              : allAgentUsers;
+            if (query) {
+              filteredAgents = filteredAgents.filter(u => 
+                u.name?.toLowerCase().includes(query) || u.email?.toLowerCase().includes(query)
+              );
+            }
+            if (siteFilter !== 'all') {
+              filteredAgents = filteredAgents.filter(u => u.site_id === siteFilter);
+            }
+            if (statusFilter !== 'all') {
+              filteredAgents = filteredAgents.filter(u => u.status === statusFilter);
+            }
+            const agentUsers = filteredAgents;
             return (
               <>
                 <div className="flex items-center justify-between mb-6">
@@ -851,6 +904,27 @@ export default function UserManagement() {
                         className="pl-9 w-64 bg-background/50"
                       />
                     </div>
+                    <Select value={siteFilter} onValueChange={setSiteFilter}>
+                      <SelectTrigger className="w-40 bg-background/50">
+                        <SelectValue placeholder="Site" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All Sites</SelectItem>
+                        {sites.map(site => (
+                          <SelectItem key={site.id} value={site.id}>{site.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <Select value={statusFilter} onValueChange={setStatusFilter}>
+                      <SelectTrigger className="w-36 bg-background/50">
+                        <SelectValue placeholder="Status" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All Status</SelectItem>
+                        <SelectItem value="active">Active</SelectItem>
+                        <SelectItem value="inactive">Inactive</SelectItem>
+                      </SelectContent>
+                    </Select>
                   </div>
                   <Button 
                     className="gap-2"
