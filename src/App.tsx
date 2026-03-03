@@ -304,14 +304,14 @@ const App = () => (
               } />
               {/* Research routes - Researcher role */}
               <Route path="/research/dashboard" element={
-                <ProtectedRoute allowedRoles={['researcher']}>
+                <ProtectedRoute allowedRoles={['researcher', 'super_admin', 'admin']}>
                   <DataProviders>
                     <ResearchDashboard />
                   </DataProviders>
                 </ProtectedRoute>
               } />
               <Route path="/research/campaigns" element={
-                <ProtectedRoute allowedRoles={['researcher']}>
+                <ProtectedRoute allowedRoles={['researcher', 'super_admin', 'admin']}>
                   <DataProviders>
                     <MyCampaigns />
                   </DataProviders>
