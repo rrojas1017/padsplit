@@ -658,7 +658,7 @@ export default function UserManagement() {
         {/* Non-Agents Tab */}
         <TabsContent value="non-agents">
           {(() => {
-            let filteredNonAgents = users.filter(u => ['super_admin', 'admin', 'supervisor', 'researcher'].includes(u.role));
+            let filteredNonAgents = users.filter(u => ['super_admin', 'admin', 'supervisor'].includes(u.role));
             const query = searchQuery.toLowerCase();
             if (query) {
               filteredNonAgents = filteredNonAgents.filter(u => 
@@ -680,7 +680,7 @@ export default function UserManagement() {
                 <div className="flex items-center justify-between mb-6">
                   <div className="flex items-center gap-4">
                     <p className="text-muted-foreground">
-                      {loading ? 'Loading...' : `${nonAgentUsers.length} administrators, supervisors & researchers`}
+                      {loading ? 'Loading...' : `${nonAgentUsers.length} administrators & supervisors`}
                     </p>
                      <div className="relative">
                       <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
@@ -700,7 +700,6 @@ export default function UserManagement() {
                         <SelectItem value="super_admin">Super Admin</SelectItem>
                         <SelectItem value="admin">Admin</SelectItem>
                         <SelectItem value="supervisor">Supervisor</SelectItem>
-                        <SelectItem value="researcher">Researcher</SelectItem>
                       </SelectContent>
                     </Select>
                     <Select value={siteFilter} onValueChange={setSiteFilter}>
@@ -830,7 +829,7 @@ export default function UserManagement() {
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
                               <DropdownMenuItem>Edit User</DropdownMenuItem>
-                              {isSuperAdmin && user.id !== currentUser?.id && (
+                              {(isSuperAdmin || isAdmin) && user.id !== currentUser?.id && (
                                 <DropdownMenuItem onClick={() => handleOpenEditRoleDialog(user)}>
                                   <Pencil className="w-4 h-4 mr-2" />
                                   Change Role
@@ -869,7 +868,7 @@ export default function UserManagement() {
           {(() => {
             // Supervisors only see agents from their site
             let filteredAgents = users.filter(u => {
-              if (u.role !== 'agent') return false;
+              if (!['agent', 'researcher'].includes(u.role)) return false;
               if (isSupervisor && currentUserSiteId) {
                 return u.site_id === currentUserSiteId;
               }
@@ -893,7 +892,7 @@ export default function UserManagement() {
                 <div className="flex items-center justify-between mb-6">
                   <div className="flex items-center gap-4">
                     <p className="text-muted-foreground">
-                      {loading ? 'Loading...' : `${agentUsers.length} agents`}
+                      {loading ? 'Loading...' : `${agentUsers.length} agents & researchers`}
                     </p>
                     <div className="relative">
                       <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
@@ -1045,7 +1044,7 @@ export default function UserManagement() {
                                           Edit Agent
                                         </DropdownMenuItem>
                                       )}
-                                      {isSuperAdmin && user.id !== currentUser?.id && (
+                                      {(isSuperAdmin || isAdmin) && user.id !== currentUser?.id && (
                                         <DropdownMenuItem onClick={() => handleOpenEditRoleDialog(user)}>
                                           <Shield className="w-4 h-4 mr-2" />
                                           Change Role
@@ -1263,8 +1262,8 @@ export default function UserManagement() {
                     <SelectValue placeholder="Select role" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="super_admin">Super Admin</SelectItem>
-                    <SelectItem value="admin">Admin</SelectItem>
+                    {isSuperAdmin && <SelectItem value="super_admin">Super Admin</SelectItem>}
+                    {isSuperAdmin && <SelectItem value="admin">Admin</SelectItem>}
                     <SelectItem value="supervisor">Supervisor</SelectItem>
                     <SelectItem value="agent">Agent</SelectItem>
                     <SelectItem value="researcher">Researcher</SelectItem>
