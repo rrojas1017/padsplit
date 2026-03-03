@@ -1,18 +1,28 @@
 
 
-## Fix: Allow Researchers to Toggle Active/Inactive
+## Add Edit Option for Researchers in Agents Tab
 
 ### Problem
-The active/inactive toggle in the Agents tab only works for users who have a linked `agents` table record. Researchers don't have linked agent records, so they show a static status badge instead of a toggle.
+Researchers don't have linked records in the `agents` table, so the "Edit Agent" menu item (guarded by `linkedAgent &&`) never renders for them. Admins/super admins cannot edit researcher details.
 
 ### Solution
-For researcher users without a linked agent, add a Switch that toggles the `status` field on the `profiles` table directly (between `'active'` and `'inactive'`).
+Add an "Edit Researcher" option for users with `role === 'researcher'` who don't have a `linkedAgent`. This will open a dialog to edit their name and site directly on the `profiles` table.
 
 ### Changes
 
 **File: `src/pages/UserManagement.tsx`**
 
-1. **Add a `handleToggleUserStatus` function** that updates the `profiles` table `status` field for a given user ID, toggling between `'active'` and `'inactive'`. Refresh the users list after update.
+1. **Add state for editing researcher**: Add `isEditResearcherDialogOpen` and `editingResearcher` (with `id`, `name`, `siteId`) state variables.
 
-2. **Update the Status column rendering** (around line 1023-1046): Change the `else` branch (when no `linkedAgent`) to show a `Switch` component for researchers, using `user.status === 'active'` as the checked value and calling `handleToggleUserStatus` on change. Keep the static badge for any other edge case.
+2. **Add `handleEditResearcher` function**: Populates edit state from the user's profile data (`user.id`, `user.name`, `user.siteId`).
+
+3. **Add `handleSaveResearcher` function**: Updates the `profiles` table with new `name` and `site_id`, then refreshes users.
+
+4. **Update dropdown menu** (line 1093): Add an `else` branch for researchers without a `linkedAgent`:
+   ```
+   {linkedAgent && ( <Edit Agent> )}
+   {!linkedAgent && user.role === 'researcher' && (isSuperAdmin || isAdmin) && ( <Edit Researcher> )}
+   ```
+
+5. **Add Edit Researcher Dialog**: Simple dialog with Name input and Site dropdown, similar to the existing Edit Agent dialog but updating the `profiles` table instead of the `agents` table.
 
