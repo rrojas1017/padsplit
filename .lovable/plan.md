@@ -1,29 +1,22 @@
 
 
-## Two Changes to User Management
+## Add Agent Type Column to Agents Tab
 
-### 1. Allow admins to change roles (limited scope)
+The Agents tab now contains both `agent` and `researcher` roles but doesn't visually distinguish them. We'll add a "Type" column showing the role badge.
 
-**Current behavior**: Only `super_admin` can see the "Change Role" menu item, and the edge function enforces `super_admin` only.
+### Changes
 
-**Changes needed**:
+**File: `src/pages/UserManagement.tsx`**
 
-**Frontend (`src/pages/UserManagement.tsx`)**:
-- Lines 833 and 1048: Change `{isSuperAdmin &&` to `{(isSuperAdmin || isAdmin) &&` to show the "Change Role" option for admins too.
-- Line 1265-1271: When the current user is an `admin` (not super_admin), limit the role options in the edit role dialog to only `agent`, `supervisor`, and `researcher` (admins cannot assign `super_admin` or `admin` roles).
+1. **Add a "Type" filter dropdown** next to the existing Site/Status filters in the Agents tab toolbar (around line 906). Options: All Types, Booking Agent, Researcher.
 
-**Backend (`supabase/functions/update-user-role/index.ts`)**:
-- Line 67: Allow both `super_admin` and `admin` roles to proceed.
-- Add validation: if the requesting user is `admin`, they can only assign roles `agent`, `supervisor`, or `researcher` — block attempts to assign `super_admin` or `admin`.
-- Block admins from changing the role of another `super_admin` or `admin` user.
+2. **Apply the type filter** in the filtering logic (around line 883-888): filter by `u.role === 'agent'` for "Booking Agent" and `u.role === 'researcher'` for "Researcher".
 
-### 2. Move researchers to the Agents tab
+3. **Add a "Type" column** to the agents table header (around line 949, after "Agent" column).
 
-**Current behavior**: Researchers appear in Non-Agents tab (line 661 filters for `super_admin`, `admin`, `supervisor`, `researcher`). Agents tab only shows `role === 'agent'` (line 872).
+4. **Add the type cell** in each agent row (around line 986, after the name cell), displaying a colored badge:
+   - `agent` role → "Booking Agent" badge (blue)
+   - `researcher` role → "Researcher" badge (purple)
 
-**Changes needed** (`src/pages/UserManagement.tsx`):
-- Line 661: Remove `'researcher'` from the Non-Agents filter array.
-- Line 872: Change from `u.role !== 'agent'` to `!['agent', 'researcher'].includes(u.role)` — include researchers in the Agents tab.
-- Line 896: Update the count label from "agents" to "agents & researchers".
-- Line 699-703: Remove the "Researcher" option from the Non-Agents role filter dropdown.
+5. **Update colspan** values in loading/empty states to account for the new column.
 
