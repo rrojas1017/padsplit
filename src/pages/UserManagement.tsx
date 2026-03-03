@@ -108,6 +108,7 @@ export default function UserManagement() {
   const [roleFilter, setRoleFilter] = useState('all');
   const [siteFilter, setSiteFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
+  const [agentTypeFilter, setAgentTypeFilter] = useState('all');
 
   const isSuperAdmin = hasRole(['super_admin']);
   const isAdmin = hasRole(['admin']);
@@ -886,6 +887,9 @@ export default function UserManagement() {
             if (statusFilter !== 'all') {
               filteredAgents = filteredAgents.filter(u => u.status === statusFilter);
             }
+            if (agentTypeFilter !== 'all') {
+              filteredAgents = filteredAgents.filter(u => u.role === agentTypeFilter);
+            }
             const agentUsers = filteredAgents;
             return (
               <>
@@ -924,6 +928,16 @@ export default function UserManagement() {
                         <SelectItem value="inactive">Inactive</SelectItem>
                       </SelectContent>
                     </Select>
+                    <Select value={agentTypeFilter} onValueChange={setAgentTypeFilter}>
+                      <SelectTrigger className="w-40 bg-background/50">
+                        <SelectValue placeholder="Type" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All Types</SelectItem>
+                        <SelectItem value="agent">Booking Agent</SelectItem>
+                        <SelectItem value="researcher">Researcher</SelectItem>
+                      </SelectContent>
+                    </Select>
                   </div>
                   <Button 
                     className="gap-2"
@@ -947,6 +961,7 @@ export default function UserManagement() {
                       <thead>
                         <tr className="border-b border-border bg-muted/30">
                           <th className="text-left py-3 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Agent</th>
+                          <th className="text-left py-3 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Type</th>
                           <th className="text-left py-3 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Email</th>
                           <th className="text-left py-3 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Site</th>
                           <th className="text-left py-3 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Status</th>
@@ -959,14 +974,14 @@ export default function UserManagement() {
                       <tbody className="divide-y divide-border">
                         {loading ? (
                           <tr>
-                            <td colSpan={(isSuperAdmin || isAdmin) ? 6 : 5} className="py-8 text-center text-muted-foreground">
+                             <td colSpan={(isSuperAdmin || isAdmin) ? 7 : 6} className="py-8 text-center text-muted-foreground">
                               <Loader2 className="w-6 h-6 animate-spin mx-auto mb-2" />
                               Loading agents...
                             </td>
                           </tr>
                         ) : agentUsers.length === 0 ? (
                           <tr>
-                            <td colSpan={(isSuperAdmin || isAdmin) ? 6 : 5} className="py-8 text-center text-muted-foreground">
+                            <td colSpan={(isSuperAdmin || isAdmin) ? 7 : 6} className="py-8 text-center text-muted-foreground">
                               No agents found
                             </td>
                           </tr>
@@ -984,6 +999,16 @@ export default function UserManagement() {
                                     </div>
                                     <span className="font-medium text-foreground">{user.name || 'Unknown'}</span>
                                   </div>
+                                </td>
+                                <td className="py-4 px-4">
+                                  <span className={cn(
+                                    "inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold",
+                                    user.role === 'researcher' 
+                                      ? "bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300" 
+                                      : "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300"
+                                  )}>
+                                    {user.role === 'researcher' ? 'Researcher' : 'Booking Agent'}
+                                  </span>
                                 </td>
                                 <td className="py-4 px-4 text-sm text-muted-foreground">
                                   {user.email}
