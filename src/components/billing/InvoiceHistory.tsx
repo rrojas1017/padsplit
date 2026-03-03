@@ -5,12 +5,13 @@ import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
-import { FileText, Check, Send, Clock, Download, ChevronDown, AlertCircle } from 'lucide-react';
+import { FileText, Check, Send, Clock, Download, ChevronDown, AlertCircle, BarChart3 } from 'lucide-react';
 import { format, parseISO, isPast } from 'date-fns';
 import { BillingInvoice, Client, InvoiceLineItem } from '@/hooks/useBillingData';
 import { formatCurrency, SOW_CATEGORY_LABELS } from '@/utils/billingCalculations';
 import { toast } from 'sonner';
 import { generateInvoicePDF } from '@/components/billing/InvoicePDFGenerator';
+import { generateUsageDetailPDF } from '@/components/billing/UsageDetailPDFGenerator';
 
 interface InvoiceHistoryProps {
   invoices: BillingInvoice[];
@@ -28,6 +29,7 @@ const statusConfig = {
 const InvoiceHistory = ({ invoices, clients, onUpdateStatus, onFetchLineItems }: InvoiceHistoryProps) => {
   const [expandedInvoice, setExpandedInvoice] = useState<string | null>(null);
   const [lineItemsCache, setLineItemsCache] = useState<Record<string, InvoiceLineItem[]>>({});
+  const [generatingUsageReport, setGeneratingUsageReport] = useState<string | null>(null);
 
   const getClientName = (clientId: string) => {
     return clients.find(c => c.id === clientId)?.name || 'Unknown';
@@ -62,6 +64,18 @@ const InvoiceHistory = ({ invoices, clients, onUpdateStatus, onFetchLineItems }:
     const client = clients.find(c => c.id === invoice.client_id);
     const items = lineItemsCache[invoice.id] || [];
     generateInvoicePDF(invoice, client, items);
+  };
+
+  const handleDownloadUsageReport = async (invoice: BillingInvoice) => {
+    setGeneratingUsageReport(invoice.id);
+    try {
+      await generateUsageDetailPDF(invoice.period_start, invoice.period_end, invoice.invoice_number || undefined);
+      toast.success('Usage detail report downloaded');
+    } catch (error) {
+      toast.error('Failed to generate usage report');
+    } finally {
+      setGeneratingUsageReport(null);
+    }
   };
 
   return (
@@ -181,9 +195,19 @@ const InvoiceHistory = ({ invoices, clients, onUpdateStatus, onFetchLineItems }:
                           variant="ghost"
                           className="h-8 w-8 p-0"
                           onClick={() => handleDownloadPDF(invoice)}
-                          title="Download PDF"
+                          title="Download Invoice PDF"
                         >
                           <Download className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-8 w-8 p-0"
+                          onClick={() => handleDownloadUsageReport(invoice)}
+                          disabled={generatingUsageReport === invoice.id}
+                          title="Download Usage Detail Report"
+                        >
+                          <BarChart3 className="h-4 w-4" />
                         </Button>
                         <Select
                           value={invoice.status}
