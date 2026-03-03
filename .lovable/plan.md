@@ -1,35 +1,53 @@
 
 
-## Remove Telephony from Billing
+## Records Processing Detail Report
 
-### Why
-No telephony provider (Telnyx, Twilio, etc.) is integrated. The telephony line item was added preemptively but has never produced real costs. It should be removed from all billing surfaces to avoid confusion.
+A new standalone PDF report that lists every record processed during a billing period with a breakdown of **what processing was performed** on each one -- not just "Voice" or "Text" classification, but the actual services applied (transcription, AI analysis, QA scoring, coaching audio, etc.).
 
-### Changes
+### How it differs from the existing Usage Detail Report
 
-**1. `src/utils/billingCalculations.ts`**
-- Remove `telephony` entry from `SOW_PRICING`
-- Remove `telephony` from `SOW_CATEGORY_LABELS` and `SOW_UNIT_LABELS` (`per_minute`)
+| Existing Usage Detail Report | New Processing Detail Report |
+|-----|-----|
+| Groups records by Voice vs Text | Lists ALL records in one table |
+| Shows SOW rate per record | Shows which services were applied to each record |
+| Billing-focused (rates, subtotals) | Evidence-focused (what was done) |
+| Summary + reconciliation pages | Per-record processing breakdown |
 
-**2. `src/components/billing/UsageDetailPDFGenerator.ts`**
-- Remove the entire "Telephony Detail" page/section that queries platform-originated calls and calculates billable minutes
-- Remove telephony from the cover summary table
+### Report structure
 
-**3. `src/components/billing/InvoiceGenerator.tsx`** (if it references telephony)
-- Remove telephony line item generation
+```text
+Page 1: Cover
+  - "Records Processing Detail Report"
+  - Appendify → PadSplit header
+  - Period, generation date
+  - Summary stats: total records, with transcription, with QA, with coaching
 
-**4. Database: `sow_pricing_config` table**
-- If a `telephony` row exists, deactivate it (`is_active = false`) via migration
+Page 2+: Processing Detail Table (landscape)
+  - # | Date | Member | Market | Agent | Duration | Transcribed | AI Analysis | QA Scored | Coaching | Classification
+  - Each processing step shown as ✓ or — 
+  - Derived from api_costs entries linked to each booking
 
-### What stays
-- `call_duration_seconds` on bookings remains (it's used for STT cost calculation, not telephony billing)
-- The `api_costs` table structure is unchanged
+Final Page: Processing Summary
+  - Count of records by processing type
+  - Total records with each service applied
+```
 
-### Files to modify
+### Data approach
+
+Query `api_costs` grouped by `booking_id` and `service_type` to build a map of which services were applied to each booking. Join with `bookings` for record metadata. Also pull from `booking_transcriptions` for transcription/QA/coaching status.
+
+### Files
+
 | File | Change |
 |------|--------|
-| `src/utils/billingCalculations.ts` | Remove telephony from SOW constants |
-| `src/components/billing/UsageDetailPDFGenerator.ts` | Remove telephony section from PDF |
-| `src/components/billing/InvoiceGenerator.tsx` | Remove telephony line if present |
-| Database migration | Set `is_active = false` on telephony SOW row |
+| `src/components/billing/RecordsProcessingPDFGenerator.ts` | **New** -- generates the processing detail PDF |
+| `src/components/billing/InvoiceHistory.tsx` | Add a third download button for this report |
+
+### Technical details
+
+- New generator: `generateRecordsProcessingPDF(periodStart, periodEnd, invoiceNumber?)`
+- Fetches `bookings` (non-research) + `api_costs` grouped by booking_id + `booking_transcriptions` for status flags
+- Uses landscape orientation for wider table
+- Same visual style (navy headers, zebra rows, Appendify branding)
+- Processing columns derived from `service_type` values in `api_costs`: `stt_transcription`, `ai_analysis`, `ai_coaching`, `ai_qa_scoring`, `tts_coaching`, `tts_qa_coaching`
 
