@@ -103,10 +103,10 @@ Deno.serve(async (req) => {
     }
 
     // Validate role
-    const validRoles = ['super_admin', 'admin', 'supervisor', 'agent']
+    const validRoles = ['super_admin', 'admin', 'supervisor', 'agent', 'researcher']
     if (!newRole || !validRoles.includes(newRole)) {
       return new Response(
-        JSON.stringify({ error: 'Invalid role. Must be one of: super_admin, admin, supervisor, agent' }),
+        JSON.stringify({ error: 'Invalid role. Must be one of: super_admin, admin, supervisor, agent, researcher' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
     }
@@ -176,9 +176,23 @@ Deno.serve(async (req) => {
       )
     }
 
+    // For researcher role, auto-assign Vixicom site if no siteId provided
+    let resolvedSiteId = siteId || null
+    if (newRole === 'researcher' && !resolvedSiteId) {
+      const { data: vixicomSite } = await supabaseAdmin
+        .from('sites')
+        .select('id')
+        .ilike('name', '%vixicom%')
+        .single()
+      if (vixicomSite) {
+        resolvedSiteId = vixicomSite.id
+        console.log(`Auto-assigned Vixicom site ${resolvedSiteId} for researcher role`)
+      }
+    }
+
     // Update site_id in profiles
     const profileUpdate: { site_id: string | null } = {
-      site_id: (newRole === 'supervisor' || newRole === 'agent') ? siteId : null
+      site_id: (newRole === 'supervisor' || newRole === 'agent' || newRole === 'researcher') ? resolvedSiteId : null
     }
 
     const { error: updateProfileError } = await supabaseAdmin
