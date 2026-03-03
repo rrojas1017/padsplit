@@ -18,7 +18,6 @@ const SOW_RATES: Record<string, number> = {
   text_processing: 0.04,
   email_delivery: 0.03,
   sms_delivery: 0.05,
-  telephony: 0.012,
 };
 
 const fmtCurrency = (amount: number, decimals = 2) =>
@@ -130,14 +129,11 @@ async function fetchUsageData(periodStart: string, periodEnd: string) {
 
   const voiceRecords = allBookings.filter(b => voiceBookingIds.has(b.id));
   const textRecords = allBookings.filter(b => allProcessedIds.has(b.id) && !voiceBookingIds.has(b.id));
-  const telephonyRecords = allBookings.filter(b => !b.import_batch_id && (b.call_duration_seconds || 0) > 0);
 
   const emails = (comms || []).filter((c: CommRecord) => c.communication_type === 'email');
   const sms = (comms || []).filter((c: CommRecord) => c.communication_type === 'sms');
 
-  const telephonyMinutes = telephonyRecords.reduce((sum, b) => sum + Math.ceil((b.call_duration_seconds || 0) / 60), 0);
-
-  return { voiceRecords, textRecords, telephonyRecords, emails, sms, telephonyMinutes };
+  return { voiceRecords, textRecords, emails, sms };
 }
 
 // ── Page: Cover + Summary ──────────────────────────────────────────────────────
@@ -147,7 +143,7 @@ function drawCoverPage(
   periodStart: string,
   periodEnd: string,
   invoiceNumber: string | undefined,
-  summary: { voice: number; text: number; emails: number; sms: number; telephonyMin: number },
+  summary: { voice: number; text: number; emails: number; sms: number },
   totalPages: number,
 ) {
   const pw = doc.internal.pageSize.getWidth();
@@ -204,7 +200,6 @@ function drawCoverPage(
     { label: 'Text-Based Records (AI Processing)', count: summary.text, rate: SOW_RATES.text_processing },
     { label: 'Email Delivery', count: summary.emails, rate: SOW_RATES.email_delivery },
     { label: 'SMS Delivery', count: summary.sms, rate: SOW_RATES.sms_delivery },
-    { label: 'Telephony (minutes)', count: summary.telephonyMin, rate: SOW_RATES.telephony },
   ];
 
   doc.setFontSize(8);
@@ -407,95 +402,11 @@ function drawCommunicationPage(
   return currentPage + 1;
 }
 
-// ── Page: Telephony Detail ─────────────────────────────────────────────────────
-
-function drawTelephonyPage(
-  doc: jsPDF,
-  records: BookingRecord[],
-  startPage: number,
-  totalPages: number,
-): number {
-  if (records.length === 0) return startPage;
-
-  doc.addPage();
-  const pw = doc.internal.pageSize.getWidth();
-  drawConfidential(doc);
-  let currentPage = startPage;
-  let y = 24;
-
-  const totalMin = records.reduce((s, r) => s + Math.ceil((r.call_duration_seconds || 0) / 60), 0);
-
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(12);
-  doc.text('Telephony Detail', 14, y);
-  doc.setFontSize(8);
-  doc.setFont('helvetica', 'normal');
-  doc.setTextColor(100);
-  doc.text(`Platform-originated calls only (excludes imports)  |  ${totalMin.toLocaleString()} minutes  |  ${fmtCurrency(SOW_RATES.telephony, 4)}/min`, 14, y + 6);
-  doc.setTextColor(0);
-  y += 14;
-
-  const cols = [
-    { label: '#', x: 16 },
-    { label: 'Date', x: 24 },
-    { label: 'Member', x: 56 },
-    { label: 'Agent', x: 110 },
-    { label: 'Duration', x: 150, align: 'right' as const },
-    { label: 'Minutes', x: pw - 16, align: 'right' as const },
-  ];
-  y = drawTableHeader(doc, y, cols);
-
-  doc.setFontSize(7);
-  records.forEach((rec, i) => {
-    if (needsNewPage(doc, y)) {
-      drawPageFooter(doc, currentPage, totalPages, 'Telephony Detail');
-      doc.addPage();
-      currentPage++;
-      drawConfidential(doc);
-      y = 24;
-      y = drawTableHeader(doc, y, cols);
-      doc.setFontSize(7);
-    }
-
-    if (i % 2 === 0) {
-      doc.setFillColor(248, 248, 248);
-      doc.rect(14, y - 4, pw - 28, 6, 'F');
-    }
-
-    const secs = rec.call_duration_seconds || 0;
-    const mins = Math.ceil(secs / 60);
-    doc.setFont('helvetica', 'normal');
-    doc.text(String(i + 1), 16, y);
-    doc.text(format(parseISO(rec.booking_date), 'MM/dd/yyyy'), 24, y);
-    const name = rec.member_name.length > 24 ? rec.member_name.substring(0, 22) + '…' : rec.member_name;
-    doc.text(name, 56, y);
-    const agentName = (rec.agent as any)?.name || '—';
-    doc.text(agentName.length > 18 ? agentName.substring(0, 16) + '…' : agentName, 110, y);
-    doc.text(`${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}`, 150, y, { align: 'right' });
-    doc.text(String(mins), pw - 16, y, { align: 'right' });
-    y += 6;
-  });
-
-  // Subtotal
-  y += 2;
-  doc.setFillColor(30, 58, 95);
-  doc.rect(14, y - 4, pw - 28, 7, 'F');
-  doc.setTextColor(255);
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(8);
-  doc.text(`Total: ${totalMin.toLocaleString()} minutes`, 16, y);
-  doc.text(fmtCurrency(totalMin * SOW_RATES.telephony), pw - 16, y, { align: 'right' });
-  doc.setTextColor(0);
-
-  drawPageFooter(doc, currentPage, totalPages, 'Telephony Detail');
-  return currentPage + 1;
-}
-
 // ── Page: Reconciliation ───────────────────────────────────────────────────────
 
 function drawReconciliation(
   doc: jsPDF,
-  summary: { voice: number; text: number; emails: number; sms: number; telephonyMin: number },
+  summary: { voice: number; text: number; emails: number; sms: number },
   invoiceNumber: string | undefined,
   periodStart: string,
   periodEnd: string,
@@ -532,7 +443,6 @@ function drawReconciliation(
     { label: 'AI Processing – Text Records', qty: summary.text, rate: SOW_RATES.text_processing },
     { label: 'Email Delivery', qty: summary.emails, rate: SOW_RATES.email_delivery },
     { label: 'SMS Delivery', qty: summary.sms, rate: SOW_RATES.sms_delivery },
-    { label: 'Telephony Usage (minutes)', qty: summary.telephonyMin, rate: SOW_RATES.telephony },
   ];
 
   let grandTotal = 0;
@@ -601,19 +511,16 @@ export async function generateUsageDetailPDF(
     text: data.textRecords.length,
     emails: data.emails.length,
     sms: data.sms.length,
-    telephonyMin: data.telephonyMinutes,
   };
 
-  // Estimate total pages (cover + voice + text + comms + telephony + reconciliation)
+  // Estimate total pages (cover + voice + text + comms + reconciliation)
   const hasVoice = data.voiceRecords.length > 0;
   const hasText = data.textRecords.length > 0;
   const hasComms = data.emails.length > 0 || data.sms.length > 0;
-  const hasTelephony = data.telephonyRecords.length > 0;
   let estPages = 1; // cover
   if (hasVoice) estPages += Math.max(1, Math.ceil(data.voiceRecords.length / 40));
   if (hasText) estPages += Math.max(1, Math.ceil(data.textRecords.length / 40));
   if (hasComms) estPages += 1;
-  if (hasTelephony) estPages += 1;
   estPages += 1; // reconciliation
 
   const doc = new jsPDF();
@@ -630,9 +537,6 @@ export async function generateUsageDetailPDF(
 
   // Communications
   nextPage = drawCommunicationPage(doc, data.emails as CommRecord[], data.sms as CommRecord[], nextPage, estPages);
-
-  // Telephony
-  nextPage = drawTelephonyPage(doc, data.telephonyRecords, nextPage, estPages);
 
   // Reconciliation
   drawReconciliation(doc, summary, invoiceNumber, periodStart, periodEnd, nextPage, estPages);

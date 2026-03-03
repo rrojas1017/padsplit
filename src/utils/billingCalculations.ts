@@ -26,8 +26,6 @@ export const SOW_PRICING = {
   email_delivery: { rate: 0.01, unit: 'per_email' },
   sms_delivery: { rate: 0.05, unit: 'per_segment' },
   chat_delivery: { rate: 0.02, unit: 'per_interaction' },
-  telephony: { rate: 0.012, unit: 'per_minute' },
-  
 } as const;
 
 export const SOW_CATEGORY_LABELS: Record<string, string> = {
@@ -37,8 +35,6 @@ export const SOW_CATEGORY_LABELS: Record<string, string> = {
   email_delivery: 'Outbound Email Delivery',
   sms_delivery: 'Outbound SMS Delivery',
   chat_delivery: 'Chat/Messaging Delivery',
-  telephony: 'Telephony Services',
-  
 };
 
 export const SOW_UNIT_LABELS: Record<string, string> = {
@@ -46,7 +42,7 @@ export const SOW_UNIT_LABELS: Record<string, string> = {
   per_email: '/email',
   per_segment: '/segment',
   per_interaction: '/interaction',
-  per_minute: '/min',
+  
 };
 
 export interface SOWLineItem {
