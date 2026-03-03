@@ -1,25 +1,18 @@
 
 
-## Fix Researcher Role & Default Vixicom Site Assignment
+## Fix: Allow Researchers to Toggle Active/Inactive
 
-### Issues Found
+### Problem
+The active/inactive toggle in the Agents tab only works for users who have a linked `agents` table record. Researchers don't have linked agent records, so they show a static status badge instead of a toggle.
 
-1. **Bug**: The `update-user-role` edge function has `validRoles = ['super_admin', 'admin', 'supervisor', 'agent']` — missing `'researcher'`. Any role change to researcher will fail with "Invalid role."
-2. **Missing**: When creating or changing a role to researcher, there's no auto-assignment to the Vixicom site. The frontend currently clears the site when researcher is selected.
+### Solution
+For researcher users without a linked agent, add a Switch that toggles the `status` field on the `profiles` table directly (between `'active'` and `'inactive'`).
 
 ### Changes
 
-**1. Edge Function (`supabase/functions/update-user-role/index.ts`)**
-- Line 106: Add `'researcher'` to `validRoles` array.
-- After site validation: when `newRole === 'researcher'`, look up the Vixicom site (`name ILIKE '%vixicom%'`) and auto-assign it as the `siteId` for the profile update.
+**File: `src/pages/UserManagement.tsx`**
 
-**2. Frontend (`src/pages/UserManagement.tsx`)**
+1. **Add a `handleToggleUserStatus` function** that updates the `profiles` table `status` field for a given user ID, toggling between `'active'` and `'inactive'`. Refresh the users list after update.
 
-- **Create User flow** (line 275-280): When researcher is selected, instead of setting site to `'none'`, auto-select the Vixicom site from the `sites` array.
-- **Edit Role dialog** (line 1282-1284): Same — when researcher is selected, auto-set `editRoleSiteId` to the Vixicom site.
-- **handleUpdateRole** (line 498): Send the `siteId` for researcher role too (not just supervisor/agent).
-- **handleCreateUser** (line 328): Send the Vixicom site ID for researcher role.
-
-**3. Edge Function site handling**
-- When `newRole === 'researcher'` and no `siteId` is provided, query `sites` for Vixicom and use that ID for the profile update. This ensures backend safety even if frontend doesn't send it.
+2. **Update the Status column rendering** (around line 1023-1046): Change the `else` branch (when no `linkedAgent`) to show a `Switch` component for researchers, using `user.status === 'active'` as the checked value and calling `handleToggleUserStatus` on change. Keep the static badge for any other edge case.
 
