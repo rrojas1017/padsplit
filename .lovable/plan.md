@@ -1,52 +1,56 @@
 
 
-# Add English/Spanish Language Toggle to Research Surveys
+# Pre-translate Scripts on Save (Not Per-Call)
 
-## Overview
-Add a language selector at the start of each survey call so researchers can conduct the survey in Spanish. When Spanish is selected, all script text (intro, questions, consent prompt, closing, rebuttal) is automatically translated via AI at runtime -- no manual translation needed from admins.
+## Problem
+The current approach translates on-the-fly each time a researcher starts a survey. The user wants translations generated once when a script is created/updated, stored alongside the English version, so researchers simply pick the language instantly.
 
-## How It Works
-1. **Language selector** appears in the Setup/Start phase of the survey wizard
-2. When "Spanish" is selected, an edge function translates the script content using Lovable AI (Gemini Flash)
-3. Translated content replaces the English text throughout the call flow
-4. The selected language is recorded with the call submission for reporting
+## Approach
 
-## Technical Plan
+### 1. Database: Add translation columns to `research_scripts`
+Add three new columns and a JSONB column for the translated content:
+- `intro_script_es` (text, nullable)
+- `closing_script_es` (text, nullable)  
+- `rebuttal_script_es` (text, nullable)
+- `questions_es` (jsonb, nullable) -- same structure as `questions` but in Spanish
+- `translation_status` (text, default `'pending'`) -- tracks: `pending`, `translating`, `completed`, `failed`
 
-### 1. New Edge Function: `translate-script`
-- Accepts: `{ intro, closing, rebuttal, questions[], targetLanguage: "es" }`
-- Uses Lovable AI (google/gemini-3-flash-preview) to translate all text fields in a single request
-- Returns the same structure with translated text
-- Uses tool calling to extract structured output (translated questions array + script blocks)
-- Caches nothing -- translates on demand per call (scripts are small, latency is acceptable since it runs before the call starts)
+### 2. Auto-translate on script save
+When a script is created or updated (in `useResearchScripts.ts`):
+- After the insert/update succeeds, fire the `translate-script` edge function in the background
+- Store the translated content back into the `_es` columns
+- Update `translation_status` to `completed`
+- Show a toast: "Spanish translation generated" or "Translation failed" 
 
-### 2. Frontend Changes
+The existing `translate-script` edge function is reused as-is. A new wrapper in the hook handles writing results back.
 
-**LogSurveyCall.tsx** (internal researcher view):
-- Add a language dropdown (`English` / `Espanol`) in the Setup phase, next to the campaign selector
-- On "Start Script", if Spanish is selected, call the edge function and replace `introScript`, `closingScript`, `rebuttalScript`, and `questions[].question` / `questions[].options` with translated versions
-- Show a loading spinner while translation runs
-- Store `language: 'es'` in the call submission
+### 3. Frontend: Script Builder shows translation status
+In the Script list page (`ScriptBuilder.tsx`), show a badge per script indicating translation status (e.g., "ES: Ready" / "ES: Translating..." / "ES: Failed" with a retry button).
 
-**PublicScriptView.tsx** (Vici iframe view):
-- Add language toggle in the Start phase card
-- Same translation flow before entering the wizard
+### 4. Survey wizard uses pre-translated content
+Update `LogSurveyCall.tsx`, `PublicScriptView.tsx`, and `ScriptTesterDialog.tsx`:
+- When researcher selects "Español", use `questions_es`, `intro_script_es`, etc. directly from the script data -- no API call needed
+- If `_es` fields are null (translation failed/pending), fall back to on-the-fly translation as a safety net
+- Remove the translation loading spinner in the normal case (instant switch)
 
-**ScriptTesterDialog.tsx** (admin test view):
-- Add language toggle in the Start phase
-- Same translation flow
+### 5. Update `useScriptTranslation.ts`
+Refactor to add a `translateAndStore` method that:
+1. Calls the edge function
+2. Writes results back to `research_scripts` via `.update()`
+3. Updates `translation_status`
 
-### 3. Database Changes
-- Add `language` column to `research_calls` table (text, default `'en'`, nullable)
-- No changes to `research_scripts` table -- translations are generated on-the-fly
+Keep the existing `translateScript` method as fallback for cases where stored translation is missing.
 
-### 4. Call Submission
-- `useResearchCalls` `CallSubmission` type gets an optional `language` field
-- The language value is stored with each research call record
+### 6. Research calls hook
+The `useResearchCalls` fetch for campaigns already pulls `research_scripts(...)` -- expand the select to include the new `_es` columns so they're available in the wizard.
 
-## User Experience
-- Researcher sees "Language: English | Espanol" toggle before starting the call
-- Selecting Espanol triggers a brief "Translating script..." loading state (2-3 seconds)
-- All prompts, questions, options, and script blocks display in Spanish
-- The consent prompt, navigation buttons, and UI chrome remain in English (only the read-aloud content is translated)
+## Files Changed
+- **Migration**: Add `intro_script_es`, `closing_script_es`, `rebuttal_script_es`, `questions_es`, `translation_status` to `research_scripts`
+- **`useResearchScripts.ts`**: Auto-trigger translation after create/update, add `translateAndStore` logic
+- **`useScriptTranslation.ts`**: Add `translateAndStore` method
+- **`useResearchCalls.ts`**: Expand script select to include `_es` fields; use them when language is `es`
+- **`LogSurveyCall.tsx`**: Use stored translations instead of on-the-fly; instant language switch
+- **`PublicScriptView.tsx`**: Same
+- **`ScriptTesterDialog.tsx`**: Same
+- **`ScriptBuilder.tsx`**: Show translation status badge + retry button
 
