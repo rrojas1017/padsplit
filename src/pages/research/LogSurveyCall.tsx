@@ -12,6 +12,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
 import { useResearchCalls, type ScriptQuestion, type CallSubmission } from '@/hooks/useResearchCalls';
 import { useAuth } from '@/contexts/AuthContext';
+import { useScriptTranslation, type SurveyLanguage } from '@/hooks/useScriptTranslation';
 import { SectionJumpNavigator } from '@/components/research/SectionJumpNavigator';
 import { ProbingFollowUps } from '@/components/research/ProbingFollowUps';
 import {
@@ -116,9 +117,11 @@ export default function LogSurveyCall() {
   const navigate = useNavigate();
   const { myCampaigns, isLoading, isSubmitting, submitCall } = useResearchCalls();
   const { user } = useAuth();
+  const { isTranslating, translateScript } = useScriptTranslation();
 
   // Setup fields
   const [campaignId, setCampaignId] = useState(searchParams.get('campaign') || '');
+  const [surveyLanguage, setSurveyLanguage] = useState<SurveyLanguage>('en');
   const [callerFirstName, setCallerFirstName] = useState('');
   const [callerLastName, setCallerLastName] = useState('');
   const [callerPhone, setCallerPhone] = useState('');
@@ -171,13 +174,18 @@ export default function LogSurveyCall() {
     [activeCampaigns, campaignId]
   );
 
+  // Translated content (overrides original when Spanish selected)
+  const [translatedContent, setTranslatedContent] = useState<{
+    intro: string; closing: string; rebuttal: string; questions: ScriptQuestion[];
+  } | null>(null);
+
   const questions: ScriptQuestion[] = useMemo(
-    () => selectedCampaign?.script?.questions || [],
-    [selectedCampaign]
+    () => translatedContent?.questions || selectedCampaign?.script?.questions || [],
+    [selectedCampaign, translatedContent]
   );
-  const introScript = selectedCampaign?.script?.intro_script || '';
-  const rebuttalScript = selectedCampaign?.script?.rebuttal_script || '';
-  const closingScript = selectedCampaign?.script?.closing_script || '';
+  const introScript = translatedContent?.intro ?? (selectedCampaign?.script?.intro_script || '');
+  const rebuttalScript = translatedContent?.rebuttal ?? (selectedCampaign?.script?.rebuttal_script || '');
+  const closingScript = translatedContent?.closing ?? (selectedCampaign?.script?.closing_script || '');
 
   const agentName = user?.name || 'Researcher';
   const renderedIntro = introScript.replace(/\{agent_name\}/gi, agentName);
@@ -235,8 +243,25 @@ export default function LogSurveyCall() {
     return Object.keys(errs).length === 0;
   };
 
-  const handleStartScript = () => {
+  const handleStartScript = async () => {
     if (!validateSetup()) return;
+
+    // Translate if Spanish selected
+    if (surveyLanguage === 'es' && selectedCampaign?.script) {
+      const result = await translateScript(selectedCampaign.script, 'es');
+      if (result) {
+        setTranslatedContent({
+          intro: result.intro,
+          closing: result.closing,
+          rebuttal: result.rebuttal,
+          questions: result.questions as ScriptQuestion[],
+        });
+      }
+      // If translation fails, proceed with English (null = use original)
+    } else {
+      setTranslatedContent(null);
+    }
+
     setVerifiedPhone(callerPhone);
     setNameConfirmed(null);
     setCorrectedFirstName('');
@@ -390,6 +415,7 @@ export default function LogSurveyCall() {
       responses: Object.keys(responses).length > 0 ? responses : undefined,
       researcher_notes: researcherNotes.trim() || undefined,
       researcher_name: agentName,
+      language: surveyLanguage,
     };
 
     const success = await submitCall(submission);
@@ -421,6 +447,8 @@ export default function LogSurveyCall() {
     setCorrectedLastName('');
     setCallStartTime(null);
     setElapsedSeconds(0);
+    setSurveyLanguage('en');
+    setTranslatedContent(null);
   };
 
   const currentQ = questions[questionIndex];
@@ -637,8 +665,29 @@ export default function LogSurveyCall() {
                       </div>
                     </div>
 
-                    <Button className="w-full" size="lg" onClick={handleStartScript} disabled={activeCampaigns.length === 0}>
-                      Start Script <ArrowRight className="w-4 h-4 ml-2" />
+                    {/* Language selector */}
+                    <div>
+                      <Label>Language</Label>
+                      <Select value={surveyLanguage} onValueChange={(v) => setSurveyLanguage(v as SurveyLanguage)}>
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="en">English</SelectItem>
+                          <SelectItem value="es">Español</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <Button className="w-full" size="lg" onClick={handleStartScript} disabled={activeCampaigns.length === 0 || isTranslating}>
+                      {isTranslating ? (
+                        <>
+                          <div className="w-4 h-4 border-2 border-primary-foreground border-t-transparent rounded-full animate-spin mr-2" />
+                          Translating script…
+                        </>
+                      ) : (
+                        <>Start Script <ArrowRight className="w-4 h-4 ml-2" /></>
+                      )}
                     </Button>
                   </CardContent>
                 </Card>

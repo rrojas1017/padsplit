@@ -7,9 +7,11 @@ import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Input } from '@/components/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { ArrowRight, ArrowLeft, MessageSquare, XCircle, ThumbsUp, ThumbsDown, RotateCcw, Play, CheckCircle, PhoneOff, Phone, Clock } from 'lucide-react';
 import { StepTracker, buildSteps } from '@/components/research/StepTracker';
 import type { ResearchScript, ScriptQuestion } from '@/hooks/useResearchScripts';
+import { useScriptTranslation, type SurveyLanguage } from '@/hooks/useScriptTranslation';
 import {
   AlertDialog,
   AlertDialogContent,
@@ -86,10 +88,17 @@ export function ScriptTesterDialog({ open, onOpenChange, script }: Props) {
   const [callStartTime, setCallStartTime] = useState<Date | null>(null);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
 
-  const questions = script.questions;
-  const introScript = script.intro_script || '';
-  const rebuttalScript = script.rebuttal_script || '';
-  const closingScript = script.closing_script || '';
+  // Language
+  const [surveyLanguage, setSurveyLanguage] = useState<SurveyLanguage>('en');
+  const [translatedContent, setTranslatedContent] = useState<{
+    intro: string; closing: string; rebuttal: string; questions: ScriptQuestion[];
+  } | null>(null);
+  const { isTranslating, translateScript } = useScriptTranslation();
+
+  const questions = translatedContent?.questions || script.questions;
+  const introScript = translatedContent?.intro ?? (script.intro_script || '');
+  const rebuttalScript = translatedContent?.rebuttal ?? (script.rebuttal_script || '');
+  const closingScript = translatedContent?.closing ?? (script.closing_script || '');
   const renderedIntro = introScript.replace(/\{agent_name\}/gi, 'Test Agent');
 
   // Timer interval
@@ -114,6 +123,8 @@ export function ScriptTesterDialog({ open, onOpenChange, script }: Props) {
     setNameConfirmed(null);
     setCallStartTime(null);
     setElapsedSeconds(0);
+    setSurveyLanguage('en');
+    setTranslatedContent(null);
   }, []);
 
 
@@ -238,8 +249,45 @@ export function ScriptTesterDialog({ open, onOpenChange, script }: Props) {
                   {rebuttalScript && <Badge variant="secondary">Has rebuttal</Badge>}
                 </div>
               </div>
-              <Button size="lg" onClick={() => { setNameConfirmed(null); setCallStartTime(new Date()); setElapsedSeconds(0); setPhase('verify'); }}>
-                <Play className="w-4 h-4 mr-2" /> Start Test
+              <div className="flex justify-center">
+                <div className="w-48">
+                  <Label className="text-xs text-muted-foreground">Language</Label>
+                  <Select value={surveyLanguage} onValueChange={(v) => setSurveyLanguage(v as SurveyLanguage)}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="en">English</SelectItem>
+                      <SelectItem value="es">Español</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <Button size="lg" disabled={isTranslating} onClick={async () => {
+                if (surveyLanguage === 'es') {
+                  const result = await translateScript(script, 'es');
+                  if (result) {
+                    setTranslatedContent({
+                      intro: result.intro,
+                      closing: result.closing,
+                      rebuttal: result.rebuttal,
+                      questions: result.questions as ScriptQuestion[],
+                    });
+                  }
+                }
+                setNameConfirmed(null);
+                setCallStartTime(new Date());
+                setElapsedSeconds(0);
+                setPhase('verify');
+              }}>
+                {isTranslating ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-primary-foreground border-t-transparent rounded-full animate-spin mr-2" />
+                    Translating…
+                  </>
+                ) : (
+                  <><Play className="w-4 h-4 mr-2" /> Start Test</>
+                )}
               </Button>
             </div>
           )}

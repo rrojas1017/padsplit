@@ -77,6 +77,7 @@ export interface CallSubmission {
   researcher_name?: string;
   responses?: Record<string, unknown>;
   researcher_notes?: string;
+  language?: string;
 }
 
 export function useResearchCalls() {
@@ -216,6 +217,7 @@ export function useResearchCalls() {
       transfer_notes: submission.transfer_notes || null,
       responses: enrichedResponses as Json,
       researcher_notes: submission.researcher_notes || null,
+      language: submission.language || 'en',
     }).select('id').single();
 
     if (error) {
