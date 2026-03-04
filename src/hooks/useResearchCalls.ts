@@ -18,6 +18,11 @@ export interface ResearchCallCampaign {
     intro_script: string | null;
     rebuttal_script: string | null;
     closing_script: string | null;
+    intro_script_es: string | null;
+    closing_script_es: string | null;
+    rebuttal_script_es: string | null;
+    questions_es: ScriptQuestion[] | null;
+    translation_status: string | null;
   };
   completed_calls: number;
 }
@@ -92,7 +97,7 @@ export function useResearchCalls() {
 
     const { data, error } = await supabase
       .from('research_campaigns')
-      .select('*, research_scripts(id, name, questions, intro_script, rebuttal_script, closing_script)')
+      .select('*, research_scripts(id, name, questions, intro_script, rebuttal_script, closing_script, intro_script_es, closing_script_es, rebuttal_script_es, questions_es, translation_status)')
       .contains('assigned_researchers', [user.id])
       .order('created_at', { ascending: false });
 
@@ -133,6 +138,11 @@ export function useResearchCalls() {
         intro_script: c.research_scripts.intro_script || null,
         rebuttal_script: c.research_scripts.rebuttal_script || null,
         closing_script: c.research_scripts.closing_script || null,
+        intro_script_es: c.research_scripts.intro_script_es || null,
+        closing_script_es: c.research_scripts.closing_script_es || null,
+        rebuttal_script_es: c.research_scripts.rebuttal_script_es || null,
+        questions_es: (c.research_scripts.questions_es || null) as ScriptQuestion[] | null,
+        translation_status: c.research_scripts.translation_status || null,
       } : undefined,
       completed_calls: callCounts[c.id] || 0,
     }));

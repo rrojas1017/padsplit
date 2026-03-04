@@ -21,6 +21,7 @@ interface TranslatedContent {
 export function useScriptTranslation() {
   const [isTranslating, setIsTranslating] = useState(false);
 
+  /** On-the-fly translation (fallback only) */
   const translateScript = useCallback(async (
     script: TranslatableScript,
     targetLanguage: SurveyLanguage
@@ -67,5 +68,56 @@ export function useScriptTranslation() {
     }
   }, []);
 
-  return { isTranslating, translateScript };
+  /** Translate and persist results back to research_scripts table */
+  const translateAndStore = useCallback(async (
+    scriptId: string,
+    script: TranslatableScript
+  ): Promise<boolean> => {
+    // Mark as translating
+    await supabase.from('research_scripts').update({
+      translation_status: 'translating',
+    } as any).eq('id', scriptId);
+
+    try {
+      const { data, error } = await supabase.functions.invoke('translate-script', {
+        body: {
+          intro: script.intro_script || '',
+          closing: script.closing_script || '',
+          rebuttal: script.rebuttal_script || '',
+          questions: script.questions,
+          targetLanguage: 'es',
+        },
+      });
+
+      if (error || data?.error) {
+        console.error('Translation error:', error || data?.error);
+        await supabase.from('research_scripts').update({
+          translation_status: 'failed',
+        } as any).eq('id', scriptId);
+        toast.error('Spanish translation failed');
+        return false;
+      }
+
+      const translated = data as TranslatedContent;
+      await supabase.from('research_scripts').update({
+        intro_script_es: translated.intro || null,
+        closing_script_es: translated.closing || null,
+        rebuttal_script_es: translated.rebuttal || null,
+        questions_es: translated.questions || null,
+        translation_status: 'completed',
+      } as any).eq('id', scriptId);
+
+      toast.success('Spanish translation generated');
+      return true;
+    } catch (err) {
+      console.error('Translation error:', err);
+      await supabase.from('research_scripts').update({
+        translation_status: 'failed',
+      } as any).eq('id', scriptId);
+      toast.error('Spanish translation failed');
+      return false;
+    }
+  }, []);
+
+  return { isTranslating, translateScript, translateAndStore };
 }
