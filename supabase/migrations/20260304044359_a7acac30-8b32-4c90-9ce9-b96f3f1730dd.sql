@@ -1,0 +1,1 @@
+ALTER TABLE public.research_calls ADD COLUMN IF NOT EXISTS language text DEFAULT 'en';

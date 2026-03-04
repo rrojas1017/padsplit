@@ -8,8 +8,10 @@ import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Label } from '@/components/ui/label';
 import { Slider } from '@/components/ui/slider';
 import { Textarea } from '@/components/ui/textarea';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { ArrowLeft, ArrowRight, ThumbsUp, ThumbsDown, MessageSquare, XCircle, CheckCircle, Play, RotateCcw, PhoneOff } from 'lucide-react';
 import padsplitLogo from '@/assets/padsplit-logo.jpeg';
+import { useScriptTranslation, type SurveyLanguage } from '@/hooks/useScriptTranslation';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -103,6 +105,11 @@ export default function PublicScriptView() {
   const [endedEarly, setEndedEarly] = useState(false);
   const [earlyDisposition, setEarlyDisposition] = useState('');
   const [selectedEndDisposition, setSelectedEndDisposition] = useState('caller_hung_up');
+  const [surveyLanguage, setSurveyLanguage] = useState<SurveyLanguage>('en');
+  const [translatedContent, setTranslatedContent] = useState<{
+    intro: string; closing: string; rebuttal: string; questions: ScriptQuestion[];
+  } | null>(null);
+  const { isTranslating, translateScript } = useScriptTranslation();
 
   useEffect(() => {
     if (!token) { setError('No token provided'); setIsLoading(false); return; }
@@ -135,6 +142,8 @@ export default function PublicScriptView() {
     setEndedEarly(false);
     setEarlyDisposition('');
     setSelectedEndDisposition('caller_hung_up');
+    setSurveyLanguage('en');
+    setTranslatedContent(null);
   }, []);
 
   if (isLoading) {
@@ -160,13 +169,13 @@ export default function PublicScriptView() {
     );
   }
 
-  const sortedQuestions = [...(script.questions || [])].sort(
+  const sortedQuestions = translatedContent?.questions || [...(script.questions || [])].sort(
     (a, b) => (a.order ?? a.id ?? 0) - (b.order ?? b.id ?? 0)
   );
 
-  const introScript = script.intro_script || '';
-  const rebuttalScript = script.rebuttal_script || '';
-  const closingScript = script.closing_script || '';
+  const introScript = translatedContent?.intro ?? (script.intro_script || '');
+  const rebuttalScript = translatedContent?.rebuttal ?? (script.rebuttal_script || '');
+  const closingScript = translatedContent?.closing ?? (script.closing_script || '');
   const renderedIntro = introScript.replace(/\{agent_name\}/gi, 'Agent');
 
   const handleConsent = (agreed: boolean) => {
@@ -316,8 +325,42 @@ export default function PublicScriptView() {
                     {rebuttalScript && <Badge variant="secondary">Has rebuttal</Badge>}
                   </div>
                 </div>
-                <Button size="lg" onClick={() => setPhase(introScript ? 'intro' : 'consent')}>
-                  <Play className="w-4 h-4 mr-2" /> Begin Script
+                <div className="flex justify-center">
+                  <div className="w-48">
+                    <Label className="text-xs text-muted-foreground">Language</Label>
+                    <Select value={surveyLanguage} onValueChange={(v) => setSurveyLanguage(v as SurveyLanguage)}>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="en">English</SelectItem>
+                        <SelectItem value="es">Español</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+                <Button size="lg" disabled={isTranslating} onClick={async () => {
+                  if (surveyLanguage === 'es') {
+                    const result = await translateScript(script, 'es');
+                    if (result) {
+                      setTranslatedContent({
+                        intro: result.intro,
+                        closing: result.closing,
+                        rebuttal: result.rebuttal,
+                        questions: result.questions as ScriptQuestion[],
+                      });
+                    }
+                  }
+                  setPhase(introScript ? 'intro' : 'consent');
+                }}>
+                  {isTranslating ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-primary-foreground border-t-transparent rounded-full animate-spin mr-2" />
+                      Translating…
+                    </>
+                  ) : (
+                    <><Play className="w-4 h-4 mr-2" /> Begin Script</>
+                  )}
                 </Button>
               </div>
             </WizardCard>

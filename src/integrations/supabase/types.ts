@@ -2182,6 +2182,7 @@ export type Database = {
           created_at: string
           id: string
           kixie_link: string | null
+          language: string | null
           original_booking_id: string | null
           researcher_id: string
           researcher_notes: string | null
@@ -2205,6 +2206,7 @@ export type Database = {
           created_at?: string
           id?: string
           kixie_link?: string | null
+          language?: string | null
           original_booking_id?: string | null
           researcher_id: string
           researcher_notes?: string | null
@@ -2228,6 +2230,7 @@ export type Database = {
           created_at?: string
           id?: string
           kixie_link?: string | null
+          language?: string | null
           original_booking_id?: string | null
           researcher_id?: string
           researcher_notes?: string | null

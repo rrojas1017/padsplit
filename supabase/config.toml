@@ -135,3 +135,6 @@ verify_jwt = false
 [functions.submit-conversation-audio]
 verify_jwt = false
 
+[functions.translate-script]
+verify_jwt = false
+
