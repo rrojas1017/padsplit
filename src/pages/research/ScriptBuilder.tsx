@@ -6,7 +6,7 @@ import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { Plus, Pencil, Trash2, FileText, ClipboardList, Eye, Upload, Play, Link, Copy, RefreshCw, X } from 'lucide-react';
+import { Plus, Pencil, Trash2, FileText, ClipboardList, Eye, Upload, Play, Link, Copy, RefreshCw, X, Languages, Loader2 } from 'lucide-react';
 import { useResearchScripts, type ResearchScript } from '@/hooks/useResearchScripts';
 import { useScriptTokens, getScriptPublicUrl } from '@/hooks/useScriptTokens';
 import { ResearchScriptDialog } from '@/components/research/ResearchScriptDialog';
@@ -28,7 +28,7 @@ const AUDIENCE_LABELS: Record<string, string> = {
 };
 
 export default function ScriptBuilder() {
-  const { scripts, isLoading, createScript, updateScript, deleteScript } = useResearchScripts();
+  const { scripts, isLoading, createScript, updateScript, deleteScript, retranslateScript } = useResearchScripts();
   const scriptIds = scripts.map(s => s.id);
   const { tokens, generateToken, copyToken, revokeToken, regenerateToken } = useScriptTokens(scriptIds);
 
@@ -219,6 +219,31 @@ export default function ScriptBuilder() {
                       {hasToken && (
                         <Badge variant="outline" className="text-xs border-primary/50 text-primary">
                           <Link className="w-2.5 h-2.5 mr-1" /> Public Link Active
+                        </Badge>
+                      )}
+                      {/* Translation status badge */}
+                      {script.translation_status === 'completed' && (
+                        <Badge variant="outline" className="text-xs border-green-500/50 text-green-600 dark:text-green-400">
+                          <Languages className="w-2.5 h-2.5 mr-1" /> ES: Ready
+                        </Badge>
+                      )}
+                      {script.translation_status === 'translating' && (
+                        <Badge variant="outline" className="text-xs border-amber-500/50 text-amber-600 dark:text-amber-400">
+                          <Loader2 className="w-2.5 h-2.5 mr-1 animate-spin" /> ES: Translating…
+                        </Badge>
+                      )}
+                      {script.translation_status === 'failed' && (
+                        <Badge
+                          variant="outline"
+                          className="text-xs border-destructive/50 text-destructive cursor-pointer hover:bg-destructive/10"
+                          onClick={() => retranslateScript(script.id)}
+                        >
+                          <RefreshCw className="w-2.5 h-2.5 mr-1" /> ES: Failed — Retry
+                        </Badge>
+                      )}
+                      {script.translation_status === 'pending' && (
+                        <Badge variant="outline" className="text-xs text-muted-foreground">
+                          <Languages className="w-2.5 h-2.5 mr-1" /> ES: Pending
                         </Badge>
                       )}
                     </div>

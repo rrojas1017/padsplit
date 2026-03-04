@@ -55,6 +55,11 @@ interface PublicScript {
   intro_script: string | null;
   rebuttal_script: string | null;
   closing_script: string | null;
+  intro_script_es: string | null;
+  closing_script_es: string | null;
+  rebuttal_script_es: string | null;
+  questions_es: ScriptQuestion[] | null;
+  translation_status: string | null;
 }
 
 type Phase = 'start' | 'intro' | 'consent' | 'question' | 'closing' | 'rebuttal' | 'done';
@@ -341,14 +346,25 @@ export default function PublicScriptView() {
                 </div>
                 <Button size="lg" disabled={isTranslating} onClick={async () => {
                   if (surveyLanguage === 'es') {
-                    const result = await translateScript(script, 'es');
-                    if (result) {
+                    // Use pre-translated content if available
+                    if (script.translation_status === 'completed' && script.questions_es) {
                       setTranslatedContent({
-                        intro: result.intro,
-                        closing: result.closing,
-                        rebuttal: result.rebuttal,
-                        questions: result.questions as ScriptQuestion[],
+                        intro: script.intro_script_es || '',
+                        closing: script.closing_script_es || '',
+                        rebuttal: script.rebuttal_script_es || '',
+                        questions: script.questions_es,
                       });
+                    } else {
+                      // Fallback: translate on-the-fly
+                      const result = await translateScript(script, 'es');
+                      if (result) {
+                        setTranslatedContent({
+                          intro: result.intro,
+                          closing: result.closing,
+                          rebuttal: result.rebuttal,
+                          questions: result.questions as ScriptQuestion[],
+                        });
+                      }
                     }
                   }
                   setPhase(introScript ? 'intro' : 'consent');

@@ -2362,46 +2362,61 @@ export type Database = {
         Row: {
           campaign_type: string
           closing_script: string | null
+          closing_script_es: string | null
           created_at: string
           created_by: string | null
           description: string | null
           id: string
           intro_script: string | null
+          intro_script_es: string | null
           is_active: boolean
           name: string
           questions: Json
+          questions_es: Json | null
           rebuttal_script: string | null
+          rebuttal_script_es: string | null
           target_audience: string
+          translation_status: string | null
           updated_at: string
         }
         Insert: {
           campaign_type: string
           closing_script?: string | null
+          closing_script_es?: string | null
           created_at?: string
           created_by?: string | null
           description?: string | null
           id?: string
           intro_script?: string | null
+          intro_script_es?: string | null
           is_active?: boolean
           name: string
           questions?: Json
+          questions_es?: Json | null
           rebuttal_script?: string | null
+          rebuttal_script_es?: string | null
           target_audience: string
+          translation_status?: string | null
           updated_at?: string
         }
         Update: {
           campaign_type?: string
           closing_script?: string | null
+          closing_script_es?: string | null
           created_at?: string
           created_by?: string | null
           description?: string | null
           id?: string
           intro_script?: string | null
+          intro_script_es?: string | null
           is_active?: boolean
           name?: string
           questions?: Json
+          questions_es?: Json | null
           rebuttal_script?: string | null
+          rebuttal_script_es?: string | null
           target_audience?: string
+          translation_status?: string | null
           updated_at?: string
         }
         Relationships: []

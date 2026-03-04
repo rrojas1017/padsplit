@@ -246,18 +246,29 @@ export default function LogSurveyCall() {
   const handleStartScript = async () => {
     if (!validateSetup()) return;
 
-    // Translate if Spanish selected
+    // Use pre-translated content if available; fall back to on-the-fly translation
     if (surveyLanguage === 'es' && selectedCampaign?.script) {
-      const result = await translateScript(selectedCampaign.script, 'es');
-      if (result) {
+      const script = selectedCampaign.script;
+      if (script.translation_status === 'completed' && script.questions_es) {
+        // Instant switch — use stored translations
         setTranslatedContent({
-          intro: result.intro,
-          closing: result.closing,
-          rebuttal: result.rebuttal,
-          questions: result.questions as ScriptQuestion[],
+          intro: script.intro_script_es || '',
+          closing: script.closing_script_es || '',
+          rebuttal: script.rebuttal_script_es || '',
+          questions: script.questions_es as ScriptQuestion[],
         });
+      } else {
+        // Fallback: translate on-the-fly
+        const result = await translateScript(script, 'es');
+        if (result) {
+          setTranslatedContent({
+            intro: result.intro,
+            closing: result.closing,
+            rebuttal: result.rebuttal,
+            questions: result.questions as ScriptQuestion[],
+          });
+        }
       }
-      // If translation fails, proceed with English (null = use original)
     } else {
       setTranslatedContent(null);
     }

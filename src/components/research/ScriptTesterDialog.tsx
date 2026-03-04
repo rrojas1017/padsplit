@@ -265,14 +265,25 @@ export function ScriptTesterDialog({ open, onOpenChange, script }: Props) {
               </div>
               <Button size="lg" disabled={isTranslating} onClick={async () => {
                 if (surveyLanguage === 'es') {
-                  const result = await translateScript(script, 'es');
-                  if (result) {
+                  // Use pre-translated content if available
+                  if (script.translation_status === 'completed' && script.questions_es) {
                     setTranslatedContent({
-                      intro: result.intro,
-                      closing: result.closing,
-                      rebuttal: result.rebuttal,
-                      questions: result.questions as ScriptQuestion[],
+                      intro: script.intro_script_es || '',
+                      closing: script.closing_script_es || '',
+                      rebuttal: script.rebuttal_script_es || '',
+                      questions: script.questions_es,
                     });
+                  } else {
+                    // Fallback: translate on-the-fly
+                    const result = await translateScript(script, 'es');
+                    if (result) {
+                      setTranslatedContent({
+                        intro: result.intro,
+                        closing: result.closing,
+                        rebuttal: result.rebuttal,
+                        questions: result.questions as ScriptQuestion[],
+                      });
+                    }
                   }
                 }
                 setNameConfirmed(null);

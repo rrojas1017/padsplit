@@ -35,7 +35,7 @@ interface Props {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   script?: ResearchScript | null;
-  onSave: (data: Omit<ResearchScript, 'id' | 'created_at' | 'updated_at' | 'created_by'>) => Promise<void>;
+  onSave: (data: Omit<ResearchScript, 'id' | 'created_at' | 'updated_at' | 'created_by' | 'intro_script_es' | 'closing_script_es' | 'rebuttal_script_es' | 'questions_es' | 'translation_status'>) => Promise<void>;
   importedData?: {
     name?: string;
     description?: string;
