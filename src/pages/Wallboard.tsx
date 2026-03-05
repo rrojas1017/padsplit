@@ -59,7 +59,7 @@ export default function Wallboard() {
   
   // Helper to filter actual bookings (exclude Non Booking status)
   const filterActualBookings = (list: typeof bookings) => 
-    list.filter(b => b.status !== 'Non Booking');
+    list.filter(b => b.status !== 'Non Booking' && b.status !== 'Research' && b.recordType !== 'research');
   
   const actualBookings = filterActualBookings(bookings);
   const todayBookings = actualBookings.filter(b => format(new Date(b.bookingDate), 'yyyy-MM-dd') === today);
