@@ -141,3 +141,6 @@ verify_jwt = false
 [functions.backfill-survey-progress]
 verify_jwt = false
 
+[functions.backfill-member-details]
+verify_jwt = false
+
