@@ -1061,19 +1061,14 @@ export default function Reports() {
                     {/* Transcription Status */}
                     <td className="py-3 px-4">
                       {booking.kixieLink ? (
-                        <button
-                          onClick={() => {
-                            setSelectedBooking(booking);
-                            setShowTranscriptModal(true);
-                          }}
+                        <span
                           title={
-                            booking.transcriptionStatus === 'completed' ? 'View Call Insights' :
+                            booking.transcriptionStatus === 'completed' ? 'Transcription completed' :
                             booking.transcriptionStatus === 'processing' ? 'Transcription in progress...' :
                             booking.transcriptionStatus === 'failed' ? `Failed: ${booking.transcriptionErrorMessage || 'Unknown error'}` :
                             booking.transcriptionStatus === 'pending' ? 'Transcription pending...' :
-                            'Transcribe Call'
+                            'Not transcribed'
                           }
-                          className="hover:opacity-80 transition-opacity"
                         >
                           {booking.transcriptionStatus === 'completed' ? (
                             <FileText className="h-4 w-4 text-purple-500" />
@@ -1084,9 +1079,9 @@ export default function Reports() {
                           ) : booking.transcriptionStatus === 'pending' ? (
                             <Loader2 className="h-4 w-4 text-muted-foreground animate-spin" />
                           ) : (
-                            <Headphones className="h-4 w-4 text-muted-foreground hover:text-purple-500 transition-colors" />
+                            <Headphones className="h-4 w-4 text-muted-foreground" />
                           )}
-                        </button>
+                        </span>
                       ) : (
                         <span className="text-muted-foreground text-xs">—</span>
                       )}
