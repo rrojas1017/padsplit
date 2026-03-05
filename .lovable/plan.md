@@ -1,16 +1,26 @@
 
 
-# Remove "Open in Kixie" Buttons
+# Allow Supervisors to View Research Insights & Reports
 
-## Changes
+## Current State
+- **Routes**: Research routes (dashboard, campaigns, log-call, history) already allow `supervisor` access
+- **Sidebar**: Research Insights nav item is restricted to `super_admin` and `admin` only
+- **Route guard**: `/research/insights` is restricted to `super_admin` and `admin` only
+- **RLS**: `research_insights` table SELECT is restricted to `super_admin` and `admin`
+- **Reports page**: Already accessible to supervisors and includes a Research tab
 
-Two files have an "Open in Kixie" button below the inline audio player. Remove only the button while keeping the audio player intact.
+## Changes Required
 
-### 1. `src/components/booking/TranscriptionModal.tsx` (lines 383-388)
-Delete the `<Button>` wrapping the "Open in Kixie" link. Keep the `<audio>` element and its surrounding card.
+### 1. Sidebar — Add supervisor to Research Insights nav item
+**File**: `src/components/layout/AppSidebar.tsx` (line 83)
+- Change `roles: ['super_admin', 'admin']` to `roles: ['super_admin', 'admin', 'supervisor']` for the Research Insights item
 
-### 2. `src/components/call-insights/CallDetailsModal.tsx` (lines 150-155)
-Same change — remove the "Open in Kixie" button, keep the audio player.
+### 2. Route guard — Allow supervisor on insights page
+**File**: `src/App.tsx` (line 351)
+- Change `allowedRoles={['super_admin', 'admin']}` to `allowedRoles={['super_admin', 'admin', 'supervisor']}` for `/research/insights`
 
-Both files retain the call recording card with the inline `<audio controls>` element for playback.
+### 3. Database — Add supervisor SELECT on research_insights table
+- Add a new RLS policy: "Supervisors can view research insights" allowing SELECT for users with `supervisor` role
+
+This gives supervisors read-only access to research insights and reports alongside admins, without granting them management (create/delete) permissions.
 
