@@ -49,7 +49,7 @@ async function callLovableAI(
   systemPrompt: string,
   userPrompt: string
 ): Promise<{ content: string; inputTokens: number; outputTokens: number }> {
-  const response = await fetch('https://api.lovable.dev/v1/chat/completions', {
+  const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${apiKey}`,
@@ -282,7 +282,7 @@ Deno.serve(async (req) => {
     // Fetch transcript
     const { data: transcription, error: fetchError } = await supabase
       .from('booking_transcriptions')
-      .select('id, call_transcription, research_processing_status')
+      .select('id, call_transcription, research_processing_status, updated_at')
       .eq('booking_id', bookingId)
       .maybeSingle();
 
@@ -294,11 +294,17 @@ Deno.serve(async (req) => {
       throw new Error(`Empty transcript for booking ${bookingId}`);
     }
 
+    // Allow re-processing if stuck in 'processing' for >15 minutes (stale)
     if (transcription.research_processing_status === 'processing') {
-      return new Response(
-        JSON.stringify({ success: false, reason: 'Already processing' }),
-        { status: 409, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
+      const updatedAt = new Date(transcription.updated_at || 0);
+      const fifteenMinutesAgo = new Date(Date.now() - 15 * 60 * 1000);
+      if (updatedAt > fifteenMinutesAgo) {
+        return new Response(
+          JSON.stringify({ success: false, reason: 'Already processing' }),
+          { status: 409, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+      console.log(`[Research] Record ${bookingId} stuck in processing since ${updatedAt.toISOString()}, resetting and retrying`);
     }
 
     // Mark as processing
