@@ -1,25 +1,34 @@
 
 
-# Fix: Register and Trigger backfill-survey-progress
+# Fix: Backfill Campaign Name Mismatch
 
 ## Problem
-The `backfill-survey-progress` edge function exists in code but is not registered in `supabase/config.toml`, so it returns 404 when called.
+The backfill failed for all 91 records (`0 processed, 20 failed`) because the campaign name in the booking notes (`"Q1-Research-2026"`) doesn't match the actual campaign name in `research_campaigns` (`"Move in-out Researh: Member experience & Reason code Classification"`).
 
-## Changes
+The regex extracts `"Q1-Research-2026"` from notes, then queries `research_campaigns` by name — no match found, so every record fails with "No questions found for campaign."
 
-### 1. `supabase/config.toml`
-Add at the end:
-```toml
-[functions.backfill-survey-progress]
-verify_jwt = false
+## Fix
+Since there's only **one campaign** and **one script** (with 36 questions), simplify the backfill logic:
+
+### `supabase/functions/backfill-survey-progress/index.ts`
+Instead of parsing the campaign name from notes and looking it up, directly fetch the single research script's questions at the start of the function (outside the loop):
+
+```typescript
+// Fetch the single script's questions once
+const { data: scriptData } = await supabase
+  .from('research_campaigns')
+  .select('research_scripts!research_campaigns_script_id_fkey(questions)')
+  .limit(1)
+  .maybeSingle();
+
+const questions = scriptData?.research_scripts?.questions;
 ```
 
-### 2. Deploy and trigger
-After the config is updated:
-1. Deploy the function
-2. Dry run first: `POST /functions/v1/backfill-survey-progress` with `{"dryRun": true}` to see how many records need processing
-3. Trigger the actual backfill: `POST /functions/v1/backfill-survey-progress` with `{}`
-4. The function self-retriggers in batches of 20 until all valid research records with transcriptions are processed
+Remove the per-record campaign parsing and cache logic entirely. Use this single question list for all records.
 
-No code changes needed to the function itself -- it already filters for `record_type = 'research'`, `has_valid_conversation = true`, and non-null transcriptions with null `survey_progress`.
+### `supabase/functions/transcribe-call/index.ts`
+Apply the same fix to the live pipeline — if campaign name lookup fails, fall back to fetching the first available research script's questions.
+
+### After fix
+Re-trigger the backfill. It will process all 91 records in ~5 batches.
 
