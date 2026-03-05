@@ -53,6 +53,12 @@ function validateConversation(params: {
   const lowerTranscription = transcription.toLowerCase();
   const lowerSummary = summary.toLowerCase();
   
+  // Hard cutoff: calls under 15 seconds cannot contain a real conversation
+  if (durationSeconds && durationSeconds < 15) {
+    console.log(`[Validation] Call too short (${durationSeconds}s < 15s) — auto-invalid`);
+    return false;
+  }
+  
   // Voicemail indicators in transcription
   const voicemailIndicators = [
     'forwarded to voicemail',
@@ -66,13 +72,17 @@ function validateConversation(params: {
     'the person you are calling',
     'is not available right now',
     'after the beep',
-    'voice mailbox'
+    'voice mailbox',
+    'voicemail',
+    'answering machine',
+    'automated voice',
   ];
   
-  // AI detected no real conversation
+  // AI detected no real conversation — checked against BOTH summary and transcription
   const noConversationIndicators = [
     'no actual conversation',
     'voicemail recording',
+    'voicemail',
     'no discussion',
     'no conversation took place',
     'no contact was made',
@@ -81,13 +91,35 @@ function validateConversation(params: {
     'no meaningful dialogue',
     'no two-way conversation',
     'one-sided recording',
-    'automated voicemail'
+    'automated voicemail',
+    'extremely brief',
+    'no further conversation',
+    'hung up',
+    'disconnected',
+    'wrong number',
+    'answering machine',
+    'automated voice',
+    'cuts off',
+    'cut off before',
+    'no information was exchanged',
+    'incomplete',
+    'no substantive',
+    'no interaction',
+    'no real conversation',
+    'no meaningful',
+    'not a sales call',
+    'no conversation',
   ];
   
   // Short calls (<30s) with voicemail keywords are almost certainly voicemails
   if (durationSeconds && durationSeconds < 30) {
     if (voicemailIndicators.some(indicator => lowerTranscription.includes(indicator))) {
       console.log('[Validation] Short call with voicemail indicator detected');
+      return false;
+    }
+    // Also check summary for voicemail on short calls
+    if (voicemailIndicators.some(indicator => lowerSummary.includes(indicator))) {
+      console.log('[Validation] Short call with voicemail indicator in summary');
       return false;
     }
   }
