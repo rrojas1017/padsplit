@@ -298,6 +298,7 @@ export default function Reports() {
         'Contact Name',
         'Contact Email',
         'Duration',
+        'Progress',
         'Agent',
         'Market City',
         'Market State',
@@ -310,6 +311,7 @@ export default function Reports() {
         booking.memberName?.startsWith('API Submission') ? '' : booking.memberName,
         booking.contactEmail ? (shouldMask ? maskEmail(booking.contactEmail) : booking.contactEmail) : '',
         formatDuration(booking.callDurationSeconds),
+        booking.questionsTotal ? `${booking.questionsAnswered || 0}/${booking.questionsTotal}` : '',
         getAgentName(agents, booking.agentId),
         booking.marketCity || '',
         booking.marketState || '',
@@ -433,7 +435,7 @@ export default function Reports() {
     <>
       {Array.from({ length: 10 }).map((_, i) => (
         <tr key={i} className="border-b border-border">
-          {Array.from({ length: isResearch ? 9 : 15 }).map((_, j) => (
+          {Array.from({ length: isResearch ? 11 : 15 }).map((_, j) => (
             <td key={j} className="py-3 px-4"><Skeleton className="h-4 w-24" /></td>
           ))}
         </tr>
@@ -913,6 +915,7 @@ export default function Reports() {
                     <SortableHeader column="memberName" label="Name" />
                     <th className="text-left py-3 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Email</th>
                     <th className="text-left py-3 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Duration</th>
+                    <th className="text-left py-3 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Progress</th>
                     <th className="text-left py-3 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Agent</th>
                     <SortableHeader column="market" label="Market" />
                     <th className="text-left py-3 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Transcription</th>
@@ -945,7 +948,7 @@ export default function Reports() {
                 <TableSkeleton />
               ) : records.length === 0 ? (
                 <tr>
-                  <td colSpan={isResearch ? 10 : 15} className="py-8 text-center text-muted-foreground">
+                  <td colSpan={isResearch ? 11 : 15} className="py-8 text-center text-muted-foreground">
                     No records found matching your filters
                   </td>
                 </tr>
@@ -1049,6 +1052,34 @@ export default function Reports() {
                         <Timer className="h-3.5 w-3.5" />
                         {formatDuration(booking.callDurationSeconds)}
                       </div>
+                    </td>
+                    {/* Survey Progress */}
+                    <td className="py-3 px-4 text-sm">
+                      {booking.questionsTotal != null && booking.questionsTotal > 0 ? (
+                        <div className="flex flex-col gap-1 min-w-[60px]">
+                          <span className={cn(
+                            "font-medium text-xs",
+                            booking.questionsAnswered === booking.questionsTotal ? "text-green-600 dark:text-green-400" :
+                            (booking.questionsAnswered || 0) / booking.questionsTotal >= 0.5 ? "text-amber-600 dark:text-amber-400" :
+                            "text-red-600 dark:text-red-400"
+                          )}>
+                            {booking.questionsAnswered || 0}/{booking.questionsTotal}
+                          </span>
+                          <div className="w-full h-1.5 rounded-full bg-secondary overflow-hidden">
+                            <div
+                              className={cn(
+                                "h-full rounded-full transition-all",
+                                booking.questionsAnswered === booking.questionsTotal ? "bg-green-500" :
+                                (booking.questionsAnswered || 0) / booking.questionsTotal >= 0.5 ? "bg-amber-500" :
+                                "bg-red-500"
+                              )}
+                              style={{ width: `${Math.round(((booking.questionsAnswered || 0) / booking.questionsTotal) * 100)}%` }}
+                            />
+                          </div>
+                        </div>
+                      ) : (
+                        <span className="text-muted-foreground text-xs">—</span>
+                      )}
                     </td>
                     {/* Agent */}
                     <td className="py-3 px-4 text-sm text-foreground">
