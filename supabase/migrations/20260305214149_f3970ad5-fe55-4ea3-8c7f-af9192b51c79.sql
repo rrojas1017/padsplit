@@ -1,0 +1,1 @@
+ALTER TABLE booking_transcriptions ADD COLUMN survey_progress jsonb DEFAULT NULL;

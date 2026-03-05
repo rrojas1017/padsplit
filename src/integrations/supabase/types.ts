@@ -497,6 +497,7 @@ export type Database = {
           stt_latency_ms: number | null
           stt_provider: string | null
           stt_word_count: number | null
+          survey_progress: Json | null
           updated_at: string | null
         }
         Insert: {
@@ -522,6 +523,7 @@ export type Database = {
           stt_latency_ms?: number | null
           stt_provider?: string | null
           stt_word_count?: number | null
+          survey_progress?: Json | null
           updated_at?: string | null
         }
         Update: {
@@ -547,6 +549,7 @@ export type Database = {
           stt_latency_ms?: number | null
           stt_provider?: string | null
           stt_word_count?: number | null
+          survey_progress?: Json | null
           updated_at?: string | null
         }
         Relationships: [

@@ -1459,7 +1459,7 @@ async function processTranscription(bookingId: string, kixieUrl: string, skipTts
     // Fetch booking to get call_type_id, agent_id, site_id, and status
     const { data: bookingData, error: bookingError } = await supabase
       .from('bookings')
-      .select('call_type_id, agent_id, status, record_type, agents(site_id)')
+      .select('call_type_id, agent_id, status, record_type, notes, agents(site_id)')
       .eq('id', bookingId)
       .maybeSingle();
 
@@ -1855,6 +1855,96 @@ async function processTranscription(bookingId: string, kixieUrl: string, skipTts
       console.log(`[Background] ⚠️ No valid conversation detected for ${bookingId} - likely voicemail/failed connection`);
     }
 
+    // ===== SURVEY PROGRESS EXTRACTION (Research records only) =====
+    let surveyProgress: { answered: number; total: number; questions_covered: number[] } | null = null;
+    if (isResearch && hasValidConversation && transcription) {
+      try {
+        console.log('[Background] Extracting survey progress for research record...');
+        const bookingNotes = bookingData?.notes || '';
+        const campaignMatch = bookingNotes.match(/Campaign:\s*(.+?)\s*\|/);
+        const campaignName = campaignMatch?.[1]?.trim();
+        
+        if (campaignName) {
+          // Look up campaign → script → questions
+          const { data: campaignData } = await supabase
+            .from('research_campaigns')
+            .select('script_id, research_scripts!research_campaigns_script_id_fkey(questions)')
+            .eq('name', campaignName)
+            .maybeSingle();
+          
+          const questions = (campaignData as any)?.research_scripts?.questions;
+          if (Array.isArray(questions) && questions.length > 0) {
+            // Build numbered question list for AI
+            const questionList = questions.map((q: any, i: number) => 
+              `${i + 1}. ${typeof q === 'string' ? q : q.text || q.question || JSON.stringify(q)}`
+            ).join('\n');
+            
+            const surveyPrompt = `You are analyzing a research survey call transcript. Determine which survey questions were covered/addressed during the call.
+
+Here are the ${questions.length} survey questions:
+${questionList}
+
+Here is the call transcript:
+${transcription.substring(0, 15000)}
+
+Return ONLY a JSON object with:
+- "answered": number of questions that were addressed/covered in the conversation
+- "total": ${questions.length}
+- "questions_covered": array of question numbers (1-indexed) that were covered
+
+Be generous in matching — if the topic of a question was discussed even partially, count it as covered. Return valid JSON only, no markdown.`;
+
+            const surveyAiResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+              method: 'POST',
+              headers: {
+                'Authorization': `Bearer ${lovableApiKey}`,
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                model: 'google/gemini-2.5-flash',
+                messages: [{ role: 'user', content: surveyPrompt }],
+              }),
+            });
+
+            if (surveyAiResponse.ok) {
+              const surveyResult = await surveyAiResponse.json();
+              let surveyContent = surveyResult.choices?.[0]?.message?.content || '';
+              // Clean markdown fencing
+              surveyContent = surveyContent.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+              const parsed = JSON.parse(surveyContent);
+              surveyProgress = {
+                answered: parsed.answered || 0,
+                total: parsed.total || questions.length,
+                questions_covered: Array.isArray(parsed.questions_covered) ? parsed.questions_covered : [],
+              };
+              console.log(`[Background] Survey progress: ${surveyProgress.answered}/${surveyProgress.total} questions covered`);
+              
+              // Log cost
+              logApiCost(supabase, {
+                service_provider: 'lovable_ai',
+                service_type: 'survey_progress_extraction',
+                edge_function: 'transcribe-call',
+                booking_id: bookingId,
+                agent_id: agentId || undefined,
+                site_id: siteId || undefined,
+                input_tokens: Math.ceil(surveyPrompt.length / 4),
+                output_tokens: Math.ceil(surveyContent.length / 4),
+                metadata: { model: 'google/gemini-2.5-flash', campaign: campaignName }
+              });
+            } else {
+              console.error('[Background] Survey progress AI call failed:', surveyAiResponse.status);
+            }
+          } else {
+            console.log('[Background] No survey questions found for campaign:', campaignName);
+          }
+        } else {
+          console.log('[Background] Could not parse campaign name from notes');
+        }
+      } catch (surveyErr) {
+        console.error('[Background] Survey progress extraction error:', surveyErr);
+      }
+    }
+
     // Step 4: Update the booking status and insert transcription data to separate table
     console.log('[Background] Updating booking status and inserting transcription data...');
     
@@ -1899,6 +1989,7 @@ async function processTranscription(bookingId: string, kixieUrl: string, skipTts
         stt_word_count: sttWordCount,
         stt_confidence_score: sttConfidenceScore,
         llm_provider: llmSelection.provider,
+        ...(surveyProgress ? { survey_progress: surveyProgress } : {}),
         updated_at: new Date().toISOString(),
       }, {
         onConflict: 'booking_id'

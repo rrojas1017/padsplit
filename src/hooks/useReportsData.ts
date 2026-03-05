@@ -199,15 +199,8 @@ export function useReportsData(
             call_key_points,
             agent_feedback,
             coaching_audio_url,
-            coaching_audio_generated_at
-          ),
-          research_calls!bookings_research_call_id_fkey (
-            responses,
-            research_campaigns!research_calls_campaign_id_fkey (
-              research_scripts!research_campaigns_script_id_fkey (
-                questions
-              )
-            )
+            coaching_audio_generated_at,
+            survey_progress
           )
         `, { count: 'exact' });
 
@@ -362,20 +355,8 @@ export function useReportsData(
           recordType: (row as any).record_type as 'booking' | 'research' | undefined,
           researchCallId: (row as any).research_call_id || undefined,
           detectedIssues: Array.isArray((row as any).detected_issues) ? (row as any).detected_issues : undefined,
-          questionsAnswered: (() => {
-            const rc = (row as any).research_calls;
-            if (!rc) return undefined;
-            const responses = rc.responses;
-            return responses ? Object.keys(responses).length : 0;
-          })(),
-          questionsTotal: (() => {
-            const rc = (row as any).research_calls;
-            if (!rc) return undefined;
-            const campaign = rc.research_campaigns;
-            const script = campaign?.research_scripts;
-            const questions = script?.questions;
-            return Array.isArray(questions) ? questions.length : undefined;
-          })(),
+          questionsAnswered: transcription?.survey_progress?.answered ?? undefined,
+          questionsTotal: transcription?.survey_progress?.total ?? undefined,
         };
       });
 
