@@ -138,3 +138,6 @@ verify_jwt = false
 [functions.translate-script]
 verify_jwt = false
 
+[functions.backfill-survey-progress]
+verify_jwt = false
+
