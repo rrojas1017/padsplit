@@ -9,6 +9,10 @@ export const ISSUE_CATEGORIES = [
   'Move-In Barriers',
   'Property & Amenity Mismatch',
   'Financial Constraints',
+  'Property Condition Issues',
+  'Host & Maintenance Failures',
+  'Safety & Security Concerns',
+  'Rent & Affordability Pressure',
 ] as const;
 
 export type IssueCategory = typeof ISSUE_CATEGORIES[number];
@@ -30,6 +34,10 @@ export const ISSUE_BADGE_CONFIG: Record<string, { color: string; icon: string }>
   'Move-In Barriers': { color: 'bg-violet-500/15 text-violet-600 border-violet-500/20', icon: 'Calendar' },
   'Property & Amenity Mismatch': { color: 'bg-emerald-500/15 text-emerald-600 border-emerald-500/20', icon: 'Building2' },
   'Financial Constraints': { color: 'bg-rose-500/15 text-rose-600 border-rose-500/20', icon: 'DollarSign' },
+  'Property Condition Issues': { color: 'bg-yellow-500/15 text-yellow-600 border-yellow-500/20', icon: 'Bug' },
+  'Host & Maintenance Failures': { color: 'bg-orange-500/15 text-orange-600 border-orange-500/20', icon: 'Wrench' },
+  'Safety & Security Concerns': { color: 'bg-red-500/15 text-red-700 border-red-500/20', icon: 'AlertTriangle' },
+  'Rent & Affordability Pressure': { color: 'bg-pink-500/15 text-pink-600 border-pink-500/20', icon: 'TrendingUp' },
 };
 
 // Keyword patterns for each category (tightened to reduce false positives)
@@ -69,6 +77,26 @@ const ISSUE_KEYWORDS: Record<IssueCategory, string[]> = {
     'budget', "can't afford", 'too expensive', 'unemploy', 'cheaper',
     'low income', 'fixed income', 'disability', 'ssi', 'ssdi',
     'not enough money', "can't pay",
+  ],
+  'Property Condition Issues': [
+    'bed bugs', 'mold', 'plumbing', 'pipes', 'no heat', 'no water',
+    'broken', 'roach', 'pest', 'infest', 'not maintained', 'not up to par',
+    'leaking', 'flooding', 'dirty', 'filthy', 'cockroach',
+  ],
+  'Host & Maintenance Failures': [
+    'host not responsive', 'maintenance never', "didn't fix", 'failed to repair',
+    'no response from host', 'took weeks', 'never came', 'never fixed',
+    'ignored requests', 'no maintenance', 'landlord never', 'won\'t fix',
+  ],
+  'Safety & Security Concerns': [
+    'police', 'unsafe', 'harassment', 'unauthorized', 'break-in', 'crime',
+    'dangerous', 'afraid', 'threatened', 'violence', 'stolen', 'robbery',
+    'shooting', 'drugs', 'weapon',
+  ],
+  'Rent & Affordability Pressure': [
+    'rent increase', "couldn't afford rent", 'price went up', 'too expensive to stay',
+    'eviction', 'rent too high', 'raised the rent', 'priced out',
+    'can\'t keep up with rent', 'behind on rent',
   ],
 };
 
