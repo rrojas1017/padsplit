@@ -1,43 +1,33 @@
 
 
-# Fix: Dashboard Counting Research Records as Bookings
+# Reports: Only Show Successful Research Calls
 
-## Root Cause
-The dashboard's `filterActualBookings` function only excludes records with status `'Non Booking'`, but does **not** exclude records with status `'Research'` (record_type = 'research'). There are **1,169 research records** in the last 90 days being counted as actual bookings in all KPIs, charts, and leaderboards.
+## Problem
+The Reports page currently shows all 1,172 research records. Of these, 179 have `has_valid_conversation = false` (voicemails, no-answers, failed connections). The user wants only successful research calls displayed.
 
-Database confirms only **34 records today**, not 966. The inflated number comes from research records being included in booking counts.
+## Data Analysis
+- 991 research records have `has_valid_conversation = true` (successful)
+- 179 have `has_valid_conversation = false` (unsuccessful)
+- 2 have `null` (unknown)
+- None have `research_call_id` linked, so we cannot filter by `research_calls.call_outcome`
 
 ## Fix
+**File: `src/hooks/useReportsData.ts`**
 
-### 1. Update `filterActualBookings` in `dashboardCalculations.ts`
-Exclude both `'Non Booking'` and `'Research'` statuses:
+In the main query builder, after applying the `record_type` filter, add a condition: when fetching research records (either `recordTypeFilter === 'research'` or `recordTypeFilter === 'all'`), exclude research records where `has_valid_conversation = false`.
+
+The cleanest approach: add an `.or()` filter that says "either it's not a research record, or it's a research record with a valid conversation":
+
 ```ts
-const filterActualBookings = (bookings: Booking[]): Booking[] => {
-  return bookings.filter(b => b.status !== 'Non Booking' && b.status !== 'Research');
-};
+// After existing filters, exclude failed research calls
+query = query.or('record_type.neq.research,has_valid_conversation.is.null,has_valid_conversation.eq.true');
 ```
 
-### 2. Add `record_type` to data fetching
-Add `record_type` to the select columns in both:
-- `BookingsContext.tsx` — the main query
-- `useDashboardData.ts` — the `LIGHTWEIGHT_COLUMNS` constant
+This ensures:
+- All booking/non-booking records pass through unchanged
+- Research records only appear if `has_valid_conversation` is `true` or `null`
+- The total count drops from ~1,172 to ~993 for research records
 
-And map it in the transform functions so the `recordType` field is available on `Booking` objects.
-
-### 3. Belt-and-suspenders: also filter by `recordType`
-Update `filterActualBookings` to also check `recordType !== 'research'` for safety:
-```ts
-const filterActualBookings = (bookings: Booking[]): Booking[] => {
-  return bookings.filter(b => 
-    b.status !== 'Non Booking' && 
-    b.status !== 'Research' && 
-    b.recordType !== 'research'
-  );
-};
-```
-
-### Files Changed
-- `src/utils/dashboardCalculations.ts` — exclude Research status
-- `src/contexts/BookingsContext.tsx` — add `record_type` to select + transform
-- `src/hooks/useDashboardData.ts` — add `record_type` to LIGHTWEIGHT_COLUMNS + transformRow
+## Files Changed
+- `src/hooks/useReportsData.ts` — add filter to exclude unsuccessful research calls
 
