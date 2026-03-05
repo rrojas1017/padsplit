@@ -4,7 +4,8 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
-import { Loader2, ChevronDown, ChevronUp, Mic, AlertCircle, CheckCircle2, Clock, TrendingUp, MessageSquare, Target, AlertTriangle, Lightbulb, Smile, Meh, Frown, Star, Award, ThumbsUp, GraduationCap, RefreshCw, Ban, Radio, Wrench, ShieldAlert, DollarSign } from 'lucide-react';
+import { Loader2, ChevronDown, ChevronUp, Mic, AlertCircle, CheckCircle2, Clock, TrendingUp, MessageSquare, Target, AlertTriangle, Lightbulb, Smile, Meh, Frown, Star, Award, ThumbsUp, GraduationCap, RefreshCw, Ban, Radio, Wrench, ShieldAlert, DollarSign, Play, ExternalLink } from 'lucide-react';
+import { Card, CardContent } from '@/components/ui/card';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/contexts/AuthContext';
@@ -365,6 +366,30 @@ export function TranscriptionModal({ booking, isOpen, onClose, onTranscriptionCo
         </DialogHeader>
 
         <ScrollArea className="max-h-[calc(85vh-100px)] pr-4">
+          {/* Audio Player - always visible when kixieLink exists */}
+          {booking.kixieLink && (
+            <Card className="mb-4">
+              <CardContent className="py-4 space-y-3">
+                <div className="flex items-center gap-3">
+                  <Play className="h-5 w-5 text-primary" />
+                  <span className="font-medium">Call Recording</span>
+                </div>
+                <audio
+                  controls
+                  src={booking.kixieLink}
+                  className="w-full h-10 rounded-lg"
+                  preload="metadata"
+                />
+                <Button variant="outline" size="sm" className="w-full" asChild>
+                  <a href={booking.kixieLink} target="_blank" rel="noopener noreferrer">
+                    <ExternalLink className="h-4 w-4 mr-2" />
+                    Open in Kixie
+                  </a>
+                </Button>
+              </CardContent>
+            </Card>
+          )}
+
           {!hasTranscription ? (
             <div className="flex flex-col items-center justify-center py-12 text-center">
               {isProcessing ? (
