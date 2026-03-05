@@ -1,36 +1,16 @@
 
 
-# Backfill Extracted Member Details to Research Records
+# Remove "Open in Kixie" Buttons
 
-## Problem
-The AI analysis already extracts names, emails, market city/state, and other details from call transcriptions into `call_key_points.memberDetails`. However, for the 91 existing research records, most of this data was never written back to the bookings table columns (`member_name`, `contact_email`, `market_city`, `market_state`).
+## Changes
 
-- 77/91 records missing market city (but ~15+ have it in `memberDetails`)
-- 77/91 records missing contact email (a few have it extracted)
-- Most still show "API Submission - +phone" as member name (but names like "Emily", "Tony", "Janae Williams" are in the transcription data)
+Two files have an "Open in Kixie" button below the inline audio player. Remove only the button while keeping the audio player intact.
 
-## Solution
-Create and run a one-time backfill that reads `call_key_points.memberDetails` from `booking_transcriptions` and writes the extracted values back to the `bookings` table — only filling in fields that are currently empty/placeholder.
+### 1. `src/components/booking/TranscriptionModal.tsx` (lines 383-388)
+Delete the `<Button>` wrapping the "Open in Kixie" link. Keep the `<audio>` element and its surrounding card.
 
-### 1. New edge function: `backfill-member-details`
-- Query all research records where `call_key_points.memberDetails` exists in `booking_transcriptions`
-- For each record, check if the booking is missing data that the AI already extracted:
-  - `member_name`: if still "API Submission - ..." and firstName/lastName available, update
-  - `contact_email`: if null and email extracted (skip bogus values like descriptions)
-  - `market_city` / `market_state`: if null and extracted
-- Process in batches of 50, self-retrigger pattern
-- Dry run support to preview counts
+### 2. `src/components/call-insights/CallDetailsModal.tsx` (lines 150-155)
+Same change — remove the "Open in Kixie" button, keep the audio player.
 
-### 2. Register in `supabase/config.toml`
-```toml
-[functions.backfill-member-details]
-verify_jwt = false
-```
-
-### 3. Execute
-1. Deploy function
-2. Dry run to see how many records can be enriched
-3. Run the actual backfill
-
-No UI changes needed — the Reports table already displays `member_name`, `market_city`, `contact_email` columns, so enriched data will appear immediately.
+Both files retain the call recording card with the inline `<audio controls>` element for playback.
 
