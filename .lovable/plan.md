@@ -1,34 +1,32 @@
 
 
-# Add Inline Audio Playback to Call Insights Modal
+# Add Audio Playback to Reports Transcription Modal
 
-## What
-Add an HTML5 audio player inside the `CallDetailsModal` so users can play back call recordings directly in the modal instead of only having an external Kixie link.
+## Problem
+The audio player was added to the `CallDetailsModal` (Call Insights page), but the user is on the **Reports** page which uses a different component — `TranscriptionModal`. This modal has no inline audio player; it only uses the `kixieLink` URL to trigger transcription, never to play back audio.
 
-## Changes
+## Change
 
-### `src/components/call-insights/CallDetailsModal.tsx`
-**Replace the external-link-only recording card** (lines 137-154) with an inline audio player + fallback external link:
+### `src/components/booking/TranscriptionModal.tsx`
+Add an inline `<audio>` player at the top of the transcription content area (after the status badges section, around line 491). The player will use `booking.kixieLink` as the audio source, since that field contains the direct recording URL.
 
-- Add a native `<audio>` element with controls, styled to match the card
-- Keep the "Open in Kixie" button as a secondary option below the player
-- The `recording_url` from the `Call` object is a direct CDN URL that browsers can play natively via `<audio src={recording_url}>`
+- Add `Play` and `ExternalLink` icons to imports
+- Insert a recording card with:
+  - Native `<audio controls>` element with `preload="metadata"`
+  - "Open in Kixie" external link button as fallback
+- Show only when `booking.kixieLink` exists
+- Place it between the status badges and the summary section so users see it immediately
 
+The card will match the same pattern used in `CallDetailsModal`:
 ```text
 ┌─────────────────────────────────────────┐
 │ 🔊 Call Recording                       │
 │ ┌─────────────────────────────────────┐ │
-│ │  ▶ ━━━━━━━━━━━━━━━━━  2:34 / 5:12  │ │  ← native <audio> controls
+│ │  ▶ ━━━━━━━━━━━━━━━━━  2:34 / 5:12  │ │
 │ └─────────────────────────────────────┘ │
-│                    [Open in Kixie ↗]    │  ← fallback link
+│              [Open in Kixie ↗]          │
 └─────────────────────────────────────────┘
 ```
 
-The recording card section will become:
-- A `<Card>` with the `<audio controls>` element using the `recording_url` as source
-- Full-width audio controls styled with Tailwind (`w-full rounded-lg`)
-- The existing external link button stays as a secondary action
-
-### No backend or schema changes needed
-The `recording_url` field on the `calls` table already contains playable audio URLs.
+Also show the audio player in the "not yet transcribed" and "failed" states so users can listen even before/without transcription.
 
