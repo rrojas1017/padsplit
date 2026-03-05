@@ -135,7 +135,7 @@ export default function Reports() {
   const [agentFilter, setAgentFilter] = useState('all');
   const [rebookingFilter, setRebookingFilter] = useState<'all' | 'new' | 'rebooking'>('all');
   const [conversationFilter, setConversationFilter] = useState<'all' | 'valid' | 'no_conversation'>('all');
-  const [recordTypeFilter, setRecordTypeFilter] = useState<'all' | 'booking' | 'research'>('all');
+  const [recordTypeFilter, setRecordTypeFilter] = useState<'all' | 'booking' | 'research'>('booking');
   const [issueFilter, setIssueFilter] = useState<string[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
 
