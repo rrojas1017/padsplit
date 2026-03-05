@@ -380,12 +380,6 @@ export function TranscriptionModal({ booking, isOpen, onClose, onTranscriptionCo
                   className="w-full h-10 rounded-lg"
                   preload="metadata"
                 />
-                <Button variant="outline" size="sm" className="w-full" asChild>
-                  <a href={booking.kixieLink} target="_blank" rel="noopener noreferrer">
-                    <ExternalLink className="h-4 w-4 mr-2" />
-                    Open in Kixie
-                  </a>
-                </Button>
               </CardContent>
             </Card>
           )}
