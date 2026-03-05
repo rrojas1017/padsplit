@@ -1,33 +1,21 @@
 
 
-# Reports: Only Show Successful Research Calls
+# Fix: Reports Default Should Be "Bookings Only"
 
 ## Problem
-The Reports page currently shows all 1,172 research records. Of these, 179 have `has_valid_conversation = false` (voicemails, no-answers, failed connections). The user wants only successful research calls displayed.
+Reports defaults to "All Records" with today's date. At 1:24 AM on March 5th, no agents have logged in, so there are zero bookings. However, 36 research records were submitted via the external API (35 successful + 1 null conversation status). This is confusing because the user expects the count to reflect agent activity.
 
-## Data Analysis
-- 991 research records have `has_valid_conversation = true` (successful)
-- 179 have `has_valid_conversation = false` (unsuccessful)
-- 2 have `null` (unknown)
-- None have `research_call_id` linked, so we cannot filter by `research_calls.call_outcome`
+## Database Reality (March 5th)
+- **0** booking records
+- **35** research records with `has_valid_conversation = true`
+- **1** research record with `has_valid_conversation = null`
+- **6** research records with `has_valid_conversation = false` (correctly filtered out)
 
 ## Fix
-**File: `src/hooks/useReportsData.ts`**
+**File: `src/pages/Reports.tsx`** — Change the default `recordTypeFilter` from `'all'` to `'booking'`.
 
-In the main query builder, after applying the `record_type` filter, add a condition: when fetching research records (either `recordTypeFilter === 'research'` or `recordTypeFilter === 'all'`), exclude research records where `has_valid_conversation = false`.
-
-The cleanest approach: add an `.or()` filter that says "either it's not a research record, or it's a research record with a valid conversation":
-
-```ts
-// After existing filters, exclude failed research calls
-query = query.or('record_type.neq.research,has_valid_conversation.is.null,has_valid_conversation.eq.true');
-```
-
-This ensures:
-- All booking/non-booking records pass through unchanged
-- Research records only appear if `has_valid_conversation` is `true` or `null`
-- The total count drops from ~1,172 to ~993 for research records
+This single-line change ensures the Reports page opens showing only actual bookings (matching the Dashboard), so at 1:24 AM with no agent activity, the count will correctly show 0. Users can still switch to "All Records" or "Research Only" via the dropdown.
 
 ## Files Changed
-- `src/hooks/useReportsData.ts` — add filter to exclude unsuccessful research calls
+- `src/pages/Reports.tsx` — default `recordTypeFilter` state from `'all'` → `'booking'`
 
