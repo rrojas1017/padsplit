@@ -136,19 +136,23 @@ export function CallDetailsModal({ call, agentName, onClose }: CallDetailsModalP
             {/* Recording */}
             {call.recording_url && (
               <Card>
-                <CardContent className="py-4">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <Play className="h-5 w-5 text-primary" />
-                      <span className="font-medium">Call Recording</span>
-                    </div>
-                    <Button variant="outline" size="sm" asChild>
-                      <a href={call.recording_url} target="_blank" rel="noopener noreferrer">
-                        <ExternalLink className="h-4 w-4 mr-2" />
-                        Open in Kixie
-                      </a>
-                    </Button>
+                <CardContent className="py-4 space-y-3">
+                  <div className="flex items-center gap-3">
+                    <Play className="h-5 w-5 text-primary" />
+                    <span className="font-medium">Call Recording</span>
                   </div>
+                  <audio
+                    controls
+                    src={call.recording_url}
+                    className="w-full h-10 rounded-lg"
+                    preload="metadata"
+                  />
+                  <Button variant="outline" size="sm" className="w-full" asChild>
+                    <a href={call.recording_url} target="_blank" rel="noopener noreferrer">
+                      <ExternalLink className="h-4 w-4 mr-2" />
+                      Open in Kixie
+                    </a>
+                  </Button>
                 </CardContent>
               </Card>
             )}
