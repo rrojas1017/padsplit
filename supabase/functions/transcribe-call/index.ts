@@ -1932,6 +1932,55 @@ async function processTranscription(bookingId: string, kixieUrl: string, skipTts
       }
     }
 
+    // ===== CONTACT DETAILS ENRICHMENT =====
+    // Write extracted contact info back to bookings table
+    if (memberDetails) {
+      const { data: contactBooking } = await supabase
+        .from('bookings')
+        .select('member_name, contact_email, contact_phone')
+        .eq('id', bookingId)
+        .single();
+
+      const contactUpdate: Record<string, any> = {};
+      
+      // Build full name from extracted first/last name
+      const extractedName = [memberDetails.firstName, memberDetails.lastName]
+        .filter(Boolean)
+        .join(' ')
+        .trim();
+      
+      // Update member_name if it's still the API Submission placeholder
+      if (extractedName && contactBooking?.member_name?.startsWith('API Submission')) {
+        contactUpdate.member_name = extractedName;
+        console.log(`[Background] Contact name enriched: "${contactBooking.member_name}" → "${extractedName}"`);
+      }
+      
+      // Update contact_email if extracted and currently empty
+      if (memberDetails.email && !contactBooking?.contact_email) {
+        contactUpdate.contact_email = memberDetails.email;
+        console.log(`[Background] Contact email enriched: ${memberDetails.email}`);
+      }
+      
+      // Update contact_phone if extracted and currently empty
+      if (memberDetails.phoneNumber && !contactBooking?.contact_phone) {
+        contactUpdate.contact_phone = memberDetails.phoneNumber;
+        console.log(`[Background] Contact phone enriched: ${memberDetails.phoneNumber}`);
+      }
+      
+      if (Object.keys(contactUpdate).length > 0) {
+        const { error: contactUpdateError } = await supabase
+          .from('bookings')
+          .update(contactUpdate)
+          .eq('id', bookingId);
+        
+        if (contactUpdateError) {
+          console.error('[Background] Contact enrichment error:', contactUpdateError);
+        } else {
+          console.log(`[Background] Contact details enriched for ${bookingId}:`, Object.keys(contactUpdate));
+        }
+      }
+    }
+
     // Clear timeout on success
     clearTimeout(timeoutId);
     console.log(`[Background] Transcription completed successfully for booking ${bookingId}`);
