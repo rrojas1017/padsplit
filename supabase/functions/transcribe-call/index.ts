@@ -1864,16 +1864,29 @@ async function processTranscription(bookingId: string, kixieUrl: string, skipTts
         const campaignMatch = bookingNotes.match(/Campaign:\s*(.+?)\s*\|/);
         const campaignName = campaignMatch?.[1]?.trim();
         
+        // Try campaign name lookup first, fall back to first available script
+        let questions: any[] | null = null;
         if (campaignName) {
-          // Look up campaign → script → questions
           const { data: campaignData } = await supabase
             .from('research_campaigns')
             .select('script_id, research_scripts!research_campaigns_script_id_fkey(questions)')
             .eq('name', campaignName)
             .maybeSingle();
-          
-          const questions = (campaignData as any)?.research_scripts?.questions;
-          if (Array.isArray(questions) && questions.length > 0) {
+          questions = (campaignData as any)?.research_scripts?.questions || null;
+        }
+        
+        // Fallback: fetch first available research script
+        if (!Array.isArray(questions) || questions.length === 0) {
+          console.log('[Background] Campaign name lookup failed, falling back to first available script');
+          const { data: fallbackData } = await supabase
+            .from('research_campaigns')
+            .select('research_scripts!research_campaigns_script_id_fkey(questions)')
+            .limit(1)
+            .maybeSingle();
+          questions = (fallbackData as any)?.research_scripts?.questions || null;
+        }
+        
+        if (Array.isArray(questions) && questions.length > 0) {
             // Build numbered question list for AI
             const questionList = questions.map((q: any, i: number) => 
               `${i + 1}. ${typeof q === 'string' ? q : q.text || q.question || JSON.stringify(q)}`
@@ -1929,17 +1942,14 @@ Be generous in matching — if the topic of a question was discussed even partia
                 site_id: siteId || undefined,
                 input_tokens: Math.ceil(surveyPrompt.length / 4),
                 output_tokens: Math.ceil(surveyContent.length / 4),
-                metadata: { model: 'google/gemini-2.5-flash', campaign: campaignName }
+                metadata: { model: 'google/gemini-2.5-flash', campaign: campaignName || 'fallback' }
               });
             } else {
               console.error('[Background] Survey progress AI call failed:', surveyAiResponse.status);
             }
           } else {
-            console.log('[Background] No survey questions found for campaign:', campaignName);
+            console.log('[Background] No survey questions found in any campaign');
           }
-        } else {
-          console.log('[Background] Could not parse campaign name from notes');
-        }
       } catch (surveyErr) {
         console.error('[Background] Survey progress extraction error:', surveyErr);
       }
