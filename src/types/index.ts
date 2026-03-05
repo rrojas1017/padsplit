@@ -139,6 +139,9 @@ export interface Booking {
   researchCallId?: string;
   // Pain point issue tagging (JSONB - array of DetectedIssueDetail objects or legacy strings)
   detectedIssues?: any[];
+  // Survey progress fields (research records only)
+  questionsAnswered?: number;
+  questionsTotal?: number;
 }
 
 export interface DailyMetrics {
