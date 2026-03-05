@@ -80,7 +80,7 @@ const menuItems: MenuItem[] = [
   { icon: Megaphone, label: 'Broadcasts', path: '/broadcasts', roles: ['super_admin', 'admin', 'supervisor'], group: 'admin' },
   { icon: ScrollText, label: 'Script Builder', path: '/research/scripts', roles: ['super_admin', 'admin'], group: 'admin' },
   { icon: FolderKanban, label: 'Campaign Manager', path: '/research/manage-campaigns', roles: ['super_admin', 'admin'], group: 'admin' },
-  { icon: FlaskConical, label: 'Research Insights', path: '/research/insights', roles: ['super_admin', 'admin'], group: 'admin' },
+  { icon: FlaskConical, label: 'Research Insights', path: '/research/insights', roles: ['super_admin', 'admin', 'supervisor'], group: 'admin' },
   { icon: Key, label: 'API Credentials', path: '/api-credentials', roles: ['super_admin', 'admin'], group: 'admin' },
 ];
 
