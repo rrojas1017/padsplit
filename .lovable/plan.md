@@ -1,21 +1,58 @@
 
 
-# Fix: Reports Default Should Be "Bookings Only"
+# Fix: Research Calls Showing All Attempts Instead of Successful Calls
 
 ## Problem
-Reports defaults to "All Records" with today's date. At 1:24 AM on March 5th, no agents have logged in, so there are zero bookings. However, 36 research records were submitted via the external API (35 successful + 1 null conversation status). This is confusing because the user expects the count to reflect agent activity.
+The `validateConversation` function in the transcription pipeline is too lenient. Out of 1,084 research calls marked as `has_valid_conversation = true`, approximately **262** are actually voicemails, disconnected calls, or failed connections that slipped through because:
 
-## Database Reality (March 5th)
-- **0** booking records
-- **35** research records with `has_valid_conversation = true`
-- **1** research record with `has_valid_conversation = null`
-- **6** research records with `has_valid_conversation = false` (correctly filtered out)
+1. The keyword list misses common AI summary phrases like "voicemail," "extremely brief," "hung up," "disconnected," "no further conversation"
+2. Short calls (<30s) are only flagged if they contain voicemail keywords in the *transcription* text, but not if the AI *summary* says it was a non-conversation
+3. No duration-based hard cutoff — 6-13 second calls with no real exchange are still marked valid
 
-## Fix
-**File: `src/pages/Reports.tsx`** — Change the default `recordTypeFilter` from `'all'` to `'booking'`.
+## Two-Part Fix
 
-This single-line change ensures the Reports page opens showing only actual bookings (matching the Dashboard), so at 1:24 AM with no agent activity, the count will correctly show 0. Users can still switch to "All Records" or "Research Only" via the dropdown.
+### Part 1: Backfill existing records (database migration)
+Run an UPDATE to re-flag the ~262 misclassified records based on their AI summary content:
 
-## Files Changed
-- `src/pages/Reports.tsx` — default `recordTypeFilter` state from `'all'` → `'booking'`
+```sql
+UPDATE bookings b
+SET has_valid_conversation = false
+FROM booking_transcriptions bt
+WHERE bt.booking_id = b.id
+  AND b.record_type = 'research'
+  AND b.has_valid_conversation = true
+  AND (
+    bt.call_summary ILIKE '%voicemail%'
+    OR bt.call_summary ILIKE '%no further conversation%'
+    OR bt.call_summary ILIKE '%no substantive%'
+    OR bt.call_summary ILIKE '%extremely brief%'
+    OR bt.call_summary ILIKE '%no interaction%'
+    OR bt.call_summary ILIKE '%no real conversation%'
+    OR bt.call_summary ILIKE '%cuts off%'
+    OR bt.call_summary ILIKE '%cut off before%'
+    OR bt.call_summary ILIKE '%no information was exchanged%'
+    OR bt.call_summary ILIKE '%no meaningful%'
+    OR bt.call_summary ILIKE '%incomplete%'
+    OR bt.call_summary ILIKE '%wrong number%'
+    OR bt.call_summary ILIKE '%hung up%'
+    OR bt.call_summary ILIKE '%disconnected%'
+    OR bt.call_summary ILIKE '%not a sales call%'
+    OR bt.call_summary ILIKE '%automated voice%'
+    OR bt.call_summary ILIKE '%no conversation%'
+    OR bt.call_summary ILIKE '%answering machine%'
+  );
+```
+
+This will drop the count from ~1,084 to ~822 successful research calls.
+
+### Part 2: Improve the detection function for future calls
+**File: `supabase/functions/transcribe-call/index.ts`** — Update the `validateConversation` function:
+
+1. Add a hard duration cutoff: calls under 15 seconds are automatically invalid (no real conversation can happen in <15s)
+2. Expand the `noConversationIndicators` list to include the missed phrases: "voicemail," "extremely brief," "no further conversation," "hung up," "disconnected," "wrong number," "answering machine," "automated voice," "cuts off," "cut off," "no information was exchanged," "incomplete"
+3. Also check the summary for "voicemail" keyword (currently only checked in transcription for short calls)
+
+### Files Changed
+- Database migration — backfill ~262 misclassified records
+- `supabase/functions/transcribe-call/index.ts` — strengthen `validateConversation` function
 
