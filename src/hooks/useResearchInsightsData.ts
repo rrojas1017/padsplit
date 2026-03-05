@@ -127,12 +127,35 @@ export function useResearchInsightsData() {
         }
       });
 
-      if (error) throw error;
+      if (error) {
+        // supabase-js puts the response body in context for FunctionsHttpError
+        const ctx = (error as any)?.context;
+        let body: any = null;
+        try {
+          if (ctx?.json) body = await ctx.json();
+          else if (ctx?.text) { const t = await ctx.text(); body = JSON.parse(t); }
+        } catch {}
+        
+        if (body?.error?.includes?.('No processed research records')) {
+          toast.error('No processed records yet. Click "Process All" to run AI extraction on research transcripts first.');
+          return null;
+        }
+        throw error;
+      }
       toast.info('Research insights generation started...');
       return data?.insight_id;
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error generating report:', error);
-      toast.error('Failed to start research insights generation');
+      // Try to extract message from FunctionsHttpError
+      let msg = 'Failed to start research insights generation';
+      try {
+        const ctx = error?.context;
+        if (ctx?.json) {
+          const body = await ctx.json();
+          if (body?.error) msg = body.error;
+        }
+      } catch {}
+      toast.error(msg);
       return null;
     }
   };
