@@ -1,38 +1,33 @@
 
 
-# Update "Successful Research Calls" to Require 2-Minute Minimum Duration
+# Fix Research Record Contact Display & Auto-Enrich from Transcription
 
-## Summary
-Add a `call_duration_seconds >= 120` requirement alongside `has_valid_conversation = true` for research calls to be considered "successful" across all filtering points.
+## Problem
+1. Research records show "API Submission - {phoneNumber}" as the contact name in Reports — the phone number is embedded in `member_name` instead of being in `contact_phone`
+2. When AI transcription extracts firstName, lastName, email, and phone from calls, these aren't written back to the `bookings` table for research records (or any records)
 
 ## Changes
 
-### 1. Database Backfill (SQL Migration)
-Flag existing research records under 2 minutes as invalid:
-```sql
-UPDATE bookings
-SET has_valid_conversation = false
-WHERE record_type = 'research'
-  AND has_valid_conversation = true
-  AND (call_duration_seconds IS NULL OR call_duration_seconds < 120);
-```
-This will drop the valid count from ~827 to ~84.
+### 1. Edge Function: `supabase/functions/transcribe-call/index.ts`
+After the existing market data enrichment block (~line 1933), add a **contact details enrichment** block:
+- If `memberDetails.firstName` or `memberDetails.lastName` is found and `member_name` starts with "API Submission", update `member_name` to the extracted name
+- If `memberDetails.email` is found and `contact_email` is null, update `contact_email`
+- If `memberDetails.phoneNumber` is found and `contact_phone` is null, update `contact_phone`
 
-### 2. Edge Function: `supabase/functions/transcribe-call/index.ts`
-Update `validateConversation` to raise the hard duration cutoff from 15s to 120s for research calls. Since the function doesn't currently know the record type, we'll either:
-- Pass `recordType` into `validateConversation` and apply 120s cutoff for research, or
-- Apply the 120s cutoff at the caller site where `has_valid_conversation` is set, after `validateConversation` returns
+### 2. Edge Function: `supabase/functions/submit-conversation-audio/index.ts`
+When creating the booking record, also populate `contact_phone` with the submitted phone number instead of only embedding it in `member_name`. The `member_name` should still be set as a fallback but `contact_phone` should be its own field.
 
-The cleaner approach: keep `validateConversation` generic (15s cutoff for all calls), and add a **post-validation override** where the bookings record is updated — if `record_type = 'research'` and `call_duration_seconds < 120`, force `has_valid_conversation = false`.
+### 3. Database Backfill (via insert tool)
+- Extract phone numbers from existing "API Submission - {phone}" `member_name` values into `contact_phone` where it's null
+- For records that already have transcription data with `memberDetails`, backfill `member_name`, `contact_email`, and `contact_phone` from the extracted data
 
-### 3. Reports Query: `src/hooks/useReportsData.ts` (line 230)
-Update the existing filter from:
-```
-record_type.neq.research,has_valid_conversation.is.null,has_valid_conversation.eq.true
-```
-To also require `call_duration_seconds >= 120` for research records. The simplest approach: since the backfill already sets `has_valid_conversation = false` for short research calls, the existing filter will automatically exclude them. No query change needed if backfill + edge function are correct.
+### 4. Reports Display: `src/pages/Reports.tsx` (~line 971)
+- For research records where `member_name` still starts with "API Submission", display `contact_phone` instead (or a cleaned version)
+- Show the actual contact name if enrichment has populated it
 
 ### Files Changed
-- **Database migration** — backfill ~743 research records under 2 minutes to `has_valid_conversation = false`
-- **`supabase/functions/transcribe-call/index.ts`** — add 120s minimum for research calls when setting `has_valid_conversation`
+- `supabase/functions/transcribe-call/index.ts` — add contact enrichment after transcription
+- `supabase/functions/submit-conversation-audio/index.ts` — populate `contact_phone` field
+- `src/pages/Reports.tsx` — improve contact display for research records
+- Database backfill — extract phones from member_name, enrich from existing transcription data
 
