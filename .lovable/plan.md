@@ -1,32 +1,21 @@
 
 
-# Add Audio Playback to Reports Transcription Modal
+# Remove Redundant Transcript Actions in Reports Table
 
 ## Problem
-The audio player was added to the `CallDetailsModal` (Call Insights page), but the user is on the **Reports** page which uses a different component — `TranscriptionModal`. This modal has no inline audio player; it only uses the `kixieLink` URL to trigger transcription, never to play back audio.
+The research records view has two separate clickable elements that both do the exact same thing (open the TranscriptionModal):
+1. The icon in the **Transcription** column (line 1064)
+2. The "Transcript" button in the **Actions** column (line 1131)
+
+This is confusing and redundant, as shown in the screenshot.
 
 ## Change
 
-### `src/components/booking/TranscriptionModal.tsx`
-Add an inline `<audio>` player at the top of the transcription content area (after the status badges section, around line 491). The player will use `booking.kixieLink` as the audio source, since that field contains the direct recording URL.
+### `src/pages/Reports.tsx`
+**Merge into a single action**: Keep the "Transcript" button in the **Actions** column (it's more discoverable with a label), and make the Transcription column show only a static status icon (no click handler). This way:
 
-- Add `Play` and `ExternalLink` icons to imports
-- Insert a recording card with:
-  - Native `<audio controls>` element with `preload="metadata"`
-  - "Open in Kixie" external link button as fallback
-- Show only when `booking.kixieLink` exists
-- Place it between the status badges and the summary section so users see it immediately
+- **Transcription column**: Shows the status icon (completed/processing/failed/pending) as a read-only indicator — no `onClick`, no `cursor-pointer`, no hover effect
+- **Actions column**: Keeps the "Transcript" button as the single entry point to the modal
 
-The card will match the same pattern used in `CallDetailsModal`:
-```text
-┌─────────────────────────────────────────┐
-│ 🔊 Call Recording                       │
-│ ┌─────────────────────────────────────┐ │
-│ │  ▶ ━━━━━━━━━━━━━━━━━  2:34 / 5:12  │ │
-│ └─────────────────────────────────────┘ │
-│              [Open in Kixie ↗]          │
-└─────────────────────────────────────────┘
-```
-
-Also show the audio player in the "not yet transcribed" and "failed" states so users can listen even before/without transcription.
+This applies to the research rows section (lines ~1062-1143). The bookings rows section likely has a different layout and should be left as-is.
 
