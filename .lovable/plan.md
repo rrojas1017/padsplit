@@ -1,90 +1,39 @@
 
 
-# Redesign Reports Page with View-Driven UI (Bookings vs Research)
+# Enable Issue Detection for Research Calls
 
-## Summary
-Replace the record type dropdown filter with a prominent Tabs toggle (Bookings / Research) at the top. The entire page — summary cards, filters, table columns, and row actions — adapts based on which view is selected.
+## Root Cause
+The `classifyIssuesFromKeyPoints` function runs on all records including research, but the keyword dictionary only covers sales-call themes (pricing confusion, booking process, move-in barriers). Research calls surface fundamentally different issues — property conditions, host accountability, safety — that have zero keyword overlap with the current categories.
 
-## Changes (all in `src/pages/Reports.tsx`)
+## Solution: Add Research-Relevant Issue Categories
 
-### 1. View Toggle
-Replace the `recordTypeFilterOptions` array and the FlaskConical dropdown (lines 76-80, 518-538) with a `Tabs` component rendered above the summary cards. Two tabs: **Bookings** (default) and **Research**. The tab value drives `recordTypeFilter` state (values: `'booking'` | `'research'`).
+Add new issue categories to the classifier that capture research call themes. This requires updating three places that share the same keyword dictionary:
 
-### 2. Summary Cards — Conditional by View
+### New Categories
 
-**Bookings view** (lines 429-499 — keep current cards minus the Research card):
-Total Records, Pending Move-In, Postponed, Moved In, Member Rejected, No Show/Cancelled, Non Booking, Issues Detected
+| Category | Sample Keywords |
+|---|---|
+| Property Condition Issues | bed bugs, mold, plumbing, pipes, no heat, no water, broken, roach, pest, infest, not maintained, not up to par |
+| Host & Maintenance Failures | host not responsive, maintenance never, didn't fix, failed to repair, no response from host, took weeks, never came |
+| Safety & Security Concerns | police, unsafe, harassment, unauthorized, break-in, crime, dangerous, afraid, threatened |
+| Rent & Affordability Pressure | rent increase, couldn't afford rent, price went up, too expensive to stay, eviction |
 
-**Research view** (replace entire cards section):
-- Total Calls (total count)
-- Successful Calls (valid conversation + >=2min)
-- Avg Duration (formatted as Xm Ys)
-- Issues Detected
-- Campaigns (count of distinct campaigns if available, otherwise omit)
+### Files to Update
 
-### 3. Filters — Conditional by View
+1. **`src/utils/issueClassifier.ts`** — Add new categories to `ISSUE_CATEGORIES`, `ISSUE_BADGE_CONFIG`, and `ISSUE_KEYWORDS`
+2. **`supabase/functions/transcribe-call/index.ts`** — Add same new categories to the inline `ISSUE_KEYWORDS` dictionary
+3. **`supabase/functions/backfill-detected-issues/index.ts`** — Add same new categories to its inline dictionary
 
-**Hide from Research view** (wrapped in `{!isResearch && ...}`):
-- Move-In Date range picker
-- Status filter
-- Booking Type filter
-- Communication Method filter
-- Rebooking filter
-- Conversation Validity filter
-- Import Batch filter
+### Badge Colors for New Categories
 
-**Hide from Research view in Row 2**:
-- "Add Booking" button
+- Property Condition Issues: `bg-yellow-500/15 text-yellow-600` with `Bug` icon
+- Host & Maintenance Failures: `bg-orange-500/15 text-orange-600` with `Wrench` icon
+- Safety & Security Concerns: `bg-red-500/15 text-red-700` with `AlertTriangle` icon
+- Rent & Affordability Pressure: `bg-pink-500/15 text-pink-600` with `TrendingUp` icon
 
-**Keep for both views**: Record Date, Site, Agent, Search, Pain Point Issues, Items per page, Export CSV, Clear Filters
+### Backfill
+After deploying, run the existing `backfill-detected-issues` function to retroactively tag the 89 valid-conversation research records (and re-check the 1,443 invalid ones).
 
-### 4. Table Columns — Conditional by View
-
-**Bookings view** (current columns, no change):
-Record Date, Move-In Date, Contact, Email, Phone, Agent, Market, Type, Status, Priority, Churn Risk, Method, Issues, Links, Actions
-
-**Research view** (new column set):
-| Column | Source |
-|--------|--------|
-| Call Date | `bookingDate` |
-| Contact (phone-first) | `contactPhone` or cleaned `memberName` |
-| Name | `memberName` (if enriched, not "API Submission") |
-| Email | `contactEmail` |
-| Duration | `callDurationSeconds` formatted as `Xm Ys` |
-| Agent | agent name |
-| Market | `marketCity, marketState` |
-| Transcription | status icon |
-| Issues | detected issues badges |
-| Actions | View Transcript only |
-
-Hidden for research: Move-In Date, Type, Status, Priority, Churn Risk, Method, Links (HubSpot/Kixie/Admin), full status-change actions menu
-
-### 5. Actions Menu — Research View
-Replace the full status-change dropdown with just:
-- View Transcript (if kixie link exists)
-- No status change options, no "Edit Full Details"
-
-### 6. CSV Export — View-Aware
-Adjust CSV headers/columns based on `isResearch` to match the visible columns.
-
-### 7. Duration Formatter Helper
-Add a small helper function:
-```typescript
-const formatDuration = (seconds: number | null | undefined): string => {
-  if (!seconds) return '—';
-  const m = Math.floor(seconds / 60);
-  const s = seconds % 60;
-  return `${m}m ${s}s`;
-};
-```
-
-## Implementation Approach
-- Use a single `const isResearch = recordTypeFilter === 'research'` boolean throughout
-- Wrap booking-specific sections in `{!isResearch && ...}`
-- Wrap research-specific sections in `{isResearch && ...}`
-- The data hook (`useReportsData`) already handles `recordTypeFilter` — no backend changes needed
-- Reset filters to defaults when switching views (clear booking-only filters when switching to research)
-
-## Files Changed
-- `src/pages/Reports.tsx` — major conditional rendering refactor
+### No Schema Changes
+`detected_issues` is already a JSONB column — new category strings work without migration.
 
