@@ -1,34 +1,36 @@
 
 
-# Fix: Backfill Campaign Name Mismatch
+# Backfill Extracted Member Details to Research Records
 
 ## Problem
-The backfill failed for all 91 records (`0 processed, 20 failed`) because the campaign name in the booking notes (`"Q1-Research-2026"`) doesn't match the actual campaign name in `research_campaigns` (`"Move in-out Researh: Member experience & Reason code Classification"`).
+The AI analysis already extracts names, emails, market city/state, and other details from call transcriptions into `call_key_points.memberDetails`. However, for the 91 existing research records, most of this data was never written back to the bookings table columns (`member_name`, `contact_email`, `market_city`, `market_state`).
 
-The regex extracts `"Q1-Research-2026"` from notes, then queries `research_campaigns` by name — no match found, so every record fails with "No questions found for campaign."
+- 77/91 records missing market city (but ~15+ have it in `memberDetails`)
+- 77/91 records missing contact email (a few have it extracted)
+- Most still show "API Submission - +phone" as member name (but names like "Emily", "Tony", "Janae Williams" are in the transcription data)
 
-## Fix
-Since there's only **one campaign** and **one script** (with 36 questions), simplify the backfill logic:
+## Solution
+Create and run a one-time backfill that reads `call_key_points.memberDetails` from `booking_transcriptions` and writes the extracted values back to the `bookings` table — only filling in fields that are currently empty/placeholder.
 
-### `supabase/functions/backfill-survey-progress/index.ts`
-Instead of parsing the campaign name from notes and looking it up, directly fetch the single research script's questions at the start of the function (outside the loop):
+### 1. New edge function: `backfill-member-details`
+- Query all research records where `call_key_points.memberDetails` exists in `booking_transcriptions`
+- For each record, check if the booking is missing data that the AI already extracted:
+  - `member_name`: if still "API Submission - ..." and firstName/lastName available, update
+  - `contact_email`: if null and email extracted (skip bogus values like descriptions)
+  - `market_city` / `market_state`: if null and extracted
+- Process in batches of 50, self-retrigger pattern
+- Dry run support to preview counts
 
-```typescript
-// Fetch the single script's questions once
-const { data: scriptData } = await supabase
-  .from('research_campaigns')
-  .select('research_scripts!research_campaigns_script_id_fkey(questions)')
-  .limit(1)
-  .maybeSingle();
-
-const questions = scriptData?.research_scripts?.questions;
+### 2. Register in `supabase/config.toml`
+```toml
+[functions.backfill-member-details]
+verify_jwt = false
 ```
 
-Remove the per-record campaign parsing and cache logic entirely. Use this single question list for all records.
+### 3. Execute
+1. Deploy function
+2. Dry run to see how many records can be enriched
+3. Run the actual backfill
 
-### `supabase/functions/transcribe-call/index.ts`
-Apply the same fix to the live pipeline — if campaign name lookup fails, fall back to fetching the first available research script's questions.
-
-### After fix
-Re-trigger the backfill. It will process all 91 records in ~5 batches.
+No UI changes needed — the Reports table already displays `member_name`, `market_city`, `contact_email` columns, so enriched data will appear immediately.
 
