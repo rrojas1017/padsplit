@@ -1,33 +1,90 @@
 
 
-# Fix Research Record Contact Display & Auto-Enrich from Transcription
+# Redesign Reports Page with View-Driven UI (Bookings vs Research)
 
-## Problem
-1. Research records show "API Submission - {phoneNumber}" as the contact name in Reports — the phone number is embedded in `member_name` instead of being in `contact_phone`
-2. When AI transcription extracts firstName, lastName, email, and phone from calls, these aren't written back to the `bookings` table for research records (or any records)
+## Summary
+Replace the record type dropdown filter with a prominent Tabs toggle (Bookings / Research) at the top. The entire page — summary cards, filters, table columns, and row actions — adapts based on which view is selected.
 
-## Changes
+## Changes (all in `src/pages/Reports.tsx`)
 
-### 1. Edge Function: `supabase/functions/transcribe-call/index.ts`
-After the existing market data enrichment block (~line 1933), add a **contact details enrichment** block:
-- If `memberDetails.firstName` or `memberDetails.lastName` is found and `member_name` starts with "API Submission", update `member_name` to the extracted name
-- If `memberDetails.email` is found and `contact_email` is null, update `contact_email`
-- If `memberDetails.phoneNumber` is found and `contact_phone` is null, update `contact_phone`
+### 1. View Toggle
+Replace the `recordTypeFilterOptions` array and the FlaskConical dropdown (lines 76-80, 518-538) with a `Tabs` component rendered above the summary cards. Two tabs: **Bookings** (default) and **Research**. The tab value drives `recordTypeFilter` state (values: `'booking'` | `'research'`).
 
-### 2. Edge Function: `supabase/functions/submit-conversation-audio/index.ts`
-When creating the booking record, also populate `contact_phone` with the submitted phone number instead of only embedding it in `member_name`. The `member_name` should still be set as a fallback but `contact_phone` should be its own field.
+### 2. Summary Cards — Conditional by View
 
-### 3. Database Backfill (via insert tool)
-- Extract phone numbers from existing "API Submission - {phone}" `member_name` values into `contact_phone` where it's null
-- For records that already have transcription data with `memberDetails`, backfill `member_name`, `contact_email`, and `contact_phone` from the extracted data
+**Bookings view** (lines 429-499 — keep current cards minus the Research card):
+Total Records, Pending Move-In, Postponed, Moved In, Member Rejected, No Show/Cancelled, Non Booking, Issues Detected
 
-### 4. Reports Display: `src/pages/Reports.tsx` (~line 971)
-- For research records where `member_name` still starts with "API Submission", display `contact_phone` instead (or a cleaned version)
-- Show the actual contact name if enrichment has populated it
+**Research view** (replace entire cards section):
+- Total Calls (total count)
+- Successful Calls (valid conversation + >=2min)
+- Avg Duration (formatted as Xm Ys)
+- Issues Detected
+- Campaigns (count of distinct campaigns if available, otherwise omit)
 
-### Files Changed
-- `supabase/functions/transcribe-call/index.ts` — add contact enrichment after transcription
-- `supabase/functions/submit-conversation-audio/index.ts` — populate `contact_phone` field
-- `src/pages/Reports.tsx` — improve contact display for research records
-- Database backfill — extract phones from member_name, enrich from existing transcription data
+### 3. Filters — Conditional by View
+
+**Hide from Research view** (wrapped in `{!isResearch && ...}`):
+- Move-In Date range picker
+- Status filter
+- Booking Type filter
+- Communication Method filter
+- Rebooking filter
+- Conversation Validity filter
+- Import Batch filter
+
+**Hide from Research view in Row 2**:
+- "Add Booking" button
+
+**Keep for both views**: Record Date, Site, Agent, Search, Pain Point Issues, Items per page, Export CSV, Clear Filters
+
+### 4. Table Columns — Conditional by View
+
+**Bookings view** (current columns, no change):
+Record Date, Move-In Date, Contact, Email, Phone, Agent, Market, Type, Status, Priority, Churn Risk, Method, Issues, Links, Actions
+
+**Research view** (new column set):
+| Column | Source |
+|--------|--------|
+| Call Date | `bookingDate` |
+| Contact (phone-first) | `contactPhone` or cleaned `memberName` |
+| Name | `memberName` (if enriched, not "API Submission") |
+| Email | `contactEmail` |
+| Duration | `callDurationSeconds` formatted as `Xm Ys` |
+| Agent | agent name |
+| Market | `marketCity, marketState` |
+| Transcription | status icon |
+| Issues | detected issues badges |
+| Actions | View Transcript only |
+
+Hidden for research: Move-In Date, Type, Status, Priority, Churn Risk, Method, Links (HubSpot/Kixie/Admin), full status-change actions menu
+
+### 5. Actions Menu — Research View
+Replace the full status-change dropdown with just:
+- View Transcript (if kixie link exists)
+- No status change options, no "Edit Full Details"
+
+### 6. CSV Export — View-Aware
+Adjust CSV headers/columns based on `isResearch` to match the visible columns.
+
+### 7. Duration Formatter Helper
+Add a small helper function:
+```typescript
+const formatDuration = (seconds: number | null | undefined): string => {
+  if (!seconds) return '—';
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  return `${m}m ${s}s`;
+};
+```
+
+## Implementation Approach
+- Use a single `const isResearch = recordTypeFilter === 'research'` boolean throughout
+- Wrap booking-specific sections in `{!isResearch && ...}`
+- Wrap research-specific sections in `{isResearch && ...}`
+- The data hook (`useReportsData`) already handles `recordTypeFilter` — no backend changes needed
+- Reset filters to defaults when switching views (clear booking-only filters when switching to research)
+
+## Files Changed
+- `src/pages/Reports.tsx` — major conditional rendering refactor
 
