@@ -5,7 +5,7 @@ import { useAgents } from '@/contexts/AgentsContext';
 import { useBookings } from '@/contexts/BookingsContext';
 import { useReportsData, ReportsFilters, ReportsPagination, ReportsSorting, SortColumn, SortDirection } from '@/hooks/useReportsData';
 import { Button } from '@/components/ui/button';
-import { Download, Search, PlusCircle, Pencil, ChevronDown, Building2, User, MessageSquare, Tag, CheckCircle, RotateCcw, ArrowUp, ArrowDown, ArrowUpDown, X, ExternalLink, Phone, UserCircle, Headphones, FileText, Loader2, MoreHorizontal, Clock, CalendarX, XCircle, Ban, AlertTriangle, Package, FlaskConical, ShieldAlert, DollarSign } from 'lucide-react';
+import { Download, Search, PlusCircle, Pencil, ChevronDown, Building2, User, MessageSquare, Tag, CheckCircle, RotateCcw, ArrowUp, ArrowDown, ArrowUpDown, X, ExternalLink, Phone, UserCircle, Headphones, FileText, Loader2, MoreHorizontal, Clock, CalendarX, XCircle, Ban, AlertTriangle, Package, FlaskConical, ShieldAlert, DollarSign, Timer } from 'lucide-react';
 import { ContactProfileHoverCard } from '@/components/reports/ContactProfileHoverCard';
 import { FollowUpPriorityBadge } from '@/components/reports/FollowUpPriorityBadge';
 import { calculateFollowUpPriority } from '@/utils/followUpPriority';
@@ -42,6 +42,7 @@ import { calculateChurnRisk } from '@/utils/churnPrediction';
 import { useChurnPrediction } from '@/hooks/useChurnPrediction';
 import { ISSUE_CATEGORIES, ISSUE_BADGE_CONFIG, normalizeDetectedIssues } from '@/utils/issueClassifier';
 import { Badge } from '@/components/ui/badge';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
 type Site = {
   id: string;
@@ -73,13 +74,6 @@ const bookingTypeOptions = [
   { label: 'Research', value: 'Research' },
 ];
 
-const recordTypeFilterOptions = [
-  { label: 'All Records', value: 'all' },
-  { label: 'Bookings Only', value: 'booking' },
-  { label: 'Research Only', value: 'research' },
-];
-
-
 const communicationMethodOptions = [
   { label: 'All Methods', value: 'all' },
   { label: 'Phone', value: 'Phone' },
@@ -100,6 +94,14 @@ const conversationFilterOptions = [
   { label: 'No Conversation (Flagged)', value: 'no_conversation' },
 ];
 
+// Duration formatter helper
+const formatDuration = (seconds: number | null | undefined): string => {
+  if (!seconds) return '—';
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  return `${m}m ${s}s`;
+};
+
 export default function Reports() {
   usePageTracking('view_reports');
   const { updateBooking } = useBookings();
@@ -113,6 +115,10 @@ export default function Reports() {
 
   // Sites from Supabase
   const [sites, setSites] = useState<Site[]>([]);
+
+  // View mode — drives entire page layout
+  const [recordTypeFilter, setRecordTypeFilter] = useState<'booking' | 'research'>('booking');
+  const isResearch = recordTypeFilter === 'research';
 
   // Filter states - date ranges (default to Today)
   const [recordDateRange, setRecordDateRange] = useState<DateRange>({
@@ -135,7 +141,6 @@ export default function Reports() {
   const [agentFilter, setAgentFilter] = useState('all');
   const [rebookingFilter, setRebookingFilter] = useState<'all' | 'new' | 'rebooking'>('all');
   const [conversationFilter, setConversationFilter] = useState<'all' | 'valid' | 'no_conversation'>('all');
-  const [recordTypeFilter, setRecordTypeFilter] = useState<'all' | 'booking' | 'research'>('booking');
   const [issueFilter, setIssueFilter] = useState<string[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -146,6 +151,21 @@ export default function Reports() {
   // Pagination
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(50);
+
+  // Reset booking-only filters when switching to research view
+  const handleViewChange = (view: string) => {
+    const newView = view as 'booking' | 'research';
+    setRecordTypeFilter(newView);
+    // Reset filters that don't apply to the new view
+    setMoveInDateRange({ from: undefined, to: undefined });
+    setStatusFilter('all');
+    setTypeFilter('all');
+    setMethodFilter('all');
+    setRebookingFilter('all');
+    setConversationFilter('all');
+    setImportBatchFilter('all');
+    setCurrentPage(1);
+  };
 
   // Build filters object for hook
   const filters: ReportsFilters = useMemo(() => ({
@@ -189,7 +209,6 @@ export default function Reports() {
     setRecordDateRange({ from: undefined, to: undefined });
     setMoveInDateRange({ from: undefined, to: undefined });
     setImportBatchFilter('all');
-    setRecordTypeFilter('all');
     setSiteFilter('all');
     setStatusFilter('all');
     setTypeFilter('all');
@@ -206,7 +225,6 @@ export default function Reports() {
     recordDateRange.from || recordDateRange.to ||
     moveInDateRange.from || moveInDateRange.to ||
     importBatchFilter !== 'all' ||
-    recordTypeFilter !== 'all' ||
     siteFilter !== 'all' || statusFilter !== 'all' || 
     typeFilter !== 'all' || methodFilter !== 'all' || 
     agentFilter !== 'all' || rebookingFilter !== 'all' || 
@@ -219,7 +237,7 @@ export default function Reports() {
       setSortColumn(column);
       setSortDirection(column === 'bookingDate' || column === 'moveInDate' ? 'desc' : 'asc');
     }
-    setCurrentPage(1); // Reset to first page on sort change
+    setCurrentPage(1);
   };
 
   // Reset to page 1 when filters change  
@@ -239,25 +257,17 @@ export default function Reports() {
   // Check if user can edit a specific booking
   const canEditBooking = (bookingAgentId: string) => {
     if (!user) return false;
-    
-    // Admin/super_admin always have access
     if (user.role === 'super_admin' || user.role === 'admin') return true;
-    
-    // Supervisor check - if agents still loading, allow action optimistically
-    // (backend RLS will validate actual permission on save)
     if (user.role === 'supervisor') {
       if (agentsLoading || agents.length === 0) return true;
       const agent = agents.find(a => a.id === bookingAgentId);
       return agent?.siteId === user.siteId;
     }
-    
-    // Agent check
     if (user.role === 'agent') {
       if (agentsLoading || agents.length === 0) return true;
       const agent = agents.find(a => a.id === bookingAgentId);
       return agent?.userId === user.id;
     }
-    
     return false;
   };
 
@@ -277,61 +287,78 @@ export default function Reports() {
     return phone;
   };
 
-  // Export CSV
+  // Export CSV — view-aware
   const exportCSV = () => {
-    const headers = [
-      'Record Date',
-      'Move-In Date',
-      'Contact Name',
-      'Contact Email',
-      'Contact Phone',
-      'Agent',
-      'Market City',
-      'Market State',
-      'Booking Type',
-      'Record Type',
-      'Status',
-      'Communication Method',
-      'Notes',
-      'HubSpot Link',
-      'Kixie Link',
-      'Admin Profile Link',
-      'Detected Issues',
-    ];
-
-    // Mask contact info for agents in CSV export
     const shouldMask = shouldMaskContactInfo(user?.role);
 
-    const rows = records.map(booking => [
-      format(booking.bookingDate, 'yyyy-MM-dd'),
-      booking.status === 'Non Booking' || booking.recordType === 'research' ? '' : format(booking.moveInDate, 'yyyy-MM-dd'),
-      booking.memberName,
-      booking.contactEmail ? (shouldMask ? maskEmail(booking.contactEmail) : booking.contactEmail) : '',
-      booking.contactPhone ? (shouldMask ? maskPhone(booking.contactPhone) : booking.contactPhone) : '',
-      getAgentName(agents, booking.agentId),
-      booking.marketCity || '',
-      booking.marketState || '',
-      booking.bookingType,
-      booking.recordType || 'booking',
-      booking.status,
-      booking.communicationMethod || '',
-      booking.notes || '',
-      booking.hubspotLink || '',
-      booking.kixieLink || '',
-      booking.adminProfileLink || '',
-      booking.detectedIssues ? normalizeDetectedIssues(booking.detectedIssues).map(d => d.issue).join(', ') : '',
-    ]);
-
-    const csvContent = [
-      headers.join(','),
-      ...rows.map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(',')),
-    ].join('\n');
-
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement('a');
-    link.href = URL.createObjectURL(blob);
-    link.download = `records-report-${format(new Date(), 'yyyy-MM-dd')}.csv`;
-    link.click();
+    if (isResearch) {
+      const headers = [
+        'Call Date',
+        'Contact Phone',
+        'Contact Name',
+        'Contact Email',
+        'Duration',
+        'Agent',
+        'Market City',
+        'Market State',
+        'Transcription Status',
+        'Detected Issues',
+      ];
+      const rows = records.map(booking => [
+        format(booking.bookingDate, 'yyyy-MM-dd'),
+        booking.contactPhone ? (shouldMask ? maskPhone(booking.contactPhone) : booking.contactPhone) : '',
+        booking.memberName?.startsWith('API Submission') ? '' : booking.memberName,
+        booking.contactEmail ? (shouldMask ? maskEmail(booking.contactEmail) : booking.contactEmail) : '',
+        formatDuration(booking.callDurationSeconds),
+        getAgentName(agents, booking.agentId),
+        booking.marketCity || '',
+        booking.marketState || '',
+        booking.transcriptionStatus || '',
+        booking.detectedIssues ? normalizeDetectedIssues(booking.detectedIssues).map(d => d.issue).join(', ') : '',
+      ]);
+      const csvContent = [
+        headers.join(','),
+        ...rows.map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(',')),
+      ].join('\n');
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = `research-report-${format(new Date(), 'yyyy-MM-dd')}.csv`;
+      link.click();
+    } else {
+      const headers = [
+        'Record Date', 'Move-In Date', 'Contact Name', 'Contact Email', 'Contact Phone',
+        'Agent', 'Market City', 'Market State', 'Booking Type', 'Status',
+        'Communication Method', 'Notes', 'HubSpot Link', 'Kixie Link', 'Admin Profile Link', 'Detected Issues',
+      ];
+      const rows = records.map(booking => [
+        format(booking.bookingDate, 'yyyy-MM-dd'),
+        booking.status === 'Non Booking' ? '' : format(booking.moveInDate, 'yyyy-MM-dd'),
+        booking.memberName,
+        booking.contactEmail ? (shouldMask ? maskEmail(booking.contactEmail) : booking.contactEmail) : '',
+        booking.contactPhone ? (shouldMask ? maskPhone(booking.contactPhone) : booking.contactPhone) : '',
+        getAgentName(agents, booking.agentId),
+        booking.marketCity || '',
+        booking.marketState || '',
+        booking.bookingType,
+        booking.status,
+        booking.communicationMethod || '',
+        booking.notes || '',
+        booking.hubspotLink || '',
+        booking.kixieLink || '',
+        booking.adminProfileLink || '',
+        booking.detectedIssues ? normalizeDetectedIssues(booking.detectedIssues).map(d => d.issue).join(', ') : '',
+      ]);
+      const csvContent = [
+        headers.join(','),
+        ...rows.map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(',')),
+      ].join('\n');
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = `records-report-${format(new Date(), 'yyyy-MM-dd')}.csv`;
+      link.click();
+    }
   };
 
   const statusColors: Record<string, string> = {
@@ -380,7 +407,7 @@ export default function Reports() {
     );
   };
 
-  // Summary statistics (computed from server count, not records)
+  // Summary statistics
   const summaryStats = useMemo(() => {
     const total = totalCount;
     const pendingMoveIn = records.filter(b => b.status === 'Pending Move-In').length;
@@ -389,12 +416,16 @@ export default function Reports() {
     const noShowCancelled = records.filter(b => b.status === 'No Show' || b.status === 'Cancelled').length;
     const postponed = records.filter(b => b.status === 'Postponed').length;
     const nonBooking = records.filter(b => b.status === 'Non Booking').length;
-    const research = records.filter(b => b.recordType === 'research').length;
     const rebookings = records.filter(b => b.isRebooking).length;
-    const newBookings = records.length - rebookings - nonBooking - research;
+    const newBookings = records.length - rebookings - nonBooking;
     const issuesDetected = records.filter(b => b.detectedIssues && normalizeDetectedIssues(b.detectedIssues).length > 0).length;
     
-    return { total, pendingMoveIn, movedIn, memberRejected, noShowCancelled, postponed, nonBooking, research, rebookings, newBookings, issuesDetected };
+    // Research-specific stats
+    const successfulCalls = records.filter(b => b.hasValidConversation !== false && (b.callDurationSeconds || 0) >= 120).length;
+    const totalDuration = records.reduce((sum, b) => sum + (b.callDurationSeconds || 0), 0);
+    const avgDuration = records.length > 0 ? Math.round(totalDuration / records.length) : 0;
+    
+    return { total, pendingMoveIn, movedIn, memberRejected, noShowCancelled, postponed, nonBooking, rebookings, newBookings, issuesDetected, successfulCalls, avgDuration };
   }, [totalCount, records]);
 
   // Loading skeleton for table rows
@@ -402,19 +433,9 @@ export default function Reports() {
     <>
       {Array.from({ length: 10 }).map((_, i) => (
         <tr key={i} className="border-b border-border">
-          <td className="py-3 px-4"><Skeleton className="h-4 w-24" /></td>
-          <td className="py-3 px-4"><Skeleton className="h-4 w-24" /></td>
-          <td className="py-3 px-4"><Skeleton className="h-4 w-32" /></td>
-          <td className="py-3 px-4"><Skeleton className="h-4 w-36" /></td>
-          <td className="py-3 px-4"><Skeleton className="h-4 w-24" /></td>
-          <td className="py-3 px-4"><Skeleton className="h-4 w-28" /></td>
-          <td className="py-3 px-4"><Skeleton className="h-4 w-24" /></td>
-          <td className="py-3 px-4"><Skeleton className="h-4 w-20" /></td>
-          <td className="py-3 px-4"><Skeleton className="h-6 w-24 rounded-full" /></td>
-          <td className="py-3 px-4"><Skeleton className="h-6 w-16 rounded-full" /></td>
-          <td className="py-3 px-4"><Skeleton className="h-4 w-16" /></td>
-          <td className="py-3 px-4"><Skeleton className="h-4 w-20" /></td>
-          <td className="py-3 px-4"><Skeleton className="h-8 w-8" /></td>
+          {Array.from({ length: isResearch ? 9 : 15 }).map((_, j) => (
+            <td key={j} className="py-3 px-4"><Skeleton className="h-4 w-24" /></td>
+          ))}
         </tr>
       ))}
     </>
@@ -425,159 +446,190 @@ export default function Reports() {
       title="Reports" 
       subtitle="Detailed call records and exports"
     >
-      {/* Summary Cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-5 lg:grid-cols-10 gap-3 mb-6">
-        <div className="bg-card rounded-xl p-4 border border-border shadow-sm">
-          <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Total Records</p>
-          <p className="text-2xl font-bold text-foreground mt-1">{summaryStats.total.toLocaleString()}</p>
-          {!isLoading && summaryStats.rebookings > 0 && (
-            <p className="text-xs text-muted-foreground mt-1">
-              {summaryStats.newBookings} new, {summaryStats.rebookings} rebookings
-            </p>
-          )}
-        </div>
-        <div className="bg-card rounded-xl p-4 border border-border shadow-sm">
-          <div className="flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-warning"></span>
-            <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Pending Move-In</p>
+      {/* View Toggle */}
+      <Tabs value={recordTypeFilter} onValueChange={handleViewChange} className="mb-6">
+        <TabsList className="grid w-full max-w-md grid-cols-2">
+          <TabsTrigger value="booking" className="gap-2">
+            <Building2 className="h-4 w-4" />
+            Bookings
+          </TabsTrigger>
+          <TabsTrigger value="research" className="gap-2">
+            <FlaskConical className="h-4 w-4" />
+            Research
+          </TabsTrigger>
+        </TabsList>
+      </Tabs>
+
+      {/* Summary Cards — Bookings View */}
+      {!isResearch && (
+        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3 mb-6">
+          <div className="bg-card rounded-xl p-4 border border-border shadow-sm">
+            <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Total Records</p>
+            <p className="text-2xl font-bold text-foreground mt-1">{summaryStats.total.toLocaleString()}</p>
+            {!isLoading && summaryStats.rebookings > 0 && (
+              <p className="text-xs text-muted-foreground mt-1">
+                {summaryStats.newBookings} new, {summaryStats.rebookings} rebookings
+              </p>
+            )}
           </div>
-          <p className="text-2xl font-bold text-warning mt-1">{summaryStats.pendingMoveIn}</p>
-        </div>
-        <div className="bg-card rounded-xl p-4 border border-border shadow-sm">
-          <div className="flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-primary"></span>
-            <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Postponed</p>
+          <div className="bg-card rounded-xl p-4 border border-border shadow-sm">
+            <div className="flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-warning"></span>
+              <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Pending Move-In</p>
+            </div>
+            <p className="text-2xl font-bold text-warning mt-1">{summaryStats.pendingMoveIn}</p>
           </div>
-          <p className="text-2xl font-bold text-primary mt-1">{summaryStats.postponed}</p>
-        </div>
-        <div className="bg-card rounded-xl p-4 border border-border shadow-sm">
-          <div className="flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-success"></span>
-            <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Moved In</p>
+          <div className="bg-card rounded-xl p-4 border border-border shadow-sm">
+            <div className="flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-primary"></span>
+              <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Postponed</p>
+            </div>
+            <p className="text-2xl font-bold text-primary mt-1">{summaryStats.postponed}</p>
           </div>
-          <p className="text-2xl font-bold text-success mt-1">{summaryStats.movedIn}</p>
-        </div>
-        <div className="bg-card rounded-xl p-4 border border-border shadow-sm">
-          <div className="flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-destructive"></span>
-            <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Member Rejected</p>
+          <div className="bg-card rounded-xl p-4 border border-border shadow-sm">
+            <div className="flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-success"></span>
+              <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Moved In</p>
+            </div>
+            <p className="text-2xl font-bold text-success mt-1">{summaryStats.movedIn}</p>
           </div>
-          <p className="text-2xl font-bold text-destructive mt-1">{summaryStats.memberRejected}</p>
-        </div>
-        <div className="bg-card rounded-xl p-4 border border-border shadow-sm">
-          <div className="flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-muted-foreground"></span>
-            <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">No Show / Cancelled</p>
+          <div className="bg-card rounded-xl p-4 border border-border shadow-sm">
+            <div className="flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-destructive"></span>
+              <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Member Rejected</p>
+            </div>
+            <p className="text-2xl font-bold text-destructive mt-1">{summaryStats.memberRejected}</p>
           </div>
-          <p className="text-2xl font-bold text-muted-foreground mt-1">{summaryStats.noShowCancelled}</p>
-        </div>
-        <div className="bg-card rounded-xl p-4 border border-border shadow-sm">
-          <div className="flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-slate-500"></span>
-            <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Non Booking</p>
+          <div className="bg-card rounded-xl p-4 border border-border shadow-sm">
+            <div className="flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-muted-foreground"></span>
+              <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">No Show / Cancelled</p>
+            </div>
+            <p className="text-2xl font-bold text-muted-foreground mt-1">{summaryStats.noShowCancelled}</p>
           </div>
-          <p className="text-2xl font-bold text-slate-500 mt-1">{summaryStats.nonBooking}</p>
-        </div>
-        <div className="bg-card rounded-xl p-4 border border-border shadow-sm">
-          <div className="flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-purple-500"></span>
-            <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Research</p>
+          <div className="bg-card rounded-xl p-4 border border-border shadow-sm">
+            <div className="flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-slate-500"></span>
+              <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Non Booking</p>
+            </div>
+            <p className="text-2xl font-bold text-slate-500 mt-1">{summaryStats.nonBooking}</p>
           </div>
-          <p className="text-2xl font-bold text-purple-500 mt-1">{summaryStats.research}</p>
-        </div>
-        <div className="bg-card rounded-xl p-4 border border-border shadow-sm">
-          <div className="flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-amber-500"></span>
-            <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Issues Detected</p>
+          <div className="bg-card rounded-xl p-4 border border-border shadow-sm">
+            <div className="flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-amber-500"></span>
+              <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Issues Detected</p>
+            </div>
+            <p className="text-2xl font-bold text-amber-500 mt-1">{summaryStats.issuesDetected}</p>
+            {!isLoading && records.length > 0 && (
+              <p className="text-xs text-muted-foreground mt-1">
+                of {records.length} shown
+              </p>
+            )}
           </div>
-          <p className="text-2xl font-bold text-amber-500 mt-1">{summaryStats.issuesDetected}</p>
-          {!isLoading && records.length > 0 && (
-            <p className="text-xs text-muted-foreground mt-1">
-              of {records.length} shown
-            </p>
-          )}
         </div>
-      </div>
+      )}
+
+      {/* Summary Cards — Research View */}
+      {isResearch && (
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
+          <div className="bg-card rounded-xl p-4 border border-border shadow-sm">
+            <div className="flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-purple-500"></span>
+              <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Total Calls</p>
+            </div>
+            <p className="text-2xl font-bold text-foreground mt-1">{summaryStats.total.toLocaleString()}</p>
+          </div>
+          <div className="bg-card rounded-xl p-4 border border-border shadow-sm">
+            <div className="flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-success"></span>
+              <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Successful Calls</p>
+            </div>
+            <p className="text-2xl font-bold text-success mt-1">{summaryStats.successfulCalls}</p>
+            <p className="text-xs text-muted-foreground mt-1">valid + ≥2min</p>
+          </div>
+          <div className="bg-card rounded-xl p-4 border border-border shadow-sm">
+            <div className="flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-primary"></span>
+              <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Avg Duration</p>
+            </div>
+            <p className="text-2xl font-bold text-primary mt-1">{formatDuration(summaryStats.avgDuration)}</p>
+          </div>
+          <div className="bg-card rounded-xl p-4 border border-border shadow-sm">
+            <div className="flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-amber-500"></span>
+              <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Issues Detected</p>
+            </div>
+            <p className="text-2xl font-bold text-amber-500 mt-1">{summaryStats.issuesDetected}</p>
+            {!isLoading && records.length > 0 && (
+              <p className="text-xs text-muted-foreground mt-1">
+                of {records.length} shown
+              </p>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Filters Row 1 */}
       <div className="flex flex-wrap items-center gap-3 mb-3">
-        {/* Record Date Range Filter */}
+        {/* Record Date Range Filter — both views */}
         <DateRangePicker
-          label="Record Date"
+          label={isResearch ? "Call Date" : "Record Date"}
           dateRange={recordDateRange}
           onDateRangeChange={setRecordDateRange}
         />
 
-        {/* Move-In Date Range Filter */}
-        <DateRangePicker
-          label="Move-In Date"
-          dateRange={moveInDateRange}
-          onDateRangeChange={setMoveInDateRange}
-        />
+        {/* Move-In Date Range Filter — bookings only */}
+        {!isResearch && (
+          <DateRangePicker
+            label="Move-In Date"
+            dateRange={moveInDateRange}
+            onDateRangeChange={setMoveInDateRange}
+          />
+        )}
 
-        {/* Record Type Filter */}
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant={recordTypeFilter !== 'all' ? 'default' : 'outline'} className="gap-2">
-              <FlaskConical className="w-4 h-4" />
-              {recordTypeFilterOptions.find(r => r.value === recordTypeFilter)?.label}
-              <ChevronDown className="w-4 h-4" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" className="w-48">
-            {recordTypeFilterOptions.map((option) => (
+        {/* Import Batch Filter — bookings only */}
+        {!isResearch && (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" className="gap-2">
+                <Package className="w-4 h-4" />
+                {getImportBatchLabel()}
+                <ChevronDown className="w-4 h-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="w-72 max-h-80 overflow-y-auto">
               <DropdownMenuItem
-                key={option.value}
-                onClick={() => setRecordTypeFilter(option.value as 'all' | 'booking' | 'research')}
-                className={recordTypeFilter === option.value ? 'bg-accent/20' : ''}
+                onClick={() => setImportBatchFilter('all')}
+                className={importBatchFilter === 'all' ? 'bg-accent/20' : ''}
               >
-                {option.label}
+                All Records
               </DropdownMenuItem>
-            ))}
-          </DropdownMenuContent>
-        </DropdownMenu>
-
-        {/* Import Batch Filter */}
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="outline" className="gap-2">
-              <Package className="w-4 h-4" />
-              {getImportBatchLabel()}
-              <ChevronDown className="w-4 h-4" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" className="w-72 max-h-80 overflow-y-auto">
-            <DropdownMenuItem
-              onClick={() => setImportBatchFilter('all')}
-              className={importBatchFilter === 'all' ? 'bg-accent/20' : ''}
-            >
-              All Records
-            </DropdownMenuItem>
-            <DropdownMenuItem
-              onClick={() => setImportBatchFilter('manual')}
-              className={importBatchFilter === 'manual' ? 'bg-accent/20' : ''}
-            >
-              Manual Entries ({manualRecordCount.toLocaleString()} records)
-            </DropdownMenuItem>
-            {importBatches.length > 0 && <DropdownMenuSeparator />}
-            {importBatches.map((batch) => (
               <DropdownMenuItem
-                key={batch.id}
-                onClick={() => setImportBatchFilter(batch.id)}
-                className={importBatchFilter === batch.id ? 'bg-accent/20' : ''}
+                onClick={() => setImportBatchFilter('manual')}
+                className={importBatchFilter === 'manual' ? 'bg-accent/20' : ''}
               >
-                <div className="flex flex-col">
-                  <span className="font-medium">{batch.id}</span>
-                  <span className="text-xs text-muted-foreground">
-                    {batch.count.toLocaleString()} records • {format(new Date(batch.earliestDate), 'MMM d')} - {format(new Date(batch.latestDate), 'MMM d, yyyy')}
-                  </span>
-                </div>
+                Manual Entries ({manualRecordCount.toLocaleString()} records)
               </DropdownMenuItem>
-            ))}
-          </DropdownMenuContent>
-        </DropdownMenu>
+              {importBatches.length > 0 && <DropdownMenuSeparator />}
+              {importBatches.map((batch) => (
+                <DropdownMenuItem
+                  key={batch.id}
+                  onClick={() => setImportBatchFilter(batch.id)}
+                  className={importBatchFilter === batch.id ? 'bg-accent/20' : ''}
+                >
+                  <div className="flex flex-col">
+                    <span className="font-medium">{batch.id}</span>
+                    <span className="text-xs text-muted-foreground">
+                      {batch.count.toLocaleString()} records • {format(new Date(batch.earliestDate), 'MMM d')} - {format(new Date(batch.latestDate), 'MMM d, yyyy')}
+                    </span>
+                  </div>
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
 
-        {/* Site Filter */}
+        {/* Site Filter — both views */}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button variant="outline" className="gap-2">
@@ -605,73 +657,79 @@ export default function Reports() {
           </DropdownMenuContent>
         </DropdownMenu>
 
-        {/* Status Filter */}
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="outline" className="gap-2">
-              <CheckCircle className="w-4 h-4" />
-              {statusOptions.find(s => s.value === statusFilter)?.label}
-              <ChevronDown className="w-4 h-4" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" className="w-48">
-            {statusOptions.map((option) => (
-              <DropdownMenuItem
-                key={option.value}
-                onClick={() => setStatusFilter(option.value)}
-                className={statusFilter === option.value ? 'bg-accent/20' : ''}
-              >
-                {option.label}
-              </DropdownMenuItem>
-            ))}
-          </DropdownMenuContent>
-        </DropdownMenu>
+        {/* Status Filter — bookings only */}
+        {!isResearch && (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" className="gap-2">
+                <CheckCircle className="w-4 h-4" />
+                {statusOptions.find(s => s.value === statusFilter)?.label}
+                <ChevronDown className="w-4 h-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="w-48">
+              {statusOptions.map((option) => (
+                <DropdownMenuItem
+                  key={option.value}
+                  onClick={() => setStatusFilter(option.value)}
+                  className={statusFilter === option.value ? 'bg-accent/20' : ''}
+                >
+                  {option.label}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
 
-        {/* Booking Type Filter */}
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="outline" className="gap-2">
-              <Tag className="w-4 h-4" />
-              {bookingTypeOptions.find(t => t.value === typeFilter)?.label}
-              <ChevronDown className="w-4 h-4" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" className="w-48">
-            {bookingTypeOptions.map((option) => (
-              <DropdownMenuItem
-                key={option.value}
-                onClick={() => setTypeFilter(option.value)}
-                className={typeFilter === option.value ? 'bg-accent/20' : ''}
-              >
-                {option.label}
-              </DropdownMenuItem>
-            ))}
-          </DropdownMenuContent>
-        </DropdownMenu>
+        {/* Booking Type Filter — bookings only */}
+        {!isResearch && (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" className="gap-2">
+                <Tag className="w-4 h-4" />
+                {bookingTypeOptions.find(t => t.value === typeFilter)?.label}
+                <ChevronDown className="w-4 h-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="w-48">
+              {bookingTypeOptions.map((option) => (
+                <DropdownMenuItem
+                  key={option.value}
+                  onClick={() => setTypeFilter(option.value)}
+                  className={typeFilter === option.value ? 'bg-accent/20' : ''}
+                >
+                  {option.label}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
 
-        {/* Communication Method Filter */}
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="outline" className="gap-2">
-              <MessageSquare className="w-4 h-4" />
-              {communicationMethodOptions.find(m => m.value === methodFilter)?.label}
-              <ChevronDown className="w-4 h-4" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" className="w-48">
-            {communicationMethodOptions.map((option) => (
-              <DropdownMenuItem
-                key={option.value}
-                onClick={() => setMethodFilter(option.value)}
-                className={methodFilter === option.value ? 'bg-accent/20' : ''}
-              >
-                {option.label}
-              </DropdownMenuItem>
-            ))}
-          </DropdownMenuContent>
-        </DropdownMenu>
+        {/* Communication Method Filter — bookings only */}
+        {!isResearch && (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" className="gap-2">
+                <MessageSquare className="w-4 h-4" />
+                {communicationMethodOptions.find(m => m.value === methodFilter)?.label}
+                <ChevronDown className="w-4 h-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="w-48">
+              {communicationMethodOptions.map((option) => (
+                <DropdownMenuItem
+                  key={option.value}
+                  onClick={() => setMethodFilter(option.value)}
+                  className={methodFilter === option.value ? 'bg-accent/20' : ''}
+                >
+                  {option.label}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
 
-        {/* Agent Filter */}
+        {/* Agent Filter — both views */}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button variant="outline" className="gap-2">
@@ -699,54 +757,58 @@ export default function Reports() {
           </DropdownMenuContent>
         </DropdownMenu>
 
-        {/* Rebooking Filter */}
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="outline" className="gap-2">
-              <RotateCcw className="w-4 h-4" />
-              {rebookingFilterOptions.find(r => r.value === rebookingFilter)?.label}
-              <ChevronDown className="w-4 h-4" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" className="w-48">
-            {rebookingFilterOptions.map((option) => (
-              <DropdownMenuItem
-                key={option.value}
-                onClick={() => setRebookingFilter(option.value as 'all' | 'new' | 'rebooking')}
-                className={rebookingFilter === option.value ? 'bg-accent/20' : ''}
-              >
-                {option.label}
-              </DropdownMenuItem>
-            ))}
-          </DropdownMenuContent>
-        </DropdownMenu>
+        {/* Rebooking Filter — bookings only */}
+        {!isResearch && (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" className="gap-2">
+                <RotateCcw className="w-4 h-4" />
+                {rebookingFilterOptions.find(r => r.value === rebookingFilter)?.label}
+                <ChevronDown className="w-4 h-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="w-48">
+              {rebookingFilterOptions.map((option) => (
+                <DropdownMenuItem
+                  key={option.value}
+                  onClick={() => setRebookingFilter(option.value as 'all' | 'new' | 'rebooking')}
+                  className={rebookingFilter === option.value ? 'bg-accent/20' : ''}
+                >
+                  {option.label}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
 
-        {/* Conversation Validity Filter */}
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant={conversationFilter === 'no_conversation' ? 'destructive' : 'outline'} className="gap-2">
-              <AlertTriangle className="w-4 h-4" />
-              {conversationFilterOptions.find(c => c.value === conversationFilter)?.label}
-              <ChevronDown className="w-4 h-4" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" className="w-56">
-            {conversationFilterOptions.map((option) => (
-              <DropdownMenuItem
-                key={option.value}
-                onClick={() => setConversationFilter(option.value as 'all' | 'valid' | 'no_conversation')}
-                className={conversationFilter === option.value ? 'bg-accent/20' : ''}
-              >
-                {option.value === 'no_conversation' && (
-                  <AlertTriangle className="w-4 h-4 mr-2 text-amber-500" />
-                )}
-                {option.label}
-              </DropdownMenuItem>
-            ))}
-          </DropdownMenuContent>
-        </DropdownMenu>
+        {/* Conversation Validity Filter — bookings only */}
+        {!isResearch && (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant={conversationFilter === 'no_conversation' ? 'destructive' : 'outline'} className="gap-2">
+                <AlertTriangle className="w-4 h-4" />
+                {conversationFilterOptions.find(c => c.value === conversationFilter)?.label}
+                <ChevronDown className="w-4 h-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="w-56">
+              {conversationFilterOptions.map((option) => (
+                <DropdownMenuItem
+                  key={option.value}
+                  onClick={() => setConversationFilter(option.value as 'all' | 'valid' | 'no_conversation')}
+                  className={conversationFilter === option.value ? 'bg-accent/20' : ''}
+                >
+                  {option.value === 'no_conversation' && (
+                    <AlertTriangle className="w-4 h-4 mr-2 text-amber-500" />
+                  )}
+                  {option.label}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
 
-        {/* Pain Point Issues Filter */}
+        {/* Pain Point Issues Filter — both views */}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button variant={issueFilter.length > 0 ? 'default' : 'outline'} className="gap-2">
@@ -792,7 +854,7 @@ export default function Reports() {
         <div className="relative flex-1 min-w-[200px] max-w-md">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <Input 
-            placeholder="Search by member, agent, market..." 
+            placeholder={isResearch ? "Search by contact, agent, market..." : "Search by member, agent, market..."} 
             className="pl-9"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
@@ -828,11 +890,13 @@ export default function Reports() {
           Export CSV
         </Button>
 
-        {/* Add Booking */}
-        <Button className="gap-2" onClick={() => navigate('/add-booking')}>
-          <PlusCircle className="w-4 h-4" />
-          Add Booking
-        </Button>
+        {/* Add Booking — bookings view only */}
+        {!isResearch && (
+          <Button className="gap-2" onClick={() => navigate('/add-booking')}>
+            <PlusCircle className="w-4 h-4" />
+            Add Booking
+          </Button>
+        )}
       </div>
 
       {/* Data Table */}
@@ -842,21 +906,38 @@ export default function Reports() {
           <table className="w-full">
             <thead>
               <tr className="border-b border-border bg-muted/30">
-                <SortableHeader column="bookingDate" label="Record Date" />
-                <SortableHeader column="moveInDate" label="Move-In Date" />
-                <SortableHeader column="memberName" label="Contact" />
-                <th className="text-left py-3 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Email</th>
-                <th className="text-left py-3 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Phone</th>
-                <th className="text-left py-3 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Agent</th>
-                <SortableHeader column="market" label="Market" />
-                <SortableHeader column="bookingType" label="Type" />
-                <SortableHeader column="status" label="Status" />
-                <th className="text-left py-3 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Priority</th>
-                <th className="text-left py-3 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Churn Risk</th>
-                <SortableHeader column="communicationMethod" label="Method" />
-                <th className="text-left py-3 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Issues</th>
-                <th className="text-left py-3 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Links</th>
-                <th className="text-left py-3 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Actions</th>
+                {isResearch ? (
+                  <>
+                    <SortableHeader column="bookingDate" label="Call Date" />
+                    <th className="text-left py-3 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Contact</th>
+                    <SortableHeader column="memberName" label="Name" />
+                    <th className="text-left py-3 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Email</th>
+                    <th className="text-left py-3 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Duration</th>
+                    <th className="text-left py-3 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Agent</th>
+                    <SortableHeader column="market" label="Market" />
+                    <th className="text-left py-3 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Transcription</th>
+                    <th className="text-left py-3 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Issues</th>
+                    <th className="text-left py-3 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Actions</th>
+                  </>
+                ) : (
+                  <>
+                    <SortableHeader column="bookingDate" label="Record Date" />
+                    <SortableHeader column="moveInDate" label="Move-In Date" />
+                    <SortableHeader column="memberName" label="Contact" />
+                    <th className="text-left py-3 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Email</th>
+                    <th className="text-left py-3 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Phone</th>
+                    <th className="text-left py-3 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Agent</th>
+                    <SortableHeader column="market" label="Market" />
+                    <SortableHeader column="bookingType" label="Type" />
+                    <SortableHeader column="status" label="Status" />
+                    <th className="text-left py-3 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Priority</th>
+                    <th className="text-left py-3 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Churn Risk</th>
+                    <SortableHeader column="communicationMethod" label="Method" />
+                    <th className="text-left py-3 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Issues</th>
+                    <th className="text-left py-3 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Links</th>
+                    <th className="text-left py-3 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Actions</th>
+                  </>
+                )}
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
@@ -864,17 +945,212 @@ export default function Reports() {
                 <TableSkeleton />
               ) : records.length === 0 ? (
                 <tr>
-                  <td colSpan={15} className="py-8 text-center text-muted-foreground">
+                  <td colSpan={isResearch ? 10 : 15} className="py-8 text-center text-muted-foreground">
                     No records found matching your filters
                   </td>
                 </tr>
+              ) : isResearch ? (
+                /* ===== RESEARCH VIEW ROWS ===== */
+                records.map((booking) => (
+                  <tr key={booking.id} className="hover:bg-muted/30 transition-colors">
+                    {/* Call Date */}
+                    <td className="py-3 px-4 text-sm text-foreground">
+                      <div className="flex items-center gap-1.5">
+                        {format(booking.bookingDate, 'MMM d, yyyy')}
+                        {(() => {
+                          const issues = normalizeDetectedIssues(booking.detectedIssues);
+                          return issues.length > 0 && (
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <span className="inline-flex items-center gap-0.5 cursor-help text-amber-500">
+                                  <ShieldAlert className="h-4 w-4" />
+                                  {issues.length > 1 && <span className="text-[10px] font-bold">{issues.length}</span>}
+                                </span>
+                              </TooltipTrigger>
+                              <TooltipContent side="right" className="max-w-sm">
+                                <p className="font-semibold mb-1">{issues.length} Issue{issues.length > 1 ? 's' : ''} Detected</p>
+                                <div className="text-xs space-y-2">
+                                  {issues.map((detail, i) => (
+                                    <div key={i}>
+                                      <p className="font-medium">• {detail.issue}</p>
+                                      {detail.matchingConcerns.length > 0 && (
+                                        <div className="ml-3 mt-0.5 text-muted-foreground">
+                                          {detail.matchingConcerns.map((c, j) => (
+                                            <p key={j} className="italic">"{c}"</p>
+                                          ))}
+                                        </div>
+                                      )}
+                                    </div>
+                                  ))}
+                                </div>
+                              </TooltipContent>
+                            </Tooltip>
+                          );
+                        })()}
+                      </div>
+                    </td>
+                    {/* Contact (phone-first) */}
+                    <td className="py-3 px-4 text-sm text-foreground">
+                      {booking.contactPhone ? (
+                        shouldMaskContactInfo(user?.role) ? (
+                          <span className="text-muted-foreground whitespace-nowrap">{maskPhone(booking.contactPhone)}</span>
+                        ) : (
+                          <a href={`tel:${booking.contactPhone}`} className="text-primary hover:underline whitespace-nowrap">
+                            {formatPhone(booking.contactPhone)}
+                          </a>
+                        )
+                      ) : (
+                        <span className="text-muted-foreground">—</span>
+                      )}
+                    </td>
+                    {/* Name (enriched only) */}
+                    <td className="py-3 px-4 text-sm font-medium text-foreground">
+                      {booking.memberName?.startsWith('API Submission') ? (
+                        <span className="text-muted-foreground">—</span>
+                      ) : (
+                        <ContactProfileHoverCard
+                          memberName={booking.memberName}
+                          callKeyPoints={booking.callKeyPoints}
+                          callSummary={booking.callSummary}
+                          transcriptionStatus={booking.transcriptionStatus}
+                          contactEmail={booking.contactEmail || undefined}
+                          contactPhone={booking.contactPhone || undefined}
+                          bookingId={booking.id}
+                          shouldMaskContact={shouldMaskContactInfo(user?.role)}
+                          bookingStatus={booking.status}
+                          moveInDate={booking.moveInDate}
+                          bookingDate={booking.bookingDate}
+                          marketCity={booking.marketCity || undefined}
+                          marketState={booking.marketState || undefined}
+                          emailVerificationStatus={booking.emailVerificationStatus}
+                          emailVerified={booking.emailVerified}
+                        >
+                          <span className="hover:text-primary transition-colors cursor-default">{booking.memberName}</span>
+                        </ContactProfileHoverCard>
+                      )}
+                    </td>
+                    {/* Email */}
+                    <td className="py-3 px-4 text-sm">
+                      {booking.contactEmail ? (
+                        shouldMaskContactInfo(user?.role) ? (
+                          <span className="text-muted-foreground truncate max-w-[180px] block">{maskEmail(booking.contactEmail)}</span>
+                        ) : (
+                          <a href={`mailto:${booking.contactEmail}`} className="text-primary hover:underline truncate max-w-[180px] block" title={booking.contactEmail}>
+                            {booking.contactEmail}
+                          </a>
+                        )
+                      ) : (
+                        <span className="text-muted-foreground">—</span>
+                      )}
+                    </td>
+                    {/* Duration */}
+                    <td className="py-3 px-4 text-sm text-muted-foreground whitespace-nowrap">
+                      <div className="flex items-center gap-1.5">
+                        <Timer className="h-3.5 w-3.5" />
+                        {formatDuration(booking.callDurationSeconds)}
+                      </div>
+                    </td>
+                    {/* Agent */}
+                    <td className="py-3 px-4 text-sm text-foreground">
+                      {getAgentName(agents, booking.agentId)}
+                    </td>
+                    {/* Market */}
+                    <td className="py-3 px-4 text-sm text-muted-foreground">
+                      {booking.marketCity && booking.marketState ? `${booking.marketCity}, ${booking.marketState}` : booking.marketCity || booking.marketState || '—'}
+                    </td>
+                    {/* Transcription Status */}
+                    <td className="py-3 px-4">
+                      {booking.kixieLink ? (
+                        <button
+                          onClick={() => {
+                            setSelectedBooking(booking);
+                            setShowTranscriptModal(true);
+                          }}
+                          title={
+                            booking.transcriptionStatus === 'completed' ? 'View Call Insights' :
+                            booking.transcriptionStatus === 'processing' ? 'Transcription in progress...' :
+                            booking.transcriptionStatus === 'failed' ? `Failed: ${booking.transcriptionErrorMessage || 'Unknown error'}` :
+                            booking.transcriptionStatus === 'pending' ? 'Transcription pending...' :
+                            'Transcribe Call'
+                          }
+                          className="hover:opacity-80 transition-opacity"
+                        >
+                          {booking.transcriptionStatus === 'completed' ? (
+                            <FileText className="h-4 w-4 text-purple-500" />
+                          ) : booking.transcriptionStatus === 'processing' ? (
+                            <Loader2 className="h-4 w-4 text-amber-500 animate-spin" />
+                          ) : booking.transcriptionStatus === 'failed' ? (
+                            <AlertTriangle className="h-4 w-4 text-destructive" />
+                          ) : booking.transcriptionStatus === 'pending' ? (
+                            <Loader2 className="h-4 w-4 text-muted-foreground animate-spin" />
+                          ) : (
+                            <Headphones className="h-4 w-4 text-muted-foreground hover:text-purple-500 transition-colors" />
+                          )}
+                        </button>
+                      ) : (
+                        <span className="text-muted-foreground text-xs">—</span>
+                      )}
+                    </td>
+                    {/* Issues */}
+                    <td className="py-3 px-4">
+                      {(() => {
+                        const issues = normalizeDetectedIssues(booking.detectedIssues);
+                        return issues.length > 0 ? (
+                          <div className="flex flex-wrap gap-1 max-w-[200px]">
+                            {issues.map((detail) => {
+                              const config = ISSUE_BADGE_CONFIG[detail.issue];
+                              return (
+                                <Tooltip key={detail.issue}>
+                                  <TooltipTrigger asChild>
+                                    <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium border cursor-help ${config?.color || 'bg-muted text-muted-foreground border-border'}`}>
+                                      {detail.issue.split(' ')[0]}
+                                    </span>
+                                  </TooltipTrigger>
+                                  <TooltipContent side="top" className="max-w-xs">
+                                    <p className="font-semibold text-xs">{detail.issue}</p>
+                                    {detail.matchingConcerns.length > 0 && (
+                                      <div className="mt-1 text-xs text-muted-foreground space-y-0.5">
+                                        {detail.matchingConcerns.map((c, j) => (
+                                          <p key={j} className="italic">"{c}"</p>
+                                        ))}
+                                      </div>
+                                    )}
+                                  </TooltipContent>
+                                </Tooltip>
+                              );
+                            })}
+                          </div>
+                        ) : (
+                          <span className="text-muted-foreground text-xs">—</span>
+                        );
+                      })()}
+                    </td>
+                    {/* Actions — research: view transcript only */}
+                    <td className="py-3 px-4">
+                      {booking.kixieLink && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-8 gap-1.5 text-xs"
+                          onClick={() => {
+                            setSelectedBooking(booking);
+                            setShowTranscriptModal(true);
+                          }}
+                        >
+                          <FileText className="h-3.5 w-3.5" />
+                          Transcript
+                        </Button>
+                      )}
+                    </td>
+                  </tr>
+                ))
               ) : (
+                /* ===== BOOKINGS VIEW ROWS ===== */
                 records.map((booking) => (
                   <tr key={booking.id} className="hover:bg-muted/30 transition-colors">
                     <td className="py-3 px-4 text-sm text-foreground">
                       <div className="flex items-center gap-1.5">
                         {format(booking.bookingDate, 'MMM d, yyyy')}
-                        {/* Pricing not discussed indicator */}
                         {booking.callKeyPoints?.pricingDiscussed?.mentioned === false && booking.transcriptionStatus === 'completed' && (
                           <Tooltip>
                             <TooltipTrigger asChild>
@@ -930,7 +1206,7 @@ export default function Reports() {
                       </div>
                     </td>
                     <td className="py-3 px-4 text-sm text-foreground">
-                      {booking.status === 'Non Booking' || booking.recordType === 'research' ? (
+                      {booking.status === 'Non Booking' ? (
                         <span className="text-muted-foreground">—</span>
                       ) : (
                         format(booking.moveInDate, 'MMM d, yyyy')
@@ -969,16 +1245,8 @@ export default function Reports() {
                             </Tooltip>
                           )}
                           <span className="hover:text-primary transition-colors">
-                            {booking.memberName?.startsWith('API Submission') 
-                              ? (booking.contactPhone || booking.memberName.replace('API Submission - ', ''))
-                              : booking.memberName}
+                            {booking.memberName}
                           </span>
-                          {booking.recordType === 'research' && (
-                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-medium bg-purple-500/10 text-purple-500">
-                              <FlaskConical className="h-3 w-3" />
-                              Research
-                            </span>
-                          )}
                           {booking.isRebooking && (
                             <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-medium bg-primary/10 text-primary">
                               <RotateCcw className="h-3 w-3" />
@@ -1052,7 +1320,7 @@ export default function Reports() {
                             callKeyPoints: booking.callKeyPoints,
                             transcriptionStatus: booking.transcriptionStatus,
                           },
-                          null // lastContactDate - would need batch fetch for efficiency
+                          null
                         )}
                         size="sm"
                       />
@@ -1132,11 +1400,9 @@ export default function Reports() {
                             <UserCircle className="h-4 w-4 text-blue-500 hover:text-blue-600 transition-colors" />
                           </a>
                         )}
-                        {/* Transcription Status Icon - Instant click, no blocking refresh */}
                         {booking.kixieLink && (
                           <button
                             onClick={() => {
-                              // Open modal immediately with current data
                               setSelectedBooking(booking);
                               setShowTranscriptModal(true);
                             }}
@@ -1304,46 +1570,59 @@ export default function Reports() {
         {/* Pagination */}
         <div className="p-4 border-t border-border flex items-center justify-between">
           <p className="text-sm text-muted-foreground">
-            Showing {totalCount === 0 ? 0 : startIndex + 1}-{Math.min(startIndex + itemsPerPage, totalCount)} of {totalCount.toLocaleString()} records
+            Showing {totalCount === 0 ? 0 : startIndex + 1} to {Math.min(startIndex + itemsPerPage, totalCount)} of {totalCount.toLocaleString()} {isResearch ? 'calls' : 'records'}
           </p>
           <div className="flex items-center gap-2">
-            <Button 
-              variant="outline" 
-              size="sm" 
-              disabled={currentPage === 1 || isLoading}
-              onClick={() => setCurrentPage(p => p - 1)}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setCurrentPage(1)}
+              disabled={currentPage === 1}
+            >
+              First
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+              disabled={currentPage === 1}
             >
               Previous
             </Button>
             <span className="text-sm text-muted-foreground px-2">
               Page {currentPage} of {totalPages || 1}
             </span>
-            <Button 
-              variant="outline" 
+            <Button
+              variant="outline"
               size="sm"
-              disabled={currentPage >= totalPages || isLoading}
-              onClick={() => setCurrentPage(p => p + 1)}
+              onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+              disabled={currentPage >= totalPages}
             >
               Next
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setCurrentPage(totalPages)}
+              disabled={currentPage >= totalPages}
+            >
+              Last
             </Button>
           </div>
         </div>
       </div>
       </TooltipProvider>
 
-      {/* Transcription Modal - uses realtime subscription for updates */}
+      {/* Transcription Modal */}
       {selectedBooking && (
         <TranscriptionModal
           booking={selectedBooking}
           isOpen={showTranscriptModal}
           onClose={() => {
             setShowTranscriptModal(false);
-            setSelectedBooking(null);
-          }}
-          onTranscriptionComplete={() => {
-            // Background refresh
             refetch();
           }}
+          onTranscriptionComplete={refetch}
         />
       )}
     </DashboardLayout>
