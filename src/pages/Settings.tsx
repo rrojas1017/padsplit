@@ -7,7 +7,8 @@ import { Switch } from '@/components/ui/switch';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useAuth } from '@/contexts/AuthContext';
-import { Database, Bell, Moon, Sun, Upload, Key, FileText, Download, Brain, Phone, BookOpen, Shield, ScrollText, Zap, Volume2, Loader2, ClipboardCheck, RefreshCw, AlertTriangle, FlaskConical, Lock } from 'lucide-react';
+import { Database, Bell, Moon, Sun, Upload, Key, FileText, Download, Brain, Phone, BookOpen, Shield, ScrollText, Zap, Volume2, Loader2, ClipboardCheck, RefreshCw, AlertTriangle, FlaskConical, Lock, Microscope } from 'lucide-react';
+import { ResearchPromptsSettings } from '@/components/research-insights/ResearchPromptsSettings';
 import { generateRoleDocumentationPDF } from '@/utils/roleDocumentation';
 import { generateQADocumentationPDF } from '@/utils/qaDocumentation';
 import { CallTypeList } from '@/components/ai-management/CallTypeList';
@@ -129,7 +130,7 @@ export default function Settings() {
     >
       <div className="max-w-4xl">
         <Tabs defaultValue="general" className="space-y-6">
-          <TabsList className="grid w-full grid-cols-2 lg:grid-cols-6 h-auto gap-1">
+          <TabsList className="grid w-full grid-cols-2 lg:grid-cols-7 h-auto gap-1">
             <TabsTrigger value="general" className="gap-2">
               <Sun className="w-4 h-4" />
               <span className="hidden sm:inline">General</span>
@@ -152,6 +153,12 @@ export default function Settings() {
               <TabsTrigger value="security" className="gap-2">
                 <Lock className="w-4 h-4" />
                 <span className="hidden sm:inline">Security</span>
+              </TabsTrigger>
+            )}
+            {hasRole(['super_admin']) && (
+              <TabsTrigger value="research-prompts" className="gap-2">
+                <Microscope className="w-4 h-4" />
+                <span className="hidden sm:inline">Research AI</span>
               </TabsTrigger>
             )}
             <TabsTrigger value="docs" className="gap-2">
@@ -477,6 +484,22 @@ export default function Settings() {
               {hasRole(['super_admin']) && (
                 <MovedInNotificationSettings />
               )}
+            </TabsContent>
+          )}
+
+          {/* Research Prompts Tab - Super Admin only */}
+          {hasRole(['super_admin']) && (
+            <TabsContent value="research-prompts" className="space-y-6">
+              <div className="bg-card rounded-xl border border-border p-6 shadow-card">
+                <div className="flex items-center gap-3 mb-6">
+                  <Microscope className="w-5 h-5 text-accent" />
+                  <div>
+                    <h3 className="text-lg font-semibold text-foreground">Research AI Prompts</h3>
+                    <p className="text-sm text-muted-foreground">Configure the AI prompts used for move-out research analysis</p>
+                  </div>
+                </div>
+                <ResearchPromptsSettings />
+              </div>
             </TabsContent>
           )}
 
