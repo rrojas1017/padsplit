@@ -968,7 +968,11 @@ export default function Reports() {
                               </TooltipContent>
                             </Tooltip>
                           )}
-                          <span className="hover:text-primary transition-colors">{booking.memberName}</span>
+                          <span className="hover:text-primary transition-colors">
+                            {booking.memberName?.startsWith('API Submission') 
+                              ? (booking.contactPhone || booking.memberName.replace('API Submission - ', ''))
+                              : booking.memberName}
+                          </span>
                           {booking.recordType === 'research' && (
                             <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-medium bg-purple-500/10 text-purple-500">
                               <FlaskConical className="h-3 w-3" />
