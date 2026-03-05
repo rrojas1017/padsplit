@@ -14,7 +14,8 @@ const LIGHTWEIGHT_COLUMNS = `
   call_duration_seconds, call_type_id,
   is_rebooking, original_booking_id,
   contact_email, contact_phone,
-  email_verified, email_verified_at, email_verification_status
+  email_verified, email_verified_at, email_verification_status,
+  record_type
 `;
 
 function transformRow(b: any): Booking {
@@ -55,6 +56,7 @@ function transformRow(b: any): Booking {
     emailVerified: b.email_verified,
     emailVerifiedAt: b.email_verified_at ? new Date(b.email_verified_at) : undefined,
     emailVerificationStatus: b.email_verification_status as Booking['emailVerificationStatus'],
+    recordType: b.record_type as Booking['recordType'],
   };
 }
 

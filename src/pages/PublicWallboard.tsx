@@ -178,7 +178,7 @@ export default function PublicWallboard() {
   
   // Helper to filter actual bookings (exclude Non Booking status)
   const filterActualBookings = (list: Booking[]) => 
-    list.filter(b => b.status !== 'Non Booking');
+    list.filter(b => b.status !== 'Non Booking' && b.status !== 'Research' && b.recordType !== 'research');
   
   // Filter bookings based on site filter if set
   const filteredAgentIds = displayToken.siteFilter && displayToken.siteFilter !== 'all'

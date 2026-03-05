@@ -3,7 +3,11 @@ import { startOfDay, startOfMonth, startOfWeek, subDays, addDays, format, isToda
 
 // Helper to filter out Non Booking records from actual booking calculations
 const filterActualBookings = (bookings: Booking[]): Booking[] => {
-  return bookings.filter(b => b.status !== 'Non Booking');
+  return bookings.filter(b => 
+    b.status !== 'Non Booking' && 
+    b.status !== 'Research' && 
+    b.recordType !== 'research'
+  );
 };
 
 const countWeekdays = (startDate: Date, endDate: Date): number => {
