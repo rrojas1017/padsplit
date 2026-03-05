@@ -348,7 +348,7 @@ const App = () => (
                 </ProtectedRoute>
               } />
               <Route path="/research/insights" element={
-                <ProtectedRoute allowedRoles={['super_admin', 'admin']}>
+                <ProtectedRoute allowedRoles={['super_admin', 'admin', 'supervisor']}>
                   <DataProviders>
                     <ResearchInsights />
                   </DataProviders>
