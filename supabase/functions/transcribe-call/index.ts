@@ -1835,11 +1835,17 @@ async function processTranscription(bookingId: string, kixieUrl: string, skipTts
 
     // ===== CONVERSATION VALIDITY CHECK =====
     // Detect voicemails, failed connections, and calls without real conversations
-    const hasValidConversation = validateConversation({
+    let hasValidConversation = validateConversation({
       durationSeconds: callDurationSeconds,
       transcription: transcription,
       summary: summary,
     });
+    
+    // Research calls require a minimum 2-minute (120s) duration to be considered valid
+    if (hasValidConversation && isResearch && (!callDurationSeconds || callDurationSeconds < 120)) {
+      console.log(`[Background] Research call ${bookingId} under 2 min (${callDurationSeconds || 0}s) — marking invalid`);
+      hasValidConversation = false;
+    }
     
     if (!hasValidConversation) {
       console.log(`[Background] ⚠️ No valid conversation detected for ${bookingId} - likely voicemail/failed connection`);
