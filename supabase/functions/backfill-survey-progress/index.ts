@@ -72,56 +72,38 @@ serve(async (req) => {
     });
   }
 
+  // Fetch the single research script's questions once (not per-record)
+  const { data: scriptData } = await supabase
+    .from('research_campaigns')
+    .select('research_scripts!research_campaigns_script_id_fkey(questions)')
+    .limit(1)
+    .maybeSingle();
+
+  const questions = (scriptData as any)?.research_scripts?.questions;
+  if (!Array.isArray(questions) || questions.length === 0) {
+    console.error('[Backfill] No research script questions found in any campaign');
+    return new Response(JSON.stringify({ error: 'No research script questions found' }), {
+      status: 500,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
+  }
+
+  console.log(`[Backfill] Using ${questions.length} questions from research script`);
+
+  const questionList = questions.map((q: any, i: number) =>
+    `${i + 1}. ${typeof q === 'string' ? q : q.text || q.question || JSON.stringify(q)}`
+  ).join('\n');
+
   // Return immediately, process in background
   EdgeRuntime.waitUntil((async () => {
     let processed = 0;
     let failed = 0;
-
-    // Get campaign → script mapping (parse from first record's notes to find campaign)
-    // Cache scripts by campaign name
-    const scriptCache: Record<string, any[]> = {};
 
     for (const record of records!) {
       try {
         const transcription = (record as any).booking_transcriptions;
         const transcript = transcription?.call_transcription;
         if (!transcript) continue;
-
-        const notes = record.notes || '';
-        const campaignMatch = notes.match(/Campaign:\s*(.+?)\s*\|/);
-        const campaignName = campaignMatch?.[1]?.trim();
-        if (!campaignName) {
-          console.log(`[Backfill] No campaign in notes for ${record.id}`);
-          failed++;
-          continue;
-        }
-
-        // Get questions (cached)
-        if (!scriptCache[campaignName]) {
-          const { data: campaignData } = await supabase
-            .from('research_campaigns')
-            .select('script_id, research_scripts!research_campaigns_script_id_fkey(questions)')
-            .eq('name', campaignName)
-            .maybeSingle();
-          
-          const questions = (campaignData as any)?.research_scripts?.questions;
-          if (!Array.isArray(questions) || questions.length === 0) {
-            console.log(`[Backfill] No questions found for campaign: ${campaignName}`);
-            scriptCache[campaignName] = [];
-          } else {
-            scriptCache[campaignName] = questions;
-          }
-        }
-
-        const questions = scriptCache[campaignName];
-        if (questions.length === 0) {
-          failed++;
-          continue;
-        }
-
-        const questionList = questions.map((q: any, i: number) =>
-          `${i + 1}. ${typeof q === 'string' ? q : q.text || q.question || JSON.stringify(q)}`
-        ).join('\n');
 
         const surveyPrompt = `You are analyzing a research survey call transcript. Determine which survey questions were covered/addressed during the call.
 
@@ -167,7 +149,6 @@ Be generous in matching — if the topic of a question was discussed even partia
           questions_covered: Array.isArray(parsed.questions_covered) ? parsed.questions_covered : [],
         };
 
-        // Update the transcription record
         const { error: updateError } = await supabase
           .from('booking_transcriptions')
           .update({ survey_progress: surveyProgress })
@@ -181,7 +162,6 @@ Be generous in matching — if the topic of a question was discussed even partia
           console.log(`[Backfill] ${record.id}: ${surveyProgress.answered}/${surveyProgress.total}`);
         }
 
-        // Small delay to avoid rate limiting
         await new Promise(r => setTimeout(r, 500));
       } catch (err) {
         console.error(`[Backfill] Error processing ${record.id}:`, err);
@@ -191,7 +171,6 @@ Be generous in matching — if the topic of a question was discussed even partia
 
     console.log(`[Backfill] Complete: ${processed} processed, ${failed} failed`);
 
-    // Self-retrigger if more records remain
     if (processed > 0) {
       try {
         await fetch(`${supabaseUrl}/functions/v1/backfill-survey-progress`, {
