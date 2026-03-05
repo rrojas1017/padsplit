@@ -2179,11 +2179,15 @@ Be generous in matching — if the topic of a question was discussed even partia
     } else {
       console.log('[Background] Research record — skipping QA scoring (not applicable for survey calls)');
       
-      // Fire-and-forget: Trigger research record processing (Prompts A+B) for research records
-      console.log(`[Background] Research record — triggering research AI processing for ${bookingId}`);
-      const researchResult = await callDownstreamFunction('process-research-record');
-      if (!researchResult.success) {
-        console.error(`[Background] Research processing failed for ${bookingId}: ${researchResult.error || researchResult.statusCode}`);
+      // Fire-and-forget: Trigger research record processing (Prompts A+B) for valid research records only
+      if (hasValidConversation) {
+        console.log(`[Background] Research record — triggering research AI processing for ${bookingId}`);
+        const researchResult = await callDownstreamFunction('process-research-record');
+        if (!researchResult.success) {
+          console.error(`[Background] Research processing failed for ${bookingId}: ${researchResult.error || researchResult.statusCode}`);
+        }
+      } else {
+        console.log(`[Background] Research record ${bookingId} is not a valid conversation — skipping AI processing`);
       }
     }
 

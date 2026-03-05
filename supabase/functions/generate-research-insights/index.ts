@@ -397,6 +397,7 @@ Deno.serve(async (req) => {
         )
       `)
       .eq('record_type', 'research')
+      .eq('has_valid_conversation', true)
       .eq('booking_transcriptions.research_processing_status', 'completed');
 
     if (campaignId) {

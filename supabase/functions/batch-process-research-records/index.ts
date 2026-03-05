@@ -31,6 +31,7 @@ Deno.serve(async (req) => {
         )
       `)
       .eq('record_type', 'research')
+      .eq('has_valid_conversation', true)
       .not('booking_transcriptions.call_transcription', 'is', null)
       .or('research_processing_status.is.null,research_processing_status.eq.failed', { referencedTable: 'booking_transcriptions' })
       .limit(dryRun ? 1000 : BATCH_SIZE);
