@@ -493,6 +493,11 @@ export type Database = {
           qa_coaching_audio_url: string | null
           qa_coaching_quiz_passed_at: string | null
           qa_scores: Json | null
+          research_classification: Json | null
+          research_extraction: Json | null
+          research_human_review: boolean | null
+          research_processed_at: string | null
+          research_processing_status: string | null
           stt_confidence_score: number | null
           stt_latency_ms: number | null
           stt_provider: string | null
@@ -519,6 +524,11 @@ export type Database = {
           qa_coaching_audio_url?: string | null
           qa_coaching_quiz_passed_at?: string | null
           qa_scores?: Json | null
+          research_classification?: Json | null
+          research_extraction?: Json | null
+          research_human_review?: boolean | null
+          research_processed_at?: string | null
+          research_processing_status?: string | null
           stt_confidence_score?: number | null
           stt_latency_ms?: number | null
           stt_provider?: string | null
@@ -545,6 +555,11 @@ export type Database = {
           qa_coaching_audio_url?: string | null
           qa_coaching_quiz_passed_at?: string | null
           qa_scores?: Json | null
+          research_classification?: Json | null
+          research_extraction?: Json | null
+          research_human_review?: boolean | null
+          research_processed_at?: string | null
+          research_processing_status?: string | null
           stt_confidence_score?: number | null
           stt_latency_ms?: number | null
           stt_provider?: string | null
@@ -2325,31 +2340,52 @@ export type Database = {
       }
       research_insights: {
         Row: {
-          caller_type: string
-          campaign_id: string
+          analysis_period: string | null
+          caller_type: string | null
+          campaign_id: string | null
           created_at: string
+          created_by: string | null
           data: Json
+          date_range_end: string | null
+          date_range_start: string | null
+          error_message: string | null
           generated_at: string
           id: string
-          insight_type: string
+          insight_type: string | null
+          status: string | null
+          total_records_analyzed: number | null
         }
         Insert: {
-          caller_type: string
-          campaign_id: string
+          analysis_period?: string | null
+          caller_type?: string | null
+          campaign_id?: string | null
           created_at?: string
+          created_by?: string | null
           data?: Json
+          date_range_end?: string | null
+          date_range_start?: string | null
+          error_message?: string | null
           generated_at?: string
           id?: string
-          insight_type: string
+          insight_type?: string | null
+          status?: string | null
+          total_records_analyzed?: number | null
         }
         Update: {
-          caller_type?: string
-          campaign_id?: string
+          analysis_period?: string | null
+          caller_type?: string | null
+          campaign_id?: string | null
           created_at?: string
+          created_by?: string | null
           data?: Json
+          date_range_end?: string | null
+          date_range_start?: string | null
+          error_message?: string | null
           generated_at?: string
           id?: string
-          insight_type?: string
+          insight_type?: string | null
+          status?: string | null
+          total_records_analyzed?: number | null
         }
         Relationships: [
           {
@@ -2360,6 +2396,39 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      research_prompts: {
+        Row: {
+          id: string
+          model: string | null
+          prompt_key: string
+          prompt_text: string
+          temperature: number | null
+          updated_at: string | null
+          updated_by: string | null
+          version: number | null
+        }
+        Insert: {
+          id?: string
+          model?: string | null
+          prompt_key: string
+          prompt_text: string
+          temperature?: number | null
+          updated_at?: string | null
+          updated_by?: string | null
+          version?: number | null
+        }
+        Update: {
+          id?: string
+          model?: string | null
+          prompt_key?: string
+          prompt_text?: string
+          temperature?: number | null
+          updated_at?: string | null
+          updated_by?: string | null
+          version?: number | null
+        }
+        Relationships: []
       }
       research_scripts: {
         Row: {
