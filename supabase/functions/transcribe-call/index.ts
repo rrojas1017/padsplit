@@ -149,6 +149,10 @@ const ISSUE_KEYWORDS_MAP: Record<string, string[]> = {
   'Move-In Barriers': ['background check', 'credit check', 'screening', 'eviction', 'when can i move', 'criminal', 'failed background', 'denied screening', 'move-in', 'move in'],
   'Property & Amenity Mismatch': ['noisy', 'neighborhood', 'too small', "doesn't have", 'no parking', 'not what i expected', 'wrong room', 'amenity'],
   'Financial Constraints': ['budget', "can't afford", 'too expensive', 'unemploy', 'cheaper', 'low income', 'fixed income', 'disability', 'ssi', 'ssdi', 'not enough money', "can't pay"],
+  'Property Condition Issues': ['bed bugs', 'mold', 'plumbing', 'pipes', 'no heat', 'no water', 'broken', 'roach', 'pest', 'infest', 'not maintained', 'not up to par', 'leaking', 'flooding', 'dirty', 'filthy', 'cockroach'],
+  'Host & Maintenance Failures': ['host not responsive', 'maintenance never', "didn't fix", 'failed to repair', 'no response from host', 'took weeks', 'never came', 'never fixed', 'ignored requests', 'no maintenance', "landlord never", "won't fix"],
+  'Safety & Security Concerns': ['police', 'unsafe', 'harassment', 'unauthorized', 'break-in', 'crime', 'dangerous', 'afraid', 'threatened', 'violence', 'stolen', 'robbery', 'shooting', 'drugs', 'weapon'],
+  'Rent & Affordability Pressure': ['rent increase', "couldn't afford rent", 'price went up', 'too expensive to stay', 'eviction', 'rent too high', 'raised the rent', 'priced out', "can't keep up with rent", 'behind on rent'],
 };
 
 interface DetectedIssueDetail {
