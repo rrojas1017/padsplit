@@ -164,13 +164,20 @@ export function useResearchInsightsData() {
   const triggerBackfill = async () => {
     try {
       const { data, error } = await supabase.functions.invoke('batch-process-research-records', {
-        body: { batch_size: 5 }
+        body: {}
       });
 
       if (error) throw error;
-      toast.info(`Processing records... ${data?.processed || 0} processed this batch`);
-      // Refresh stats
-      setTimeout(fetchProcessingStats, 3000);
+      toast.info('Processing all records automatically...');
+      
+      // Start polling stats every 10 seconds until all records are processed
+      const pollInterval = setInterval(async () => {
+        await fetchProcessingStats();
+      }, 10000);
+
+      // Store interval ID so we can clear it later
+      (window as any).__researchBackfillPoll = pollInterval;
+
       return data;
     } catch (error) {
       console.error('Error triggering backfill:', error);

@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Progress } from '@/components/ui/progress';
 import { Sparkles, RefreshCw, Loader2, Database, AlertTriangle, CheckCircle } from 'lucide-react';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
@@ -82,10 +83,20 @@ export default function ResearchInsights() {
   const handleBackfill = async () => {
     setIsBackfilling(true);
     await triggerBackfill();
-    setIsBackfilling(false);
-    // Keep refreshing stats
-    setTimeout(fetchProcessingStats, 5000);
   };
+
+  // Auto-stop backfilling when all records are processed
+  useEffect(() => {
+    if (isBackfilling && processingStats.pendingRecords === 0 && processingStats.totalResearchRecords > 0) {
+      setIsBackfilling(false);
+      // Clear the polling interval
+      if ((window as any).__researchBackfillPoll) {
+        clearInterval((window as any).__researchBackfillPoll);
+        delete (window as any).__researchBackfillPoll;
+      }
+      toast.success(`All ${processingStats.processedRecords} records processed!`);
+    }
+  }, [isBackfilling, processingStats]);
 
   const reportData = selectedReport?.data as any;
 
@@ -162,25 +173,35 @@ export default function ResearchInsights() {
       {/* Processing Status Banner */}
       <div className="mb-6 flex flex-wrap gap-3">
         <Card className="flex-1 min-w-[250px]">
-          <CardContent className="p-4 flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <Database className="w-5 h-5 text-primary" />
-              <div>
-                <p className="text-sm font-medium text-foreground">
-                  {processingStats.processedRecords} / {processingStats.totalResearchRecords} records processed
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  {processingStats.pendingRecords > 0 
-                    ? `${processingStats.pendingRecords} pending AI processing`
-                    : 'All records processed'}
-                </p>
+          <CardContent className="p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <Database className="w-5 h-5 text-primary" />
+                <div>
+                  <p className="text-sm font-medium text-foreground">
+                    {processingStats.processedRecords} / {processingStats.totalResearchRecords} records processed
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {isBackfilling
+                      ? 'Processing in progress...'
+                      : processingStats.pendingRecords > 0 
+                        ? `${processingStats.pendingRecords} pending AI processing`
+                        : 'All records processed'}
+                  </p>
+                </div>
               </div>
+              {processingStats.pendingRecords > 0 && (
+                <Button onClick={handleBackfill} disabled={isBackfilling} variant="outline" size="sm" className="gap-1.5">
+                  {isBackfilling ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+                  {isBackfilling ? 'Processing...' : 'Process All'}
+                </Button>
+              )}
             </div>
-            {processingStats.pendingRecords > 0 && (
-              <Button onClick={handleBackfill} disabled={isBackfilling} variant="outline" size="sm" className="gap-1.5">
-                {isBackfilling ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
-                Process All
-              </Button>
+            {isBackfilling && processingStats.totalResearchRecords > 0 && (
+              <Progress 
+                value={(processingStats.processedRecords / processingStats.totalResearchRecords) * 100} 
+                className="h-2"
+              />
             )}
           </CardContent>
         </Card>
