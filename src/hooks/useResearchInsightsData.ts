@@ -40,6 +40,7 @@ export function useResearchInsightsData() {
         .from('bookings')
         .select('id', { count: 'exact', head: true })
         .eq('record_type', 'research')
+        .eq('has_valid_conversation', true)
         .not('call_transcription', 'is', null);
 
       // Count processed records

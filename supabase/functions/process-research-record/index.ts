@@ -264,6 +264,21 @@ Deno.serve(async (req) => {
 
     console.log(`[Research] Processing record for booking ${bookingId}`);
 
+    // Check if booking has a valid conversation
+    const { data: booking } = await supabase
+      .from('bookings')
+      .select('has_valid_conversation')
+      .eq('id', bookingId)
+      .maybeSingle();
+
+    if (!booking?.has_valid_conversation) {
+      console.log(`[Research] Skipping ${bookingId} — not a valid conversation (voicemail/brief attempt)`);
+      return new Response(
+        JSON.stringify({ success: false, reason: 'Not a valid conversation', bookingId }),
+        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
     // Fetch transcript
     const { data: transcription, error: fetchError } = await supabase
       .from('booking_transcriptions')
