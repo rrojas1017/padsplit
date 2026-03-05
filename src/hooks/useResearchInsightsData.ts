@@ -35,13 +35,13 @@ export function useResearchInsightsData() {
 
   const fetchProcessingStats = useCallback(async () => {
     try {
-      // Count total research records with transcripts
+      // Count total research records with transcripts (transcripts live in booking_transcriptions, not bookings)
       const { count: totalCount } = await supabase
-        .from('bookings')
-        .select('id', { count: 'exact', head: true })
-        .eq('record_type', 'research')
-        .eq('has_valid_conversation', true)
-        .not('call_transcription', 'is', null);
+        .from('booking_transcriptions')
+        .select('id, bookings!inner(record_type, has_valid_conversation)', { count: 'exact', head: true })
+        .not('call_transcription', 'is', null)
+        .eq('bookings.record_type', 'research')
+        .eq('bookings.has_valid_conversation', true);
 
       // Count processed records
       const { count: processedCount } = await supabase

@@ -20,6 +20,19 @@ Deno.serve(async (req) => {
     const body = await req.json().catch(() => ({}));
     const dryRun = body.dryRun === true;
 
+    // Auto-reset records stuck in 'processing' for >15 minutes
+    const fifteenMinutesAgo = new Date(Date.now() - 15 * 60 * 1000).toISOString();
+    const { data: resetData } = await supabase
+      .from('booking_transcriptions')
+      .update({ research_processing_status: null })
+      .eq('research_processing_status', 'processing')
+      .lt('updated_at', fifteenMinutesAgo)
+      .select('id');
+    
+    if (resetData && resetData.length > 0) {
+      console.log(`[Backfill] Auto-reset ${resetData.length} stale processing records`);
+    }
+
     // Find unprocessed research records with transcripts
     const { data: unprocessed, error: fetchError } = await supabase
       .from('bookings')

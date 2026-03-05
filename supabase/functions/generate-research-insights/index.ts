@@ -329,7 +329,7 @@ async function callLovableAI(
   systemPrompt: string,
   userPrompt: string
 ): Promise<{ content: string; inputTokens: number; outputTokens: number }> {
-  const response = await fetch('https://api.lovable.dev/v1/chat/completions', {
+  const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${apiKey}`,
