@@ -174,6 +174,79 @@ AGGREGATION RULES:
 7. QUICK WINS — for every major recommendation, identify a small fast action.
 8. BOOKING IDS — each record has a booking_id field. In reason_code_distribution AND issue_clusters, you MUST include the exact booking_ids array for each group/cluster so we can trace back to source records. Also list the exact reason_codes_included (the individual primary_reason_code values) that were grouped together.`;
 
+// Normalize issue clusters to match expected UI schema
+function normalizeInsightData(data: any, totalRecords: number): any {
+  if (!data) return data;
+
+  // Normalize issue_clusters
+  if (Array.isArray(data.issue_clusters)) {
+    data.issue_clusters = data.issue_clusters.map((cluster: any) => {
+      // Fix field name mismatches
+      const normalized: any = {
+        cluster_name: (cluster.cluster_name || cluster.name || 'Unknown')
+          .replace(/^P[0-3]:\s*/i, ''), // Strip priority prefixes
+        cluster_description: cluster.cluster_description || cluster.description || cluster.summary || '',
+        frequency: cluster.frequency || cluster.count || cluster.cases_affected || 0,
+        pct_of_total: cluster.pct_of_total || cluster.percentage ||
+          (totalRecords > 0 ? Math.round(((cluster.frequency || cluster.count || 0) / totalRecords) * 1000) / 10 : 0),
+        booking_ids: cluster.booking_ids || [],
+        reason_codes_included: cluster.reason_codes_included || cluster.reason_codes || [],
+        severity_distribution: cluster.severity_distribution || { critical: 0, high: 0, medium: 0, low: 0 },
+        representative_quotes: cluster.representative_quotes || cluster.supporting_quotes || cluster.quotes || [],
+        common_early_warnings: cluster.common_early_warnings || [],
+        systemic_root_cause: cluster.systemic_root_cause || cluster.root_cause || '',
+      };
+
+      // Ensure recommended_action is an object
+      const ra = cluster.recommended_action;
+      if (typeof ra === 'string') {
+        normalized.recommended_action = {
+          action: ra,
+          owner: cluster.owner || 'Operations',
+          priority: cluster.priority || 'P2',
+          expected_impact: cluster.expected_impact || '',
+          effort: cluster.effort || 'medium',
+          quick_win: cluster.quick_win || null,
+        };
+      } else if (ra && typeof ra === 'object') {
+        normalized.recommended_action = {
+          action: ra.action || ra.recommendation || '',
+          owner: ra.owner || 'Operations',
+          priority: ra.priority || cluster.priority || 'P2',
+          expected_impact: ra.expected_impact || '',
+          effort: ra.effort || 'medium',
+          quick_win: ra.quick_win || null,
+        };
+      } else {
+        normalized.recommended_action = {
+          action: '',
+          owner: 'Operations',
+          priority: cluster.priority || 'P2',
+          expected_impact: '',
+          effort: 'medium',
+          quick_win: null,
+        };
+      }
+
+      return normalized;
+    });
+  }
+
+  // Normalize reason_code_distribution entries
+  if (data.reason_code_distribution?.distribution && Array.isArray(data.reason_code_distribution.distribution)) {
+    data.reason_code_distribution.distribution = data.reason_code_distribution.distribution.map((item: any) => ({
+      reason_group: item.reason_group || item.group || 'Unknown',
+      count: item.count || 0,
+      percentage: item.percentage || 0,
+      details: item.details || '',
+      reason_codes_included: item.reason_codes_included || [],
+      booking_ids: item.booking_ids || [],
+    }));
+  }
+
+  return data;
+}
+
 async function processInsights(
   supabaseUrl: string,
   supabaseServiceKey: string,
@@ -293,8 +366,12 @@ async function processInsights(
         finalResult = chunkResults[0];
       } else {
         console.log(`[Insights] Synthesizing ${chunkResults.length} chunk results`);
+        const SYNTHESIS_SCHEMA_REMINDER = `CRITICAL: Your response MUST use the EXACT JSON schema from your system prompt. Key requirements:
+- issue_clusters: each must have cluster_name (no P0/P1 prefix), cluster_description, frequency (integer), pct_of_total (number), booking_ids (array of UUIDs), reason_codes_included (array), severity_distribution ({critical,high,medium,low}), representative_quotes (array), systemic_root_cause (string), recommended_action (OBJECT with action, owner, priority, expected_impact, effort, quick_win)
+- reason_code_distribution.distribution: each must have reason_group, count, percentage, details, reason_codes_included, booking_ids
+- All counts/percentages must reflect the TOTAL across all batches (${recordSummaries.length} records total)`;
         const synthesisResult = await callLovableAI(lovableApiKey, model, temperature, systemPrompt,
-          `Date range: ${dateRange}\n\nYou previously analyzed ${recordSummaries.length} records in ${chunkResults.length} batches. Synthesize these batch results into a single unified insight report:\n\n${JSON.stringify(chunkResults, null, 2)}`
+          `Date range: ${dateRange}\n\n${SYNTHESIS_SCHEMA_REMINDER}\n\nYou analyzed ${recordSummaries.length} records in ${chunkResults.length} batches. Merge these batch results into ONE unified report with accurate totals. Here are the original record summaries for computing booking_ids and frequencies:\n\n${JSON.stringify(recordSummaries.map(r => ({ booking_id: r.booking_id, primary_reason_code: r.primary_reason_code, addressability: r.addressability, severity: r.severity, preventability_score: r.preventability_score })))}\n\nBatch results to synthesize:\n\n${JSON.stringify(chunkResults, null, 2)}`
         );
         try {
           const jsonMatch = synthesisResult.content.match(/```(?:json)?\s*([\s\S]*?)```/);
@@ -315,6 +392,9 @@ async function processInsights(
         });
       }
     }
+
+    // Normalize before storing
+    finalResult = normalizeInsightData(finalResult, classifications.length);
 
     // Store results
     const { error: updateError } = await supabase
