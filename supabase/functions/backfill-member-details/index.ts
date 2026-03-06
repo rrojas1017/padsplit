@@ -27,6 +27,27 @@ function isValidLocation(value: string | null): boolean {
   return !bogus.includes(value.toLowerCase().trim());
 }
 
+// Extract a person's name from a greeting pattern in transcript
+function extractNameFromGreeting(transcription: string): string | null {
+  const firstChunk = transcription.substring(0, 500);
+  const patterns = [
+    /(?:Agent|Member|Speaker\s*\d):\s*(?:Hi|Hello|Hey|Good\s+(?:morning|afternoon|evening)),?\s+([A-Z][a-z]{1,15})/,
+    /^(?:Hi|Hello|Hey|Good\s+(?:morning|afternoon|evening)),?\s+([A-Z][a-z]{1,15})/m,
+  ];
+  const skipWords = new Set([
+    'there', 'everyone', 'all', 'guys', 'team', 'sir', 'ma', 'madam',
+    'this', 'how', 'thank', 'thanks', 'yes', 'no', 'so', 'um', 'well',
+    'good', 'great', 'nice', 'right', 'okay',
+  ]);
+  for (const pattern of patterns) {
+    const match = firstChunk.match(pattern);
+    if (match && match[1] && !skipWords.has(match[1].toLowerCase())) {
+      return match[1];
+    }
+  }
+  return null;
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });

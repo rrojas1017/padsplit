@@ -139,6 +139,34 @@ function validateConversation(params: {
   return true;
 }
 
+// Extract a person's name from a greeting pattern in the first 500 chars of transcript
+// Looks for "Hi [Name]", "Hello [Name]", "Hey [Name]", "Good morning [Name]" etc.
+// Only matches the Agent/researcher's first line greeting the other person
+function extractNameFromGreeting(transcription: string): string | null {
+  const firstChunk = transcription.substring(0, 500);
+  // Match common greeting patterns — the name follows the greeting word
+  // Supports "Agent: Hi Jamie" or just "Hi Jamie" at line start
+  const patterns = [
+    /(?:Agent|Member|Speaker\s*\d):\s*(?:Hi|Hello|Hey|Good\s+(?:morning|afternoon|evening)),?\s+([A-Z][a-z]{1,15})/,
+    /^(?:Hi|Hello|Hey|Good\s+(?:morning|afternoon|evening)),?\s+([A-Z][a-z]{1,15})/m,
+  ];
+  
+  // Common non-name words that could match the pattern
+  const skipWords = new Set([
+    'there', 'everyone', 'all', 'guys', 'team', 'sir', 'ma', 'madam',
+    'this', 'how', 'thank', 'thanks', 'yes', 'no', 'so', 'um', 'well',
+    'good', 'great', 'nice', 'right', 'okay',
+  ]);
+
+  for (const pattern of patterns) {
+    const match = firstChunk.match(pattern);
+    if (match && match[1] && !skipWords.has(match[1].toLowerCase())) {
+      return match[1];
+    }
+  }
+  return null;
+}
+
 // ===== PAIN POINT ISSUE CLASSIFIER =====
 const ISSUE_KEYWORDS_MAP: Record<string, string[]> = {
   'Payment & Pricing Confusion': ['promo code', 'deposit', 'weekly rate', 'how much', 'move-in cost', 'coupon', 'discount', 'billing', 'pricing', 'overcharged', 'hidden fee', 'price confused', 'not sure about the price', 'weekly payment', 'first week'],
