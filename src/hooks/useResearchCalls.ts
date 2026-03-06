@@ -237,36 +237,65 @@ export function useResearchCalls() {
       return false;
     }
 
-    // Step 2: Also insert into bookings table for centralized reporting
+    // Step 2: Link to existing API-submitted booking or create new one
     try {
-      // Get any valid agent_id (required field) - use first available agent
-      const { data: anyAgent } = await supabase
-        .from('agents')
-        .select('id')
-        .eq('active', true)
-        .limit(1)
-        .single();
+      // Check if an API-submitted booking already exists for this phone number
+      let existingBooking = null;
+      if (submission.caller_phone) {
+        const normalizedPhone = submission.caller_phone.replace(/\D/g, '').slice(-10);
+        const { data: candidates } = await supabase
+          .from('bookings')
+          .select('id, member_name, import_batch_id')
+          .eq('record_type', 'research')
+          .or(`contact_phone.ilike.%${normalizedPhone}`)
+          .is('research_call_id', null)
+          .order('created_at', { ascending: false })
+          .limit(5);
 
-      if (anyAgent) {
-        const today = new Date().toISOString().split('T')[0];
-        await supabase.from('bookings').insert({
-          record_type: 'research',
-          research_call_id: researchCallData.id,
+        existingBooking = candidates?.find((b: any) =>
+          b.member_name?.startsWith('API Submission') || b.import_batch_id === 'api-submission'
+        ) || null;
+      }
+
+      if (existingBooking) {
+        // Update the existing API-submitted booking with real name and link
+        console.log(`Linking research call to existing booking ${existingBooking.id}`);
+        await supabase.from('bookings').update({
           member_name: submission.caller_name,
-          booking_date: today,
-          move_in_date: today, // Required column, displayed as "--" for research
-          booking_type: 'Research',
-          status: 'Research',
-          agent_id: anyAgent.id,
-          contact_phone: submission.caller_phone || null,
-          created_by: user.id,
+          research_call_id: researchCallData.id,
           notes: submission.researcher_notes || null,
           call_duration_seconds: submission.call_duration_seconds || null,
-        });
+        }).eq('id', existingBooking.id);
+      } else {
+        // No existing booking found — create a new one
+        const { data: anyAgent } = await supabase
+          .from('agents')
+          .select('id')
+          .eq('active', true)
+          .limit(1)
+          .single();
+
+        if (anyAgent) {
+          const today = new Date().toISOString().split('T')[0];
+          await supabase.from('bookings').insert({
+            record_type: 'research',
+            research_call_id: researchCallData.id,
+            member_name: submission.caller_name,
+            booking_date: today,
+            move_in_date: today,
+            booking_type: 'Research',
+            status: 'Research',
+            agent_id: anyAgent.id,
+            contact_phone: submission.caller_phone || null,
+            created_by: user.id,
+            notes: submission.researcher_notes || null,
+            call_duration_seconds: submission.call_duration_seconds || null,
+          });
+        }
       }
     } catch (bookingErr) {
       // Non-fatal: research call was saved, just log the booking insert failure
-      console.error('Error creating booking record for research call:', bookingErr);
+      console.error('Error creating/updating booking record for research call:', bookingErr);
     }
 
     setIsSubmitting(false);

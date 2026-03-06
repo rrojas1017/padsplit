@@ -142,6 +142,76 @@ Deno.serve(async (req) => {
       }
     }
 
+    // ===== PASS 2: Cross-reference research_calls for placeholder names =====
+    console.log('[BackfillMemberDetails] Starting Pass 2: research_calls cross-reference...');
+    let researchUpdatedCount = 0;
+
+    // Find bookings with placeholder names that are research records
+    const { data: placeholderBookings, error: phError } = await supabase
+      .from('bookings')
+      .select('id, member_name, contact_phone, research_call_id')
+      .eq('record_type', 'research')
+      .ilike('member_name', 'API Submission%')
+      .limit(batchSize);
+
+    if (phError) {
+      console.error('[BackfillMemberDetails] Pass 2 fetch error:', phError);
+    } else if (placeholderBookings && placeholderBookings.length > 0) {
+      console.log(`[BackfillMemberDetails] Pass 2: Found ${placeholderBookings.length} placeholder research bookings`);
+
+      for (const booking of placeholderBookings) {
+        let realName: string | null = null;
+
+        // Try by research_call_id first
+        if (booking.research_call_id) {
+          const { data: rc } = await supabase
+            .from('research_calls')
+            .select('caller_name')
+            .eq('id', booking.research_call_id)
+            .maybeSingle();
+          if (rc?.caller_name && !rc.caller_name.startsWith('API Submission')) {
+            realName = rc.caller_name;
+          }
+        }
+
+        // Try by phone number
+        if (!realName && booking.contact_phone) {
+          const normalizedPhone = booking.contact_phone.replace(/\D/g, '').slice(-10);
+          if (normalizedPhone.length >= 10) {
+            const { data: rcByPhone } = await supabase
+              .from('research_calls')
+              .select('caller_name')
+              .ilike('caller_phone', `%${normalizedPhone}`)
+              .not('caller_name', 'ilike', 'API Submission%')
+              .order('created_at', { ascending: false })
+              .limit(1)
+              .maybeSingle();
+            if (rcByPhone?.caller_name) {
+              realName = rcByPhone.caller_name;
+            }
+          }
+        }
+
+        if (realName && !dryRun) {
+          const { error: updateErr } = await supabase
+            .from('bookings')
+            .update({ member_name: realName })
+            .eq('id', booking.id);
+
+          if (updateErr) {
+            console.error(`[BackfillMemberDetails] Pass 2 failed for ${booking.id}:`, updateErr);
+          } else {
+            researchUpdatedCount++;
+            console.log(`[BackfillMemberDetails] Pass 2: "${booking.member_name}" → "${realName}"`);
+          }
+        } else if (realName) {
+          researchUpdatedCount++; // count for dry run
+        }
+      }
+    }
+
+    console.log(`[BackfillMemberDetails] Pass 2 complete: ${researchUpdatedCount} research names updated`);
+
     const response = {
       success: true,
       dryRun,
@@ -149,6 +219,8 @@ Deno.serve(async (req) => {
       prepared: updates.length,
       updated: dryRun ? 0 : updatedCount,
       skipped: skippedCount,
+      researchNamesUpdated: dryRun ? 0 : researchUpdatedCount,
+      researchPlaceholdersFound: placeholderBookings?.length || 0,
       sampleUpdates: updates.slice(0, 10).map(u => ({
         id: u.id,
         changes: u.changes

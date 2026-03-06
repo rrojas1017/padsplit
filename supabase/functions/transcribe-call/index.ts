@@ -2039,35 +2039,80 @@ Be generous in matching — if the topic of a question was discussed even partia
 
     // ===== CONTACT DETAILS ENRICHMENT =====
     // Write extracted contact info back to bookings table
-    if (memberDetails) {
+    {
       const { data: contactBooking } = await supabase
         .from('bookings')
-        .select('member_name, contact_email, contact_phone')
+        .select('member_name, contact_email, contact_phone, research_call_id')
         .eq('id', bookingId)
         .single();
 
       const contactUpdate: Record<string, any> = {};
       
-      // Build full name from extracted first/last name
-      const extractedName = [memberDetails.firstName, memberDetails.lastName]
-        .filter(Boolean)
-        .join(' ')
-        .trim();
+      // Build full name from AI-extracted first/last name
+      const extractedName = memberDetails
+        ? [memberDetails.firstName, memberDetails.lastName].filter(Boolean).join(' ').trim()
+        : '';
       
-      // Update member_name if it's still the API Submission placeholder
-      if (extractedName && contactBooking?.member_name?.startsWith('API Submission')) {
+      const isPlaceholder = contactBooking?.member_name?.startsWith('API Submission');
+      
+      // Strategy 1: Use AI-extracted name from transcription
+      if (extractedName && isPlaceholder) {
         contactUpdate.member_name = extractedName;
-        console.log(`[Background] Contact name enriched: "${contactBooking.member_name}" → "${extractedName}"`);
+        console.log(`[Background] Contact name enriched (AI): "${contactBooking.member_name}" → "${extractedName}"`);
+      }
+      
+      // Strategy 2: Cross-reference research_calls table by phone number or research_call_id
+      if (isPlaceholder && !contactUpdate.member_name) {
+        try {
+          let researchCallName: string | null = null;
+          
+          // Try by research_call_id first
+          if (contactBooking?.research_call_id) {
+            const { data: rc } = await supabase
+              .from('research_calls')
+              .select('caller_name')
+              .eq('id', contactBooking.research_call_id)
+              .maybeSingle();
+            if (rc?.caller_name && !rc.caller_name.startsWith('API Submission')) {
+              researchCallName = rc.caller_name;
+            }
+          }
+          
+          // Try by phone number if no match yet
+          if (!researchCallName && contactBooking?.contact_phone) {
+            const normalizedPhone = contactBooking.contact_phone.replace(/\D/g, '').slice(-10);
+            if (normalizedPhone.length >= 10) {
+              const { data: rcByPhone } = await supabase
+                .from('research_calls')
+                .select('caller_name')
+                .ilike('caller_phone', `%${normalizedPhone}`)
+                .not('caller_name', 'ilike', 'API Submission%')
+                .order('created_at', { ascending: false })
+                .limit(1)
+                .maybeSingle();
+              if (rcByPhone?.caller_name) {
+                researchCallName = rcByPhone.caller_name;
+              }
+            }
+          }
+          
+          if (researchCallName) {
+            contactUpdate.member_name = researchCallName;
+            console.log(`[Background] Contact name enriched (research_calls): "${contactBooking.member_name}" → "${researchCallName}"`);
+          }
+        } catch (rcErr) {
+          console.error('[Background] Research call cross-reference error:', rcErr);
+        }
       }
       
       // Update contact_email if extracted and currently empty
-      if (memberDetails.email && !contactBooking?.contact_email) {
+      if (memberDetails?.email && !contactBooking?.contact_email) {
         contactUpdate.contact_email = memberDetails.email;
         console.log(`[Background] Contact email enriched: ${memberDetails.email}`);
       }
       
       // Update contact_phone if extracted and currently empty
-      if (memberDetails.phoneNumber && !contactBooking?.contact_phone) {
+      if (memberDetails?.phoneNumber && !contactBooking?.contact_phone) {
         contactUpdate.contact_phone = memberDetails.phoneNumber;
         console.log(`[Background] Contact phone enriched: ${memberDetails.phoneNumber}`);
       }
