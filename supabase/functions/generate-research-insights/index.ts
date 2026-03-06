@@ -247,38 +247,48 @@ async function processInsights(
         is_internal: false,
       });
     } else {
-      // Multi-batch: split and synthesize
+      // Multi-batch: split and synthesize IN PARALLEL
       const chunks: any[][] = [];
       for (let i = 0; i < recordSummaries.length; i += CHUNK_SIZE) {
         chunks.push(recordSummaries.slice(i, i + CHUNK_SIZE));
       }
 
-      console.log(`[Insights] Splitting ${recordSummaries.length} records into ${chunks.length} chunks`);
-      const chunkResults: any[] = [];
+      console.log(`[Insights] Splitting ${recordSummaries.length} records into ${chunks.length} chunks (parallel)`);
 
-      for (let i = 0; i < chunks.length; i++) {
-        console.log(`[Insights] Processing chunk ${i + 1}/${chunks.length} (${chunks[i].length} records)`);
-        const result = await callLovableAI(lovableApiKey, model, temperature, systemPrompt,
-          `Date range: ${dateRange}\nBatch ${i + 1} of ${chunks.length}\n\nHere are ${chunks[i].length} classified move-out records:\n\n${JSON.stringify(chunks[i], null, 2)}`
-        );
-
+      // Process all chunks in parallel
+      const chunkPromises = chunks.map(async (chunk, i) => {
+        console.log(`[Insights] Starting chunk ${i + 1}/${chunks.length} (${chunk.length} records)`);
         try {
-          const jsonMatch = result.content.match(/```(?:json)?\s*([\s\S]*?)```/);
-          chunkResults.push(JSON.parse(jsonMatch ? jsonMatch[1].trim() : result.content.trim()));
-        } catch {
-          console.error(`[Insights] Failed to parse chunk ${i + 1} result`);
-        }
+          const result = await callLovableAI(lovableApiKey, model, temperature, systemPrompt,
+            `Date range: ${dateRange}\nBatch ${i + 1} of ${chunks.length}\n\nHere are ${chunk.length} classified move-out records:\n\n${JSON.stringify(chunk, null, 2)}`
+          );
 
-        await logApiCost(supabase, {
-          service_provider: 'lovable_ai',
-          service_type: 'research_aggregation',
-          edge_function: 'generate-research-insights',
-          input_tokens: result.inputTokens,
-          output_tokens: result.outputTokens,
-          metadata: { model, prompt: 'C', chunk: i + 1, totalChunks: chunks.length },
-          triggered_by_user_id: triggeredByUserId || undefined,
-          is_internal: false,
-        });
+          await logApiCost(supabase, {
+            service_provider: 'lovable_ai',
+            service_type: 'research_aggregation',
+            edge_function: 'generate-research-insights',
+            input_tokens: result.inputTokens,
+            output_tokens: result.outputTokens,
+            metadata: { model, prompt: 'C', chunk: i + 1, totalChunks: chunks.length },
+            triggered_by_user_id: triggeredByUserId || undefined,
+            is_internal: false,
+          });
+
+          const jsonMatch = result.content.match(/```(?:json)?\s*([\s\S]*?)```/);
+          const parsed = JSON.parse(jsonMatch ? jsonMatch[1].trim() : result.content.trim());
+          console.log(`[Insights] Chunk ${i + 1} completed successfully`);
+          return parsed;
+        } catch (err) {
+          console.error(`[Insights] Failed to process chunk ${i + 1}:`, err);
+          return null;
+        }
+      });
+
+      const allChunkResults = await Promise.all(chunkPromises);
+      const chunkResults = allChunkResults.filter(Boolean);
+
+      if (chunkResults.length === 0) {
+        throw new Error('All chunks failed to process');
       }
 
       // Synthesize chunk results
@@ -488,22 +498,34 @@ Deno.serve(async (req) => {
 
     console.log(`[Insights] Created insight ${insight.id}, starting background processing for ${processedRecords.length} records`);
 
-    // Background processing
+    // Background processing with timeout guard
+    const TIMEOUT_MS = 4 * 60 * 1000; // 4 minutes
     EdgeRuntime.waitUntil(
-      processInsights(
-        supabaseUrl,
-        supabaseServiceKey,
-        lovableApiKey,
-        insight.id,
-        classifications,
-        extractions,
-        processedRecords,
-        dateRange,
-        model,
-        temperature,
-        systemPrompt,
-        triggeredByUserId
-      )
+      Promise.race([
+        processInsights(
+          supabaseUrl,
+          supabaseServiceKey,
+          lovableApiKey,
+          insight.id,
+          classifications,
+          extractions,
+          processedRecords,
+          dateRange,
+          model,
+          temperature,
+          systemPrompt,
+          triggeredByUserId
+        ),
+        new Promise<void>(async (_, reject) => {
+          await new Promise(r => setTimeout(r, TIMEOUT_MS));
+          console.error(`[Insights] Timeout after ${TIMEOUT_MS / 1000}s for insight ${insight.id}`);
+          await supabase
+            .from('research_insights')
+            .update({ status: 'failed', error_message: `Processing timed out after ${TIMEOUT_MS / 1000} seconds` })
+            .eq('id', insight.id);
+          reject(new Error('Timeout'));
+        }),
+      ]).catch(err => console.error(`[Insights] Background task error:`, err))
     );
 
     return new Response(
