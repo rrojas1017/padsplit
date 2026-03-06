@@ -1,38 +1,40 @@
 
 
-## Findings
+## Fix: Mark Stuck Report + Investigate Root Cause
 
-### Report Status
-- **Latest report `d331bff9`** is stuck in "processing" with empty data. The `EdgeRuntime.waitUntil` background task silently died — even with parallel chunks, the total processing time (3 parallel AI calls + 1 synthesis) exceeds the edge runtime's actual background execution limit (~150 seconds). The 4-minute timeout guard also didn't fire because the runtime killed the entire promise.
-- **Previous report `b6787fa1`** actually completed successfully with rich narrative data (title, key_findings, top_recommendation covering all 105 records). This is the most recent valid report.
+### Current State
+- Report `a5e5e6e3` is **stuck in "processing"** — all 3 chunks completed but the synthesis step likely timed out (no "Successfully completed" log entry)
+- Report `d331bff9` **completed successfully** — the synchronous fix worked for that run
+- The UI is likely polling or showing the stuck report instead of the completed one
 
-### Preventability Data Factors
-- The `preventability_data_factors` field is **missing from all classification records**. The reprocessing ran before or without the updated `process-research-record` function, so records don't have the new data-driven fields yet.
+### Root Cause
+The synchronous approach works when total processing fits within 300s. However, 3 parallel chunks (~110s) + synthesis (~90s) = ~200s, which is close to the limit. If synthesis takes longer (large payload), it can still time out. The function returns a timeout error to the HTTP client, but never updates the DB status to "failed" because the `catch` block in the request handler returns an HTTP error but doesn't update the `research_insights` record.
 
-### Plan: Fix Both Issues
+### Fix
 
-#### 1. Mark stuck report as failed + load last valid report
-Run a database update to mark `d331bff9` as failed. The UI will then fall back to showing `b6787fa1` (the completed one).
-
+**1. Database: Mark stuck report as failed**
 ```sql
 UPDATE research_insights 
-SET status = 'failed', error_message = 'Background task dropped by runtime' 
-WHERE id = 'd331bff9-281c-4c45-ae68-809ef8c27dcb';
+SET status = 'failed', error_message = 'HTTP timeout during synthesis' 
+WHERE id = 'a5e5e6e3-4028-4fcd-a594-25018981d87e' AND status = 'processing';
 ```
 
-#### 2. Fix the timeout architecture (generate-research-insights)
-The root cause is that `EdgeRuntime.waitUntil` has a hard ~150s limit that can't be extended. The fix is to move from background processing to **synchronous processing** — the HTTP response waits for completion. The Deno edge function has a 300s request timeout, which is sufficient for parallel chunks.
+**2. Code fix in `generate-research-insights/index.ts`**
+Add a `catch` block in the main request handler that updates the insight status to `'failed'` when `processInsights` throws or the request times out. Currently, if the function times out, the insight row stays in "processing" forever because only `processInsights` internal catch handles errors — but an HTTP-level timeout kills the whole function before that runs.
 
-**Changes to `supabase/functions/generate-research-insights/index.ts`:**
-- Remove `EdgeRuntime.waitUntil` and the timeout race
-- Process insights synchronously within the request handler
-- Return the completed insight ID in the response
-- The client already polls for status, so this is transparent
+Add after the `await processInsights(...)` call, in the outer `catch`:
+```typescript
+// In the catch block, check if we created an insight and mark it failed
+if (insight?.id) {
+  await supabase.from('research_insights')
+    .update({ status: 'failed', error_message: errorMessage })
+    .eq('id', insight.id);
+}
+```
 
-#### 3. Verify preventability data factors
-Check the deployed `process-research-record` function to confirm the `fetchMemberHistory` code is present. If it is, a re-run of "Reprocess All" will populate the `preventability_data_factors` in classifications. The next generated report will then reflect data-driven scores.
+This requires moving the `insight` variable declaration outside the try block so it's accessible in catch.
 
 ### Files to Edit
-- `supabase/functions/generate-research-insights/index.ts` — switch from background to synchronous processing
+- `supabase/functions/generate-research-insights/index.ts` — add failsafe status update in the catch block
 - Database: one-time update to unblock the stuck report
 
