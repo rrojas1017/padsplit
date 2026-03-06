@@ -309,7 +309,7 @@ export default function ResearchInsights() {
             )}
           </div>
 
-          <HumanReviewQueue />
+          <HumanReviewQueue onReviewComplete={() => { refresh(); fetchProcessingStats(); }} />
           <ProcessedRecordsList />
         </div>
       )}
