@@ -86,6 +86,7 @@ Respond with ONLY the JSON object below. No preamble, no markdown, no explanatio
       "frequency": 0,
       "pct_of_total": 0.0,
       "reason_codes_included": [],
+      "booking_ids": ["uuid1", "uuid2"],
       "severity_distribution": { "critical": 0, "high": 0, "medium": 0, "low": 0 },
       "representative_quotes": [],
       "common_early_warnings": [],
@@ -174,7 +175,7 @@ AGGREGATION RULES:
 5. BLIND SPOTS — the most valuable insight is what nobody is tracking.
 6. HONESTY — if data shows a serious systemic problem, say so directly.
 7. QUICK WINS — for every major recommendation, identify a small fast action.
-8. BOOKING IDS — each record has a booking_id field. In reason_code_distribution, you MUST include the exact booking_ids array for each group so we can trace back to source records. Also list the exact reason_codes_included (the individual primary_reason_code values) that were grouped together.`;
+8. BOOKING IDS — each record has a booking_id field. In reason_code_distribution AND issue_clusters, you MUST include the exact booking_ids array for each group/cluster so we can trace back to source records. Also list the exact reason_codes_included (the individual primary_reason_code values) that were grouped together.`;
 
 async function processInsights(
   supabaseUrl: string,

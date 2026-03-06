@@ -1,7 +1,8 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
-import { ChevronDown, Lightbulb } from 'lucide-react';
+import { ChevronDown, Lightbulb, ExternalLink } from 'lucide-react';
 import { useState } from 'react';
 import { PriorityBadge } from './PriorityBadge';
 
@@ -17,6 +18,8 @@ interface IssueCluster {
   key_quotes?: string[];
   systemic_root_cause?: string;
   root_cause?: string;
+  booking_ids?: string[];
+  reason_codes_included?: string[];
   recommended_action?: {
     action: string;
     owner?: string;
@@ -29,9 +32,10 @@ interface IssueCluster {
 
 interface IssueClustersProps {
   data: IssueCluster[];
+  onClusterClick?: (clusterName: string, bookingIds?: string[], reasonCodes?: string[]) => void;
 }
 
-export function IssueClustersPanel({ data }: IssueClustersProps) {
+export function IssueClustersPanel({ data, onClusterClick }: IssueClustersProps) {
   if (!data?.length) return null;
 
   return (
@@ -41,14 +45,14 @@ export function IssueClustersPanel({ data }: IssueClustersProps) {
       </CardHeader>
       <CardContent className="space-y-3">
         {data.map((cluster, i) => (
-          <ClusterCard key={i} cluster={cluster} />
+          <ClusterCard key={i} cluster={cluster} onClusterClick={onClusterClick} />
         ))}
       </CardContent>
     </Card>
   );
 }
 
-function ClusterCard({ cluster }: { cluster: IssueCluster }) {
+function ClusterCard({ cluster, onClusterClick }: { cluster: IssueCluster; onClusterClick?: IssueClustersProps['onClusterClick'] }) {
   const [open, setOpen] = useState(false);
 
   const freq = cluster.frequency ?? cluster.case_count;
@@ -79,6 +83,22 @@ function ClusterCard({ cluster }: { cluster: IssueCluster }) {
       <CollapsibleContent>
         <div className="px-4 pb-4 space-y-4 mt-2">
           {desc && <p className="text-sm text-muted-foreground">{desc}</p>}
+
+          {/* View records button */}
+          {onClusterClick && freq != null && freq > 0 && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-2 border-primary/30 text-primary hover:bg-primary/10 hover:border-primary/50 transition-all"
+              onClick={(e) => {
+                e.stopPropagation();
+                onClusterClick(cluster.cluster_name, cluster.booking_ids, cluster.reason_codes_included);
+              }}
+            >
+              <ExternalLink className="w-3.5 h-3.5" />
+              View {freq} records
+            </Button>
+          )}
 
           {/* Severity distribution (legacy) */}
           {cluster.severity_distribution && (
