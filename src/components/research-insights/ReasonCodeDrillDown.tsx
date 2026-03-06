@@ -3,7 +3,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from '@/components/ui/collapsible';
-import { ChevronDown, ChevronRight, Calendar, User, AlertTriangle, Quote } from 'lucide-react';
+import { ChevronDown, ChevronRight, Calendar, User, Quote } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { format } from 'date-fns';
 
@@ -23,9 +23,77 @@ interface ReasonCodeDrillDownProps {
   onOpenChange: (open: boolean) => void;
   reasonCode: string;
   reasonColor: string;
+  /** Pre-mapped booking IDs from the report (new reports include these) */
+  bookingIds?: string[];
+  /** Included reason codes from the report category */
+  includedReasonCodes?: string[];
+  /** Category description for keyword extraction */
+  categoryDescription?: string;
 }
 
-export function ReasonCodeDrillDown({ open, onOpenChange, reasonCode, reasonColor }: ReasonCodeDrillDownProps) {
+// Semantic keyword sets for known high-level categories
+const CATEGORY_KEYWORDS: Record<string, string[]> = {
+  'positive': ['graduation', 'positive', 'life event', 'personal', 'external', 'planned', 'found other', 'found better', 'relocation', 'moving', 'unavoidable', 'voluntary', 'natural', 'upgrade', 'better opportunity', 'job change', 'family', 'marriage', 'milestone'],
+  'host': ['property', 'host', 'maintenance', 'safety', 'habitability', 'pest', 'mold', 'conditions', 'landlord', 'repair', 'cleanliness', 'utilities', 'broken', 'infestation', 'violation', 'unresponsive host'],
+  'financial': ['financial', 'payment', 'afford', 'hardship', 'billing', 'cant afford', 'eviction', 'fee', 'cost', 'price', 'income', 'job loss', 'unemploy', 'debt', 'money', 'economic', 'rent increase'],
+  'roommate': ['roommate', 'conflict', 'assault', 'threat', 'harassment', 'noise', 'disrespect', 'theft', 'fighting', 'uncomfortable', 'hostile', 'altercation', 'violence', 'intimidation'],
+  'platform': ['platform', 'process', 'policy', 'bug', 'house rules', 'support', 'communication', 'transfer', 'app', 'system', 'rule', 'admin', 'management', 'customer service', 'response time'],
+  'other': ['other', 'unknown', 'unresponsive', 'unclear', 'not specified', 'n/a', 'miscellaneous'],
+};
+
+function extractKeywordsFromCategory(categoryName: string, description?: string): string[] {
+  const text = `${categoryName} ${description || ''}`.toLowerCase();
+  const matchedKeywords: string[] = [];
+
+  for (const [, keywords] of Object.entries(CATEGORY_KEYWORDS)) {
+    for (const kw of keywords) {
+      if (text.includes(kw)) {
+        matchedKeywords.push(...keywords);
+        break; // Found a match for this category, include all its keywords
+      }
+    }
+  }
+
+  // Also extract individual words from the category name as fallback
+  const words = categoryName.toLowerCase().replace(/[^a-z0-9\s]/g, '').split(/\s+/).filter(w => w.length > 3);
+  matchedKeywords.push(...words);
+
+  return [...new Set(matchedKeywords)];
+}
+
+function recordMatchesCategory(
+  classification: any,
+  keywords: string[],
+  includedReasonCodes?: string[]
+): boolean {
+  if (!classification) return false;
+
+  const code = (classification.primary_reason_code || classification.reason_code || '').toLowerCase();
+  const rootCause = (classification.root_cause_summary || classification.root_cause || classification.summary || '').toLowerCase();
+  const subReasons = (classification.sub_reasons || []).join(' ').toLowerCase();
+  const searchText = `${code} ${rootCause} ${subReasons}`;
+
+  // Check against included reason codes first (most precise)
+  if (includedReasonCodes?.length) {
+    const normalise = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, '');
+    const normCode = normalise(code);
+    for (const irc of includedReasonCodes) {
+      const normIrc = normalise(irc);
+      if (normCode.includes(normIrc) || normIrc.includes(normCode)) return true;
+    }
+  }
+
+  // Check against semantic keywords
+  for (const kw of keywords) {
+    if (searchText.includes(kw.toLowerCase())) return true;
+  }
+
+  return false;
+}
+
+export function ReasonCodeDrillDown({
+  open, onOpenChange, reasonCode, reasonColor, bookingIds, includedReasonCodes, categoryDescription
+}: ReasonCodeDrillDownProps) {
   const [records, setRecords] = useState<DrillDownRecord[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -39,7 +107,35 @@ export function ReasonCodeDrillDown({ open, onOpenChange, reasonCode, reasonColo
     setIsLoading(true);
     setRecords([]);
     try {
-      // Fetch all completed research records with their classification
+      // Strategy 1: If we have booking IDs from the report, fetch directly
+      if (bookingIds?.length) {
+        const { data, error } = await supabase
+          .from('booking_transcriptions')
+          .select('booking_id, research_classification, bookings!inner(id, member_name, booking_date)')
+          .in('booking_id', bookingIds);
+
+        if (!error && data?.length) {
+          const matched = data.map((row: any) => {
+            const booking = row.bookings as any;
+            const cls = row.research_classification as any;
+            return {
+              bookingId: row.booking_id,
+              memberName: booking?.member_name || 'Unknown',
+              bookingDate: booking?.booking_date || '',
+              preventabilityScore: cls?.preventability_score ?? cls?.preventability ?? null,
+              rootCauseSummary: cls?.root_cause_summary || cls?.root_cause || cls?.summary || null,
+              keyQuote: cls?.key_quote || cls?.supporting_quote || null,
+              primaryReasonCode: cls?.primary_reason_code || cls?.reason_code || '',
+              classification: cls,
+            };
+          }).sort((a: DrillDownRecord, b: DrillDownRecord) => (b.bookingDate > a.bookingDate ? 1 : -1));
+          setRecords(matched);
+          setIsLoading(false);
+          return;
+        }
+      }
+
+      // Strategy 2 & 3: Keyword matching fallback
       const { data, error } = await supabase
         .from('booking_transcriptions')
         .select('booking_id, research_classification, bookings!inner(id, member_name, booking_date, record_type, has_valid_conversation)')
@@ -48,11 +144,9 @@ export function ReasonCodeDrillDown({ open, onOpenChange, reasonCode, reasonColo
 
       if (error) throw error;
 
-      // Client-side filter by primary_reason_code matching
-      const normalise = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, '');
-      const targetNorm = normalise(reasonCode);
-
+      const keywords = extractKeywordsFromCategory(reasonCode, categoryDescription);
       const matched: DrillDownRecord[] = [];
+
       for (const row of data || []) {
         const booking = row.bookings as any;
         if (booking?.record_type !== 'research' || !booking?.has_valid_conversation) continue;
@@ -60,11 +154,7 @@ export function ReasonCodeDrillDown({ open, onOpenChange, reasonCode, reasonColo
         const cls = row.research_classification as any;
         if (!cls) continue;
 
-        const code = cls.primary_reason_code || cls.reason_code || '';
-        const codeNorm = normalise(code);
-
-        // Fuzzy match: check if one contains the other or significant overlap
-        if (codeNorm.includes(targetNorm) || targetNorm.includes(codeNorm) || fuzzyMatch(targetNorm, codeNorm)) {
+        if (recordMatchesCategory(cls, keywords, includedReasonCodes)) {
           matched.push({
             bookingId: row.booking_id,
             memberName: booking.member_name || 'Unknown',
@@ -72,13 +162,12 @@ export function ReasonCodeDrillDown({ open, onOpenChange, reasonCode, reasonColo
             preventabilityScore: cls.preventability_score ?? cls.preventability ?? null,
             rootCauseSummary: cls.root_cause_summary || cls.root_cause || cls.summary || null,
             keyQuote: cls.key_quote || cls.supporting_quote || null,
-            primaryReasonCode: code,
+            primaryReasonCode: cls.primary_reason_code || cls.reason_code || '',
             classification: cls,
           });
         }
       }
 
-      // Sort by date descending
       matched.sort((a, b) => (b.bookingDate > a.bookingDate ? 1 : -1));
       setRecords(matched);
     } catch (err) {
@@ -171,6 +260,12 @@ export function ReasonCodeDrillDown({ open, onOpenChange, reasonCode, reasonColo
                         <p className="text-xs text-muted-foreground">{rec.preventabilityScore}/10</p>
                       </div>
                     )}
+                    {rec.primaryReasonCode && (
+                      <div>
+                        <p className="text-xs font-medium text-foreground mb-1">Reason Code</p>
+                        <Badge variant="outline" className="text-xs">{rec.primaryReasonCode}</Badge>
+                      </div>
+                    )}
                     {rec.classification?.sub_reasons?.length > 0 && (
                       <div>
                         <p className="text-xs font-medium text-foreground mb-1">Sub-Reasons</p>
@@ -190,20 +285,4 @@ export function ReasonCodeDrillDown({ open, onOpenChange, reasonCode, reasonColo
       </DialogContent>
     </Dialog>
   );
-}
-
-function fuzzyMatch(a: string, b: string): boolean {
-  if (!a || !b) return false;
-  // Check if they share at least 60% of the longer string
-  const longer = a.length > b.length ? a : b;
-  const shorter = a.length > b.length ? b : a;
-  if (shorter.length < 4) return false;
-  
-  // Simple word overlap check
-  const wordsA = a.match(/.{3}/g) || [];
-  let matches = 0;
-  for (const w of wordsA) {
-    if (b.includes(w)) matches++;
-  }
-  return wordsA.length > 0 && matches / wordsA.length > 0.6;
 }

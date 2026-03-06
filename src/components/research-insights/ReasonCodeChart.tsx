@@ -5,23 +5,29 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContaine
 import { ExternalLink } from 'lucide-react';
 import { ReasonCodeDrillDown } from './ReasonCodeDrillDown';
 
+interface CategoryItem {
+  category: string;
+  count: number;
+  percentage: number;
+  description?: string;
+  booking_ids?: string[];
+  reason_codes_included?: string[];
+}
+
 interface ReasonCodeChartProps {
   data: {
     total_cases?: number;
     preventable_churn?: number;
     unpreventable_churn?: number;
-    by_category?: Array<{
-      category: string;
-      count: number;
-      percentage: number;
-      description?: string;
-    }>;
+    by_category?: CategoryItem[];
     // Legacy nested format
     distribution?: Array<{
       reason_group: string;
       count: number;
       percentage: number;
       details?: string;
+      booking_ids?: string[];
+      reason_codes_included?: string[];
     }>;
     methodology?: string;
   } | Array<{
@@ -34,10 +40,13 @@ interface ReasonCodeChartProps {
 export function ReasonCodeChart({ data }: ReasonCodeChartProps) {
   const [selectedReason, setSelectedReason] = useState<string | null>(null);
   const [selectedColor, setSelectedColor] = useState<string>('');
+  const [selectedBookingIds, setSelectedBookingIds] = useState<string[] | undefined>();
+  const [selectedIncludedCodes, setSelectedIncludedCodes] = useState<string[] | undefined>();
+  const [selectedDescription, setSelectedDescription] = useState<string | undefined>();
 
   if (!data) return null;
 
-  let chartData: Array<{ name: string; count: number; pct: number; details?: string }> = [];
+  let chartData: Array<{ name: string; count: number; pct: number; details?: string; bookingIds?: string[]; includedCodes?: string[] }> = [];
   let totalCases: number | undefined;
   let preventable: number | undefined;
   let unpreventable: number | undefined;
@@ -57,6 +66,8 @@ export function ReasonCodeChart({ data }: ReasonCodeChartProps) {
         count: d.count,
         pct: d.percentage,
         details: d.description,
+        bookingIds: d.booking_ids,
+        includedCodes: d.reason_codes_included,
       }));
     } else if (data.distribution?.length) {
       chartData = data.distribution.map(d => ({
@@ -64,6 +75,8 @@ export function ReasonCodeChart({ data }: ReasonCodeChartProps) {
         count: d.count,
         pct: d.percentage,
         details: d.details,
+        bookingIds: d.booking_ids,
+        includedCodes: d.reason_codes_included,
       }));
     }
   }
@@ -81,9 +94,12 @@ export function ReasonCodeChart({ data }: ReasonCodeChartProps) {
     'hsl(262, 83%, 58%)',
   ];
 
-  const handleReasonClick = (name: string, colorIndex: number) => {
-    setSelectedReason(name);
+  const handleReasonClick = (item: typeof sorted[0], colorIndex: number) => {
+    setSelectedReason(item.name);
     setSelectedColor(COLORS[colorIndex % COLORS.length]);
+    setSelectedBookingIds(item.bookingIds);
+    setSelectedIncludedCodes(item.includedCodes);
+    setSelectedDescription(item.details);
   };
 
   return (
@@ -129,7 +145,7 @@ export function ReasonCodeChart({ data }: ReasonCodeChartProps) {
                 contentStyle={{ background: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', borderRadius: '8px' }}
                 labelStyle={{ color: 'hsl(var(--foreground))' }}
               />
-              <Bar dataKey="count" radius={[0, 4, 4, 0]} className="cursor-pointer" onClick={(_data: any, index: number) => handleReasonClick(sorted[index].name, index)}>
+              <Bar dataKey="count" radius={[0, 4, 4, 0]} className="cursor-pointer" onClick={(_data: any, index: number) => handleReasonClick(sorted[index], index)}>
                 {sorted.map((_entry, index) => (
                   <Cell key={index} fill={COLORS[index % COLORS.length]} />
                 ))}
@@ -143,7 +159,7 @@ export function ReasonCodeChart({ data }: ReasonCodeChartProps) {
               <div
                 key={i}
                 className="flex items-start gap-3 text-sm border border-border rounded-lg p-3 cursor-pointer hover:bg-muted/50 hover:border-primary/30 transition-colors group"
-                onClick={() => handleReasonClick(item.name, i)}
+                onClick={() => handleReasonClick(item, i)}
               >
                 <div className="w-3 h-3 rounded-sm flex-shrink-0 mt-1" style={{ background: COLORS[i % COLORS.length] }} />
                 <div className="flex-1 min-w-0">
@@ -173,6 +189,9 @@ export function ReasonCodeChart({ data }: ReasonCodeChartProps) {
         onOpenChange={(open) => { if (!open) setSelectedReason(null); }}
         reasonCode={selectedReason || ''}
         reasonColor={selectedColor}
+        bookingIds={selectedBookingIds}
+        includedReasonCodes={selectedIncludedCodes}
+        categoryDescription={selectedDescription}
       />
     </>
   );

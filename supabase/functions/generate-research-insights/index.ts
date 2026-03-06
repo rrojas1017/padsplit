@@ -67,7 +67,7 @@ Respond with ONLY the JSON object below. No preamble, no markdown, no explanatio
     "headline": "Single sentence capturing the most important finding."
   },
   "reason_code_distribution": [
-    { "code": "Reason code", "count": 0, "pct": 0.0, "avg_preventability": 0.0 }
+    { "code": "Reason code", "count": 0, "pct": 0.0, "avg_preventability": 0.0, "booking_ids": ["booking-uuid-1"], "reason_codes_included": ["GRANULAR_CODE_1"] }
   ],
   "issue_clusters": [
     {
@@ -76,6 +76,7 @@ Respond with ONLY the JSON object below. No preamble, no markdown, no explanatio
       "frequency": 0,
       "pct_of_total": 0.0,
       "reason_codes_included": [],
+      "booking_ids": [],
       "severity_distribution": { "critical": 0, "high": 0, "medium": 0, "low": 0 },
       "representative_quotes": [],
       "common_early_warnings": [],
@@ -163,7 +164,8 @@ AGGREGATION RULES:
 4. PRIORITIZATION: P0 = safety/legal/>40%. P1 = high-regret/20-40%. P2 = moderate.
 5. BLIND SPOTS — the most valuable insight is what nobody is tracking.
 6. HONESTY — if data shows a serious systemic problem, say so directly.
-7. QUICK WINS — for every major recommendation, identify a small fast action.`;
+7. QUICK WINS — for every major recommendation, identify a small fast action.
+8. BOOKING IDS — each record has a "_booking_id" field. Include the array of booking IDs in "reason_code_distribution" and "issue_clusters" so the UI can trace back to individual records. Also include "reason_codes_included" listing the granular primary_reason_code values grouped into each category.`;
 
 async function processInsights(
   supabaseUrl: string,
@@ -428,7 +430,7 @@ Deno.serve(async (req) => {
 
     const classifications = processedRecords.map((r: any) => {
       const t = Array.isArray(r.booking_transcriptions) ? r.booking_transcriptions[0] : r.booking_transcriptions;
-      return t.research_classification;
+      return { ...t.research_classification, _booking_id: r.id };
     });
 
     const extractions = processedRecords.map((r: any) => {
