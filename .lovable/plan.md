@@ -1,32 +1,41 @@
 
 
-## Make Issue Clusters Drill-Down & Improve Visual Clickability
+## Make the Human Review Queue Actionable
 
-### Current State
-- **ReasonCodeChart**: Already has clickable drill-down via `onGroupClick` — works with `ReasonCodeDrillDown` sheet. Has subtle "Click to view records →" hint.
-- **IssueClustersPanel**: No drill-down at all. Has `reason_codes_included` in the AI schema but no `booking_ids`, and no click handler.
-- **Visual cues**: Both components lack strong visual affordance that they're clickable.
+Currently the 33 flagged items are listed with a name, date, reason code, and a truncated review reason — but admins can't do anything with them. Here's the plan to make it useful:
 
-### Changes
+### What each review item needs
 
-**1. Update AI Prompt C schema** (`supabase/functions/generate-research-insights/index.ts`)
-- Add `booking_ids: []` to the `issue_clusters` schema so the AI maps specific records to each cluster.
+Each row should let the admin:
+1. **Expand to see full context** — the AI's review reason (why it was flagged), the assigned reason code, and key quotes from the transcript
+2. **View the transcript** — link/button to open the full call transcript
+3. **Approve or Override** — confirm the AI's classification is correct, or pick a different reason code
+4. **Dismiss** — mark as reviewed (clears the `research_human_review` flag) so it leaves the queue
 
-**2. Add drill-down to IssueClustersPanel** (`src/components/research-insights/IssueClustersPanel.tsx`)
-- Add `onClusterClick` callback prop mirroring the ReasonCodeChart pattern.
-- Add a "View X records →" button inside each expanded cluster card that triggers the drill-down.
-- Pass `booking_ids` and `reason_codes_included` from cluster data to the callback.
-- Update the `IssueCluster` interface to include `booking_ids?: string[]` and `reason_codes_included?: string[]`.
+### Implementation
 
-**3. Wire up in ResearchInsights.tsx** (`src/pages/research/ResearchInsights.tsx`)
-- Pass `onClusterClick` to `IssueClustersPanel` that opens the same `ReasonCodeDrillDown` sheet, reusing the existing component.
+**1. Redesign `HumanReviewQueue.tsx`**
+- Convert each row into an expandable accordion-style card
+- Expanded view shows: full `human_review_reason`, the AI's `primary_reason_code`, confidence score, and key quotes from `research_classification`
+- Add action buttons: "Approve" (clears flag), "Override" (opens reason code selector, saves new code, clears flag), "View Transcript" (opens the existing `TranscriptionModal`)
+- Add a "Dismiss" option that simply clears the review flag without changing classification
 
-**4. Improve visual clickability on both components**
-- **ReasonCodeChart detail cards**: Add a subtle right-arrow icon (ExternalLink or ChevronRight), stronger hover effect (border color change), and a group-level hover ring.
-- **IssueClustersPanel**: Add a dedicated "View records" button with an ExternalLink icon inside the expanded content. Keep the collapsible trigger as-is (it's for expand/collapse, not drill-down).
-- Both get `group-hover` transitions and pointer cursor to signal interactivity.
+**2. Add review actions**
+- **Approve**: Sets `research_human_review = false` on the record (keeps existing classification)
+- **Override**: Updates `research_classification.primary_reason_code` with admin's selection and sets `research_human_review = false`
+- Both actions update the record via Supabase and remove the item from the queue in the UI
+- Show a toast confirmation after each action
 
-### Technical Details
-- Reuses the existing `ReasonCodeDrillDown` component for both reason codes and issue clusters — no new components needed.
-- The fallback query strategy in `ReasonCodeDrillDown` already handles `reasonCodesIncluded`, so issue clusters with only `reason_codes_included` (no `booking_ids`) will still work for older reports.
+**3. Add bulk actions**
+- "Approve All" button to clear all flags at once (with a confirmation dialog)
+- Counter updates in real-time as items are resolved
+
+**4. Update processing stats**
+- After approving/dismissing items, refresh the `humanReviewCount` in the parent stats banner so the amber "33 flagged" card updates
+
+### Technical details
+- Queries use existing `booking_transcriptions` table — no schema changes needed
+- The `research_human_review` boolean column already exists for toggling
+- The `research_classification` JSONB column holds the reason code to override
+- Reason code options can be derived from the existing reason code distribution data or a static list
 

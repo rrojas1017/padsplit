@@ -66,19 +66,9 @@ Respond with ONLY the JSON object below. No preamble, no markdown, no explanatio
     "life_event_pct": 0.0,
     "headline": "Single sentence capturing the most important finding."
   },
-  "reason_code_distribution": {
-    "distribution": [
-      {
-        "reason_group": "Clear descriptive group label",
-        "count": 0,
-        "percentage": 0.0,
-        "details": "Why these records are grouped together",
-        "reason_codes_included": ["Exact reason code 1", "Exact reason code 2"],
-        "booking_ids": ["uuid1", "uuid2"]
-      }
-    ],
-    "methodology": "How groups were determined and why"
-  },
+  "reason_code_distribution": [
+    { "code": "Reason code", "count": 0, "pct": 0.0, "avg_preventability": 0.0 }
+  ],
   "issue_clusters": [
     {
       "cluster_name": "Clear theme name",
@@ -86,7 +76,6 @@ Respond with ONLY the JSON object below. No preamble, no markdown, no explanatio
       "frequency": 0,
       "pct_of_total": 0.0,
       "reason_codes_included": [],
-      "booking_ids": ["uuid1", "uuid2"],
       "severity_distribution": { "critical": 0, "high": 0, "medium": 0, "low": 0 },
       "representative_quotes": [],
       "common_early_warnings": [],
@@ -174,8 +163,7 @@ AGGREGATION RULES:
 4. PRIORITIZATION: P0 = safety/legal/>40%. P1 = high-regret/20-40%. P2 = moderate.
 5. BLIND SPOTS — the most valuable insight is what nobody is tracking.
 6. HONESTY — if data shows a serious systemic problem, say so directly.
-7. QUICK WINS — for every major recommendation, identify a small fast action.
-8. BOOKING IDS — each record has a booking_id field. In reason_code_distribution AND issue_clusters, you MUST include the exact booking_ids array for each group/cluster so we can trace back to source records. Also list the exact reason_codes_included (the individual primary_reason_code values) that were grouped together.`;
+7. QUICK WINS — for every major recommendation, identify a small fast action.`;
 
 async function processInsights(
   supabaseUrl: string,
@@ -184,7 +172,6 @@ async function processInsights(
   insightId: string,
   classifications: any[],
   extractions: any[],
-  processedRecords: any[],
   dateRange: string,
   model: string,
   temperature: number,
@@ -199,11 +186,10 @@ async function processInsights(
     // Build combined data for Prompt C
     const recordSummaries = classifications.map((c: any, i: number) => {
       const extraction = extractions[i];
-      const record = processedRecords[i] as any;
       return {
         ...c,
-        booking_id: record?.id,
-        member_name: extraction?.member_name || record?.member_name,
+        // Include key extraction fields for richer context
+        member_name: extraction?.member_name,
         length_of_stay: extraction?.length_of_stay,
         primary_reason_stated: extraction?.primary_reason_stated,
         issues_count: extraction?.issues_mentioned?.length || 0,
@@ -497,7 +483,6 @@ Deno.serve(async (req) => {
         insight.id,
         classifications,
         extractions,
-        processedRecords,
         dateRange,
         model,
         temperature,

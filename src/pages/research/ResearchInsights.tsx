@@ -26,19 +26,12 @@ import { EmergingPatternsPanel } from '@/components/research-insights/EmergingPa
 import { HumanReviewQueue } from '@/components/research-insights/HumanReviewQueue';
 import { ProcessedRecordsList } from '@/components/research-insights/ProcessedRecordsList';
 import { PriorityGlossary } from '@/components/research-insights/PriorityGlossary';
-import { ReasonCodeDrillDown } from '@/components/research-insights/ReasonCodeDrillDown';
 
 export default function ResearchInsights() {
   const [dateRange, setDateRange] = useState<DateRangeOption>('allTime');
   const [campaignId, setCampaignId] = useState<string>('all');
   const [isGenerating, setIsGenerating] = useState(false);
   const [isBackfilling, setIsBackfilling] = useState(false);
-  const [drillDown, setDrillDown] = useState<{
-    open: boolean;
-    groupName: string;
-    bookingIds?: string[];
-    reasonCodes?: string[];
-  }>({ open: false, groupName: '' });
 
   const {
     reports,
@@ -271,23 +264,13 @@ export default function ResearchInsights() {
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             {reportData.reason_code_distribution && (
               <div className="lg:col-span-2">
-                <ReasonCodeChart
-                  data={reportData.reason_code_distribution}
-                  onGroupClick={(groupName, bookingIds, reasonCodes) =>
-                    setDrillDown({ open: true, groupName, bookingIds, reasonCodes })
-                  }
-                />
+                <ReasonCodeChart data={reportData.reason_code_distribution} />
               </div>
             )}
 
             {reportData.issue_clusters && (
               <div className="lg:col-span-2">
-                <IssueClustersPanel
-                  data={reportData.issue_clusters}
-                  onClusterClick={(clusterName, bookingIds, reasonCodes) =>
-                    setDrillDown({ open: true, groupName: clusterName, bookingIds, reasonCodes })
-                  }
-                />
+                <IssueClustersPanel data={reportData.issue_clusters} />
               </div>
             )}
 
@@ -328,17 +311,6 @@ export default function ResearchInsights() {
 
           <HumanReviewQueue onReviewComplete={() => { refresh(); fetchProcessingStats(); }} />
           <ProcessedRecordsList />
-
-          <ReasonCodeDrillDown
-            open={drillDown.open}
-            onOpenChange={(open) => setDrillDown(prev => ({ ...prev, open }))}
-            groupName={drillDown.groupName}
-            bookingIds={drillDown.bookingIds}
-            reasonCodesIncluded={drillDown.reasonCodes}
-            campaignId={campaignId !== 'all' ? campaignId : undefined}
-            dateRangeStart={selectedReport?.date_range_start || undefined}
-            dateRangeEnd={selectedReport?.date_range_end || undefined}
-          />
         </div>
       )}
 
