@@ -172,7 +172,17 @@ AGGREGATION RULES:
 5. BLIND SPOTS — the most valuable insight is what nobody is tracking.
 6. HONESTY — if data shows a serious systemic problem, say so directly.
 7. QUICK WINS — for every major recommendation, identify a small fast action.
-8. BOOKING IDS — each record has a booking_id field. In reason_code_distribution AND issue_clusters, you MUST include the exact booking_ids array for each group/cluster so we can trace back to source records. Also list the exact reason_codes_included (the individual primary_reason_code values) that were grouped together.`;
+8. BOOKING IDS — each record has a booking_id field. In reason_code_distribution AND issue_clusters, you MUST include the exact booking_ids array for each group/cluster so we can trace back to source records. Also list the exact reason_codes_included (the individual primary_reason_code values) that were grouped together.
+
+FIELD NAME REQUIREMENTS (DO NOT use alternative names):
+- Use "booking_ids" NOT "case_ids"
+- Use "representative_quotes" NOT "key_quotes", "supporting_quotes", or "impact_quote"  
+- Use "cluster_description" NOT "description"
+- Use "frequency" NOT "case_count" or "count"
+- Use "systemic_root_cause" NOT "root_cause"
+- Use "recommended_action" as an OBJECT {action, owner, priority, expected_impact, effort, quick_win} NOT a string
+- Use "reason_codes_included" NOT "reason_codes"
+- Use "pct_of_total" NOT "percentage"`;
 
 // Normalize issue clusters to match expected UI schema
 function normalizeInsightData(data: any, totalRecords: number): any {
@@ -181,18 +191,26 @@ function normalizeInsightData(data: any, totalRecords: number): any {
   // Normalize issue_clusters
   if (Array.isArray(data.issue_clusters)) {
     data.issue_clusters = data.issue_clusters.map((cluster: any) => {
-      // Fix field name mismatches
+      // Fix field name mismatches — handle ALL observed AI variations
+      const freq = cluster.frequency || cluster.case_count || cluster.count || cluster.cases_affected || 0;
+      const bookingIds = cluster.booking_ids || cluster.case_ids || [];
+      const quotes = cluster.representative_quotes || cluster.supporting_quotes || cluster.key_quotes || cluster.quotes || [];
+      // Wrap single-string impact_quote into array
+      const finalQuotes = quotes.length > 0 ? quotes :
+        (cluster.impact_quote ? [cluster.impact_quote] : 
+         (Array.isArray(cluster.key_issues) ? cluster.key_issues : []));
+
       const normalized: any = {
         cluster_name: (cluster.cluster_name || cluster.name || 'Unknown')
           .replace(/^P[0-3]:\s*/i, ''), // Strip priority prefixes
         cluster_description: cluster.cluster_description || cluster.description || cluster.summary || '',
-        frequency: cluster.frequency || cluster.count || cluster.cases_affected || 0,
+        frequency: freq,
         pct_of_total: cluster.pct_of_total || cluster.percentage ||
-          (totalRecords > 0 ? Math.round(((cluster.frequency || cluster.count || 0) / totalRecords) * 1000) / 10 : 0),
-        booking_ids: cluster.booking_ids || [],
+          (totalRecords > 0 ? Math.round((freq / totalRecords) * 1000) / 10 : 0),
+        booking_ids: bookingIds,
         reason_codes_included: cluster.reason_codes_included || cluster.reason_codes || [],
         severity_distribution: cluster.severity_distribution || { critical: 0, high: 0, medium: 0, low: 0 },
-        representative_quotes: cluster.representative_quotes || cluster.supporting_quotes || cluster.quotes || [],
+        representative_quotes: finalQuotes,
         common_early_warnings: cluster.common_early_warnings || [],
         systemic_root_cause: cluster.systemic_root_cause || cluster.root_cause || '',
       };
@@ -236,11 +254,11 @@ function normalizeInsightData(data: any, totalRecords: number): any {
   if (data.reason_code_distribution?.distribution && Array.isArray(data.reason_code_distribution.distribution)) {
     data.reason_code_distribution.distribution = data.reason_code_distribution.distribution.map((item: any) => ({
       reason_group: item.reason_group || item.group || 'Unknown',
-      count: item.count || 0,
-      percentage: item.percentage || 0,
-      details: item.details || '',
-      reason_codes_included: item.reason_codes_included || [],
-      booking_ids: item.booking_ids || [],
+      count: item.count || item.case_count || item.frequency || 0,
+      percentage: item.percentage || item.pct_of_total || 0,
+      details: item.details || item.description || '',
+      reason_codes_included: item.reason_codes_included || item.reason_codes || [],
+      booking_ids: item.booking_ids || item.case_ids || [],
     }));
   }
 
