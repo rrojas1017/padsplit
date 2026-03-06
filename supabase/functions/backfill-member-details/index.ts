@@ -27,6 +27,27 @@ function isValidLocation(value: string | null): boolean {
   return !bogus.includes(value.toLowerCase().trim());
 }
 
+// Extract a person's name from a greeting pattern in transcript
+function extractNameFromGreeting(transcription: string): string | null {
+  const firstChunk = transcription.substring(0, 500);
+  const patterns = [
+    /(?:Agent|Member|Speaker\s*\d):\s*(?:Hi|Hello|Hey|Good\s+(?:morning|afternoon|evening)),?\s+([A-Z][a-z]{1,15})/,
+    /^(?:Hi|Hello|Hey|Good\s+(?:morning|afternoon|evening)),?\s+([A-Z][a-z]{1,15})/m,
+  ];
+  const skipWords = new Set([
+    'there', 'everyone', 'all', 'guys', 'team', 'sir', 'ma', 'madam',
+    'this', 'how', 'thank', 'thanks', 'yes', 'no', 'so', 'um', 'well',
+    'good', 'great', 'nice', 'right', 'okay',
+  ]);
+  for (const pattern of patterns) {
+    const match = firstChunk.match(pattern);
+    if (match && match[1] && !skipWords.has(match[1].toLowerCase())) {
+      return match[1];
+    }
+  }
+  return null;
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
@@ -212,6 +233,57 @@ Deno.serve(async (req) => {
 
     console.log(`[BackfillMemberDetails] Pass 2 complete: ${researchUpdatedCount} research names updated`);
 
+    // ===== PASS 3: Extract names from transcript greetings =====
+    console.log('[BackfillMemberDetails] Starting Pass 3: transcript greeting scan...');
+    let greetingUpdatedCount = 0;
+
+    const { data: stillPlaceholders, error: spError } = await supabase
+      .from('bookings')
+      .select('id, member_name, contact_phone')
+      .eq('record_type', 'research')
+      .ilike('member_name', 'API Submission%')
+      .limit(batchSize);
+
+    if (spError) {
+      console.error('[BackfillMemberDetails] Pass 3 fetch error:', spError);
+    } else if (stillPlaceholders && stillPlaceholders.length > 0) {
+      // Fetch transcripts for these bookings
+      const spIds = stillPlaceholders.map((b: any) => b.id);
+      const { data: transcripts } = await supabase
+        .from('booking_transcriptions')
+        .select('booking_id, call_transcription')
+        .in('booking_id', spIds)
+        .not('call_transcription', 'is', null);
+
+      const transcriptMap = new Map((transcripts || []).map((t: any) => [t.booking_id, t.call_transcription]));
+
+      for (const booking of stillPlaceholders) {
+        const transcript = transcriptMap.get(booking.id);
+        if (!transcript) continue;
+
+        const greetingName = extractNameFromGreeting(transcript);
+        if (greetingName) {
+          if (!dryRun) {
+            const { error: updateErr } = await supabase
+              .from('bookings')
+              .update({ member_name: greetingName })
+              .eq('id', booking.id);
+
+            if (updateErr) {
+              console.error(`[BackfillMemberDetails] Pass 3 failed for ${booking.id}:`, updateErr);
+            } else {
+              greetingUpdatedCount++;
+              console.log(`[BackfillMemberDetails] Pass 3: "${booking.member_name}" → "${greetingName}"`);
+            }
+          } else {
+            greetingUpdatedCount++;
+          }
+        }
+      }
+    }
+
+    console.log(`[BackfillMemberDetails] Pass 3 complete: ${greetingUpdatedCount} greeting names updated`);
+
     const response = {
       success: true,
       dryRun,
@@ -221,6 +293,7 @@ Deno.serve(async (req) => {
       skipped: skippedCount,
       researchNamesUpdated: dryRun ? 0 : researchUpdatedCount,
       researchPlaceholdersFound: placeholderBookings?.length || 0,
+      greetingNamesUpdated: dryRun ? 0 : greetingUpdatedCount,
       sampleUpdates: updates.slice(0, 10).map(u => ({
         id: u.id,
         changes: u.changes

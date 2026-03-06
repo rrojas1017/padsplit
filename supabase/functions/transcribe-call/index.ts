@@ -139,6 +139,34 @@ function validateConversation(params: {
   return true;
 }
 
+// Extract a person's name from a greeting pattern in the first 500 chars of transcript
+// Looks for "Hi [Name]", "Hello [Name]", "Hey [Name]", "Good morning [Name]" etc.
+// Only matches the Agent/researcher's first line greeting the other person
+function extractNameFromGreeting(transcription: string): string | null {
+  const firstChunk = transcription.substring(0, 500);
+  // Match common greeting patterns — the name follows the greeting word
+  // Supports "Agent: Hi Jamie" or just "Hi Jamie" at line start
+  const patterns = [
+    /(?:Agent|Member|Speaker\s*\d):\s*(?:Hi|Hello|Hey|Good\s+(?:morning|afternoon|evening)),?\s+([A-Z][a-z]{1,15})/,
+    /^(?:Hi|Hello|Hey|Good\s+(?:morning|afternoon|evening)),?\s+([A-Z][a-z]{1,15})/m,
+  ];
+  
+  // Common non-name words that could match the pattern
+  const skipWords = new Set([
+    'there', 'everyone', 'all', 'guys', 'team', 'sir', 'ma', 'madam',
+    'this', 'how', 'thank', 'thanks', 'yes', 'no', 'so', 'um', 'well',
+    'good', 'great', 'nice', 'right', 'okay',
+  ]);
+
+  for (const pattern of patterns) {
+    const match = firstChunk.match(pattern);
+    if (match && match[1] && !skipWords.has(match[1].toLowerCase())) {
+      return match[1];
+    }
+  }
+  return null;
+}
+
 // ===== PAIN POINT ISSUE CLASSIFIER =====
 const ISSUE_KEYWORDS_MAP: Record<string, string[]> = {
   'Payment & Pricing Confusion': ['promo code', 'deposit', 'weekly rate', 'how much', 'move-in cost', 'coupon', 'discount', 'billing', 'pricing', 'overcharged', 'hidden fee', 'price confused', 'not sure about the price', 'weekly payment', 'first week'],
@@ -1022,12 +1050,19 @@ ${Object.entries(config.callType.scoring_criteria).map(([key, weight]) => `- ${k
 - 3-4: Below average, significant issues
 - 1-2: Poor, major problems`;
 
+  // Research-specific name extraction hint
+  if (isNonBooking || config?.callType?.name?.toLowerCase().includes('research')) {
+    sections.push(`
+RESEARCH/SURVEY CALL NAME EXTRACTION:
+In research or survey calls the PadSplit researcher typically greets the other person by name in the first few lines (e.g., "Hi Jamie, this is Emily from PadSplit"). The researcher is the PadSplit employee — extract the OTHER person's name as firstName/lastName. Look carefully at the opening lines for names used in greetings like "Hi [Name]", "Hello [Name]", "Hey [Name]", or "Good morning [Name]".`);
+  }
+
   sections.push(`
 Return a JSON object with EXACTLY this structure (no markdown, just raw JSON):
 {
   "summary": "A concise 2-3 sentence summary capturing the key points of this call. What was discussed? What was the outcome?",
   "memberDetails": {
-    "firstName": "string or null - the member's first name if mentioned",
+    "firstName": "string or null - the member's first name if mentioned. IMPORTANT: In research/survey calls, check the first few lines where the researcher greets the caller by name.",
     "lastName": "string or null - the member's last name if mentioned",
     "phoneNumber": "string or null - phone number if mentioned or confirmed (format: xxx-xxx-xxxx)",
     "email": "string or null - email address if mentioned",
@@ -1140,11 +1175,14 @@ CRITICAL INSTRUCTIONS:
 TRANSCRIPTION:
 ${transcription}
 
+RESEARCH/SURVEY CALL NAME EXTRACTION:
+In research or survey calls the PadSplit researcher typically greets the other person by name in the first few lines (e.g., "Hi Jamie, this is Emily from PadSplit"). The researcher is the PadSplit employee — extract the OTHER person's name as firstName/lastName. Look carefully at the opening lines for names used in greetings like "Hi [Name]", "Hello [Name]", "Hey [Name]", or "Good morning [Name]".
+
 Return a JSON object with EXACTLY this structure (no markdown, just raw JSON):
 {
   "summary": "A concise 2-3 sentence summary capturing the key points of this call. What was discussed? What was the outcome?",
   "memberDetails": {
-    "firstName": "string or null - the member's first name if mentioned",
+    "firstName": "string or null - the member's first name if mentioned. IMPORTANT: In research/survey calls, check the first few lines where the researcher greets the caller by name.",
     "lastName": "string or null - the member's last name if mentioned",
     "phoneNumber": "string or null - phone number if mentioned or confirmed (format: xxx-xxx-xxxx)",
     "email": "string or null - email address if mentioned",
@@ -2060,6 +2098,15 @@ Be generous in matching — if the topic of a question was discussed even partia
       if (extractedName && isPlaceholder) {
         contactUpdate.member_name = extractedName;
         console.log(`[Background] Contact name enriched (AI): "${contactBooking.member_name}" → "${extractedName}"`);
+      }
+      
+      // Strategy 1b: Regex fallback — scan transcript greeting for name if AI missed it
+      if (isPlaceholder && !contactUpdate.member_name && isResearch && transcription) {
+        const greetingName = extractNameFromGreeting(transcription);
+        if (greetingName) {
+          contactUpdate.member_name = greetingName;
+          console.log(`[Background] Contact name enriched (regex greeting): "${contactBooking.member_name}" → "${greetingName}"`);
+        }
       }
       
       // Strategy 2: Cross-reference research_calls table by phone number or research_call_id
