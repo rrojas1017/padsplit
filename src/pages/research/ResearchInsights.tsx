@@ -282,7 +282,12 @@ export default function ResearchInsights() {
 
             {reportData.issue_clusters && (
               <div className="lg:col-span-2">
-                <IssueClustersPanel data={reportData.issue_clusters} />
+                <IssueClustersPanel
+                  data={reportData.issue_clusters}
+                  onClusterClick={(clusterName, bookingIds, reasonCodes) =>
+                    setDrillDown({ open: true, groupName: clusterName, bookingIds, reasonCodes })
+                  }
+                />
               </div>
             )}
 
