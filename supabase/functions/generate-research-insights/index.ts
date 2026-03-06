@@ -1,8 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-declare const EdgeRuntime: {
-  waitUntil: (promise: Promise<unknown>) => void;
-};
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -496,36 +493,22 @@ Deno.serve(async (req) => {
       throw new Error(`Failed to create insight record: ${insertError?.message}`);
     }
 
-    console.log(`[Insights] Created insight ${insight.id}, starting background processing for ${processedRecords.length} records`);
+    console.log(`[Insights] Created insight ${insight.id}, processing synchronously for ${processedRecords.length} records`);
 
-    // Background processing with timeout guard
-    const TIMEOUT_MS = 4 * 60 * 1000; // 4 minutes
-    EdgeRuntime.waitUntil(
-      Promise.race([
-        processInsights(
-          supabaseUrl,
-          supabaseServiceKey,
-          lovableApiKey,
-          insight.id,
-          classifications,
-          extractions,
-          processedRecords,
-          dateRange,
-          model,
-          temperature,
-          systemPrompt,
-          triggeredByUserId
-        ),
-        new Promise<void>(async (_, reject) => {
-          await new Promise(r => setTimeout(r, TIMEOUT_MS));
-          console.error(`[Insights] Timeout after ${TIMEOUT_MS / 1000}s for insight ${insight.id}`);
-          await supabase
-            .from('research_insights')
-            .update({ status: 'failed', error_message: `Processing timed out after ${TIMEOUT_MS / 1000} seconds` })
-            .eq('id', insight.id);
-          reject(new Error('Timeout'));
-        }),
-      ]).catch(err => console.error(`[Insights] Background task error:`, err))
+    // Process synchronously within the request (300s HTTP timeout >> ~150s parallel processing)
+    await processInsights(
+      supabaseUrl,
+      supabaseServiceKey,
+      lovableApiKey,
+      insight.id,
+      classifications,
+      extractions,
+      processedRecords,
+      dateRange,
+      model,
+      temperature,
+      systemPrompt,
+      triggeredByUserId
     );
 
     return new Response(
@@ -533,7 +516,7 @@ Deno.serve(async (req) => {
         success: true,
         insightId: insight.id,
         recordCount: processedRecords.length,
-        message: 'Insight generation started',
+        message: 'Insight generation completed',
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
