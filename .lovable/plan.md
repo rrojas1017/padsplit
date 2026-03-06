@@ -1,32 +1,24 @@
 
 
-## Make Issue Clusters Drill-Down & Improve Visual Clickability
+## Fix: Drill-Down Showing 0 Records for Existing Reports
 
-### Current State
-- **ReasonCodeChart**: Already has clickable drill-down via `onGroupClick` — works with `ReasonCodeDrillDown` sheet. Has subtle "Click to view records →" hint.
-- **IssueClustersPanel**: No drill-down at all. Has `reason_codes_included` in the AI schema but no `booking_ids`, and no click handler.
-- **Visual cues**: Both components lack strong visual affordance that they're clickable.
+### Problem
+Clicking "Host, Property & Safety Failures" (44 records) opens the drill-down but shows **0 records**. This happens because:
+1. The current report was generated **before** `booking_ids` and `reason_codes_included` were added to the schema — so both are `undefined`
+2. The fallback query in `ReasonCodeDrillDown` only runs when `reasonCodesIncluded` has values — which it doesn't for old reports
+3. No third fallback exists
 
-### Changes
+### Solution
+Add a third fallback strategy to `ReasonCodeDrillDown.tsx` that uses the **group name** to fuzzy-match records:
 
-**1. Update AI Prompt C schema** (`supabase/functions/generate-research-insights/index.ts`)
-- Add `booking_ids: []` to the `issue_clusters` schema so the AI maps specific records to each cluster.
+1. When both `bookingIds` and `reasonCodesIncluded` are empty/missing, query all processed research records and filter client-side by matching the `primary_reason_code` against keywords extracted from the group name (e.g., "Host", "Property", "Safety")
+2. This ensures old reports still work while new reports use the precise `booking_ids` path
 
-**2. Add drill-down to IssueClustersPanel** (`src/components/research-insights/IssueClustersPanel.tsx`)
-- Add `onClusterClick` callback prop mirroring the ReasonCodeChart pattern.
-- Add a "View X records →" button inside each expanded cluster card that triggers the drill-down.
-- Pass `booking_ids` and `reason_codes_included` from cluster data to the callback.
-- Update the `IssueCluster` interface to include `booking_ids?: string[]` and `reason_codes_included?: string[]`.
+### Files to Change
 
-**3. Wire up in ResearchInsights.tsx** (`src/pages/research/ResearchInsights.tsx`)
-- Pass `onClusterClick` to `IssueClustersPanel` that opens the same `ReasonCodeDrillDown` sheet, reusing the existing component.
+**`src/components/research-insights/ReasonCodeDrillDown.tsx`**
+- Add Strategy 3 after Strategy 2: when no `bookingIds` and no `reasonCodesIncluded`, fetch all processed research records (with campaign/date filters) and fuzzy-match using the `groupName` split into keywords against each record's `primary_reason_code`
+- Extract keywords by splitting group name on common delimiters (commas, "&", "and") and trimming filler words
 
-**4. Improve visual clickability on both components**
-- **ReasonCodeChart detail cards**: Add a subtle right-arrow icon (ExternalLink or ChevronRight), stronger hover effect (border color change), and a group-level hover ring.
-- **IssueClustersPanel**: Add a dedicated "View records" button with an ExternalLink icon inside the expanded content. Keep the collapsible trigger as-is (it's for expand/collapse, not drill-down).
-- Both get `group-hover` transitions and pointer cursor to signal interactivity.
-
-### Technical Details
-- Reuses the existing `ReasonCodeDrillDown` component for both reason codes and issue clusters — no new components needed.
-- The fallback query strategy in `ReasonCodeDrillDown` already handles `reasonCodesIncluded`, so issue clusters with only `reason_codes_included` (no `booking_ids`) will still work for older reports.
+This is a single-file change that makes the existing drill-down work retroactively for all previously generated reports.
 
