@@ -18,7 +18,6 @@ interface ActionItem {
 }
 
 interface TopActionsPanelProps {
-  // Can be an object with grouped arrays or a flat array
   data: {
     p0_immediate_risk_mitigation?: ActionItem[];
     p1_systemic_process_redesign?: ActionItem[];
@@ -26,14 +25,27 @@ interface TopActionsPanelProps {
   } | ActionItem[];
 }
 
+function getActionBorderColor(priority?: string): string {
+  if (!priority) return 'hsl(var(--border))';
+  const p = priority.toUpperCase();
+  if (p.includes('P0')) return 'hsl(var(--destructive))';
+  if (p.includes('P1')) return 'hsl(45, 93%, 47%)';
+  if (p.includes('P2')) return 'hsl(217, 91%, 60%)';
+  return 'hsl(var(--border))';
+}
+
 function ActionCard({ item, index }: { item: ActionItem; index: number }) {
   const desc = item.description || item.rationale;
   const owner = item.ownership || item.owner;
+  const borderColor = getActionBorderColor(item.priority);
 
   return (
-    <div className="border border-border rounded-lg p-4 space-y-2">
+    <div
+      className="border border-border rounded-lg p-4 space-y-2"
+      style={{ borderLeftWidth: '4px', borderLeftColor: borderColor }}
+    >
       <div className="flex items-start gap-3">
-        <span className="flex-shrink-0 w-7 h-7 rounded-full bg-primary/10 text-primary font-bold text-sm flex items-center justify-center">
+        <span className="flex-shrink-0 w-7 h-7 rounded-full bg-gradient-to-br from-primary/20 to-primary/10 text-primary font-bold text-sm flex items-center justify-center">
           {item.rank ?? index + 1}
         </span>
         <div className="flex-1 min-w-0">
@@ -62,7 +74,7 @@ function ActionSection({ title, badge, items }: { title: string; badge: React.Re
   if (!items?.length) return null;
   return (
     <div className="space-y-3">
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2 pb-2 border-b border-border">
         {badge}
         <p className="text-sm font-semibold text-foreground">{title}</p>
       </div>
@@ -76,14 +88,15 @@ function ActionSection({ title, badge, items }: { title: string; badge: React.Re
 export function TopActionsPanel({ data }: TopActionsPanelProps) {
   if (!data) return null;
 
-  // Handle flat array (legacy)
   if (Array.isArray(data)) {
     if (!data.length) return null;
     return (
-      <Card>
+      <Card className="shadow-sm">
         <CardHeader>
           <CardTitle className="text-base flex items-center gap-2">
-            <Target className="w-4 h-4 text-primary" />
+            <div className="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center">
+              <Target className="w-4 h-4 text-primary" />
+            </div>
             Top Actions
           </CardTitle>
         </CardHeader>
@@ -96,7 +109,6 @@ export function TopActionsPanel({ data }: TopActionsPanelProps) {
     );
   }
 
-  // Grouped object format
   const hasP0 = !!data.p0_immediate_risk_mitigation?.length;
   const hasP1 = !!data.p1_systemic_process_redesign?.length;
   const hasQW = !!data.quick_wins?.length;
@@ -104,10 +116,12 @@ export function TopActionsPanel({ data }: TopActionsPanelProps) {
   if (!hasP0 && !hasP1 && !hasQW) return null;
 
   return (
-    <Card>
+    <Card className="shadow-sm">
       <CardHeader>
         <CardTitle className="text-base flex items-center gap-2">
-          <Target className="w-4 h-4 text-primary" />
+          <div className="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center">
+            <Target className="w-4 h-4 text-primary" />
+          </div>
           Top Actions
         </CardTitle>
       </CardHeader>

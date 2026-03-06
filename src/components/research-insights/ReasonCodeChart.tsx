@@ -20,7 +20,6 @@ interface ReasonCodeChartProps {
     preventable_churn?: number;
     unpreventable_churn?: number;
     by_category?: CategoryItem[];
-    // Legacy nested format
     distribution?: Array<{
       reason_group: string;
       count: number;
@@ -118,7 +117,7 @@ export function ReasonCodeChart({ data }: ReasonCodeChartProps) {
 
   return (
     <>
-      <Card>
+      <Card className="shadow-sm overflow-hidden">
         <CardHeader>
           <CardTitle className="text-base">Reason Code Distribution</CardTitle>
         </CardHeader>
@@ -126,15 +125,15 @@ export function ReasonCodeChart({ data }: ReasonCodeChartProps) {
           {/* Summary stat cards */}
           {totalCases != null && (
             <div className="grid grid-cols-3 gap-3">
-              <div className="text-center p-3 rounded-lg bg-muted/50">
+              <div className="text-center p-3 rounded-xl bg-gradient-to-br from-muted/30 to-muted/60 border border-border">
                 <p className="text-lg font-bold text-foreground">{totalCases}</p>
                 <p className="text-xs text-muted-foreground">Total Cases</p>
               </div>
-              <div className="text-center p-3 rounded-lg bg-destructive/10">
+              <div className="text-center p-3 rounded-xl bg-gradient-to-br from-destructive/5 to-destructive/15 border border-destructive/20">
                 <p className="text-lg font-bold text-destructive">{preventable}</p>
                 <p className="text-xs text-muted-foreground">Preventable</p>
               </div>
-              <div className="text-center p-3 rounded-lg bg-muted/50">
+              <div className="text-center p-3 rounded-xl bg-gradient-to-br from-muted/30 to-muted/60 border border-border">
                 <p className="text-lg font-bold text-foreground">{unpreventable}</p>
                 <p className="text-xs text-muted-foreground">Unpreventable</p>
               </div>
@@ -167,15 +166,15 @@ export function ReasonCodeChart({ data }: ReasonCodeChartProps) {
             </BarChart>
           </ResponsiveContainer>
 
-          {/* Detail cards — clickable */}
+          {/* Detail cards — clickable with left color stripe */}
           <div className="space-y-2">
             {sorted.map((item, i) => (
               <div
                 key={i}
-                className="flex items-start gap-3 text-sm border border-border rounded-lg p-3 cursor-pointer hover:bg-muted/50 hover:border-primary/30 transition-colors group"
+                className="flex items-start gap-3 text-sm rounded-lg p-3 cursor-pointer hover:bg-muted/50 transition-all duration-200 group border border-border overflow-hidden"
+                style={{ borderLeftWidth: '4px', borderLeftColor: COLORS[i % COLORS.length] }}
                 onClick={() => handleReasonClick(item, i)}
               >
-                <div className="w-3 h-3 rounded-sm flex-shrink-0 mt-1" style={{ background: COLORS[i % COLORS.length] }} />
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center justify-between gap-2">
                     <p className="font-medium text-foreground group-hover:text-primary transition-colors">{item.name}</p>

@@ -10,7 +10,6 @@ interface IssueCluster {
   priority?: string;
   recommended_action?: string | { action: string; owner?: string; priority?: string };
   supporting_quotes?: string[];
-  // Legacy
   cluster_description?: string;
   frequency?: number;
   case_count?: number;
@@ -24,10 +23,18 @@ interface IssueClustersProps {
   data: IssueCluster[];
 }
 
+function getPriorityBorderColor(priority?: string): string {
+  if (!priority) return 'hsl(var(--border))';
+  const p = priority.toUpperCase();
+  if (p.includes('P0')) return 'hsl(var(--destructive))';
+  if (p.includes('P1')) return 'hsl(45, 93%, 47%)';
+  if (p.includes('P2')) return 'hsl(217, 91%, 60%)';
+  return 'hsl(var(--border))';
+}
+
 export function IssueClustersPanel({ data }: IssueClustersProps) {
   if (!data?.length) return null;
 
-  // Sort P0 first
   const sorted = [...data].sort((a, b) => {
     const pa = a.priority?.toUpperCase() || 'P9';
     const pb = b.priority?.toUpperCase() || 'P9';
@@ -35,7 +42,7 @@ export function IssueClustersPanel({ data }: IssueClustersProps) {
   });
 
   return (
-    <Card>
+    <Card className="shadow-sm">
       <CardHeader>
         <CardTitle className="text-base">Issue Clusters</CardTitle>
       </CardHeader>
@@ -59,11 +66,15 @@ function ClusterCard({ cluster }: { cluster: IssueCluster }) {
     : cluster.recommended_action?.action;
   const actionPriority = cluster.priority || (typeof cluster.recommended_action === 'object' ? cluster.recommended_action?.priority : undefined);
   const freq = cluster.frequency ?? cluster.case_count;
+  const borderColor = getPriorityBorderColor(actionPriority);
 
   return (
     <Collapsible open={open} onOpenChange={setOpen}>
       <CollapsibleTrigger className="w-full">
-        <div className="flex items-center justify-between p-4 rounded-lg border border-border hover:bg-muted/50 transition-colors text-left">
+        <div
+          className="flex items-center justify-between p-4 rounded-lg border border-border hover:bg-muted/50 transition-colors text-left"
+          style={{ borderLeftWidth: '4px', borderLeftColor: borderColor }}
+        >
           <div className="flex items-center gap-3 min-w-0">
             <div>
               <p className="font-medium text-foreground text-sm">{cluster.cluster_name}</p>
@@ -79,13 +90,13 @@ function ClusterCard({ cluster }: { cluster: IssueCluster }) {
         </div>
       </CollapsibleTrigger>
       <CollapsibleContent>
-        <div className="px-4 pb-4 space-y-4 mt-2">
+        <div className="px-4 pb-4 space-y-4 mt-2 ml-1">
           {desc && <p className="text-sm text-muted-foreground">{desc}</p>}
 
           {quotes.length > 0 && (
             <div className="space-y-2">
               {quotes.map((q, i) => (
-                <blockquote key={i} className="border-l-2 border-primary/40 pl-3 italic text-sm text-muted-foreground">
+                <blockquote key={i} className="border-l-2 border-accent pl-3 italic text-sm text-muted-foreground">
                   "{q}"
                 </blockquote>
               ))}
@@ -93,14 +104,14 @@ function ClusterCard({ cluster }: { cluster: IssueCluster }) {
           )}
 
           {rootCause && (
-            <div className="bg-muted/50 rounded-lg p-3">
+            <div className="bg-muted/30 rounded-xl p-3">
               <p className="text-xs font-medium text-foreground mb-1">Root Cause</p>
               <p className="text-sm text-muted-foreground">{rootCause}</p>
             </div>
           )}
 
           {actionText && (
-            <div className="bg-primary/5 border border-primary/20 rounded-lg p-3 flex items-start gap-2">
+            <div className="bg-primary/5 border border-primary/20 rounded-xl p-3 flex items-start gap-2">
               <Lightbulb className="w-4 h-4 text-primary mt-0.5 flex-shrink-0" />
               <p className="text-sm font-medium text-foreground">{actionText}</p>
             </div>

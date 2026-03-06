@@ -115,8 +115,8 @@ export default function ResearchInsights() {
 
   return (
     <DashboardLayout title="Research Insights" subtitle="AI-processed findings from move-out research">
-      {/* Controls Bar */}
-      <div className="flex flex-wrap items-center gap-3 mb-6">
+      {/* Controls Bar — frosted glass */}
+      <div className="flex flex-wrap items-center gap-3 mb-8 p-4 rounded-xl bg-card/80 backdrop-blur border border-border shadow-sm">
         <Select value={campaignId} onValueChange={setCampaignId}>
           <SelectTrigger className="w-[200px]">
             <SelectValue placeholder="All Campaigns" />
@@ -172,12 +172,14 @@ export default function ResearchInsights() {
       </div>
 
       {/* Processing Status Banner */}
-      <div className="mb-6 flex flex-wrap gap-3">
-        <Card className="flex-1 min-w-[250px]">
+      <div className="mb-8 flex flex-wrap gap-3">
+        <Card className="flex-1 min-w-[250px] shadow-sm">
           <CardContent className="p-4 space-y-3">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
-                <Database className="w-5 h-5 text-primary" />
+                <div className="w-9 h-9 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
+                  <Database className="w-4.5 h-4.5 text-primary" />
+                </div>
                 <div>
                   <p className="text-sm font-medium text-foreground">
                     {processingStats.processedRecords} / {processingStats.totalResearchRecords} records processed
@@ -208,9 +210,11 @@ export default function ResearchInsights() {
         </Card>
 
         {processingStats.humanReviewCount > 0 && (
-          <Card className="min-w-[180px]">
+          <Card className="min-w-[180px] shadow-sm border-amber-500/20">
             <CardContent className="p-4 flex items-center gap-3">
-              <AlertTriangle className="w-5 h-5 text-amber-500" />
+              <div className="w-9 h-9 rounded-full bg-amber-500/10 flex items-center justify-center flex-shrink-0">
+                <AlertTriangle className="w-4.5 h-4.5 text-amber-500" />
+              </div>
               <div>
                 <p className="text-sm font-medium text-foreground">{processingStats.humanReviewCount} flagged</p>
                 <p className="text-xs text-muted-foreground">Need human review</p>
@@ -222,10 +226,12 @@ export default function ResearchInsights() {
 
       {/* In-progress banner */}
       {isGenerating && (
-        <div className="mb-6 bg-primary/5 border border-primary/20 rounded-xl p-6 space-y-3">
+        <div className="mb-8 rounded-xl p-6 space-y-3 border border-primary/20 bg-gradient-to-r from-primary/5 via-primary/10 to-primary/5 shadow-sm">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <Loader2 className="w-5 h-5 text-primary animate-spin" />
+              <div className="w-9 h-9 rounded-full bg-primary/15 flex items-center justify-center flex-shrink-0">
+                <Loader2 className="w-4.5 h-4.5 text-primary animate-spin" />
+              </div>
               <div>
                 <p className="text-sm font-medium text-foreground">
                   {progress?.currentPhase === 'synthesizing'
@@ -265,19 +271,21 @@ export default function ResearchInsights() {
       {/* Loading state */}
       {isLoading && (
         <div className="space-y-4">
-          <Skeleton className="h-32 w-full" />
-          <Skeleton className="h-64 w-full" />
-          <Skeleton className="h-48 w-full" />
+          <Skeleton className="h-32 w-full rounded-xl" />
+          <Skeleton className="h-64 w-full rounded-xl" />
+          <Skeleton className="h-48 w-full rounded-xl" />
         </div>
       )}
 
       {/* No reports yet */}
       {!isLoading && !selectedReport && !isGenerating && (
-        <Card>
+        <Card className="shadow-sm">
           <CardContent className="p-12 text-center">
-            <Sparkles className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
+            <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center mx-auto mb-4">
+              <Sparkles className="w-8 h-8 text-primary" />
+            </div>
             <h3 className="text-lg font-semibold text-foreground mb-2">No Research Insights Yet</h3>
-            <p className="text-sm text-muted-foreground mb-4">
+            <p className="text-sm text-muted-foreground mb-4 max-w-md mx-auto">
               {processingStats.processedRecords > 0
                 ? `${processingStats.processedRecords} records are ready. Click "Generate Report" to analyze patterns across all processed records.`
                 : `${processingStats.totalResearchRecords} research records found. Click "Process All" to extract insights from transcripts first.`}
@@ -288,28 +296,23 @@ export default function ResearchInsights() {
 
       {/* Report content */}
       {!isLoading && selectedReport?.status === 'completed' && reportData && (
-        <div className="space-y-6">
-          {/* Executive Summary — full width */}
+        <div className="space-y-8">
           {reportData.executive_summary && (
             <ExecutiveSummary data={reportData.executive_summary} />
           )}
 
-          {/* Reason Code Distribution — full width */}
           {reportData.reason_code_distribution && (
             <ReasonCodeChart data={reportData.reason_code_distribution} />
           )}
 
-          {/* Issue Clusters — full width, P0 first */}
           {reportData.issue_clusters && (
             <IssueClustersPanel data={reportData.issue_clusters} />
           )}
 
-          {/* Top Actions — full width, grouped by priority */}
           {reportData.top_actions && (
             <TopActionsPanel data={reportData.top_actions} />
           )}
 
-          {/* Two-column: Payment Friction | Transfer Friction */}
           {(reportData.payment_friction_analysis || reportData.transfer_friction_analysis) && (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               {reportData.payment_friction_analysis && (
@@ -321,7 +324,6 @@ export default function ResearchInsights() {
             </div>
           )}
 
-          {/* Two-column: Blind Spots | Host Accountability */}
           {(reportData.operational_blind_spots || reportData.host_accountability_flags) && (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               {reportData.operational_blind_spots && (
@@ -333,17 +335,14 @@ export default function ResearchInsights() {
             </div>
           )}
 
-          {/* Agent Performance — full width */}
           {reportData.agent_performance_summary && (
             <AgentPerformanceCard data={reportData.agent_performance_summary} />
           )}
 
-          {/* Emerging Patterns — full width */}
           {reportData.emerging_patterns && (
             <EmergingPatternsPanel data={reportData.emerging_patterns} />
           )}
 
-          {/* Review & Records */}
           <HumanReviewQueue />
           <ProcessedRecordsList />
         </div>
@@ -351,7 +350,7 @@ export default function ResearchInsights() {
 
       {/* Failed report */}
       {!isLoading && selectedReport?.status === 'failed' && (
-        <Card className="border-destructive/30">
+        <Card className="border-destructive/30 shadow-sm">
           <CardContent className="p-6 text-center">
             <AlertTriangle className="w-8 h-8 text-destructive mx-auto mb-2" />
             <p className="text-sm text-foreground font-medium">Report generation failed</p>
@@ -362,8 +361,8 @@ export default function ResearchInsights() {
 
       {isLoadingDetail && (
         <div className="space-y-4 mt-6">
-          <Skeleton className="h-32 w-full" />
-          <Skeleton className="h-64 w-full" />
+          <Skeleton className="h-32 w-full rounded-xl" />
+          <Skeleton className="h-64 w-full rounded-xl" />
         </div>
       )}
     </DashboardLayout>

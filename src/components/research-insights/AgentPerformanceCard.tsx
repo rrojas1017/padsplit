@@ -11,7 +11,6 @@ interface AgentPerformanceProps {
   data: {
     strengths?: string;
     opportunities_for_improvement?: OpportunityItem[];
-    // Legacy
     weaknesses?: string[];
     recommendation?: string;
     total_calls_reviewed?: number;
@@ -26,16 +25,18 @@ export function AgentPerformanceCard({ data }: AgentPerformanceProps) {
   if (!data) return null;
 
   return (
-    <Card>
+    <Card className="shadow-sm">
       <CardHeader className="pb-3">
         <CardTitle className="text-base flex items-center gap-2">
-          <UserCheck className="w-4 h-4 text-emerald-500" />
+          <div className="w-7 h-7 rounded-full bg-emerald-500/10 flex items-center justify-center">
+            <UserCheck className="w-4 h-4 text-emerald-500" />
+          </div>
           Agent Performance Summary
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
         {data.strengths && (
-          <div className="bg-emerald-500/5 border border-emerald-500/20 rounded-lg p-4">
+          <div className="bg-gradient-to-br from-emerald-500/5 to-emerald-500/10 border border-emerald-500/20 rounded-xl p-4">
             <div className="flex items-center gap-2 mb-2">
               <ThumbsUp className="w-4 h-4 text-emerald-500" />
               <p className="text-xs font-semibold text-foreground uppercase tracking-wide">Strengths</p>
@@ -52,7 +53,11 @@ export function AgentPerformanceCard({ data }: AgentPerformanceProps) {
             </div>
             <div className="space-y-3">
               {data.opportunities_for_improvement.map((opp, i) => (
-                <div key={i} className="border border-border rounded-lg p-3 space-y-2">
+                <div
+                  key={i}
+                  className="border border-border rounded-lg p-3 space-y-2"
+                  style={{ borderLeftWidth: '4px', borderLeftColor: 'hsl(45, 93%, 47%)' }}
+                >
                   <p className="text-sm font-medium text-foreground">{opp.area}</p>
                   {opp.description && <p className="text-xs text-muted-foreground">{opp.description}</p>}
                   {opp.recommendation && (
@@ -80,7 +85,7 @@ export function AgentPerformanceCard({ data }: AgentPerformanceProps) {
         ) : null}
 
         {data.recommendation && (
-          <div className="bg-primary/5 border border-primary/20 rounded-lg p-4">
+          <div className="bg-primary/5 border border-primary/20 rounded-xl p-4">
             <div className="flex items-center gap-2 mb-2">
               <Lightbulb className="w-4 h-4 text-primary" />
               <p className="text-xs font-semibold text-foreground uppercase tracking-wide">Recommendation</p>
@@ -89,18 +94,17 @@ export function AgentPerformanceCard({ data }: AgentPerformanceProps) {
           </div>
         )}
 
-        {/* Legacy stat layout */}
         {data.total_calls_reviewed != null && (
           <div className="grid grid-cols-3 gap-3">
-            <div className="text-center p-3 rounded-lg bg-muted/50">
+            <div className="text-center p-3 rounded-xl bg-gradient-to-br from-muted/30 to-muted/60 border border-border">
               <p className="text-lg font-bold text-foreground">{data.total_calls_reviewed}</p>
               <p className="text-xs text-muted-foreground">Calls Reviewed</p>
             </div>
-            <div className="text-center p-3 rounded-lg bg-muted/50">
+            <div className="text-center p-3 rounded-xl bg-gradient-to-br from-muted/30 to-muted/60 border border-border">
               <p className="text-lg font-bold text-foreground">{data.avg_questions_covered?.toFixed(0)}</p>
               <p className="text-xs text-muted-foreground">Avg Questions</p>
             </div>
-            <div className="text-center p-3 rounded-lg bg-muted/50">
+            <div className="text-center p-3 rounded-xl bg-gradient-to-br from-muted/30 to-muted/60 border border-border">
               <p className="text-lg font-bold text-foreground">{data.coverage_pct?.toFixed(0)}%</p>
               <p className="text-xs text-muted-foreground">Coverage</p>
             </div>
