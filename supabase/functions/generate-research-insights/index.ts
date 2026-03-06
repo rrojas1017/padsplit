@@ -390,6 +390,8 @@ Deno.serve(async (req) => {
   const lovableApiKey = Deno.env.get('LOVABLE_API_KEY')!;
   const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
+  let insight: { id: string } | null = null;
+
   try {
     const { campaignId, dateRangeStart, dateRangeEnd, analysisPeriod } = await req.json();
 
@@ -472,7 +474,7 @@ Deno.serve(async (req) => {
       : analysisPeriod || 'All Time';
 
     // Create insight record
-    const { data: insight, error: insertError } = await supabase
+    const { data: insightData, error: insertError } = await supabase
       .from('research_insights')
       .insert({
         campaign_id: campaignId || null,
@@ -489,9 +491,11 @@ Deno.serve(async (req) => {
       .select('id')
       .single();
 
-    if (insertError || !insight) {
+    if (insertError || !insightData) {
       throw new Error(`Failed to create insight record: ${insertError?.message}`);
     }
+
+    insight = insightData;
 
     console.log(`[Insights] Created insight ${insight.id}, processing synchronously for ${processedRecords.length} records`);
 
@@ -524,6 +528,20 @@ Deno.serve(async (req) => {
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     console.error(`[Insights] Error:`, errorMessage);
+
+    // Failsafe: mark insight as failed if it was created but processing errored/timed out
+    if (insight?.id) {
+      try {
+        await supabase
+          .from('research_insights')
+          .update({ status: 'failed', error_message: errorMessage })
+          .eq('id', insight.id);
+        console.log(`[Insights] Marked insight ${insight.id} as failed`);
+      } catch (updateErr) {
+        console.error(`[Insights] Failed to mark insight as failed:`, updateErr);
+      }
+    }
+
     return new Response(
       JSON.stringify({ success: false, error: errorMessage }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
