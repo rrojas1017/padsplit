@@ -1,41 +1,63 @@
 
 
-## Make the Human Review Queue Actionable
+## Drill-Down from Reason Code Distribution to Exact Records
 
-Currently the 33 flagged items are listed with a name, date, reason code, and a truncated review reason — but admins can't do anything with them. Here's the plan to make it useful:
+### Problem
+The Reason Code Distribution chart shows grouped categories (e.g., "Host, Property & Safety Failures — 44") but there's no way to see which exact records fall into each group. The grouping is also done entirely by the AI during aggregation (Prompt C), with no stored mapping back to individual records — making it opaque and potentially inaccurate.
 
-### What each review item needs
+### Solution
 
-Each row should let the admin:
-1. **Expand to see full context** — the AI's review reason (why it was flagged), the assigned reason code, and key quotes from the transcript
-2. **View the transcript** — link/button to open the full call transcript
-3. **Approve or Override** — confirm the AI's classification is correct, or pick a different reason code
-4. **Dismiss** — mark as reviewed (clears the `research_human_review` flag) so it leaves the queue
+**Two changes:**
+
+1. **Include record-level mapping in the AI aggregation output** — modify the Prompt C schema so each reason code group includes a list of `booking_ids` or `member_names` that belong to it. This creates a verifiable, transparent link between the aggregate view and the source records.
+
+2. **Make the ReasonCodeChart clickable to show a drill-down panel** — when an admin clicks a reason group (e.g., "Host, Property & Safety Failures"), a drawer/modal opens showing the exact records with their individual `primary_reason_code`, member name, date, preventability score, and case brief.
 
 ### Implementation
 
-**1. Redesign `HumanReviewQueue.tsx`**
-- Convert each row into an expandable accordion-style card
-- Expanded view shows: full `human_review_reason`, the AI's `primary_reason_code`, confidence score, and key quotes from `research_classification`
-- Add action buttons: "Approve" (clears flag), "Override" (opens reason code selector, saves new code, clears flag), "View Transcript" (opens the existing `TranscriptionModal`)
-- Add a "Dismiss" option that simply clears the review flag without changing classification
+**1. Update `generate-research-insights/index.ts` — Prompt C schema**
 
-**2. Add review actions**
-- **Approve**: Sets `research_human_review = false` on the record (keeps existing classification)
-- **Override**: Updates `research_classification.primary_reason_code` with admin's selection and sets `research_human_review = false`
-- Both actions update the record via Supabase and remove the item from the queue in the UI
-- Show a toast confirmation after each action
+Add `reason_codes_included` and `booking_ids` fields to each item in the `reason_code_distribution` array:
 
-**3. Add bulk actions**
-- "Approve All" button to clear all flags at once (with a confirmation dialog)
-- Counter updates in real-time as items are resolved
+```json
+"reason_code_distribution": {
+  "distribution": [
+    {
+      "reason_group": "Group label",
+      "count": 0,
+      "percentage": 0.0,
+      "details": "Why grouped this way",
+      "reason_codes_included": ["Host Negligence / Property Condition", "Safety Concern"],
+      "booking_ids": ["uuid1", "uuid2"]
+    }
+  ],
+  "methodology": "How groups were determined"
+}
+```
 
-**4. Update processing stats**
-- After approving/dismissing items, refresh the `humanReviewCount` in the parent stats banner so the amber "33 flagged" card updates
+Also pass `booking_id` into each record summary sent to the AI so it can reference them back. The edge function already builds `recordSummaries` from classifications — just add the booking_id from the query.
 
-### Technical details
-- Queries use existing `booking_transcriptions` table — no schema changes needed
-- The `research_human_review` boolean column already exists for toggling
-- The `research_classification` JSONB column holds the reason code to override
-- Reason code options can be derived from the existing reason code distribution data or a static list
+**2. Create `src/components/research-insights/ReasonCodeDrillDown.tsx`**
+
+A Sheet/Drawer component that:
+- Accepts a reason group name + list of booking_ids (from the report data)
+- Falls back to querying `booking_transcriptions` where `research_classification->>'primary_reason_code'` matches the `reason_codes_included` list
+- Shows each record: member name, date, individual reason code, preventability score, addressability, case brief
+- Allows clicking through to the full record detail
+
+**3. Update `ReasonCodeChart.tsx`**
+
+- Make each bar and detail card clickable
+- Pass an `onGroupClick(groupName, bookingIds, reasonCodes)` callback
+- Parent (`ResearchInsights.tsx`) manages drill-down state and renders the drawer
+
+**4. Update `ResearchInsights.tsx`**
+
+- Add state for selected reason group
+- Render `ReasonCodeDrillDown` when a group is selected
+- Pass the report data's booking_ids for that group, with a DB fallback query
+
+### Accuracy safeguard
+
+The fallback query ensures accuracy even if the AI's grouping is imperfect: when `booking_ids` are missing from the report data, the drill-down queries `booking_transcriptions` directly using the `reason_codes_included` array and matches against each record's `research_classification->>primary_reason_code`. This means the records shown are always ground-truth from the database, not just what the AI claims.
 
