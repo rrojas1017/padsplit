@@ -1,39 +1,123 @@
 
 
-## Add Live Progress Visibility to Report Generation
+## Redesign Research Insights from Scratch
 
 ### Problem
-After clicking "Generate Report", the UI shows a generic "Generating research insights... This may take a few minutes." banner with no detail about what's happening — no record count, no chunk progress, no elapsed time. The edge function logs show it's working (107 records, 3 chunks) but the user has no visibility.
+The UI components still don't render the actual report data because field names are mismatched. The data itself is excellent — rich, actionable, well-organized with P0/P1/P2 priorities, member quotes, and specific recommendations. The UI just needs to be rebuilt to match what the AI actually produces.
 
-### Solution
-Enhance both the backend and frontend to surface real-time progress during report generation.
+### Actual Data Structure (from the completed report)
 
-### Implementation
+```text
+executive_summary:
+  ├── title (string)
+  ├── key_findings (string - paragraph)
+  ├── period (string)
+  ├── recommendation_summary (string)
+  └── urgent_quote (string)
 
-#### 1. Edge function: write chunk progress to the database
-In `supabase/functions/generate-research-insights/index.ts`, update the `research_insights` row's `data` column with a `_progress` field after each chunk completes:
-- Before processing: set `data = { _progress: { totalChunks, completedChunks: 0, totalRecords, currentPhase: 'analyzing' } }`
-- After each chunk: increment `completedChunks`
-- During synthesis: set `currentPhase: 'synthesizing'`
-- On completion: the existing logic already sets `status: 'completed'` and overwrites `data`
+reason_code_distribution:
+  ├── total_cases (number)
+  ├── preventable_churn (number)
+  ├── unpreventable_churn (number)
+  └── by_category[]:
+      ├── category (string)
+      ├── count (number)
+      ├── percentage (number)
+      └── description (string)
 
-This reuses the existing `data` JSONB column — no schema changes needed.
+issue_clusters[]:
+  ├── cluster_name (string)
+  ├── description (string)
+  ├── priority (string: "P0", "P1")
+  ├── recommended_action (string)
+  └── supporting_quotes[] (strings)
 
-#### 2. Polling hook: surface progress data
-In `src/hooks/useResearchInsightsPolling.ts`, expand the polling query to also select `data, total_records_analyzed` and expose a `progress` state object:
+top_actions: (OBJECT, not array)
+  ├── p0_immediate_risk_mitigation[]:
+  │   ├── action (string)
+  │   ├── description (string)
+  │   └── ownership (string)
+  ├── p1_systemic_process_redesign[]:
+  │   └── (same shape)
+  └── quick_wins[]:
+      └── (same shape)
+
+operational_blind_spots[]:
+  ├── blind_spot (string)
+  └── description (string)
+
+host_accountability_flags[]:
+  ├── flag (string)
+  ├── description (string)
+  └── priority (string)
+
+emerging_patterns[]:
+  ├── pattern (string)
+  ├── description (string)
+  └── quote (string)
+
+payment_friction_analysis:
+  ├── summary (string)
+  └── key_friction_points[]:
+      ├── point (string)
+      ├── description (string)
+      ├── quote (string)
+      └── impact (string: "Critical", "High")
+
+transfer_friction_analysis:
+  └── (same shape as payment)
+
+agent_performance_summary:
+  ├── strengths (string)
+  └── opportunities_for_improvement[]:
+      ├── area (string)
+      ├── description (string)
+      └── recommendation (string)
 ```
-{ totalChunks, completedChunks, totalRecords, currentPhase }
-```
 
-#### 3. UI: rich progress banner
-In `src/pages/research/ResearchInsights.tsx`, replace the simple "Generating..." text with:
-- Record count: "Analyzing 107 records..."
-- Chunk progress bar: "Chunk 2 of 3 complete"
-- Phase label: "Analyzing..." → "Synthesizing results..."
-- Elapsed time counter (client-side, starts when generation begins)
+### Plan (10 files to update)
 
-### Files changed
-- `supabase/functions/generate-research-insights/index.ts` — write `_progress` to `data` column during processing
-- `src/hooks/useResearchInsightsPolling.ts` — expose progress state from polling
-- `src/pages/research/ResearchInsights.tsx` — rich progress banner with progress bar, phase, elapsed time
+#### 1. ExecutiveSummary.tsx — Rewrite
+Map to actual fields: `title`, `key_findings` (plural), `period`, `recommendation_summary`, `urgent_quote`. Show the title prominently, key findings as narrative paragraph, urgent quote in a highlighted callout, and recommendation summary in an action card.
+
+#### 2. ReasonCodeChart.tsx — Rewrite  
+Read `by_category[]` with fields `category`, `count`, `percentage`, `description`. Add stat cards at top for `total_cases`, `preventable_churn`, `unpreventable_churn`. Keep the horizontal bar chart but use the correct fields.
+
+#### 3. IssueClustersPanel.tsx — Rewrite
+Map `description` (not `cluster_description`), `priority` (string like "P0"), `recommended_action` (string, not object), `supporting_quotes[]` (not `representative_quotes`). Show priority badge prominently. Remove severity_distribution, root_cause references.
+
+#### 4. TopActionsPanel.tsx — Rewrite completely
+Data is an **object** with three keyed arrays (`p0_immediate_risk_mitigation`, `p1_systemic_process_redesign`, `quick_wins`), not a flat array. Render as three grouped sections with P0/P1/Quick Win headers. Each item has `action`, `description`, `ownership`.
+
+#### 5. BlindSpotsPanel.tsx — Minor fix
+Already mostly correct (`blind_spot`, `description`). Remove unused `priority`, `how_discovered`, `estimated_prevalence`, `recommended_detection_method` references.
+
+#### 6. HostAccountabilityPanel.tsx — Fix priority mapping
+Data has `flag`, `description`, `priority` (string like "P0", "P1"). Add PriorityBadge based on the `priority` field instead of parsing the title text.
+
+#### 7. EmergingPatternsPanel.tsx — Already correct
+Has `pattern`, `description`, `quote`. No `watch_or_act` in actual data — gracefully handles missing. Minimal changes.
+
+#### 8. PaymentFrictionCard.tsx — Rewrite
+Data has `summary` + `key_friction_points[]` (objects with `point`, `description`, `quote`, `impact`), not `key_failures[]` (strings). Render each friction point as a card with impact badge and member quote.
+
+#### 9. TransferFrictionCard.tsx — Rewrite (same pattern)
+Same structure as payment friction. Render `key_friction_points[]` with `point`, `description`, `quote`, `impact`.
+
+#### 10. AgentPerformanceCard.tsx — Rewrite
+Data has `strengths` (string) + `opportunities_for_improvement[]` (objects with `area`, `description`, `recommendation`), not `weaknesses[]` (strings). Render each opportunity as its own card with area title, description, and recommendation.
+
+#### 11. ResearchInsights.tsx page — Reorganize layout
+- Executive Summary full-width at top
+- Reason Code Distribution full-width with preventable/unpreventable stat cards
+- Issue Clusters full-width (collapsible, P0 first)
+- Top Actions full-width (grouped by priority tier)
+- Two-column layout: Payment Friction | Transfer Friction
+- Two-column layout: Blind Spots | Host Accountability
+- Agent Performance full-width
+- Emerging Patterns full-width
+- Human Review Queue and Processed Records at bottom
+
+### Note on Claude
+Claude (Anthropic) is not available through the supported AI models. The current Gemini 2.5 Pro model produced excellent, rich data — the problem was purely the UI not matching the output schema. No model change is needed.
 

@@ -51,9 +51,24 @@ export default function ResearchInsights() {
     setIsGenerating(false);
   }, [refresh]);
 
-  const { startPolling, checkExistingAnalysis } = useResearchInsightsPolling({
+  const { startPolling, checkExistingAnalysis, progress } = useResearchInsightsPolling({
     onComplete: refreshCallback,
   });
+
+  const [generationStartTime, setGenerationStartTime] = useState<number | null>(null);
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+
+  // Elapsed time counter
+  useEffect(() => {
+    if (!isGenerating || !generationStartTime) {
+      setElapsedSeconds(0);
+      return;
+    }
+    const interval = setInterval(() => {
+      setElapsedSeconds(Math.floor((Date.now() - generationStartTime) / 1000));
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [isGenerating, generationStartTime]);
 
   useEffect(() => {
     const init = async () => {
@@ -67,6 +82,7 @@ export default function ResearchInsights() {
 
   const handleGenerate = async () => {
     setIsGenerating(true);
+    setGenerationStartTime(Date.now());
     const insightId = await generateReport({
       campaignId: campaignId !== 'all' ? campaignId : undefined,
       analysisPeriod: dateRange,
@@ -206,9 +222,43 @@ export default function ResearchInsights() {
 
       {/* In-progress banner */}
       {isGenerating && (
-        <div className="mb-6 bg-primary/5 border border-primary/20 rounded-xl p-4 flex items-center gap-3">
-          <Loader2 className="w-5 h-5 text-primary animate-spin" />
-          <p className="text-sm text-foreground">Generating research insights... This may take a few minutes.</p>
+        <div className="mb-6 bg-primary/5 border border-primary/20 rounded-xl p-6 space-y-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <Loader2 className="w-5 h-5 text-primary animate-spin" />
+              <div>
+                <p className="text-sm font-medium text-foreground">
+                  {progress?.currentPhase === 'synthesizing'
+                    ? 'Synthesizing results...'
+                    : progress
+                      ? `Analyzing ${progress.totalRecords} records...`
+                      : 'Starting analysis...'}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {progress && progress.totalChunks > 1
+                    ? `Chunk ${progress.completedChunks} of ${progress.totalChunks} complete`
+                    : progress?.currentPhase === 'synthesizing'
+                      ? 'Combining chunk results into final report'
+                      : 'Preparing data for AI analysis'}
+                </p>
+              </div>
+            </div>
+            {elapsedSeconds > 0 && (
+              <span className="text-xs text-muted-foreground tabular-nums">
+                {Math.floor(elapsedSeconds / 60)}:{String(elapsedSeconds % 60).padStart(2, '0')}
+              </span>
+            )}
+          </div>
+          {progress && progress.totalChunks > 0 && (
+            <Progress
+              value={
+                progress.currentPhase === 'synthesizing'
+                  ? 90
+                  : (progress.completedChunks / progress.totalChunks) * 80
+              }
+              className="h-2"
+            />
+          )}
         </div>
       )}
 
