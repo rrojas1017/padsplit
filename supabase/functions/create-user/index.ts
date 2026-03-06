@@ -147,7 +147,7 @@ Deno.serve(async (req) => {
       })
     }
 
-    const { email, password, name, role, siteId, linkedAgentId } = requestBody;
+    const { email, password, name, role, siteId, linkedAgentId, dialerAgentUser } = requestBody;
 
     // Validate required fields exist
     if (!email || !password || !name || !role) {
@@ -347,7 +347,8 @@ Deno.serve(async (req) => {
           name: name,
           site_id: effectiveSiteId,
           user_id: newUser.user.id,
-          active: true
+          active: true,
+          dialer_agent_user: dialerAgentUser || null,
         })
         .select('id')
         .single();
