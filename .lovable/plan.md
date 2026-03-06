@@ -1,74 +1,123 @@
 
 
-## Modernize Research Insights UI
+## Redesign Research Insights from Scratch
 
-Visual-only refresh across all research insight components. No content, data, or layout position changes. Same components, same sections, same order — just polished to look more professional and aligned with the existing PadSplit design system (navy primary, gold accent, gradient cards, subtle shadows).
+### Problem
+The UI components still don't render the actual report data because field names are mismatched. The data itself is excellent — rich, actionable, well-organized with P0/P1/P2 priorities, member quotes, and specific recommendations. The UI just needs to be rebuilt to match what the AI actually produces.
 
-### Changes by file
+### Actual Data Structure (from the completed report)
 
-**1. `src/pages/research/ResearchInsights.tsx`**
-- Controls bar: wrap in a frosted-glass style card (`bg-card/80 backdrop-blur border`) instead of bare flex
-- Processing status banner: add subtle gradient background, softer border radius
-- In-progress banner: use a gradient shimmer border effect instead of flat `bg-primary/5`
-- Empty state: add a subtle gradient background and refine spacing
-- Section dividers: add `space-y-8` instead of `space-y-6` for more breathing room
+```text
+executive_summary:
+  ├── title (string)
+  ├── key_findings (string - paragraph)
+  ├── period (string)
+  ├── recommendation_summary (string)
+  └── urgent_quote (string)
 
-**2. `src/components/research-insights/ExecutiveSummary.tsx`**
-- Use `var(--gradient-hero)` background with white text for the title area (hero-banner style)
-- Add subtle shadow (`shadow-md`) to the card
-- Refine the recommendation and impact boxes with slightly stronger rounded corners and padding
-- Quote block: add a subtle gold left-border instead of amber
+reason_code_distribution:
+  ├── total_cases (number)
+  ├── preventable_churn (number)
+  ├── unpreventable_churn (number)
+  └── by_category[]:
+      ├── category (string)
+      ├── count (number)
+      ├── percentage (number)
+      └── description (string)
 
-**3. `src/components/research-insights/ReasonCodeChart.tsx`**
-- Card: add `shadow-sm` and `overflow-hidden`
-- Summary stat cards: add subtle gradient backgrounds instead of flat `bg-muted/50`
-- Detail list items: add left color stripe (4px) matching the bar color instead of the small square dot
-- Smoother hover transition on detail cards
+issue_clusters[]:
+  ├── cluster_name (string)
+  ├── description (string)
+  ├── priority (string: "P0", "P1")
+  ├── recommended_action (string)
+  └── supporting_quotes[] (strings)
 
-**4. `src/components/research-insights/IssueClustersPanel.tsx`**
-- Collapsible trigger: add left-accent border (4px) colored by priority (red=P0, amber=P1, blue=P2)
-- Expanded content: softer background tint
-- Quote blockquotes: use gold accent border
+top_actions: (OBJECT, not array)
+  ├── p0_immediate_risk_mitigation[]:
+  │   ├── action (string)
+  │   ├── description (string)
+  │   └── ownership (string)
+  ├── p1_systemic_process_redesign[]:
+  │   └── (same shape)
+  └── quick_wins[]:
+      └── (same shape)
 
-**5. `src/components/research-insights/TopActionsPanel.tsx`**
-- Action cards: add subtle left border colored by priority tier
-- Numbered circles: use gradient fill instead of flat `bg-primary/10`
-- Section headers: add a thin bottom divider line
+operational_blind_spots[]:
+  ├── blind_spot (string)
+  └── description (string)
 
-**6. `src/components/research-insights/PaymentFrictionCard.tsx` & `TransferFrictionCard.tsx`**
-- Card header: add colored icon background circle (like a pill) behind the icon
-- Friction point items: left-accent border by impact level
-- Recommendation box: use gold accent gradient border
+host_accountability_flags[]:
+  ├── flag (string)
+  ├── description (string)
+  └── priority (string)
 
-**7. `src/components/research-insights/BlindSpotsPanel.tsx`**
-- Items: add amber left-accent border (4px), subtle amber tint on hover
-- Add numbered indicators
+emerging_patterns[]:
+  ├── pattern (string)
+  ├── description (string)
+  └── quote (string)
 
-**8. `src/components/research-insights/HostAccountabilityPanel.tsx`**
-- Items: add left-accent border colored by priority
-- Recommendation sub-boxes: use slightly darker tint
+payment_friction_analysis:
+  ├── summary (string)
+  └── key_friction_points[]:
+      ├── point (string)
+      ├── description (string)
+      ├── quote (string)
+      └── impact (string: "Critical", "High")
 
-**9. `src/components/research-insights/AgentPerformanceCard.tsx`**
-- Strengths box: use gradient green tint instead of flat
-- Opportunity items: add left amber border accent
-- Card: add shadow-sm
+transfer_friction_analysis:
+  └── (same shape as payment)
 
-**10. `src/components/research-insights/EmergingPatternsPanel.tsx`**
-- Items: add colored left border based on `watch_or_act` status
-- Badge styling: slightly bolder with icon indicators
+agent_performance_summary:
+  ├── strengths (string)
+  └── opportunities_for_improvement[]:
+      ├── area (string)
+      ├── description (string)
+      └── recommendation (string)
+```
 
-**11. `src/components/research-insights/HumanReviewQueue.tsx`**
-- Items: add amber left-accent border
-- Card header: add amber tint background
+### Plan (10 files to update)
 
-**12. `src/components/research-insights/PriorityBadge.tsx`**
-- Add subtle dot indicator before text for each priority level
+#### 1. ExecutiveSummary.tsx — Rewrite
+Map to actual fields: `title`, `key_findings` (plural), `period`, `recommendation_summary`, `urgent_quote`. Show the title prominently, key findings as narrative paragraph, urgent quote in a highlighted callout, and recommendation summary in an action card.
 
-### Design principles applied
-- Consistent left-accent borders (4px) on list items for visual hierarchy
-- Subtle card shadows (`shadow-sm`) throughout
-- Gradient tints replacing flat color backgrounds
-- More generous spacing between sections
-- Icon backgrounds (small pill circles) for card headers
-- All using existing CSS custom properties — no new design tokens needed
+#### 2. ReasonCodeChart.tsx — Rewrite  
+Read `by_category[]` with fields `category`, `count`, `percentage`, `description`. Add stat cards at top for `total_cases`, `preventable_churn`, `unpreventable_churn`. Keep the horizontal bar chart but use the correct fields.
+
+#### 3. IssueClustersPanel.tsx — Rewrite
+Map `description` (not `cluster_description`), `priority` (string like "P0"), `recommended_action` (string, not object), `supporting_quotes[]` (not `representative_quotes`). Show priority badge prominently. Remove severity_distribution, root_cause references.
+
+#### 4. TopActionsPanel.tsx — Rewrite completely
+Data is an **object** with three keyed arrays (`p0_immediate_risk_mitigation`, `p1_systemic_process_redesign`, `quick_wins`), not a flat array. Render as three grouped sections with P0/P1/Quick Win headers. Each item has `action`, `description`, `ownership`.
+
+#### 5. BlindSpotsPanel.tsx — Minor fix
+Already mostly correct (`blind_spot`, `description`). Remove unused `priority`, `how_discovered`, `estimated_prevalence`, `recommended_detection_method` references.
+
+#### 6. HostAccountabilityPanel.tsx — Fix priority mapping
+Data has `flag`, `description`, `priority` (string like "P0", "P1"). Add PriorityBadge based on the `priority` field instead of parsing the title text.
+
+#### 7. EmergingPatternsPanel.tsx — Already correct
+Has `pattern`, `description`, `quote`. No `watch_or_act` in actual data — gracefully handles missing. Minimal changes.
+
+#### 8. PaymentFrictionCard.tsx — Rewrite
+Data has `summary` + `key_friction_points[]` (objects with `point`, `description`, `quote`, `impact`), not `key_failures[]` (strings). Render each friction point as a card with impact badge and member quote.
+
+#### 9. TransferFrictionCard.tsx — Rewrite (same pattern)
+Same structure as payment friction. Render `key_friction_points[]` with `point`, `description`, `quote`, `impact`.
+
+#### 10. AgentPerformanceCard.tsx — Rewrite
+Data has `strengths` (string) + `opportunities_for_improvement[]` (objects with `area`, `description`, `recommendation`), not `weaknesses[]` (strings). Render each opportunity as its own card with area title, description, and recommendation.
+
+#### 11. ResearchInsights.tsx page — Reorganize layout
+- Executive Summary full-width at top
+- Reason Code Distribution full-width with preventable/unpreventable stat cards
+- Issue Clusters full-width (collapsible, P0 first)
+- Top Actions full-width (grouped by priority tier)
+- Two-column layout: Payment Friction | Transfer Friction
+- Two-column layout: Blind Spots | Host Accountability
+- Agent Performance full-width
+- Emerging Patterns full-width
+- Human Review Queue and Processed Records at bottom
+
+### Note on Claude
+Claude (Anthropic) is not available through the supported AI models. The current Gemini 2.5 Pro model produced excellent, rich data — the problem was purely the UI not matching the output schema. No model change is needed.
 

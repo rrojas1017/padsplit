@@ -33,36 +33,41 @@ export function ExecutiveSummary({ data }: ExecutiveSummaryProps) {
 
   if (title || findings) {
     return (
-      <Card className="border-primary/30 bg-primary/5">
-        <CardContent className="p-6 space-y-4">
+      <Card className="shadow-md overflow-hidden border-primary/20">
+        {/* Hero banner header */}
+        <div className="bg-gradient-to-r from-primary to-primary/80 p-6">
           <div className="flex items-start gap-3">
-            <Sparkles className="w-5 h-5 text-primary mt-1 flex-shrink-0" />
+            <div className="w-9 h-9 rounded-full bg-white/15 flex items-center justify-center flex-shrink-0">
+              <Sparkles className="w-5 h-5 text-white" />
+            </div>
             <div className="space-y-2 flex-1">
-              <h2 className="text-lg font-bold text-foreground leading-snug">{title}</h2>
-              {period && <Badge variant="outline">{period}</Badge>}
+              <h2 className="text-lg font-bold text-white leading-snug">{title}</h2>
+              {period && <Badge variant="outline" className="border-white/30 text-white/90 bg-white/10">{period}</Badge>}
             </div>
           </div>
+        </div>
 
+        <CardContent className="p-6 space-y-4">
           {findings && (
             <p className="text-sm text-muted-foreground leading-relaxed">{findings}</p>
           )}
 
           {data.quantified_impact && (
-            <div className="bg-background/80 rounded-lg p-4 border border-border">
+            <div className="bg-muted/30 rounded-xl p-4 border border-border">
               <p className="text-xs font-semibold text-foreground mb-1 uppercase tracking-wide">Quantified Impact</p>
               <p className="text-sm text-muted-foreground leading-relaxed">{data.quantified_impact}</p>
             </div>
           )}
 
           {data.urgent_quote && (
-            <div className="bg-amber-500/10 border border-amber-500/20 rounded-lg p-4 flex items-start gap-2.5">
-              <Quote className="w-4 h-4 text-amber-600 mt-0.5 flex-shrink-0" />
+            <div className="bg-accent/50 border border-accent rounded-xl p-4 flex items-start gap-2.5">
+              <Quote className="w-4 h-4 text-accent-foreground mt-0.5 flex-shrink-0" />
               <p className="text-sm italic text-muted-foreground leading-relaxed">"{data.urgent_quote}"</p>
             </div>
           )}
 
           {recommendation && (
-            <div className="bg-destructive/10 border border-destructive/20 rounded-lg p-4 flex items-start gap-2.5">
+            <div className="bg-destructive/10 border border-destructive/20 rounded-xl p-4 flex items-start gap-2.5">
               <AlertTriangle className="w-4 h-4 text-destructive mt-0.5 flex-shrink-0" />
               <div>
                 <p className="text-xs font-semibold text-destructive mb-1 uppercase tracking-wide">Key Recommendation</p>
@@ -90,7 +95,7 @@ export function ExecutiveSummary({ data }: ExecutiveSummaryProps) {
   return (
     <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
       {stats.map((stat) => (
-        <Card key={stat.label} className="border-border">
+        <Card key={stat.label} className="shadow-sm">
           <CardContent className="p-4 text-center">
             <p className="text-xl font-bold text-foreground">{stat.value}</p>
             <p className="text-xs text-muted-foreground mt-1">{stat.label}</p>

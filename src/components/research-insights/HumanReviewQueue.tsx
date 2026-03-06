@@ -55,18 +55,24 @@ export function HumanReviewQueue() {
   if (!items.length) return null;
 
   return (
-    <Card>
-      <CardHeader>
+    <Card className="shadow-sm border-amber-500/20">
+      <CardHeader className="bg-amber-500/5 rounded-t-lg">
         <CardTitle className="text-base flex items-center gap-2">
-          <AlertTriangle className="w-4 h-4 text-amber-500" />
+          <div className="w-7 h-7 rounded-full bg-amber-500/10 flex items-center justify-center">
+            <AlertTriangle className="w-4 h-4 text-amber-500" />
+          </div>
           Human Review Queue
           <Badge variant="secondary">{items.length}</Badge>
         </CardTitle>
       </CardHeader>
-      <CardContent>
+      <CardContent className="pt-4">
         <div className="space-y-2">
           {items.map((item) => (
-            <div key={item.id} className="flex items-center justify-between p-3 rounded-lg border border-border">
+            <div
+              key={item.id}
+              className="flex items-center justify-between p-3 rounded-lg border border-border"
+              style={{ borderLeftWidth: '4px', borderLeftColor: 'hsl(45, 93%, 47%)' }}
+            >
               <div>
                 <p className="text-sm font-medium text-foreground">{item.member_name}</p>
                 <p className="text-xs text-muted-foreground">{item.booking_date ? format(new Date(item.booking_date), 'MMM d, yyyy') : ''}</p>
