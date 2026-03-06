@@ -164,7 +164,8 @@ AGGREGATION RULES:
 4. PRIORITIZATION: P0 = safety/legal/>40%. P1 = high-regret/20-40%. P2 = moderate.
 5. BLIND SPOTS — the most valuable insight is what nobody is tracking.
 6. HONESTY — if data shows a serious systemic problem, say so directly.
-7. QUICK WINS — for every major recommendation, identify a small fast action.`;
+7. QUICK WINS — for every major recommendation, identify a small fast action.
+8. BOOKING IDS — each record has a "_booking_id" field. Include the array of booking IDs in "reason_code_distribution" and "issue_clusters" so the UI can trace back to individual records. Also include "reason_codes_included" listing the granular primary_reason_code values grouped into each category.`;
 
 async function processInsights(
   supabaseUrl: string,
