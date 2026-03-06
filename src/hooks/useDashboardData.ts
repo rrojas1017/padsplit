@@ -3,7 +3,8 @@ import { Booking } from '@/types';
 import { supabase } from '@/integrations/supabase/client';
 import { useBookings } from '@/contexts/BookingsContext';
 import { DateRangeFilter as DateRangeFilterType, CustomDateRange } from '@/utils/dashboardCalculations';
-import { format, subDays } from 'date-fns';
+import { format } from 'date-fns';
+import { getDateRangeFromFilter } from '@/utils/dashboardCalculations';
 
 const LIGHTWEIGHT_COLUMNS = `
   id, member_name, booking_date, move_in_date, agent_id, status,
@@ -60,13 +61,9 @@ function transformRow(b: any): Booking {
   };
 }
 
-function needsDirectQuery(dateRange: DateRangeFilterType, customDates?: CustomDateRange): boolean {
-  if (dateRange === 'all') return true;
-  if (dateRange === 'custom' && customDates) {
-    const ninetyDaysAgo = subDays(new Date(), 90);
-    return customDates.from < ninetyDaysAgo;
-  }
-  return false;
+function needsDirectQuery(dateRange: DateRangeFilterType): boolean {
+  // Only "today" is safe to use from context (most recent data always present)
+  return dateRange !== 'today';
 }
 
 /**
@@ -122,9 +119,10 @@ export function useDashboardData(dateRange: DateRangeFilterType, customDates?: C
 
     setIsDirectLoading(true);
     try {
-      const dateFilter = dateRange === 'custom' && customDates
-        ? { from: format(customDates.from, 'yyyy-MM-dd'), to: format(customDates.to, 'yyyy-MM-dd') }
-        : undefined; // 'all' = no date filter
+      const { start, end } = getDateRangeFromFilter(dateRange, customDates);
+      const dateFilter = dateRange === 'all'
+        ? undefined // 'all' = no date filter
+        : { from: format(start, 'yyyy-MM-dd'), to: format(end, 'yyyy-MM-dd') };
 
       const data = await fetchAllBookings(dateFilter);
       cacheRef.current = { key: cacheKey, data };
@@ -137,14 +135,14 @@ export function useDashboardData(dateRange: DateRangeFilterType, customDates?: C
   }, [cacheKey, dateRange, customDates]);
 
   useEffect(() => {
-    if (needsDirectQuery(dateRange, customDates)) {
+    if (needsDirectQuery(dateRange)) {
       fetchDirect();
     } else {
       setDirectBookings(null);
     }
   }, [dateRange, customDates, fetchDirect]);
 
-  const useDirect = needsDirectQuery(dateRange, customDates);
+  const useDirect = needsDirectQuery(dateRange);
 
   return {
     bookings: useDirect ? (directBookings || []) : contextBookings,
