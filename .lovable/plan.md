@@ -1,24 +1,40 @@
 
 
-## Fix: Drill-Down Showing 0 Records for Existing Reports
+## Improve Research Classification Accuracy
 
 ### Problem
-Clicking "Host, Property & Safety Failures" (44 records) opens the drill-down but shows **0 records**. This happens because:
-1. The current report was generated **before** `booking_ids` and `reason_codes_included` were added to the schema — so both are `undefined`
-2. The fallback query in `ReasonCodeDrillDown` only runs when `reasonCodesIncluded` has values — which it doesn't for old reports
-3. No third fallback exists
+Three issues causing inaccurate categorization:
+1. **Prompt A's "STATED vs TRUE REASON GUIDE"** forces the AI to reinterpret what members said — e.g., "I found an apartment" gets reclassified as "Host Negligence" even without evidence
+2. **No confidence threshold** — a single casual mention of an issue gets the same weight as a repeated, emphasized complaint
+3. **Prompt B only sees the extraction** — it cannot verify whether Prompt A's interpretation matches the actual transcript
 
-### Solution
-Add a third fallback strategy to `ReasonCodeDrillDown.tsx` that uses the **group name** to fuzzy-match records:
+### Changes
 
-1. When both `bookingIds` and `reasonCodesIncluded` are empty/missing, query all processed research records and filter client-side by matching the `primary_reason_code` against keywords extracted from the group name (e.g., "Host", "Property", "Safety")
-2. This ensures old reports still work while new reports use the precise `booking_ids` path
+**File: `supabase/functions/process-research-record/index.ts`**
 
-### Files to Change
+**1. Remove over-interpretation bias from Prompt A (DEFAULT_EXTRACTION_PROMPT)**
+- Delete the entire "STATED vs TRUE REASON GUIDE" block (lines 193-199)
+- Replace `primary_reason_interpreted` instruction from "Your analytical interpretation of the TRUE root cause" to: "If you believe the stated reason may not be the full picture, explain why based on EVIDENCE from the transcript. If there is no contradicting evidence, set this to null."
+- Add rule: "Do NOT assume hidden motivations. Only flag an interpreted reason when the transcript contains concrete contradicting evidence."
 
-**`src/components/research-insights/ReasonCodeDrillDown.tsx`**
-- Add Strategy 3 after Strategy 2: when no `bookingIds` and no `reasonCodesIncluded`, fetch all processed research records (with campaign/date filters) and fuzzy-match using the `groupName` split into keywords against each record's `primary_reason_code`
-- Extract keywords by splitting group name on common delimiters (commas, "&", "and") and trimming filler words
+**2. Add confidence thresholds to Prompt A extraction**
+- Add a `mention_count` field to each item in `issues_mentioned`: how many distinct times the member referenced this issue
+- Add an `evidence_strength` field: `"strong"` (member explicitly identifies as reason for leaving), `"moderate"` (discussed at length or with emotion), `"weak"` (mentioned once in passing or only by agent)
+- Add rule: "Mark evidence_strength as 'weak' for issues mentioned only once, casually, or only raised by the agent. Mark 'strong' only when the member explicitly connects the issue to their decision to leave."
 
-This is a single-file change that makes the existing drill-down work retroactively for all previously generated reports.
+**3. Feed raw transcript to Prompt B for verification**
+- Change the Prompt B user message from just the extraction JSON to include both the extraction AND the raw transcript
+- Update `DEFAULT_CLASSIFICATION_PROMPT` to add verification rules:
+  - "You are receiving BOTH the structured extraction AND the original transcript. Cross-reference the extraction against the transcript."
+  - "If the extraction's `primary_reason_interpreted` contradicts what the member actually said, override it using the transcript as ground truth."
+  - "Only use issues with evidence_strength 'strong' or 'moderate' when determining the primary_reason_code. Issues with 'weak' evidence should only appear in secondary_reason_codes."
+  - "Lower the preventability_score by 2 points if the primary reason is based on interpretation rather than explicit member statements."
+
+**4. Update the Prompt B call** (line 372)
+- Change the user prompt from:
+  `Here is the structured extraction to classify:\n\n${JSON.stringify(extraction, null, 2)}`
+- To:
+  `Here is the structured extraction to classify:\n\n${JSON.stringify(extraction, null, 2)}\n\n--- ORIGINAL TRANSCRIPT FOR VERIFICATION ---\n\n${transcription.call_transcription}`
+
+This is a single-file change to the edge function. Existing processed records are unaffected — only new/re-processed records will use the improved prompts. Custom prompts in the `research_prompts` table will continue to override these defaults.
 
