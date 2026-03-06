@@ -168,7 +168,7 @@ export function ReasonCodeDrillDown({
 
   const getAddressabilityColor = (val: string | null) => {
     if (!val) return 'secondary';
-    const v = val.toLowerCase();
+    const v = String(val).toLowerCase();
     if (v.includes('addressable') && !v.includes('non') && !v.includes('partial')) return 'destructive';
     if (v.includes('partial')) return 'default';
     return 'secondary';
