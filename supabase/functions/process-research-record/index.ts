@@ -120,7 +120,7 @@ Respond with ONLY the JSON object below. No preamble, no markdown, no explanatio
   "length_of_stay": "string or null",
   "phone_number": "string or null",
   "primary_reason_stated": "The member's own explanation of why they left, condensed to 1-3 sentences using their framing and language.",
-  "primary_reason_interpreted": "Your analytical interpretation of the TRUE root cause. Apply the Stressor → Failure Point → Breaking Point framework.",
+  "primary_reason_interpreted": "If you believe the stated reason may not be the full picture, explain why based on EVIDENCE from the transcript. If there is no contradicting evidence, set this to null.",
   "trigger_type": "gradual | single_event | external_life_change | compound",
   "trigger_description": "What specifically happened or changed",
   "issues_mentioned": [
@@ -128,6 +128,8 @@ Respond with ONLY the JSON object below. No preamble, no markdown, no explanatio
       "issue": "Short clear description",
       "category": "maintenance | host_behavior | roommate_conflict | payment_difficulty | employment | safety | cleanliness | communication | policy_confusion | transfer_friction | life_change | other",
       "severity_expressed": "low | medium | high | critical",
+      "mention_count": 1,
+      "evidence_strength": "strong | moderate | weak",
       "was_reported_to_padsplit": true,
       "padsplit_response_if_reported": "What happened when they reported it, or null",
       "escalated_over_time": false,
@@ -186,21 +188,16 @@ Respond with ONLY the JSON object below. No preamble, no markdown, no explanatio
 RULES:
 - If information is not in the transcript, use null. NEVER fabricate.
 - Extract ALL issues mentioned, even tangential ones.
+- Do NOT assume hidden motivations. Only flag an interpreted reason when the transcript contains concrete contradicting evidence.
+- For mention_count, count the number of DISTINCT times the member referenced this issue (not the agent).
+- Mark evidence_strength as 'weak' for issues mentioned only once, casually, or only raised by the agent. Mark 'moderate' for issues discussed at length or with emotion. Mark 'strong' ONLY when the member explicitly connects the issue to their decision to leave.
 - For blind_spots, be thorough — look for silent suffering, assumptions about PadSplit's limitations, information gaps.
 - For quotes, use EXACT words from the transcript.
-- When ambiguous, use confidence_flags rather than presenting interpretation as fact.
+- When ambiguous, use confidence_flags rather than presenting interpretation as fact.`;
 
-STATED vs TRUE REASON GUIDE:
-- "I couldn't find a job" → likely Payment Extension Not Offered
-- "I found an apartment" → likely Host Negligence (apartment was escape, not cause)
-- "I just decided to move" → likely Roommate Conflict (downplayed)
-- "My balance was too high" → likely Collections – No Flexibility
-- "The host and I didn't see eye to eye" → likely Host Negligence/Safety
-- "It just wasn't working out" → likely Multiple compounding issues`;
+const DEFAULT_CLASSIFICATION_PROMPT = `You are a housing operations analyst at PadSplit. You are receiving structured extraction data from a member move-out interview AND the original transcript. Cross-reference the extraction against the transcript to verify accuracy.
 
-const DEFAULT_CLASSIFICATION_PROMPT = `You are a housing operations analyst at PadSplit. You are receiving structured extraction data from a member move-out interview. Classify this case using PadSplit's internal framework.
-
-Input: the JSON extraction from the previous processing step.
+Input: the JSON extraction from the previous processing step, followed by the original transcript for verification.
 
 Respond with ONLY the JSON object below. No preamble, no markdown, no explanation.
 
@@ -244,9 +241,12 @@ Respond with ONLY the JSON object below. No preamble, no markdown, no explanatio
 
 CLASSIFICATION RULES:
 1. PRIMARY CODE = the issue which, if resolved, would MOST LIKELY have retained the member.
-2. PREVENTABILITY SCORING: 9-10: Clear signals, tools to intervene, failed to act. 7-8: Possible with proactive changes. 5-6: Partially preventable. 3-4: Mostly external. 1-2: Fully external.
-3. REGRETTABILITY: High = engaged member we should have kept. Low = departure was inevitable or acceptable.
-4. FLAG FOR HUMAN REVIEW when: transcript is ambiguous, contradictory, involves legal issues, or uncertain between primary codes.`;
+2. Only use issues with evidence_strength 'strong' or 'moderate' when determining the primary_reason_code. Issues with 'weak' evidence should only appear in secondary_reason_codes.
+3. If the extraction's primary_reason_interpreted contradicts what the member actually said in the transcript, override it using the transcript as ground truth.
+4. Lower the preventability_score by 2 points if the primary reason is based on interpretation rather than explicit member statements.
+5. PREVENTABILITY SCORING: 9-10: Clear signals, tools to intervene, failed to act. 7-8: Possible with proactive changes. 5-6: Partially preventable. 3-4: Mostly external. 1-2: Fully external.
+6. REGRETTABILITY: High = engaged member we should have kept. Low = departure was inevitable or acceptable.
+7. FLAG FOR HUMAN REVIEW when: transcript is ambiguous, contradictory, involves legal issues, or uncertain between primary codes.`;
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -369,7 +369,7 @@ Deno.serve(async (req) => {
       classificationModel,
       classificationTemp,
       classificationSystemPrompt,
-      `Here is the structured extraction to classify:\n\n${JSON.stringify(extraction, null, 2)}`
+      `Here is the structured extraction to classify:\n\n${JSON.stringify(extraction, null, 2)}\n\n--- ORIGINAL TRANSCRIPT FOR VERIFICATION ---\n\n${transcription.call_transcription}`
     );
 
     const classification = await parseJsonWithRetry(
@@ -378,7 +378,7 @@ Deno.serve(async (req) => {
       classificationModel,
       classificationTemp,
       classificationSystemPrompt,
-      `Here is the structured extraction to classify:\n\n${JSON.stringify(extraction, null, 2)}`
+      `Here is the structured extraction to classify:\n\n${JSON.stringify(extraction, null, 2)}\n\n--- ORIGINAL TRANSCRIPT FOR VERIFICATION ---\n\n${transcription.call_transcription}`
     );
 
     console.log(`[Research] Prompt B complete. Primary code: ${classification.primary_reason_code}, Preventability: ${classification.preventability_score}`);
