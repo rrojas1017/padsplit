@@ -25,6 +25,7 @@ import { TopActionsPanel } from '@/components/research-insights/TopActionsPanel'
 import { EmergingPatternsPanel } from '@/components/research-insights/EmergingPatternsPanel';
 import { HumanReviewQueue } from '@/components/research-insights/HumanReviewQueue';
 import { ProcessedRecordsList } from '@/components/research-insights/ProcessedRecordsList';
+import { PriorityGlossary } from '@/components/research-insights/PriorityGlossary';
 
 export default function ResearchInsights() {
   const [dateRange, setDateRange] = useState<DateRangeOption>('allTime');
@@ -257,6 +258,8 @@ export default function ResearchInsights() {
           {reportData.executive_summary && (
             <ExecutiveSummary data={reportData.executive_summary} />
           )}
+
+          <PriorityGlossary />
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             {reportData.reason_code_distribution && (
