@@ -1,12 +1,11 @@
 import { useState, useCallback, useEffect } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Progress } from '@/components/ui/progress';
-import { Sparkles, RefreshCw, Loader2, Database, AlertTriangle, CheckCircle } from 'lucide-react';
+import { Sparkles, RefreshCw, Loader2, Database, AlertTriangle } from 'lucide-react';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
 import { useResearchInsightsData, DateRangeOption } from '@/hooks/useResearchInsightsData';
@@ -85,11 +84,9 @@ export default function ResearchInsights() {
     await triggerBackfill();
   };
 
-  // Auto-stop backfilling when all records are processed
   useEffect(() => {
     if (isBackfilling && processingStats.pendingRecords === 0 && processingStats.totalResearchRecords > 0) {
       setIsBackfilling(false);
-      // Clear the polling interval
       if ((window as any).__researchBackfillPoll) {
         clearInterval((window as any).__researchBackfillPoll);
         delete (window as any).__researchBackfillPoll;
@@ -99,17 +96,6 @@ export default function ResearchInsights() {
   }, [isBackfilling, processingStats]);
 
   const reportData = selectedReport?.data as any;
-
-  const getPeriodLabel = (period: string): string => {
-    switch (period) {
-      case 'thisWeek': return 'This Week';
-      case 'lastMonth': return 'Last Month';
-      case 'thisMonth': return 'This Month';
-      case 'last3months': return 'Last 3 Months';
-      case 'allTime': return 'All Time';
-      default: return period || 'All Time';
-    }
-  };
 
   return (
     <DashboardLayout title="Research Insights" subtitle="AI-processed findings from move-out research">
@@ -149,7 +135,6 @@ export default function ResearchInsights() {
           <RefreshCw className="w-4 h-4" />
         </Button>
 
-        {/* Previous reports selector */}
         {reports.length > 1 && (
           <Select
             value={selectedReport?.id || ''}
@@ -184,7 +169,7 @@ export default function ResearchInsights() {
                   <p className="text-xs text-muted-foreground">
                     {isBackfilling
                       ? 'Processing in progress...'
-                      : processingStats.pendingRecords > 0 
+                      : processingStats.pendingRecords > 0
                         ? `${processingStats.pendingRecords} pending AI processing`
                         : 'All records processed'}
                   </p>
@@ -198,8 +183,8 @@ export default function ResearchInsights() {
               )}
             </div>
             {isBackfilling && processingStats.totalResearchRecords > 0 && (
-              <Progress 
-                value={(processingStats.processedRecords / processingStats.totalResearchRecords) * 100} 
+              <Progress
+                value={(processingStats.processedRecords / processingStats.totalResearchRecords) * 100}
                 className="h-2"
               />
             )}
@@ -254,58 +239,61 @@ export default function ResearchInsights() {
       {/* Report content */}
       {!isLoading && selectedReport?.status === 'completed' && reportData && (
         <div className="space-y-6">
+          {/* Executive Summary — full width */}
           {reportData.executive_summary && (
             <ExecutiveSummary data={reportData.executive_summary} />
           )}
 
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {reportData.reason_code_distribution && (
-              <div className="lg:col-span-2">
-                <ReasonCodeChart data={reportData.reason_code_distribution} />
-              </div>
-            )}
+          {/* Reason Code Distribution — full width */}
+          {reportData.reason_code_distribution && (
+            <ReasonCodeChart data={reportData.reason_code_distribution} />
+          )}
 
-            {reportData.issue_clusters && (
-              <div className="lg:col-span-2">
-                <IssueClustersPanel data={reportData.issue_clusters} />
-              </div>
-            )}
+          {/* Issue Clusters — full width, P0 first */}
+          {reportData.issue_clusters && (
+            <IssueClustersPanel data={reportData.issue_clusters} />
+          )}
 
-            {reportData.payment_friction_analysis && (
-              <PaymentFrictionCard data={reportData.payment_friction_analysis} />
-            )}
+          {/* Top Actions — full width, grouped by priority */}
+          {reportData.top_actions && (
+            <TopActionsPanel data={reportData.top_actions} />
+          )}
 
-            {reportData.transfer_friction_analysis && (
-              <TransferFrictionCard data={reportData.transfer_friction_analysis} />
-            )}
+          {/* Two-column: Payment Friction | Transfer Friction */}
+          {(reportData.payment_friction_analysis || reportData.transfer_friction_analysis) && (
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {reportData.payment_friction_analysis && (
+                <PaymentFrictionCard data={reportData.payment_friction_analysis} />
+              )}
+              {reportData.transfer_friction_analysis && (
+                <TransferFrictionCard data={reportData.transfer_friction_analysis} />
+              )}
+            </div>
+          )}
 
-            {reportData.top_actions && (
-              <div className="lg:col-span-2">
-                <TopActionsPanel data={reportData.top_actions} />
-              </div>
-            )}
+          {/* Two-column: Blind Spots | Host Accountability */}
+          {(reportData.operational_blind_spots || reportData.host_accountability_flags) && (
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {reportData.operational_blind_spots && (
+                <BlindSpotsPanel data={reportData.operational_blind_spots} />
+              )}
+              {reportData.host_accountability_flags && (
+                <HostAccountabilityPanel data={reportData.host_accountability_flags} />
+              )}
+            </div>
+          )}
 
-            {reportData.operational_blind_spots && (
-              <BlindSpotsPanel data={reportData.operational_blind_spots} />
-            )}
+          {/* Agent Performance — full width */}
+          {reportData.agent_performance_summary && (
+            <AgentPerformanceCard data={reportData.agent_performance_summary} />
+          )}
 
-            {reportData.host_accountability_flags && (
-              <HostAccountabilityPanel data={reportData.host_accountability_flags} />
-            )}
+          {/* Emerging Patterns — full width */}
+          {reportData.emerging_patterns && (
+            <EmergingPatternsPanel data={reportData.emerging_patterns} />
+          )}
 
-            {reportData.agent_performance_summary && (
-              <div className="lg:col-span-2">
-                <AgentPerformanceCard data={reportData.agent_performance_summary} />
-              </div>
-            )}
-
-            {reportData.emerging_patterns && (
-              <div className="lg:col-span-2">
-                <EmergingPatternsPanel data={reportData.emerging_patterns} />
-              </div>
-            )}
-          </div>
-
+          {/* Review & Records */}
           <HumanReviewQueue />
           <ProcessedRecordsList />
         </div>
@@ -322,7 +310,6 @@ export default function ResearchInsights() {
         </Card>
       )}
 
-      {/* Loading detail */}
       {isLoadingDetail && (
         <div className="space-y-4 mt-6">
           <Skeleton className="h-32 w-full" />

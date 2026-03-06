@@ -4,6 +4,16 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContaine
 
 interface ReasonCodeChartProps {
   data: {
+    total_cases?: number;
+    preventable_churn?: number;
+    unpreventable_churn?: number;
+    by_category?: Array<{
+      category: string;
+      count: number;
+      percentage: number;
+      description?: string;
+    }>;
+    // Legacy nested format
     distribution?: Array<{
       reason_group: string;
       count: number;
@@ -15,28 +25,41 @@ interface ReasonCodeChartProps {
     code: string;
     count: number;
     pct: number;
-    avg_preventability?: number;
   }>;
 }
 
 export function ReasonCodeChart({ data }: ReasonCodeChartProps) {
   if (!data) return null;
 
-  // Normalize data from either format
   let chartData: Array<{ name: string; count: number; pct: number; details?: string }> = [];
+  let totalCases: number | undefined;
+  let preventable: number | undefined;
+  let unpreventable: number | undefined;
   let methodology: string | undefined;
 
   if (Array.isArray(data)) {
-    // Legacy format
-    chartData = data.map(d => ({ name: d.code, count: d.count, pct: d.pct, details: undefined }));
-  } else if (data.distribution?.length) {
-    chartData = data.distribution.map(d => ({
-      name: d.reason_group,
-      count: d.count,
-      pct: d.percentage,
-      details: d.details,
-    }));
+    chartData = data.map(d => ({ name: d.code, count: d.count, pct: d.pct }));
+  } else {
+    totalCases = data.total_cases;
+    preventable = data.preventable_churn;
+    unpreventable = data.unpreventable_churn;
     methodology = data.methodology;
+
+    if (data.by_category?.length) {
+      chartData = data.by_category.map(d => ({
+        name: d.category,
+        count: d.count,
+        pct: d.percentage,
+        details: d.description,
+      }));
+    } else if (data.distribution?.length) {
+      chartData = data.distribution.map(d => ({
+        name: d.reason_group,
+        count: d.count,
+        pct: d.percentage,
+        details: d.details,
+      }));
+    }
   }
 
   if (!chartData.length) return null;
@@ -49,6 +72,7 @@ export function ReasonCodeChart({ data }: ReasonCodeChartProps) {
     'hsl(45, 93%, 47%)',
     'hsl(var(--primary))',
     'hsl(var(--muted-foreground))',
+    'hsl(262, 83%, 58%)',
   ];
 
   return (
@@ -57,14 +81,32 @@ export function ReasonCodeChart({ data }: ReasonCodeChartProps) {
         <CardTitle className="text-base">Reason Code Distribution</CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
+        {/* Summary stat cards */}
+        {totalCases != null && (
+          <div className="grid grid-cols-3 gap-3">
+            <div className="text-center p-3 rounded-lg bg-muted/50">
+              <p className="text-lg font-bold text-foreground">{totalCases}</p>
+              <p className="text-xs text-muted-foreground">Total Cases</p>
+            </div>
+            <div className="text-center p-3 rounded-lg bg-destructive/10">
+              <p className="text-lg font-bold text-destructive">{preventable}</p>
+              <p className="text-xs text-muted-foreground">Preventable</p>
+            </div>
+            <div className="text-center p-3 rounded-lg bg-muted/50">
+              <p className="text-lg font-bold text-foreground">{unpreventable}</p>
+              <p className="text-xs text-muted-foreground">Unpreventable</p>
+            </div>
+          </div>
+        )}
+
         <ResponsiveContainer width="100%" height={Math.max(250, sorted.length * 50)}>
-          <BarChart data={sorted} layout="vertical" margin={{ left: 220, right: 30, top: 5, bottom: 5 }}>
+          <BarChart data={sorted} layout="vertical" margin={{ left: 180, right: 30, top: 5, bottom: 5 }}>
             <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
             <XAxis type="number" className="text-xs fill-muted-foreground" />
             <YAxis
               type="category"
               dataKey="name"
-              width={210}
+              width={170}
               tick={{ fontSize: 11 }}
               className="fill-muted-foreground"
             />
