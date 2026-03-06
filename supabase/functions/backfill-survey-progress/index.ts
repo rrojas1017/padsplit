@@ -1,9 +1,4 @@
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-
-declare const EdgeRuntime: {
-  waitUntil: (promise: Promise<unknown>) => void;
-};
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -12,7 +7,7 @@ const corsHeaders = {
 
 const BATCH_SIZE = 20;
 
-serve(async (req) => {
+Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
@@ -52,7 +47,6 @@ serve(async (req) => {
   console.log(`[Backfill] Found ${total} records to process${dryRun ? ' (dry run)' : ''}`);
 
   if (dryRun) {
-    // Count total remaining
     const { count } = await supabase
       .from('bookings')
       .select('id, booking_transcriptions!inner(id)', { count: 'exact', head: true })
@@ -72,7 +66,7 @@ serve(async (req) => {
     });
   }
 
-  // Fetch the single research script's questions once (not per-record)
+  // Fetch research script questions
   const { data: scriptData } = await supabase
     .from('research_campaigns')
     .select('research_scripts!research_campaigns_script_id_fkey(questions)')
@@ -81,7 +75,7 @@ serve(async (req) => {
 
   const questions = (scriptData as any)?.research_scripts?.questions;
   if (!Array.isArray(questions) || questions.length === 0) {
-    console.error('[Backfill] No research script questions found in any campaign');
+    console.error('[Backfill] No research script questions found');
     return new Response(JSON.stringify({ error: 'No research script questions found' }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -94,18 +88,16 @@ serve(async (req) => {
     `${i + 1}. ${typeof q === 'string' ? q : q.text || q.question || JSON.stringify(q)}`
   ).join('\n');
 
-  // Return immediately, process in background
-  EdgeRuntime.waitUntil((async () => {
-    let processed = 0;
-    let failed = 0;
+  let processed = 0;
+  let failed = 0;
 
-    for (const record of records!) {
-      try {
-        const transcription = (record as any).booking_transcriptions;
-        const transcript = transcription?.call_transcription;
-        if (!transcript) continue;
+  for (const record of records!) {
+    try {
+      const transcription = (record as any).booking_transcriptions;
+      const transcript = transcription?.call_transcription;
+      if (!transcript) continue;
 
-        const surveyPrompt = `You are analyzing a research survey call transcript. Determine which survey questions were covered/addressed during the call.
+      const surveyPrompt = `You are analyzing a research survey call transcript. Determine which survey questions were covered/addressed during the call.
 
 Here are the ${questions.length} survey questions:
 ${questionList}
@@ -120,75 +112,63 @@ Return ONLY a JSON object with:
 
 Be generous in matching — if the topic of a question was discussed even partially, count it as covered. Return valid JSON only, no markdown.`;
 
-        const aiResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${lovableApiKey}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            model: 'google/gemini-2.5-flash',
-            messages: [{ role: 'user', content: surveyPrompt }],
-          }),
-        });
+      const aiResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${lovableApiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: 'google/gemini-2.5-flash',
+          messages: [{ role: 'user', content: surveyPrompt }],
+        }),
+      });
 
-        if (!aiResponse.ok) {
-          console.error(`[Backfill] AI error for ${record.id}: ${aiResponse.status}`);
-          failed++;
-          continue;
-        }
-
-        const aiResult = await aiResponse.json();
-        let content = aiResult.choices?.[0]?.message?.content || '';
-        content = content.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-        const parsed = JSON.parse(content);
-
-        const surveyProgress = {
-          answered: parsed.answered || 0,
-          total: parsed.total || questions.length,
-          questions_covered: Array.isArray(parsed.questions_covered) ? parsed.questions_covered : [],
-        };
-
-        const { error: updateError } = await supabase
-          .from('booking_transcriptions')
-          .update({ survey_progress: surveyProgress })
-          .eq('booking_id', record.id);
-
-        if (updateError) {
-          console.error(`[Backfill] Update error for ${record.id}:`, updateError);
-          failed++;
-        } else {
-          processed++;
-          console.log(`[Backfill] ${record.id}: ${surveyProgress.answered}/${surveyProgress.total}`);
-        }
-
-        await new Promise(r => setTimeout(r, 500));
-      } catch (err) {
-        console.error(`[Backfill] Error processing ${record.id}:`, err);
+      if (!aiResponse.ok) {
+        console.error(`[Backfill] AI error for ${record.id}: ${aiResponse.status}`);
         failed++;
+        continue;
       }
-    }
 
-    console.log(`[Backfill] Complete: ${processed} processed, ${failed} failed`);
+      const aiResult = await aiResponse.json();
+      let content = aiResult.choices?.[0]?.message?.content || '';
+      content = content.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+      const parsed = JSON.parse(content);
 
-    if (processed > 0) {
-      try {
-        await fetch(`${supabaseUrl}/functions/v1/backfill-survey-progress`, {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${supabaseServiceKey}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({}),
-        });
-        console.log('[Backfill] Self-retriggered for next batch');
-      } catch (retriggerErr) {
-        console.error('[Backfill] Self-retrigger failed:', retriggerErr);
+      const surveyProgress = {
+        answered: parsed.answered || 0,
+        total: parsed.total || questions.length,
+        questions_covered: Array.isArray(parsed.questions_covered) ? parsed.questions_covered : [],
+      };
+
+      const { error: updateError } = await supabase
+        .from('booking_transcriptions')
+        .update({ survey_progress: surveyProgress })
+        .eq('booking_id', record.id);
+
+      if (updateError) {
+        console.error(`[Backfill] Update error for ${record.id}:`, updateError);
+        failed++;
+      } else {
+        processed++;
+        console.log(`[Backfill] ${record.id}: ${surveyProgress.answered}/${surveyProgress.total}`);
       }
-    }
-  })());
 
-  return new Response(JSON.stringify({ message: `Processing ${total} records in background`, batch: total }), {
+      await new Promise(r => setTimeout(r, 500));
+    } catch (err) {
+      console.error(`[Backfill] Error processing ${record.id}:`, err);
+      failed++;
+    }
+  }
+
+  console.log(`[Backfill] Complete: ${processed} processed, ${failed} failed`);
+
+  return new Response(JSON.stringify({ 
+    message: `Processed ${processed} records`, 
+    processed, 
+    failed,
+    hasMore: total === BATCH_SIZE
+  }), {
     headers: { ...corsHeaders, 'Content-Type': 'application/json' },
   });
 });

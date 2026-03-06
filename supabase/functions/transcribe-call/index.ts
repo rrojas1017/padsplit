@@ -1857,6 +1857,7 @@ async function processTranscription(bookingId: string, kixieUrl: string, skipTts
 
     // ===== SURVEY PROGRESS EXTRACTION (Research records only) =====
     let surveyProgress: { answered: number; total: number; questions_covered: number[] } | null = null;
+    console.log(`[Background] Survey progress gate: isResearch=${isResearch}, hasValidConversation=${hasValidConversation}, hasTranscription=${!!transcription} for ${bookingId}`);
     if (isResearch && hasValidConversation && transcription) {
       try {
         console.log('[Background] Extracting survey progress for research record...');

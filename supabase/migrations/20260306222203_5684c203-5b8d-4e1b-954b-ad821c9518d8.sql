@@ -1,0 +1,1 @@
+UPDATE bookings SET has_valid_conversation = false WHERE id IN (SELECT b.id FROM bookings b JOIN booking_transcriptions bt ON bt.booking_id = b.id WHERE b.record_type = 'research' AND b.has_valid_conversation = true AND bt.survey_progress IS NULL AND (bt.call_transcription IS NULL OR length(bt.call_transcription) = 0))
