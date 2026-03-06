@@ -322,7 +322,7 @@ Deno.serve(async (req) => {
     const classificationPrompt = prompts?.find((p: any) => p.prompt_key === 'classification');
 
     const extractionSystemPrompt = extractionPrompt?.prompt_text || DEFAULT_EXTRACTION_PROMPT;
-    const extractionModel = extractionPrompt?.model || 'google/gemini-2.5-pro';
+    const extractionModel = extractionPrompt?.model || 'google/gemini-2.5-flash';
     const extractionTemp = Number(extractionPrompt?.temperature) || 0.2;
 
     const classificationSystemPrompt = classificationPrompt?.prompt_text || DEFAULT_CLASSIFICATION_PROMPT;
