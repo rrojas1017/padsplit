@@ -31,9 +31,16 @@ interface ReasonCodeChartProps {
     }>;
     methodology?: string;
   } | Array<{
-    code: string;
+    code?: string;
+    reason_group?: string;
+    category?: string;
     count: number;
-    pct: number;
+    pct?: number;
+    percentage?: number;
+    details?: string;
+    description?: string;
+    booking_ids?: string[];
+    reason_codes_included?: string[];
   }>;
 }
 
@@ -53,7 +60,14 @@ export function ReasonCodeChart({ data }: ReasonCodeChartProps) {
   let methodology: string | undefined;
 
   if (Array.isArray(data)) {
-    chartData = data.map(d => ({ name: d.code, count: d.count, pct: d.pct }));
+    chartData = data.map(d => ({
+      name: d.code || d.reason_group || d.category || 'Unknown',
+      count: d.count,
+      pct: d.pct ?? d.percentage ?? 0,
+      details: d.details || d.description,
+      bookingIds: d.booking_ids,
+      includedCodes: d.reason_codes_included,
+    }));
   } else {
     totalCases = data.total_cases;
     preventable = data.preventable_churn;
