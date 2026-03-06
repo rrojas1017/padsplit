@@ -16,24 +16,31 @@ Deno.serve(async (req) => {
 
   try {
     const body = await req.json().catch(() => ({}));
-    const campaignId = body.campaignId || null;
     const dryRun = body.dryRun === true;
 
-    // Find all booking_transcriptions that have been processed, linked to research bookings
-    let query = supabase
-      .from('booking_transcriptions')
-      .select('id, booking_id, bookings!inner(id, record_type, campaign_id)', { count: 'exact', head: dryRun })
-      .eq('research_processing_status', 'completed')
-      .eq('bookings.record_type', 'research');
+    // First get research booking IDs
+    const { data: researchBookings, error: bookingsError } = await supabase
+      .from('bookings')
+      .select('id')
+      .eq('record_type', 'research');
 
-    if (campaignId) {
-      // Filter by campaign via booking's research_call -> campaign
-      // Since bookings don't have campaign_id directly, we skip campaign filter for now
-      // unless the caller passes booking IDs
+    if (bookingsError) throw bookingsError;
+
+    const bookingIds = (researchBookings || []).map((b: any) => b.id);
+
+    if (bookingIds.length === 0) {
+      return new Response(JSON.stringify({ count: 0, reset_count: 0, message: 'No research bookings found' }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
     }
 
     if (dryRun) {
-      const { count, error } = await query;
+      const { count, error } = await supabase
+        .from('booking_transcriptions')
+        .select('id', { count: 'exact', head: true })
+        .eq('research_processing_status', 'completed')
+        .in('booking_id', bookingIds);
+
       if (error) throw error;
       return new Response(JSON.stringify({ count: count || 0 }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -41,14 +48,11 @@ Deno.serve(async (req) => {
     }
 
     // Get IDs to reset
-    const { data: records, error: fetchError } = await query.select('id');
-    
-    // Re-query without head mode to get actual IDs
     const { data: toReset, error: listError } = await supabase
       .from('booking_transcriptions')
-      .select('id, bookings!inner(id, record_type)')
+      .select('id')
       .eq('research_processing_status', 'completed')
-      .eq('bookings.record_type', 'research');
+      .in('booking_id', bookingIds);
 
     if (listError) throw listError;
 
