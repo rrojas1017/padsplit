@@ -5,15 +5,6 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { supabase } from '@/integrations/supabase/client';
 
-const FILLER_WORDS = new Set(['the', 'a', 'an', 'of', 'in', 'on', 'for', 'to', 'with', 'by', 'issues', 'failures', 'problems', 'concerns', 'related']);
-
-function extractKeywords(groupName: string): string[] {
-  return groupName
-    .split(/[,&/]+|\band\b/i)
-    .map((s) => s.trim().toLowerCase())
-    .flatMap((s) => s.split(/\s+/))
-    .filter((w) => w.length > 2 && !FILLER_WORDS.has(w));
-}
 interface DrillDownRecord {
   bookingId: string;
   memberName: string;
@@ -104,41 +95,6 @@ export function ReasonCodeDrillDown({
             );
           });
           setRecords(mapRecords(filtered));
-          setIsLoading(false);
-          return;
-        }
-      }
-
-      // Strategy 3: Fuzzy-match using group name keywords (for old reports)
-      {
-        const keywords = extractKeywords(groupName);
-        if (keywords.length > 0) {
-          let query = supabase
-            .from('bookings')
-            .select(`
-              id, member_name, booking_date,
-              booking_transcriptions!inner(research_classification, research_processing_status)
-            `)
-            .eq('record_type', 'research')
-            .eq('has_valid_conversation', true)
-            .eq('booking_transcriptions.research_processing_status', 'completed');
-
-          if (campaignId) query = query.eq('research_call_id', campaignId);
-          if (dateRangeStart) query = query.gte('booking_date', dateRangeStart);
-          if (dateRangeEnd) query = query.lte('booking_date', dateRangeEnd);
-
-          const { data, error } = await query;
-
-          if (!error && data) {
-            const filtered = (data as any[]).filter((r) => {
-              const t = Array.isArray(r.booking_transcriptions)
-                ? r.booking_transcriptions[0]
-                : r.booking_transcriptions;
-              const code = (t?.research_classification?.primary_reason_code || '').toLowerCase();
-              return keywords.some((kw) => code.includes(kw));
-            });
-            setRecords(mapRecords(filtered));
-          }
         }
       }
     } catch (err) {
@@ -168,7 +124,7 @@ export function ReasonCodeDrillDown({
 
   const getAddressabilityColor = (val: string | null) => {
     if (!val) return 'secondary';
-    const v = String(val).toLowerCase();
+    const v = val.toLowerCase();
     if (v.includes('addressable') && !v.includes('non') && !v.includes('partial')) return 'destructive';
     if (v.includes('partial')) return 'default';
     return 'secondary';

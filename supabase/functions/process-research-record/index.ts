@@ -89,6 +89,7 @@ async function parseJsonWithRetry(
   userPrompt: string
 ): Promise<any> {
   try {
+    // Try to extract JSON from markdown code blocks if present
     const jsonMatch = content.match(/```(?:json)?\s*([\s\S]*?)```/);
     const cleanContent = jsonMatch ? jsonMatch[1].trim() : content.trim();
     return JSON.parse(cleanContent);
@@ -107,149 +108,7 @@ async function parseJsonWithRetry(
   }
 }
 
-// Fetch member history from system data for data-driven preventability scoring
-async function fetchMemberHistory(supabase: any, bookingId: string, extraction: any): Promise<{
-  context: string;
-  factors: Record<string, any>;
-}> {
-  const phoneNumber = extraction?.phone_number;
-  const memberName = extraction?.member_name;
-
-  if (!phoneNumber && !memberName) {
-    console.log('[History] No phone or name extracted, skipping history lookup');
-    return { context: '', factors: {} };
-  }
-
-  try {
-    // 1. Find all bookings for this member (by phone or name match)
-    let bookingsQuery = supabase
-      .from('bookings')
-      .select('id, status, booking_date, move_in_date, contact_phone, contact_email, member_name, detected_issues, record_type, created_at')
-      .neq('id', bookingId)
-      .order('booking_date', { ascending: true });
-
-    if (phoneNumber) {
-      bookingsQuery = bookingsQuery.eq('contact_phone', phoneNumber);
-    } else {
-      bookingsQuery = bookingsQuery.ilike('member_name', memberName);
-    }
-
-    const { data: priorBookings } = await bookingsQuery.limit(50);
-    const memberBookings = priorBookings || [];
-
-    // 2. Gather all booking IDs for communication lookups
-    const allBookingIds = memberBookings.map((b: any) => b.id);
-
-    // 3. Fetch communications sent to this member
-    let communications: any[] = [];
-    if (allBookingIds.length > 0) {
-      const { data: comms } = await supabase
-        .from('contact_communications')
-        .select('communication_type, sent_at, message_preview')
-        .in('booking_id', allBookingIds)
-        .order('sent_at', { ascending: false })
-        .limit(20);
-      communications = comms || [];
-    }
-
-    // 4. Fetch prior transcription analysis (detected issues, agent feedback)
-    let priorAnalysis: any[] = [];
-    if (allBookingIds.length > 0) {
-      const { data: transcriptions } = await supabase
-        .from('booking_transcriptions')
-        .select('booking_id, agent_feedback, qa_scores, research_classification')
-        .in('booking_id', allBookingIds)
-        .limit(20);
-      priorAnalysis = transcriptions || [];
-    }
-
-    // 5. Collect all detected issues from prior bookings
-    const allDetectedIssues: string[] = [];
-    for (const b of memberBookings) {
-      if (b.detected_issues && Array.isArray(b.detected_issues)) {
-        for (const issue of b.detected_issues) {
-          const label = typeof issue === 'string' ? issue : issue?.issue || issue?.category || JSON.stringify(issue);
-          allDetectedIssues.push(label);
-        }
-      }
-    }
-
-    // 6. Calculate tenure
-    const firstBookingDate = memberBookings.length > 0 ? new Date(memberBookings[0].booking_date || memberBookings[0].created_at) : null;
-    const tenureDays = firstBookingDate ? Math.floor((Date.now() - firstBookingDate.getTime()) / (1000 * 60 * 60 * 24)) : 0;
-
-    // 7. Status breakdown
-    const statusCounts: Record<string, number> = {};
-    for (const b of memberBookings) {
-      statusCounts[b.status] = (statusCounts[b.status] || 0) + 1;
-    }
-
-    // 8. Check for prior research classifications
-    const priorReasonCodes: string[] = [];
-    for (const t of priorAnalysis) {
-      if (t.research_classification?.primary_reason_code) {
-        priorReasonCodes.push(t.research_classification.primary_reason_code);
-      }
-    }
-
-    // 9. Check current booking issues from extraction against known issues
-    const extractedIssueCategories = (extraction?.issues_mentioned || []).map((i: any) => i.category).filter(Boolean);
-    const issueWasPreviouslyKnown = extractedIssueCategories.some((cat: string) =>
-      allDetectedIssues.some(known => known.toLowerCase().includes(cat.toLowerCase()))
-    );
-
-    // Build factors object
-    const factors = {
-      prior_bookings_count: memberBookings.length,
-      booking_statuses: statusCounts,
-      communications_sent: communications.length,
-      communication_types: [...new Set(communications.map((c: any) => c.communication_type))],
-      known_issues_before_departure: [...new Set(allDetectedIssues)],
-      issue_was_previously_reported: issueWasPreviouslyKnown,
-      time_as_member_days: tenureDays,
-      prior_reason_codes: priorReasonCodes,
-      has_prior_agent_feedback: priorAnalysis.some((t: any) => t.agent_feedback !== null),
-    };
-
-    // Build context string for Prompt B
-    const contextLines: string[] = [];
-    contextLines.push(`Member tenure: ${tenureDays} days (first booking: ${firstBookingDate?.toISOString().split('T')[0] || 'unknown'})`);
-    contextLines.push(`Prior bookings: ${memberBookings.length} (Statuses: ${JSON.stringify(statusCounts)})`);
-    contextLines.push(`Communications sent to member: ${communications.length} (Types: ${factors.communication_types.join(', ') || 'none'})`);
-    
-    if (communications.length > 0) {
-      const recentComms = communications.slice(0, 5);
-      contextLines.push(`Recent communications:`);
-      for (const c of recentComms) {
-        contextLines.push(`  - ${c.communication_type} on ${new Date(c.sent_at).toISOString().split('T')[0]}: "${(c.message_preview || '').substring(0, 100)}"`);
-      }
-    }
-
-    if (allDetectedIssues.length > 0) {
-      contextLines.push(`Previously detected issues from other calls: ${[...new Set(allDetectedIssues)].join(', ')}`);
-    }
-
-    if (issueWasPreviouslyKnown) {
-      contextLines.push(`⚠️ IMPORTANT: At least one issue mentioned in this interview was ALREADY KNOWN from prior system data.`);
-    }
-
-    if (priorReasonCodes.length > 0) {
-      contextLines.push(`Prior research classifications: ${priorReasonCodes.join(', ')}`);
-    }
-
-    console.log(`[History] Found ${memberBookings.length} prior bookings, ${communications.length} communications, ${allDetectedIssues.length} prior issues for member`);
-
-    return {
-      context: contextLines.join('\n'),
-      factors,
-    };
-  } catch (error) {
-    console.error('[History] Error fetching member history:', error);
-    return { context: '', factors: {} };
-  }
-}
-
-// Default prompts
+// Default prompts (used as fallback if research_prompts table is empty)
 const DEFAULT_EXTRACTION_PROMPT = `You are a qualitative research analyst processing a transcribed move-out interview between a PadSplit agent and a former member. The transcript is from automated speech-to-text — expect false starts, crosstalk, filler words, tangents, and garbled text. Focus on substance.
 
 Respond with ONLY the JSON object below. No preamble, no markdown, no explanation.
@@ -261,7 +120,7 @@ Respond with ONLY the JSON object below. No preamble, no markdown, no explanatio
   "length_of_stay": "string or null",
   "phone_number": "string or null",
   "primary_reason_stated": "The member's own explanation of why they left, condensed to 1-3 sentences using their framing and language.",
-  "primary_reason_interpreted": "If you believe the stated reason may not be the full picture, explain why based on EVIDENCE from the transcript. If there is no contradicting evidence, set this to null.",
+  "primary_reason_interpreted": "Your analytical interpretation of the TRUE root cause. Apply the Stressor → Failure Point → Breaking Point framework.",
   "trigger_type": "gradual | single_event | external_life_change | compound",
   "trigger_description": "What specifically happened or changed",
   "issues_mentioned": [
@@ -269,8 +128,6 @@ Respond with ONLY the JSON object below. No preamble, no markdown, no explanatio
       "issue": "Short clear description",
       "category": "maintenance | host_behavior | roommate_conflict | payment_difficulty | employment | safety | cleanliness | communication | policy_confusion | transfer_friction | life_change | other",
       "severity_expressed": "low | medium | high | critical",
-      "mention_count": 1,
-      "evidence_strength": "strong | moderate | weak",
       "was_reported_to_padsplit": true,
       "padsplit_response_if_reported": "What happened when they reported it, or null",
       "escalated_over_time": false,
@@ -329,16 +186,21 @@ Respond with ONLY the JSON object below. No preamble, no markdown, no explanatio
 RULES:
 - If information is not in the transcript, use null. NEVER fabricate.
 - Extract ALL issues mentioned, even tangential ones.
-- Do NOT assume hidden motivations. Only flag an interpreted reason when the transcript contains concrete contradicting evidence.
-- For mention_count, count the number of DISTINCT times the member referenced this issue (not the agent).
-- Mark evidence_strength as 'weak' for issues mentioned only once, casually, or only raised by the agent. Mark 'moderate' for issues discussed at length or with emotion. Mark 'strong' ONLY when the member explicitly connects the issue to their decision to leave.
 - For blind_spots, be thorough — look for silent suffering, assumptions about PadSplit's limitations, information gaps.
 - For quotes, use EXACT words from the transcript.
-- When ambiguous, use confidence_flags rather than presenting interpretation as fact.`;
+- When ambiguous, use confidence_flags rather than presenting interpretation as fact.
 
-const DEFAULT_CLASSIFICATION_PROMPT = `You are a housing operations analyst at PadSplit. You are receiving structured extraction data from a member move-out interview, the original transcript for verification, AND factual member history from PadSplit's system data. Cross-reference ALL sources.
+STATED vs TRUE REASON GUIDE:
+- "I couldn't find a job" → likely Payment Extension Not Offered
+- "I found an apartment" → likely Host Negligence (apartment was escape, not cause)
+- "I just decided to move" → likely Roommate Conflict (downplayed)
+- "My balance was too high" → likely Collections – No Flexibility
+- "The host and I didn't see eye to eye" → likely Host Negligence/Safety
+- "It just wasn't working out" → likely Multiple compounding issues`;
 
-Input: the JSON extraction from the previous processing step, followed by the original transcript for verification, followed by member history data from the system.
+const DEFAULT_CLASSIFICATION_PROMPT = `You are a housing operations analyst at PadSplit. You are receiving structured extraction data from a member move-out interview. Classify this case using PadSplit's internal framework.
+
+Input: the JSON extraction from the previous processing step.
 
 Respond with ONLY the JSON object below. No preamble, no markdown, no explanation.
 
@@ -351,15 +213,7 @@ Respond with ONLY the JSON object below. No preamble, no markdown, no explanatio
   "regrettability": "High | Medium | Low",
   "regrettability_rationale": "2-3 sentences",
   "preventability_score": 5,
-  "preventability_rationale": "2-3 sentences explaining how system data influenced this score",
-  "preventability_data_factors": {
-    "prior_bookings_count": 0,
-    "communications_sent": 0,
-    "known_issues_before_departure": [],
-    "issue_was_previously_reported": false,
-    "time_as_member_days": 0,
-    "score_adjustment": "description of how system data raised or lowered the score"
-  },
+  "preventability_rationale": "2-3 sentences",
   "experience_deterioration": "gradual | trigger_event | compound",
   "categorization_framework": "Addressable | Non-addressable | Non-regrettable but addressable | Regrettable (non-fraud) | Regrettable fraud | Non-regrettable (policy/collections)",
   "early_warning_signals": [
@@ -390,24 +244,9 @@ Respond with ONLY the JSON object below. No preamble, no markdown, no explanatio
 
 CLASSIFICATION RULES:
 1. PRIMARY CODE = the issue which, if resolved, would MOST LIKELY have retained the member.
-2. Only use issues with evidence_strength 'strong' or 'moderate' when determining the primary_reason_code. Issues with 'weak' evidence should only appear in secondary_reason_codes.
-3. If the extraction's primary_reason_interpreted contradicts what the member actually said in the transcript, override it using the transcript as ground truth.
-4. Lower the preventability_score by 2 points if the primary reason is based on interpretation rather than explicit member statements.
-5. PREVENTABILITY SCORING: 9-10: Clear signals, tools to intervene, failed to act. 7-8: Possible with proactive changes. 5-6: Partially preventable. 3-4: Mostly external. 1-2: Fully external.
-
-DATA-DRIVEN PREVENTABILITY ADJUSTMENTS (use the MEMBER HISTORY section):
-6. If the member's issue was ALREADY KNOWN in the system (appears in prior detected_issues or communications) but was NOT resolved → INCREASE preventability_score by +2 (missed opportunity to act on known signal).
-7. If communications were sent addressing the issue but the member still left → INCREASE preventability_score by +1 (action was taken but insufficient).
-8. If NO communications were ever sent to the member and the issue was reportable → INCREASE preventability_score by +1 (no outreach attempted).
-9. If the member had multiple prior bookings (3+) → INCREASE regrettability to "High" (engaged, loyal member lost).
-10. If the member tenure exceeds 180 days → this is a long-term member; weight their departure more heavily in preventability.
-11. If NO prior system touchpoints exist for this issue (not in detected_issues, no communications) → DECREASE preventability_score by -1 (system had no visibility).
-12. Always populate preventability_data_factors with the actual system data that influenced your scoring. The score_adjustment field must explain what changed and why.
-13. If no member history data is available, score purely on transcript evidence and note "No system history available" in score_adjustment.
-
-REGRETTABILITY:
-14. High = engaged member we should have kept. Low = departure was inevitable or acceptable.
-15. FLAG FOR HUMAN REVIEW when: transcript is ambiguous, contradictory, involves legal issues, or uncertain between primary codes.`;
+2. PREVENTABILITY SCORING: 9-10: Clear signals, tools to intervene, failed to act. 7-8: Possible with proactive changes. 5-6: Partially preventable. 3-4: Mostly external. 1-2: Fully external.
+3. REGRETTABILITY: High = engaged member we should have kept. Low = departure was inevitable or acceptable.
+4. FLAG FOR HUMAN REVIEW when: transcript is ambiguous, contradictory, involves legal issues, or uncertain between primary codes.`;
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -428,7 +267,7 @@ Deno.serve(async (req) => {
     // Check if booking has a valid conversation
     const { data: booking } = await supabase
       .from('bookings')
-      .select('has_valid_conversation, contact_phone, contact_email, member_name')
+      .select('has_valid_conversation')
       .eq('id', bookingId)
       .maybeSingle();
 
@@ -523,27 +362,14 @@ Deno.serve(async (req) => {
       is_internal: false,
     });
 
-    // === MEMBER HISTORY LOOKUP (between Prompt A and Prompt B) ===
-    console.log(`[Research] Fetching member history for ${bookingId}`);
-    const memberHistory = await fetchMemberHistory(supabase, bookingId, extraction);
-
-    // === PROMPT B: Classification (with member history context) ===
+    // === PROMPT B: Classification ===
     console.log(`[Research] Running Prompt B (classification) for ${bookingId}`);
-
-    let promptBUserMessage = `Here is the structured extraction to classify:\n\n${JSON.stringify(extraction, null, 2)}\n\n--- ORIGINAL TRANSCRIPT FOR VERIFICATION ---\n\n${transcription.call_transcription}`;
-
-    if (memberHistory.context) {
-      promptBUserMessage += `\n\n--- MEMBER HISTORY (SYSTEM DATA) ---\n\n${memberHistory.context}`;
-    } else {
-      promptBUserMessage += `\n\n--- MEMBER HISTORY (SYSTEM DATA) ---\n\nNo prior system data found for this member. Score preventability based on transcript evidence only.`;
-    }
-
     const classificationResult = await callLovableAI(
       lovableApiKey,
       classificationModel,
       classificationTemp,
       classificationSystemPrompt,
-      promptBUserMessage
+      `Here is the structured extraction to classify:\n\n${JSON.stringify(extraction, null, 2)}`
     );
 
     const classification = await parseJsonWithRetry(
@@ -552,15 +378,10 @@ Deno.serve(async (req) => {
       classificationModel,
       classificationTemp,
       classificationSystemPrompt,
-      promptBUserMessage
+      `Here is the structured extraction to classify:\n\n${JSON.stringify(extraction, null, 2)}`
     );
 
     console.log(`[Research] Prompt B complete. Primary code: ${classification.primary_reason_code}, Preventability: ${classification.preventability_score}`);
-
-    // Inject system-level factors if the AI didn't populate them
-    if (!classification.preventability_data_factors || Object.keys(classification.preventability_data_factors).length === 0) {
-      classification.preventability_data_factors = memberHistory.factors;
-    }
 
     // Log cost for Prompt B
     await logApiCost(supabase, {
@@ -598,7 +419,6 @@ Deno.serve(async (req) => {
         bookingId,
         primaryReasonCode: classification.primary_reason_code,
         preventabilityScore: classification.preventability_score,
-        preventabilityDataFactors: classification.preventability_data_factors,
         humanReviewRecommended: classification.human_review_recommended,
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }

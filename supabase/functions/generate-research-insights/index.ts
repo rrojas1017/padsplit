@@ -1,5 +1,8 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
+declare const EdgeRuntime: {
+  waitUntil: (promise: Promise<unknown>) => void;
+};
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -172,98 +175,7 @@ AGGREGATION RULES:
 5. BLIND SPOTS — the most valuable insight is what nobody is tracking.
 6. HONESTY — if data shows a serious systemic problem, say so directly.
 7. QUICK WINS — for every major recommendation, identify a small fast action.
-8. BOOKING IDS — each record has a booking_id field. In reason_code_distribution AND issue_clusters, you MUST include the exact booking_ids array for each group/cluster so we can trace back to source records. Also list the exact reason_codes_included (the individual primary_reason_code values) that were grouped together.
-
-FIELD NAME REQUIREMENTS (DO NOT use alternative names):
-- Use "booking_ids" NOT "case_ids"
-- Use "representative_quotes" NOT "key_quotes", "supporting_quotes", or "impact_quote"  
-- Use "cluster_description" NOT "description"
-- Use "frequency" NOT "case_count" or "count"
-- Use "systemic_root_cause" NOT "root_cause"
-- Use "recommended_action" as an OBJECT {action, owner, priority, expected_impact, effort, quick_win} NOT a string
-- Use "reason_codes_included" NOT "reason_codes"
-- Use "pct_of_total" NOT "percentage"`;
-
-// Normalize issue clusters to match expected UI schema
-function normalizeInsightData(data: any, totalRecords: number): any {
-  if (!data) return data;
-
-  // Normalize issue_clusters
-  if (Array.isArray(data.issue_clusters)) {
-    data.issue_clusters = data.issue_clusters.map((cluster: any) => {
-      // Fix field name mismatches — handle ALL observed AI variations
-      const freq = cluster.frequency || cluster.case_count || cluster.count || cluster.cases_affected || 0;
-      const bookingIds = cluster.booking_ids || cluster.case_ids || [];
-      const quotes = cluster.representative_quotes || cluster.supporting_quotes || cluster.key_quotes || cluster.quotes || [];
-      // Wrap single-string impact_quote into array
-      const finalQuotes = quotes.length > 0 ? quotes :
-        (cluster.impact_quote ? [cluster.impact_quote] : 
-         (Array.isArray(cluster.key_issues) ? cluster.key_issues : []));
-
-      const normalized: any = {
-        cluster_name: (cluster.cluster_name || cluster.name || 'Unknown')
-          .replace(/^P[0-3]:\s*/i, ''), // Strip priority prefixes
-        cluster_description: cluster.cluster_description || cluster.description || cluster.summary || '',
-        frequency: freq,
-        pct_of_total: cluster.pct_of_total || cluster.percentage ||
-          (totalRecords > 0 ? Math.round((freq / totalRecords) * 1000) / 10 : 0),
-        booking_ids: bookingIds,
-        reason_codes_included: cluster.reason_codes_included || cluster.reason_codes || [],
-        severity_distribution: cluster.severity_distribution || { critical: 0, high: 0, medium: 0, low: 0 },
-        representative_quotes: finalQuotes,
-        common_early_warnings: cluster.common_early_warnings || [],
-        systemic_root_cause: cluster.systemic_root_cause || cluster.root_cause || '',
-      };
-
-      // Ensure recommended_action is an object
-      const ra = cluster.recommended_action;
-      if (typeof ra === 'string') {
-        normalized.recommended_action = {
-          action: ra,
-          owner: cluster.owner || 'Operations',
-          priority: cluster.priority || 'P2',
-          expected_impact: cluster.expected_impact || '',
-          effort: cluster.effort || 'medium',
-          quick_win: cluster.quick_win || null,
-        };
-      } else if (ra && typeof ra === 'object') {
-        normalized.recommended_action = {
-          action: ra.action || ra.recommendation || '',
-          owner: ra.owner || 'Operations',
-          priority: ra.priority || cluster.priority || 'P2',
-          expected_impact: ra.expected_impact || '',
-          effort: ra.effort || 'medium',
-          quick_win: ra.quick_win || null,
-        };
-      } else {
-        normalized.recommended_action = {
-          action: '',
-          owner: 'Operations',
-          priority: cluster.priority || 'P2',
-          expected_impact: '',
-          effort: 'medium',
-          quick_win: null,
-        };
-      }
-
-      return normalized;
-    });
-  }
-
-  // Normalize reason_code_distribution entries
-  if (data.reason_code_distribution?.distribution && Array.isArray(data.reason_code_distribution.distribution)) {
-    data.reason_code_distribution.distribution = data.reason_code_distribution.distribution.map((item: any) => ({
-      reason_group: item.reason_group || item.group || 'Unknown',
-      count: item.count || item.case_count || item.frequency || 0,
-      percentage: item.percentage || item.pct_of_total || 0,
-      details: item.details || item.description || '',
-      reason_codes_included: item.reason_codes_included || item.reason_codes || [],
-      booking_ids: item.booking_ids || item.case_ids || [],
-    }));
-  }
-
-  return data;
-}
+8. BOOKING IDS — each record has a booking_id field. In reason_code_distribution AND issue_clusters, you MUST include the exact booking_ids array for each group/cluster so we can trace back to source records. Also list the exact reason_codes_included (the individual primary_reason_code values) that were grouped together.`;
 
 async function processInsights(
   supabaseUrl: string,
@@ -335,48 +247,38 @@ async function processInsights(
         is_internal: false,
       });
     } else {
-      // Multi-batch: split and synthesize IN PARALLEL
+      // Multi-batch: split and synthesize
       const chunks: any[][] = [];
       for (let i = 0; i < recordSummaries.length; i += CHUNK_SIZE) {
         chunks.push(recordSummaries.slice(i, i + CHUNK_SIZE));
       }
 
-      console.log(`[Insights] Splitting ${recordSummaries.length} records into ${chunks.length} chunks (parallel)`);
+      console.log(`[Insights] Splitting ${recordSummaries.length} records into ${chunks.length} chunks`);
+      const chunkResults: any[] = [];
 
-      // Process all chunks in parallel
-      const chunkPromises = chunks.map(async (chunk, i) => {
-        console.log(`[Insights] Starting chunk ${i + 1}/${chunks.length} (${chunk.length} records)`);
+      for (let i = 0; i < chunks.length; i++) {
+        console.log(`[Insights] Processing chunk ${i + 1}/${chunks.length} (${chunks[i].length} records)`);
+        const result = await callLovableAI(lovableApiKey, model, temperature, systemPrompt,
+          `Date range: ${dateRange}\nBatch ${i + 1} of ${chunks.length}\n\nHere are ${chunks[i].length} classified move-out records:\n\n${JSON.stringify(chunks[i], null, 2)}`
+        );
+
         try {
-          const result = await callLovableAI(lovableApiKey, model, temperature, systemPrompt,
-            `Date range: ${dateRange}\nBatch ${i + 1} of ${chunks.length}\n\nHere are ${chunk.length} classified move-out records:\n\n${JSON.stringify(chunk, null, 2)}`
-          );
-
-          await logApiCost(supabase, {
-            service_provider: 'lovable_ai',
-            service_type: 'research_aggregation',
-            edge_function: 'generate-research-insights',
-            input_tokens: result.inputTokens,
-            output_tokens: result.outputTokens,
-            metadata: { model, prompt: 'C', chunk: i + 1, totalChunks: chunks.length },
-            triggered_by_user_id: triggeredByUserId || undefined,
-            is_internal: false,
-          });
-
           const jsonMatch = result.content.match(/```(?:json)?\s*([\s\S]*?)```/);
-          const parsed = JSON.parse(jsonMatch ? jsonMatch[1].trim() : result.content.trim());
-          console.log(`[Insights] Chunk ${i + 1} completed successfully`);
-          return parsed;
-        } catch (err) {
-          console.error(`[Insights] Failed to process chunk ${i + 1}:`, err);
-          return null;
+          chunkResults.push(JSON.parse(jsonMatch ? jsonMatch[1].trim() : result.content.trim()));
+        } catch {
+          console.error(`[Insights] Failed to parse chunk ${i + 1} result`);
         }
-      });
 
-      const allChunkResults = await Promise.all(chunkPromises);
-      const chunkResults = allChunkResults.filter(Boolean);
-
-      if (chunkResults.length === 0) {
-        throw new Error('All chunks failed to process');
+        await logApiCost(supabase, {
+          service_provider: 'lovable_ai',
+          service_type: 'research_aggregation',
+          edge_function: 'generate-research-insights',
+          input_tokens: result.inputTokens,
+          output_tokens: result.outputTokens,
+          metadata: { model, prompt: 'C', chunk: i + 1, totalChunks: chunks.length },
+          triggered_by_user_id: triggeredByUserId || undefined,
+          is_internal: false,
+        });
       }
 
       // Synthesize chunk results
@@ -384,12 +286,8 @@ async function processInsights(
         finalResult = chunkResults[0];
       } else {
         console.log(`[Insights] Synthesizing ${chunkResults.length} chunk results`);
-        const SYNTHESIS_SCHEMA_REMINDER = `CRITICAL: Your response MUST use the EXACT JSON schema from your system prompt. Key requirements:
-- issue_clusters: each must have cluster_name (no P0/P1 prefix), cluster_description, frequency (integer), pct_of_total (number), booking_ids (array of UUIDs), reason_codes_included (array), severity_distribution ({critical,high,medium,low}), representative_quotes (array), systemic_root_cause (string), recommended_action (OBJECT with action, owner, priority, expected_impact, effort, quick_win)
-- reason_code_distribution.distribution: each must have reason_group, count, percentage, details, reason_codes_included, booking_ids
-- All counts/percentages must reflect the TOTAL across all batches (${recordSummaries.length} records total)`;
         const synthesisResult = await callLovableAI(lovableApiKey, model, temperature, systemPrompt,
-          `Date range: ${dateRange}\n\n${SYNTHESIS_SCHEMA_REMINDER}\n\nYou analyzed ${recordSummaries.length} records in ${chunkResults.length} batches. Merge these batch results into ONE unified report with accurate totals. Here are the original record summaries for computing booking_ids and frequencies:\n\n${JSON.stringify(recordSummaries.map(r => ({ booking_id: r.booking_id, primary_reason_code: r.primary_reason_code, addressability: r.addressability, severity: r.severity, preventability_score: r.preventability_score })))}\n\nBatch results to synthesize:\n\n${JSON.stringify(chunkResults, null, 2)}`
+          `Date range: ${dateRange}\n\nYou previously analyzed ${recordSummaries.length} records in ${chunkResults.length} batches. Synthesize these batch results into a single unified insight report:\n\n${JSON.stringify(chunkResults, null, 2)}`
         );
         try {
           const jsonMatch = synthesisResult.content.match(/```(?:json)?\s*([\s\S]*?)```/);
@@ -410,9 +308,6 @@ async function processInsights(
         });
       }
     }
-
-    // Normalize before storing
-    finalResult = normalizeInsightData(finalResult, classifications.length);
 
     // Store results
     const { error: updateError } = await supabase
@@ -487,8 +382,6 @@ Deno.serve(async (req) => {
   const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
   const lovableApiKey = Deno.env.get('LOVABLE_API_KEY')!;
   const supabase = createClient(supabaseUrl, supabaseServiceKey);
-
-  let insight: { id: string } | null = null;
 
   try {
     const { campaignId, dateRangeStart, dateRangeEnd, analysisPeriod } = await req.json();
@@ -572,7 +465,7 @@ Deno.serve(async (req) => {
       : analysisPeriod || 'All Time';
 
     // Create insight record
-    const { data: insightData, error: insertError } = await supabase
+    const { data: insight, error: insertError } = await supabase
       .from('research_insights')
       .insert({
         campaign_id: campaignId || null,
@@ -589,28 +482,28 @@ Deno.serve(async (req) => {
       .select('id')
       .single();
 
-    if (insertError || !insightData) {
+    if (insertError || !insight) {
       throw new Error(`Failed to create insight record: ${insertError?.message}`);
     }
 
-    insight = insightData;
+    console.log(`[Insights] Created insight ${insight.id}, starting background processing for ${processedRecords.length} records`);
 
-    console.log(`[Insights] Created insight ${insight.id}, processing synchronously for ${processedRecords.length} records`);
-
-    // Process synchronously within the request (300s HTTP timeout >> ~150s parallel processing)
-    await processInsights(
-      supabaseUrl,
-      supabaseServiceKey,
-      lovableApiKey,
-      insight.id,
-      classifications,
-      extractions,
-      processedRecords,
-      dateRange,
-      model,
-      temperature,
-      systemPrompt,
-      triggeredByUserId
+    // Background processing
+    EdgeRuntime.waitUntil(
+      processInsights(
+        supabaseUrl,
+        supabaseServiceKey,
+        lovableApiKey,
+        insight.id,
+        classifications,
+        extractions,
+        processedRecords,
+        dateRange,
+        model,
+        temperature,
+        systemPrompt,
+        triggeredByUserId
+      )
     );
 
     return new Response(
@@ -618,7 +511,7 @@ Deno.serve(async (req) => {
         success: true,
         insightId: insight.id,
         recordCount: processedRecords.length,
-        message: 'Insight generation completed',
+        message: 'Insight generation started',
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
@@ -626,20 +519,6 @@ Deno.serve(async (req) => {
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     console.error(`[Insights] Error:`, errorMessage);
-
-    // Failsafe: mark insight as failed if it was created but processing errored/timed out
-    if (insight?.id) {
-      try {
-        await supabase
-          .from('research_insights')
-          .update({ status: 'failed', error_message: errorMessage })
-          .eq('id', insight.id);
-        console.log(`[Insights] Marked insight ${insight.id} as failed`);
-      } catch (updateErr) {
-        console.error(`[Insights] Failed to mark insight as failed:`, updateErr);
-      }
-    }
-
     return new Response(
       JSON.stringify({ success: false, error: errorMessage }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }

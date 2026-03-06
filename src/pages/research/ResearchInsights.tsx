@@ -6,8 +6,7 @@ import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Progress } from '@/components/ui/progress';
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
-import { Sparkles, RefreshCw, Loader2, Database, AlertTriangle, CheckCircle, RotateCcw } from 'lucide-react';
+import { Sparkles, RefreshCw, Loader2, Database, AlertTriangle, CheckCircle } from 'lucide-react';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
 import { useResearchInsightsData, DateRangeOption } from '@/hooks/useResearchInsightsData';
@@ -34,8 +33,6 @@ export default function ResearchInsights() {
   const [campaignId, setCampaignId] = useState<string>('all');
   const [isGenerating, setIsGenerating] = useState(false);
   const [isBackfilling, setIsBackfilling] = useState(false);
-  const [isReprocessing, setIsReprocessing] = useState(false);
-  const [reprocessCount, setReprocessCount] = useState<number | null>(null);
   const [drillDown, setDrillDown] = useState<{
     open: boolean;
     groupName: string;
@@ -52,8 +49,6 @@ export default function ResearchInsights() {
     fetchReportDetail,
     generateReport,
     triggerBackfill,
-    triggerReprocess,
-    getReprocessCount,
     refresh,
     fetchProcessingStats,
   } = useResearchInsightsData();
@@ -97,28 +92,6 @@ export default function ResearchInsights() {
     setIsBackfilling(true);
     await triggerBackfill();
   };
-
-  const handleReprocessOpen = async () => {
-    const count = await getReprocessCount();
-    setReprocessCount(count);
-  };
-
-  const handleReprocessConfirm = async () => {
-    setIsReprocessing(true);
-    await triggerReprocess();
-  };
-
-  // Auto-stop reprocessing when all records are processed
-  useEffect(() => {
-    if (isReprocessing && processingStats.pendingRecords === 0 && processingStats.totalResearchRecords > 0) {
-      setIsReprocessing(false);
-      if ((window as any).__researchBackfillPoll) {
-        clearInterval((window as any).__researchBackfillPoll);
-        delete (window as any).__researchBackfillPoll;
-      }
-      toast.success(`All ${processingStats.processedRecords} records reprocessed with updated prompts!`);
-    }
-  }, [isReprocessing, processingStats]);
 
   // Auto-stop backfilling when all records are processed
   useEffect(() => {
@@ -225,42 +198,14 @@ export default function ResearchInsights() {
                   </p>
                 </div>
               </div>
-              <div className="flex items-center gap-2">
-                {processingStats.pendingRecords > 0 && (
-                  <Button onClick={handleBackfill} disabled={isBackfilling || isReprocessing} variant="outline" size="sm" className="gap-1.5">
-                    {isBackfilling ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
-                    {isBackfilling ? 'Processing...' : 'Process All'}
-                  </Button>
-                )}
-                {processingStats.processedRecords > 0 && (
-                  <AlertDialog>
-                    <AlertDialogTrigger asChild>
-                      <Button onClick={handleReprocessOpen} disabled={isReprocessing || isBackfilling} variant="outline" size="sm" className="gap-1.5">
-                        {isReprocessing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RotateCcw className="w-3.5 h-3.5" />}
-                        {isReprocessing ? 'Reprocessing...' : 'Reprocess All'}
-                      </Button>
-                    </AlertDialogTrigger>
-                    <AlertDialogContent>
-                      <AlertDialogHeader>
-                        <AlertDialogTitle>Reprocess All Research Records</AlertDialogTitle>
-                        <AlertDialogDescription>
-                          This will reset and reprocess {reprocessCount !== null ? reprocessCount : '...'} records with the updated AI prompts (improved accuracy, confidence thresholds, transcript verification).
-                          <br /><br />
-                          This may take several minutes depending on the number of records.
-                        </AlertDialogDescription>
-                      </AlertDialogHeader>
-                      <AlertDialogFooter>
-                        <AlertDialogCancel>Cancel</AlertDialogCancel>
-                        <AlertDialogAction onClick={handleReprocessConfirm}>
-                          Reprocess All
-                        </AlertDialogAction>
-                      </AlertDialogFooter>
-                    </AlertDialogContent>
-                  </AlertDialog>
-                )}
-              </div>
+              {processingStats.pendingRecords > 0 && (
+                <Button onClick={handleBackfill} disabled={isBackfilling} variant="outline" size="sm" className="gap-1.5">
+                  {isBackfilling ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+                  {isBackfilling ? 'Processing...' : 'Process All'}
+                </Button>
+              )}
             </div>
-            {(isBackfilling || isReprocessing) && processingStats.totalResearchRecords > 0 && (
+            {isBackfilling && processingStats.totalResearchRecords > 0 && (
               <Progress 
                 value={(processingStats.processedRecords / processingStats.totalResearchRecords) * 100} 
                 className="h-2"
