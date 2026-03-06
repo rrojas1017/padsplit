@@ -89,7 +89,6 @@ async function parseJsonWithRetry(
   userPrompt: string
 ): Promise<any> {
   try {
-    // Try to extract JSON from markdown code blocks if present
     const jsonMatch = content.match(/```(?:json)?\s*([\s\S]*?)```/);
     const cleanContent = jsonMatch ? jsonMatch[1].trim() : content.trim();
     return JSON.parse(cleanContent);
@@ -108,7 +107,145 @@ async function parseJsonWithRetry(
   }
 }
 
-// Default prompts (used as fallback if research_prompts table is empty)
+// ── Default merged prompt (combines extraction + classification in one call) ──
+
+const DEFAULT_MERGED_PROMPT = `You are a qualitative research analyst and housing operations classifier at PadSplit. You are processing a transcribed move-out interview between a PadSplit agent and a former member. The transcript is from automated speech-to-text — expect false starts, crosstalk, filler words, tangents, and garbled text. Focus on substance.
+
+You will perform TWO tasks in a single pass:
+1. **Extract** structured data from the transcript (issues, context, quotes, agent observations).
+2. **Classify** the case using PadSplit's internal framework (reason codes, preventability, addressability).
+
+Respond with ONLY a JSON object containing two top-level keys: "extraction" and "classification". No preamble, no markdown, no explanation.
+
+{
+  "extraction": {
+    "member_name": "string or null",
+    "member_id": "string or null",
+    "agent_name": "string or null",
+    "length_of_stay": "string or null",
+    "phone_number": "string or null",
+    "primary_reason_stated": "The member's own explanation of why they left, condensed to 1-3 sentences using their framing and language.",
+    "primary_reason_interpreted": "Your analytical interpretation of the TRUE root cause. Apply the Stressor → Failure Point → Breaking Point framework.",
+    "trigger_type": "gradual | single_event | external_life_change | compound",
+    "trigger_description": "What specifically happened or changed",
+    "issues_mentioned": [
+      {
+        "issue": "Short clear description",
+        "category": "maintenance | host_behavior | roommate_conflict | payment_difficulty | employment | safety | cleanliness | communication | policy_confusion | transfer_friction | life_change | other",
+        "severity_expressed": "low | medium | high | critical",
+        "was_reported_to_padsplit": true,
+        "padsplit_response_if_reported": "What happened when they reported it, or null",
+        "escalated_over_time": false,
+        "quotes": ["direct quotes"]
+      }
+    ],
+    "payment_context": {
+      "payment_was_factor": false,
+      "employment_related": false,
+      "extension_requested": false,
+      "extension_experience": null,
+      "miscommunication_present": false,
+      "miscommunication_details": null,
+      "outstanding_balance": null,
+      "balance_blocking_return": false,
+      "pattern_of_nonpayment": false,
+      "third_party_payments": false
+    },
+    "transfer_context": {
+      "considered_transfer": false,
+      "aware_of_option": false,
+      "barrier_to_transfer": null,
+      "transfer_would_have_retained": null
+    },
+    "host_context": {
+      "host_mentioned": false,
+      "host_sentiment": "not_mentioned",
+      "host_issues": [],
+      "host_responsiveness": "not_discussed",
+      "host_legal_concerns": null
+    },
+    "roommate_context": {
+      "roommate_issues": false,
+      "nature_of_conflict": null,
+      "was_reported": false,
+      "why_not_reported": null
+    },
+    "blind_spots": [],
+    "improvement_suggestions": [],
+    "would_return_to_padsplit": "unclear",
+    "return_conditions": null,
+    "emotional_tone": "neutral",
+    "agent_observations": {
+      "questions_covered_estimate": "0",
+      "sections_skipped": [],
+      "agent_stayed_on_script": false,
+      "agent_offered_solutions": false,
+      "agent_made_promises": false,
+      "agent_probed_deeper": false,
+      "notable_agent_behavior": null
+    },
+    "key_quotes": [],
+    "confidence_flags": []
+  },
+  "classification": {
+    "primary_reason_code": "EXACTLY one of: Transfer Denied / Couldn't Transfer | Maintenance Delays | Roommate Conflict | Safety Concern | Noise or Cleanliness Issues | Communication Breakdown / Support Dissatisfaction | Policy Confusion / Lack of Flexibility | Payment Extension Not Offered | Collections – No Flexibility | Pattern of Non-Payment | Job Relocation | Moving in with Family | Buying a Home | Health Issues | Immigration Changes | Marriage | Military Relocation | Fraud / Misrepresentation | Host Negligence / Property Condition | Other",
+    "primary_reason_detail": "1-2 sentences on why this code was chosen",
+    "secondary_reason_codes": [],
+    "addressability": "Addressable | Non-addressable | Partially addressable",
+    "addressability_rationale": "2-3 sentences",
+    "regrettability": "High | Medium | Low",
+    "regrettability_rationale": "2-3 sentences",
+    "preventability_score": 5,
+    "preventability_rationale": "2-3 sentences",
+    "experience_deterioration": "gradual | trigger_event | compound",
+    "categorization_framework": "Addressable | Non-addressable | Non-regrettable but addressable | Regrettable (non-fraud) | Regrettable fraud | Non-regrettable (policy/collections)",
+    "early_warning_signals": [
+      {
+        "signal": "The detectable signal",
+        "when_it_appeared": "When in the member journey",
+        "was_it_caught": "Yes | Partially | No",
+        "what_should_have_happened": "The ideal system response"
+      }
+    ],
+    "intervention_opportunities": [
+      {
+        "moment": "The specific window",
+        "action": "Concrete implementable action",
+        "likelihood_of_retention": "high | medium | low",
+        "department_responsible": "support | host_ops | product | payments | trust_safety | retention"
+      }
+    ],
+    "blind_spots": [],
+    "key_quotes": [],
+    "root_cause_summary": "2-3 sentences a VP could read in 10 seconds.",
+    "what_we_could_have_done": "2-3 sentences.",
+    "agent_performance_notes": "Coverage and quality notes.",
+    "case_brief": "150-200 word narrative summary using Stressor → Failure Point → Breaking Point framework.",
+    "human_review_recommended": false,
+    "human_review_reason": null
+  }
+}
+
+EXTRACTION RULES:
+- If information is not in the transcript, use null. NEVER fabricate.
+- Extract ALL issues mentioned, even tangential ones.
+- For blind_spots, be thorough — look for silent suffering, assumptions about PadSplit's limitations, information gaps.
+- For quotes, use EXACT words from the transcript.
+- When ambiguous, use confidence_flags rather than presenting interpretation as fact.
+- Record the member's stated reason exactly as they expressed it in "primary_reason_stated".
+- In "primary_reason_interpreted", note ONLY if other evidence in the transcript contradicts or complicates the stated reason. Cite the specific evidence.
+- If no contradicting evidence exists, "primary_reason_interpreted" should match the stated reason.
+- Do NOT assume hidden motivations. Flag discrepancies only when the transcript itself provides conflicting signals.
+- Use "confidence_flags" to note any ambiguity rather than choosing an interpretation.
+
+CLASSIFICATION RULES:
+1. PRIMARY CODE = the issue which, if resolved, would MOST LIKELY have retained the member.
+2. PREVENTABILITY SCORING: 9-10: Clear signals, tools to intervene, failed to act. 7-8: Possible with proactive changes. 5-6: Partially preventable. 3-4: Mostly external. 1-2: Fully external.
+3. REGRETTABILITY: High = engaged member we should have kept. Low = departure was inevitable or acceptable.
+4. FLAG FOR HUMAN REVIEW when: transcript is ambiguous, contradictory, involves legal issues, or uncertain between primary codes.
+5. Base your classification on what the member ACTUALLY said in the transcript. If the extraction shows weak or ambiguous evidence for the primary reason, reduce the preventability score accordingly.`;
+
+// Legacy default prompts (kept for fallback if separate extraction/classification prompts exist in DB)
 const DEFAULT_EXTRACTION_PROMPT = `You are a qualitative research analyst processing a transcribed move-out interview between a PadSplit agent and a former member. The transcript is from automated speech-to-text — expect false starts, crosstalk, filler words, tangents, and garbled text. Focus on substance.
 
 Respond with ONLY the JSON object below. No preamble, no markdown, no explanation.
@@ -317,84 +454,113 @@ Deno.serve(async (req) => {
       .from('research_prompts')
       .select('prompt_key, prompt_text, temperature, model');
 
-    const extractionPrompt = prompts?.find((p: any) => p.prompt_key === 'extraction');
-    const classificationPrompt = prompts?.find((p: any) => p.prompt_key === 'classification');
+    const mergedPromptRow = prompts?.find((p: any) => p.prompt_key === 'merged');
+    const extractionPromptRow = prompts?.find((p: any) => p.prompt_key === 'extraction');
+    const classificationPromptRow = prompts?.find((p: any) => p.prompt_key === 'classification');
 
-    const extractionSystemPrompt = extractionPrompt?.prompt_text || DEFAULT_EXTRACTION_PROMPT;
-    const extractionModel = extractionPrompt?.model || 'google/gemini-2.5-flash';
-    const extractionTemp = Number(extractionPrompt?.temperature) || 0.2;
+    // Decide processing mode: merged (new) or legacy two-step
+    const useMerged = !!mergedPromptRow || (!extractionPromptRow && !classificationPromptRow);
 
-    const classificationSystemPrompt = classificationPrompt?.prompt_text || DEFAULT_CLASSIFICATION_PROMPT;
-    const classificationModel = classificationPrompt?.model || 'google/gemini-2.5-pro';
-    const classificationTemp = Number(classificationPrompt?.temperature) || 0.2;
+    let extraction: any;
+    let classification: any;
 
-    // === PROMPT A: Extraction ===
-    console.log(`[Research] Running Prompt A (extraction) for ${bookingId}`);
-    const extractionResult = await callLovableAI(
-      lovableApiKey,
-      extractionModel,
-      extractionTemp,
-      extractionSystemPrompt,
-      `Here is the transcript to analyze:\n\n${transcription.call_transcription}`
-    );
+    if (useMerged) {
+      // ── MERGED SINGLE-CALL MODE ──
+      const systemPrompt = mergedPromptRow?.prompt_text || DEFAULT_MERGED_PROMPT;
+      const model = mergedPromptRow?.model || 'google/gemini-2.5-flash';
+      const temperature = Number(mergedPromptRow?.temperature) || 0.2;
 
-    const extraction = await parseJsonWithRetry(
-      extractionResult.content,
-      lovableApiKey,
-      extractionModel,
-      extractionTemp,
-      extractionSystemPrompt,
-      `Here is the transcript to analyze:\n\n${transcription.call_transcription}`
-    );
+      console.log(`[Research] Running MERGED prompt (${model}) for ${bookingId}`);
+      const result = await callLovableAI(
+        lovableApiKey,
+        model,
+        temperature,
+        systemPrompt,
+        `Here is the transcript to analyze:\n\n${transcription.call_transcription}`
+      );
 
-    console.log(`[Research] Prompt A complete. Issues found: ${extraction.issues_mentioned?.length || 0}`);
+      const parsed = await parseJsonWithRetry(
+        result.content,
+        lovableApiKey,
+        model,
+        temperature,
+        systemPrompt,
+        `Here is the transcript to analyze:\n\n${transcription.call_transcription}`
+      );
 
-    // Log cost for Prompt A
-    await logApiCost(supabase, {
-      service_provider: 'lovable_ai',
-      service_type: 'research_extraction',
-      edge_function: 'process-research-record',
-      booking_id: bookingId,
-      input_tokens: extractionResult.inputTokens,
-      output_tokens: extractionResult.outputTokens,
-      metadata: { model: extractionModel, prompt: 'A' },
-      is_internal: false,
-    });
+      extraction = parsed.extraction || parsed;
+      classification = parsed.classification;
 
-    // === PROMPT B: Classification ===
-    console.log(`[Research] Running Prompt B (classification) for ${bookingId}`);
-    const classificationResult = await callLovableAI(
-      lovableApiKey,
-      classificationModel,
-      classificationTemp,
-      classificationSystemPrompt,
-      `Here is the structured extraction to classify:\n\n${JSON.stringify(extraction, null, 2)}`
-    );
+      // If classification is missing, mark for human review
+      if (!classification) {
+        console.warn(`[Research] Merged output missing 'classification' key for ${bookingId}, marking for human review`);
+        classification = { human_review_recommended: true, human_review_reason: 'Merged prompt did not return classification' };
+      }
 
-    const classification = await parseJsonWithRetry(
-      classificationResult.content,
-      lovableApiKey,
-      classificationModel,
-      classificationTemp,
-      classificationSystemPrompt,
-      `Here is the structured extraction to classify:\n\n${JSON.stringify(extraction, null, 2)}`
-    );
+      console.log(`[Research] Merged prompt complete. Primary code: ${classification.primary_reason_code}, Issues: ${extraction.issues_mentioned?.length || 0}`);
 
-    console.log(`[Research] Prompt B complete. Primary code: ${classification.primary_reason_code}, Preventability: ${classification.preventability_score}`);
+      // Log single cost entry
+      await logApiCost(supabase, {
+        service_provider: 'lovable_ai',
+        service_type: 'research_merged',
+        edge_function: 'process-research-record',
+        booking_id: bookingId,
+        input_tokens: result.inputTokens,
+        output_tokens: result.outputTokens,
+        metadata: { model, prompt: 'merged' },
+        is_internal: false,
+      });
 
-    // Log cost for Prompt B
-    await logApiCost(supabase, {
-      service_provider: 'lovable_ai',
-      service_type: 'research_classification',
-      edge_function: 'process-research-record',
-      booking_id: bookingId,
-      input_tokens: classificationResult.inputTokens,
-      output_tokens: classificationResult.outputTokens,
-      metadata: { model: classificationModel, prompt: 'B' },
-      is_internal: false,
-    });
+    } else {
+      // ── LEGACY TWO-STEP MODE (for users who customized separate prompts) ──
+      const extractionSystemPrompt = extractionPromptRow?.prompt_text || DEFAULT_EXTRACTION_PROMPT;
+      const extractionModel = extractionPromptRow?.model || 'google/gemini-2.5-flash';
+      const extractionTemp = Number(extractionPromptRow?.temperature) || 0.2;
 
-    // Store results
+      const classificationSystemPrompt = classificationPromptRow?.prompt_text || DEFAULT_CLASSIFICATION_PROMPT;
+      const classificationModel = classificationPromptRow?.model || 'google/gemini-2.5-pro';
+      const classificationTemp = Number(classificationPromptRow?.temperature) || 0.2;
+
+      // Prompt A: Extraction
+      console.log(`[Research] Running Prompt A (extraction, legacy) for ${bookingId}`);
+      const extractionResult = await callLovableAI(
+        lovableApiKey, extractionModel, extractionTemp, extractionSystemPrompt,
+        `Here is the transcript to analyze:\n\n${transcription.call_transcription}`
+      );
+
+      extraction = await parseJsonWithRetry(
+        extractionResult.content, lovableApiKey, extractionModel, extractionTemp,
+        extractionSystemPrompt, `Here is the transcript to analyze:\n\n${transcription.call_transcription}`
+      );
+
+      await logApiCost(supabase, {
+        service_provider: 'lovable_ai', service_type: 'research_extraction',
+        edge_function: 'process-research-record', booking_id: bookingId,
+        input_tokens: extractionResult.inputTokens, output_tokens: extractionResult.outputTokens,
+        metadata: { model: extractionModel, prompt: 'A' }, is_internal: false,
+      });
+
+      // Prompt B: Classification
+      console.log(`[Research] Running Prompt B (classification, legacy) for ${bookingId}`);
+      const classificationResult = await callLovableAI(
+        lovableApiKey, classificationModel, classificationTemp, classificationSystemPrompt,
+        `Here is the structured extraction to classify:\n\n${JSON.stringify(extraction, null, 2)}`
+      );
+
+      classification = await parseJsonWithRetry(
+        classificationResult.content, lovableApiKey, classificationModel, classificationTemp,
+        classificationSystemPrompt, `Here is the structured extraction to classify:\n\n${JSON.stringify(extraction, null, 2)}`
+      );
+
+      await logApiCost(supabase, {
+        service_provider: 'lovable_ai', service_type: 'research_classification',
+        edge_function: 'process-research-record', booking_id: bookingId,
+        input_tokens: classificationResult.inputTokens, output_tokens: classificationResult.outputTokens,
+        metadata: { model: classificationModel, prompt: 'B' }, is_internal: false,
+      });
+    }
+
+    // Store results (same columns regardless of mode)
     const { error: updateError } = await supabase
       .from('booking_transcriptions')
       .update({

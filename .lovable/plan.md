@@ -1,40 +1,123 @@
 
 
-## Merge Extraction + Classification into a Single Prompt
+## Redesign Research Insights from Scratch
 
-### Goal
-Reduce per-record research cost from ~$0.11 to ~$0.07 by combining Prompt A (extraction) and Prompt B (classification) into one Gemini Flash call, eliminating the second LLM invocation entirely.
+### Problem
+The UI components still don't render the actual report data because field names are mismatched. The data itself is excellent — rich, actionable, well-organized with P0/P1/P2 priorities, member quotes, and specific recommendations. The UI just needs to be rebuilt to match what the AI actually produces.
 
-### How it works
+### Actual Data Structure (from the completed report)
 
-**File: `supabase/functions/process-research-record/index.ts`**
+```text
+executive_summary:
+  ├── title (string)
+  ├── key_findings (string - paragraph)
+  ├── period (string)
+  ├── recommendation_summary (string)
+  └── urgent_quote (string)
 
-1. **Merge the two default prompts into one** — a new `DEFAULT_MERGED_PROMPT` that includes both the extraction JSON schema and the classification JSON schema in a single system prompt. The output JSON will have two top-level keys: `extraction` (current Prompt A output) and `classification` (current Prompt B output). This keeps the stored data structure identical to today.
+reason_code_distribution:
+  ├── total_cases (number)
+  ├── preventable_churn (number)
+  ├── unpreventable_churn (number)
+  └── by_category[]:
+      ├── category (string)
+      ├── count (number)
+      ├── percentage (number)
+      └── description (string)
 
-2. **Replace the two-call flow with one call** — instead of calling `callLovableAI` twice (once for extraction, once for classification), call it once with the merged prompt. The transcript goes directly as the user message.
+issue_clusters[]:
+  ├── cluster_name (string)
+  ├── description (string)
+  ├── priority (string: "P0", "P1")
+  ├── recommended_action (string)
+  └── supporting_quotes[] (strings)
 
-3. **Split the parsed result before storing** — after parsing the merged JSON response, split into `extraction` and `classification` objects and store them in the same `research_extraction` and `research_classification` columns. All downstream code (ProcessedRecordsList, HumanReviewQueue, ReasonCodeDrillDown, generate-research-insights) continues to work unchanged.
+top_actions: (OBJECT, not array)
+  ├── p0_immediate_risk_mitigation[]:
+  │   ├── action (string)
+  │   ├── description (string)
+  │   └── ownership (string)
+  ├── p1_systemic_process_redesign[]:
+  │   └── (same shape)
+  └── quick_wins[]:
+      └── (same shape)
 
-4. **Log cost as a single entry** — one `api_costs` row with `service_type: 'research_merged'` instead of two separate rows. The cost is lower because: (a) one call instead of two, (b) Flash model instead of Pro for classification, (c) no redundant token processing (Prompt B currently receives the full extraction JSON as input, which duplicates much of what Prompt A already processed).
+operational_blind_spots[]:
+  ├── blind_spot (string)
+  └── description (string)
 
-5. **Update prompt lookup** — check `research_prompts` table for a `merged` prompt_key first. If found, use it. If not found, fall back to the hardcoded default. If neither `merged` nor separate `extraction`/`classification` keys exist, use the default merged prompt.
+host_accountability_flags[]:
+  ├── flag (string)
+  ├── description (string)
+  └── priority (string)
 
-**File: `src/components/research-insights/ResearchPromptsSettings.tsx`**
+emerging_patterns[]:
+  ├── pattern (string)
+  ├── description (string)
+  └── quote (string)
 
-6. **Update the settings UI** — add a `merged` prompt key label so super-admins can edit the merged prompt. Keep the old `extraction` and `classification` labels visible but mark them as "(Legacy)" so existing saved prompts aren't lost.
+payment_friction_analysis:
+  ├── summary (string)
+  └── key_friction_points[]:
+      ├── point (string)
+      ├── description (string)
+      ├── quote (string)
+      └── impact (string: "Critical", "High")
 
-### What stays the same
-- Database columns (`research_extraction`, `research_classification`) — no schema change
-- All downstream consumers (ProcessedRecordsList, HumanReviewQueue, ReasonCodeDrillDown, generate-research-insights)
-- The `batch-process-research-records` function (it just calls `process-research-record` per record)
-- Cost logging structure (same `api_costs` table)
+transfer_friction_analysis:
+  └── (same shape as payment)
 
-### Cost math
-- Current: ~28k input tokens (Flash) + ~4k output (Flash) + ~6k input (Pro) + ~3k output (Pro) = ~$0.036 + ~$0.031 = **$0.067 + $0.035 transcription = $0.11**
-- Merged: ~28k input tokens (Flash) + ~7k output (Flash) = ~$0.026 + $0.035 transcription = **~$0.06** (below target)
+agent_performance_summary:
+  ├── strengths (string)
+  └── opportunities_for_improvement[]:
+      ├── area (string)
+      ├── description (string)
+      └── recommendation (string)
+```
 
-### Risk mitigation
-- The merged prompt asks for a larger JSON output, but Flash handles this well with `response_format: { type: 'json_object' }`
-- The `parseJsonWithRetry` function already handles malformed responses
-- If the merged output is missing the `classification` key, mark for human review automatically
+### Plan (10 files to update)
+
+#### 1. ExecutiveSummary.tsx — Rewrite
+Map to actual fields: `title`, `key_findings` (plural), `period`, `recommendation_summary`, `urgent_quote`. Show the title prominently, key findings as narrative paragraph, urgent quote in a highlighted callout, and recommendation summary in an action card.
+
+#### 2. ReasonCodeChart.tsx — Rewrite  
+Read `by_category[]` with fields `category`, `count`, `percentage`, `description`. Add stat cards at top for `total_cases`, `preventable_churn`, `unpreventable_churn`. Keep the horizontal bar chart but use the correct fields.
+
+#### 3. IssueClustersPanel.tsx — Rewrite
+Map `description` (not `cluster_description`), `priority` (string like "P0"), `recommended_action` (string, not object), `supporting_quotes[]` (not `representative_quotes`). Show priority badge prominently. Remove severity_distribution, root_cause references.
+
+#### 4. TopActionsPanel.tsx — Rewrite completely
+Data is an **object** with three keyed arrays (`p0_immediate_risk_mitigation`, `p1_systemic_process_redesign`, `quick_wins`), not a flat array. Render as three grouped sections with P0/P1/Quick Win headers. Each item has `action`, `description`, `ownership`.
+
+#### 5. BlindSpotsPanel.tsx — Minor fix
+Already mostly correct (`blind_spot`, `description`). Remove unused `priority`, `how_discovered`, `estimated_prevalence`, `recommended_detection_method` references.
+
+#### 6. HostAccountabilityPanel.tsx — Fix priority mapping
+Data has `flag`, `description`, `priority` (string like "P0", "P1"). Add PriorityBadge based on the `priority` field instead of parsing the title text.
+
+#### 7. EmergingPatternsPanel.tsx — Already correct
+Has `pattern`, `description`, `quote`. No `watch_or_act` in actual data — gracefully handles missing. Minimal changes.
+
+#### 8. PaymentFrictionCard.tsx — Rewrite
+Data has `summary` + `key_friction_points[]` (objects with `point`, `description`, `quote`, `impact`), not `key_failures[]` (strings). Render each friction point as a card with impact badge and member quote.
+
+#### 9. TransferFrictionCard.tsx — Rewrite (same pattern)
+Same structure as payment friction. Render `key_friction_points[]` with `point`, `description`, `quote`, `impact`.
+
+#### 10. AgentPerformanceCard.tsx — Rewrite
+Data has `strengths` (string) + `opportunities_for_improvement[]` (objects with `area`, `description`, `recommendation`), not `weaknesses[]` (strings). Render each opportunity as its own card with area title, description, and recommendation.
+
+#### 11. ResearchInsights.tsx page — Reorganize layout
+- Executive Summary full-width at top
+- Reason Code Distribution full-width with preventable/unpreventable stat cards
+- Issue Clusters full-width (collapsible, P0 first)
+- Top Actions full-width (grouped by priority tier)
+- Two-column layout: Payment Friction | Transfer Friction
+- Two-column layout: Blind Spots | Host Accountability
+- Agent Performance full-width
+- Emerging Patterns full-width
+- Human Review Queue and Processed Records at bottom
+
+### Note on Claude
+Claude (Anthropic) is not available through the supported AI models. The current Gemini 2.5 Pro model produced excellent, rich data — the problem was purely the UI not matching the output schema. No model change is needed.
 

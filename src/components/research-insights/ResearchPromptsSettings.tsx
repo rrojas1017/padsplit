@@ -29,8 +29,9 @@ const SUPPORTED_MODELS = [
 ];
 
 const PROMPT_LABELS: Record<string, { title: string; description: string }> = {
-  extraction: { title: 'Prompt A — Record Extraction', description: 'Runs per record to extract structured data from transcripts' },
-  classification: { title: 'Prompt B — Record Classification', description: 'Runs per record to classify reason codes, preventability, and addressability' },
+  merged: { title: 'Prompt AB — Merged Extraction + Classification', description: 'Single call per record: extracts structured data and classifies in one pass (cost-optimized)' },
+  extraction: { title: 'Prompt A — Record Extraction (Legacy)', description: 'Legacy: runs per record to extract structured data. Only used if merged prompt is not configured.' },
+  classification: { title: 'Prompt B — Record Classification (Legacy)', description: 'Legacy: runs per record to classify. Only used if merged prompt is not configured.' },
   aggregation: { title: 'Prompt C — Aggregate Insights', description: 'Runs on batch of all records to generate the insight report' },
 };
 
@@ -111,7 +112,7 @@ export function ResearchPromptsSettings() {
     return <div className="text-sm text-muted-foreground">Loading prompts...</div>;
   }
 
-  const orderedKeys = ['extraction', 'classification', 'aggregation'];
+  const orderedKeys = ['merged', 'extraction', 'classification', 'aggregation'];
 
   return (
     <div className="space-y-6">
