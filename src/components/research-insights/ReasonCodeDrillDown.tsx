@@ -3,7 +3,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from '@/components/ui/collapsible';
-import { ChevronDown, ChevronRight, Calendar, User, Quote } from 'lucide-react';
+import { ChevronDown, ChevronRight, Calendar, User, Quote, Volume2 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { format } from 'date-fns';
 
@@ -16,6 +16,7 @@ interface DrillDownRecord {
   keyQuote: string | null;
   primaryReasonCode: string;
   classification: any;
+  recordingUrl: string | null;
 }
 
 interface ReasonCodeDrillDownProps {
@@ -111,7 +112,7 @@ export function ReasonCodeDrillDown({
       if (bookingIds?.length) {
         const { data, error } = await supabase
           .from('booking_transcriptions')
-          .select('booking_id, research_classification, bookings!inner(id, member_name, booking_date)')
+          .select('booking_id, research_classification, bookings!inner(id, member_name, booking_date, kixie_link)')
           .in('booking_id', bookingIds);
 
         if (!error && data?.length) {
@@ -127,6 +128,7 @@ export function ReasonCodeDrillDown({
               keyQuote: cls?.key_quote || cls?.supporting_quote || null,
               primaryReasonCode: cls?.primary_reason_code || cls?.reason_code || '',
               classification: cls,
+              recordingUrl: booking?.kixie_link || null,
             };
           }).sort((a: DrillDownRecord, b: DrillDownRecord) => (b.bookingDate > a.bookingDate ? 1 : -1));
           setRecords(matched);
@@ -138,7 +140,7 @@ export function ReasonCodeDrillDown({
       // Strategy 2 & 3: Keyword matching fallback
       const { data, error } = await supabase
         .from('booking_transcriptions')
-        .select('booking_id, research_classification, bookings!inner(id, member_name, booking_date, record_type, has_valid_conversation)')
+        .select('booking_id, research_classification, bookings!inner(id, member_name, booking_date, record_type, has_valid_conversation, kixie_link)')
         .eq('research_processing_status', 'completed')
         .not('research_classification', 'is', null);
 
@@ -164,6 +166,7 @@ export function ReasonCodeDrillDown({
             keyQuote: cls.key_quote || cls.supporting_quote || null,
             primaryReasonCode: cls.primary_reason_code || cls.reason_code || '',
             classification: cls,
+            recordingUrl: booking.kixie_link || null,
           });
         }
       }
@@ -219,6 +222,9 @@ export function ReasonCodeDrillDown({
                           <span className="text-sm font-medium text-foreground">{rec.memberName}</span>
                         </div>
                         <div className="flex items-center gap-2 flex-shrink-0">
+                          {rec.recordingUrl && (
+                            <Volume2 className="w-3.5 h-3.5 text-primary" />
+                          )}
                           {rec.preventabilityScore != null && (
                             <Badge variant={rec.preventabilityScore >= 7 ? 'destructive' : rec.preventabilityScore >= 4 ? 'secondary' : 'outline'} className="text-xs">
                               {rec.preventabilityScore >= 7 ? 'Preventable' : rec.preventabilityScore >= 4 ? 'Partial' : 'Unpreventable'}
@@ -240,6 +246,16 @@ export function ReasonCodeDrillDown({
                 </CollapsibleTrigger>
                 <CollapsibleContent>
                   <div className="ml-7 mr-3 mb-2 p-3 rounded-lg bg-muted/30 border border-border/50 space-y-3">
+                    {rec.recordingUrl && (
+                      <div>
+                        <p className="text-xs font-medium text-foreground mb-1.5 flex items-center gap-1">
+                          <Volume2 className="w-3 h-3" /> Call Recording
+                        </p>
+                        <audio controls preload="none" className="w-full h-10" src={rec.recordingUrl}>
+                          Your browser does not support the audio element.
+                        </audio>
+                      </div>
+                    )}
                     {rec.rootCauseSummary && (
                       <div>
                         <p className="text-xs font-medium text-foreground mb-1">Root Cause</p>
