@@ -182,6 +182,15 @@ async function processInsights(
 ) {
   const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
+  // Helper to write progress to the data column
+  async function updateProgress(phase: string, completedChunks: number, totalChunks: number) {
+    try {
+      await supabase.from('research_insights').update({
+        data: { _progress: { totalChunks, completedChunks, totalRecords: classifications.length, currentPhase: phase } }
+      }).eq('id', insightId);
+    } catch (e) { console.error('[Insights] Progress update failed:', e); }
+  }
+
   try {
     console.log(`[Insights] Background processing started for ${insightId} with ${classifications.length} records`);
 
@@ -208,6 +217,7 @@ async function processInsights(
 
     if (recordSummaries.length <= CHUNK_SIZE) {
       // Single batch
+      await updateProgress('analyzing', 0, 1);
       const result = await callLovableAI(lovableApiKey, model, temperature, systemPrompt,
         `Date range: ${dateRange}\n\nHere are ${recordSummaries.length} classified move-out records:\n\n${JSON.stringify(recordSummaries, null, 2)}`
       );
@@ -243,6 +253,7 @@ async function processInsights(
 
       console.log(`[Insights] Splitting ${recordSummaries.length} records into ${chunks.length} chunks`);
       const chunkResults: any[] = [];
+      await updateProgress('analyzing', 0, chunks.length);
 
       for (let i = 0; i < chunks.length; i++) {
         console.log(`[Insights] Processing chunk ${i + 1}/${chunks.length} (${chunks[i].length} records)`);
@@ -267,6 +278,8 @@ async function processInsights(
           triggered_by_user_id: triggeredByUserId || undefined,
           is_internal: false,
         });
+
+        await updateProgress('analyzing', i + 1, chunks.length);
       }
 
       // Synthesize chunk results
@@ -274,6 +287,7 @@ async function processInsights(
         finalResult = chunkResults[0];
       } else {
         console.log(`[Insights] Synthesizing ${chunkResults.length} chunk results`);
+        await updateProgress('synthesizing', chunks.length, chunks.length);
         const synthesisResult = await callLovableAI(lovableApiKey, model, temperature, systemPrompt,
           `Date range: ${dateRange}\n\nYou previously analyzed ${recordSummaries.length} records in ${chunkResults.length} batches. Synthesize these batch results into a single unified insight report:\n\n${JSON.stringify(chunkResults, null, 2)}`
         );
