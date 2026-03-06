@@ -228,7 +228,7 @@ export function useReportsData(
       }
 
       // Exclude unsuccessful research calls (voicemails, no-answers, failed connections)
-      query = query.or('record_type.neq.research,has_valid_conversation.is.null,has_valid_conversation.eq.true');
+      query = query.or('record_type.neq.research,has_valid_conversation.eq.true');
 
       // Apply import batch filter
       if (filters.importBatchFilter === 'manual') {
