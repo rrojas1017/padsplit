@@ -187,6 +187,41 @@ export function useResearchInsightsData() {
     }
   };
 
+  const getReprocessCount = async (): Promise<number> => {
+    try {
+      const { data, error } = await supabase.functions.invoke('reset-research-processing', {
+        body: { dryRun: true }
+      });
+      if (error) throw error;
+      return data?.count || 0;
+    } catch (error) {
+      console.error('Error getting reprocess count:', error);
+      return 0;
+    }
+  };
+
+  const triggerReprocess = async () => {
+    try {
+      const { data, error } = await supabase.functions.invoke('reset-research-processing', {
+        body: {}
+      });
+
+      if (error) throw error;
+      toast.info(`Reset ${data?.reset_count || 0} records. Reprocessing started...`);
+      
+      const pollInterval = setInterval(async () => {
+        await fetchProcessingStats();
+      }, 10000);
+      (window as any).__researchBackfillPoll = pollInterval;
+
+      return data;
+    } catch (error) {
+      console.error('Error triggering reprocess:', error);
+      toast.error('Failed to start reprocessing');
+      return null;
+    }
+  };
+
   const refresh = useCallback(async () => {
     setIsLoading(true);
     await Promise.all([fetchReports(), fetchProcessingStats()]);
@@ -206,6 +241,8 @@ export function useResearchInsightsData() {
     fetchReportDetail,
     generateReport,
     triggerBackfill,
+    triggerReprocess,
+    getReprocessCount,
     refresh,
     fetchProcessingStats,
   };
