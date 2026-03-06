@@ -9,7 +9,73 @@ const BATCH_SIZE = 5;
 const PARALLEL_SIZE = 3;
 
 Deno.serve(async (req) => {
-// ... keep existing code
+  if (req.method === 'OPTIONS') {
+    return new Response(null, { headers: corsHeaders });
+  }
+
+  const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+  const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+  const supabase = createClient(supabaseUrl, supabaseServiceKey);
+
+  try {
+    const body = await req.json().catch(() => ({}));
+    const dryRun = body.dryRun === true;
+
+    // Auto-reset records stuck in 'processing' for >15 minutes
+    const fifteenMinutesAgo = new Date(Date.now() - 15 * 60 * 1000).toISOString();
+    const { data: resetData } = await supabase
+      .from('booking_transcriptions')
+      .update({ research_processing_status: null })
+      .eq('research_processing_status', 'processing')
+      .lt('updated_at', fifteenMinutesAgo)
+      .select('id');
+    
+    if (resetData && resetData.length > 0) {
+      console.log(`[Backfill] Auto-reset ${resetData.length} stale processing records`);
+    }
+
+    // Find unprocessed research records with transcripts
+    const { data: unprocessed, error: fetchError } = await supabase
+      .from('bookings')
+      .select(`
+        id,
+        booking_transcriptions!inner (
+          call_transcription,
+          research_processing_status
+        )
+      `)
+      .eq('record_type', 'research')
+      .eq('has_valid_conversation', true)
+      .not('booking_transcriptions.call_transcription', 'is', null)
+      .or('research_processing_status.is.null,research_processing_status.eq.failed', { referencedTable: 'booking_transcriptions' })
+      .limit(dryRun ? 1000 : BATCH_SIZE);
+
+    if (fetchError) {
+      throw new Error(`Failed to fetch unprocessed records: ${fetchError.message}`);
+    }
+
+    // Filter to only records that truly need processing
+    const toProcess = (unprocessed || []).filter((r: any) => {
+      const t = Array.isArray(r.booking_transcriptions) ? r.booking_transcriptions[0] : r.booking_transcriptions;
+      return t?.call_transcription && (!t?.research_processing_status || t?.research_processing_status === 'failed');
+    });
+
+    if (dryRun) {
+      return new Response(
+        JSON.stringify({ success: true, totalUnprocessed: toProcess.length }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    console.log(`[Backfill] Found ${toProcess.length} unprocessed research records`);
+
+    if (toProcess.length === 0) {
+      return new Response(
+        JSON.stringify({ success: true, processed: 0, remaining: 0, message: 'All records processed' }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
     // Process records in parallel chunks of PARALLEL_SIZE
     let processed = 0;
     let failed = 0;
@@ -49,13 +115,6 @@ Deno.serve(async (req) => {
         }
       }
     }
-
-    // Check if there are more to process
-    const { count: remainingCount } = await supabase
-      .from('bookings')
-      .select('id', { count: 'exact', head: true })
-      .eq('record_type', 'research')
-      .not('booking_transcriptions.call_transcription', 'is', null);
 
     // Self-retrigger if there are more records
     const hasMore = toProcess.length === BATCH_SIZE;
