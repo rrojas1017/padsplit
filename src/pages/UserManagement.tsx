@@ -90,6 +90,7 @@ export default function UserManagement() {
   const [newUserRole, setNewUserRole] = useState<string>('');
   const [newUserSiteId, setNewUserSiteId] = useState<string>('');
   const [linkedAgentId, setLinkedAgentId] = useState<string>('');
+  const [newDialerAgentUser, setNewDialerAgentUser] = useState<string>('');
   const [unlinkedAgents, setUnlinkedAgents] = useState<UnlinkedAgent[]>([]);
   const [loadingAgents, setLoadingAgents] = useState(false);
 
@@ -335,6 +336,7 @@ export default function UserManagement() {
           role: newUserRole,
           siteId: (newUserRole === 'supervisor' || newUserRole === 'agent' || newUserRole === 'researcher') && newUserSiteId !== 'none' ? newUserSiteId : null,
           linkedAgentId: linkedAgentId && linkedAgentId !== 'none' ? linkedAgentId : null,
+          dialerAgentUser: newDialerAgentUser || null,
         },
       });
 
@@ -363,6 +365,7 @@ export default function UserManagement() {
       setNewUserRole('');
       setNewUserSiteId('');
       setLinkedAgentId('');
+      setNewDialerAgentUser('');
       setHasTypedNewPassword(false);
       setIsDialogOpen(false);
 
@@ -1293,6 +1296,21 @@ export default function UserManagement() {
                     </SelectContent>
                   </Select>
                 )}
+              </div>
+            )}
+
+            {newUserRole === 'agent' && (
+              <div className="grid gap-2">
+                <Label htmlFor="dialerAgentUser">Dialer Agent User</Label>
+                <Input
+                  id="dialerAgentUser"
+                  value={newDialerAgentUser}
+                  onChange={(e) => setNewDialerAgentUser(e.target.value)}
+                  placeholder="e.g. john.doe"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Used to match incoming dialer submissions to this agent
+                </p>
               </div>
             )}
 
