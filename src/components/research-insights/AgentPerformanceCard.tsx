@@ -1,21 +1,79 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { UserCheck } from 'lucide-react';
+import { UserCheck, ThumbsUp, AlertTriangle, Lightbulb } from 'lucide-react';
 
 interface AgentPerformanceProps {
   data: {
-    total_calls_reviewed: number;
-    avg_questions_covered: number;
-    coverage_pct: number;
-    commonly_skipped_sections: Array<{ section: string; skip_frequency: number; impact: string }>;
-    positive_patterns: string[];
-    coaching_opportunities: Array<{ issue: string; frequency: number; recommendation: string }>;
+    // New narrative format
+    strengths?: string;
+    weaknesses?: string[];
+    recommendation?: string;
+    // Legacy format
+    total_calls_reviewed?: number;
+    avg_questions_covered?: number;
+    coverage_pct?: number;
+    commonly_skipped_sections?: Array<{ section: string; skip_frequency: number; impact: string }>;
+    positive_patterns?: string[];
+    coaching_opportunities?: Array<{ issue: string; frequency: number; recommendation: string }>;
   };
 }
 
 export function AgentPerformanceCard({ data }: AgentPerformanceProps) {
   if (!data) return null;
 
+  const isNarrative = !!(data.strengths || data.weaknesses);
+
+  if (isNarrative) {
+    return (
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base flex items-center gap-2">
+            <UserCheck className="w-4 h-4 text-emerald-500" />
+            Agent Performance Summary
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {data.strengths && (
+            <div className="bg-emerald-500/5 border border-emerald-500/20 rounded-lg p-4">
+              <div className="flex items-center gap-2 mb-2">
+                <ThumbsUp className="w-4 h-4 text-emerald-500" />
+                <p className="text-xs font-semibold text-foreground uppercase tracking-wide">Strengths</p>
+              </div>
+              <p className="text-sm text-muted-foreground">{data.strengths}</p>
+            </div>
+          )}
+
+          {data.weaknesses?.length ? (
+            <div>
+              <div className="flex items-center gap-2 mb-2">
+                <AlertTriangle className="w-4 h-4 text-amber-500" />
+                <p className="text-xs font-semibold text-foreground uppercase tracking-wide">Weaknesses & Gaps</p>
+              </div>
+              <ul className="space-y-2">
+                {data.weaknesses.map((w, i) => (
+                  <li key={i} className="text-sm text-muted-foreground border border-border rounded-lg p-3">
+                    {w}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+
+          {data.recommendation && (
+            <div className="bg-primary/5 border border-primary/20 rounded-lg p-4">
+              <div className="flex items-center gap-2 mb-2">
+                <Lightbulb className="w-4 h-4 text-primary" />
+                <p className="text-xs font-semibold text-foreground uppercase tracking-wide">Recommendation</p>
+              </div>
+              <p className="text-sm text-foreground">{data.recommendation}</p>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    );
+  }
+
+  // Legacy stat-based layout
   return (
     <Card>
       <CardHeader className="pb-3">
@@ -40,7 +98,7 @@ export function AgentPerformanceCard({ data }: AgentPerformanceProps) {
           </div>
         </div>
 
-        {data.positive_patterns?.length > 0 && (
+        {data.positive_patterns?.length ? (
           <div>
             <p className="text-xs font-medium text-foreground mb-1">Positive Patterns</p>
             <div className="flex gap-1.5 flex-wrap">
@@ -49,26 +107,9 @@ export function AgentPerformanceCard({ data }: AgentPerformanceProps) {
               ))}
             </div>
           </div>
-        )}
+        ) : null}
 
-        {data.commonly_skipped_sections?.length > 0 && (
-          <div>
-            <p className="text-xs font-medium text-foreground mb-2">Commonly Skipped Sections</p>
-            <div className="space-y-2">
-              {data.commonly_skipped_sections.map((s, i) => (
-                <div key={i} className="text-xs border border-border rounded p-2">
-                  <div className="flex justify-between">
-                    <span className="font-medium text-foreground">{s.section}</span>
-                    <Badge variant="outline">{s.skip_frequency}x</Badge>
-                  </div>
-                  <p className="text-muted-foreground mt-1">{s.impact}</p>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {data.coaching_opportunities?.length > 0 && (
+        {data.coaching_opportunities?.length ? (
           <div>
             <p className="text-xs font-medium text-foreground mb-2">Coaching Opportunities</p>
             <div className="space-y-2">
@@ -80,7 +121,7 @@ export function AgentPerformanceCard({ data }: AgentPerformanceProps) {
               ))}
             </div>
           </div>
-        )}
+        ) : null}
       </CardContent>
     </Card>
   );
