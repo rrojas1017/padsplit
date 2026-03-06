@@ -9,6 +9,8 @@ interface ReasonCodeChartProps {
       count: number;
       percentage: number;
       details?: string;
+      reason_codes_included?: string[];
+      booking_ids?: string[];
     }>;
     methodology?: string;
   } | Array<{
@@ -17,13 +19,14 @@ interface ReasonCodeChartProps {
     pct: number;
     avg_preventability?: number;
   }>;
+  onGroupClick?: (groupName: string, bookingIds?: string[], reasonCodes?: string[]) => void;
 }
 
-export function ReasonCodeChart({ data }: ReasonCodeChartProps) {
+export function ReasonCodeChart({ data, onGroupClick }: ReasonCodeChartProps) {
   if (!data) return null;
 
   // Normalize data from either format
-  let chartData: Array<{ name: string; count: number; pct: number; details?: string }> = [];
+  let chartData: Array<{ name: string; count: number; pct: number; details?: string; booking_ids?: string[]; reason_codes_included?: string[] }> = [];
   let methodology: string | undefined;
 
   if (Array.isArray(data)) {
@@ -35,6 +38,8 @@ export function ReasonCodeChart({ data }: ReasonCodeChartProps) {
       count: d.count,
       pct: d.percentage,
       details: d.details,
+      booking_ids: d.booking_ids,
+      reason_codes_included: d.reason_codes_included,
     }));
     methodology = data.methodology;
   }
@@ -86,7 +91,11 @@ export function ReasonCodeChart({ data }: ReasonCodeChartProps) {
         {/* Detail cards */}
         <div className="space-y-2">
           {sorted.map((item, i) => (
-            <div key={i} className="flex items-start gap-3 text-sm border border-border rounded-lg p-3">
+            <div
+              key={i}
+              className={`flex items-start gap-3 text-sm border border-border rounded-lg p-3 transition-colors ${onGroupClick ? 'cursor-pointer hover:bg-accent/50' : ''}`}
+              onClick={() => onGroupClick?.(item.name, item.booking_ids, item.reason_codes_included)}
+            >
               <div className="w-3 h-3 rounded-sm flex-shrink-0 mt-1" style={{ background: COLORS[i % COLORS.length] }} />
               <div className="flex-1 min-w-0">
                 <div className="flex items-center justify-between gap-2">
@@ -95,6 +104,9 @@ export function ReasonCodeChart({ data }: ReasonCodeChartProps) {
                 </div>
                 {item.details && (
                   <p className="text-xs text-muted-foreground mt-1">{item.details}</p>
+                )}
+                {onGroupClick && (
+                  <p className="text-xs text-primary mt-1">Click to view records →</p>
                 )}
               </div>
             </div>
