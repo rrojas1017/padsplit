@@ -1,41 +1,64 @@
 
 
-## Make the Human Review Queue Actionable
+## Problem
 
-Currently the 33 flagged items are listed with a name, date, reason code, and a truncated review reason — but admins can't do anything with them. Here's the plan to make it useful:
+The Research Insights report has rich, actionable data (105 cases analyzed with detailed findings), but **the UI shows mostly empty/broken content** because the AI-generated JSON structure doesn't match the field names the React components expect.
 
-### What each review item needs
+**Data mismatch examples:**
 
-Each row should let the admin:
-1. **Expand to see full context** — the AI's review reason (why it was flagged), the assigned reason code, and key quotes from the transcript
-2. **View the transcript** — link/button to open the full call transcript
-3. **Approve or Override** — confirm the AI's classification is correct, or pick a different reason code
-4. **Dismiss** — mark as reviewed (clears the `research_human_review` flag) so it leaves the queue
+| Component expects | Actual data field |
+|---|---|
+| `executive_summary.headline` | `executive_summary.title` + `key_finding` |
+| `executive_summary.total_cases` | missing (needs to derive from context) |
+| `executive_summary.addressable_pct` | mentioned in `quantified_impact` text |
+| `issue_clusters[].frequency` | `case_count` |
+| `issue_clusters[].representative_quotes` | `key_quotes` |
+| `issue_clusters[].systemic_root_cause` | `root_cause` |
+| `issue_clusters[].severity_distribution` | missing |
+| `top_actions[].rank` | missing |
+| `top_actions[].rationale` | `description` |
+| `top_actions[].cases_affected` | missing |
+| `blind_spots[].how_discovered` | `description` |
+| `reason_code_distribution[].code` | nested under `.distribution[].reason_group` |
+| `host_accountability_flags[].issue_pattern` | `flag` |
+| `host_accountability_flags[].frequency` | missing |
+| `emerging_patterns[].frequency` | missing |
+| `payment_friction_analysis.payment_related_moveouts` | `summary` + `key_failures` (text) |
 
-### Implementation
+## Plan
 
-**1. Redesign `HumanReviewQueue.tsx`**
-- Convert each row into an expandable accordion-style card
-- Expanded view shows: full `human_review_reason`, the AI's `primary_reason_code`, confidence score, and key quotes from `research_classification`
-- Add action buttons: "Approve" (clears flag), "Override" (opens reason code selector, saves new code, clears flag), "View Transcript" (opens the existing `TranscriptionModal`)
-- Add a "Dismiss" option that simply clears the review flag without changing classification
+### 1. Redesign all Research Insights UI components to match actual data
 
-**2. Add review actions**
-- **Approve**: Sets `research_human_review = false` on the record (keeps existing classification)
-- **Override**: Updates `research_classification.primary_reason_code` with admin's selection and sets `research_human_review = false`
-- Both actions update the record via Supabase and remove the item from the queue in the UI
-- Show a toast confirmation after each action
+Update every component to render the data structure the AI actually produces. This means rewriting the interfaces and rendering logic for:
 
-**3. Add bulk actions**
-- "Approve All" button to clear all flags at once (with a confirmation dialog)
-- Counter updates in real-time as items are resolved
+- **ExecutiveSummary** — Show `title`, `key_finding` (as the main narrative), `quantified_impact`, `urgent_recommendation`, and `period`. Display as a prominent narrative card rather than stat tiles (since the AI provides prose, not numbers).
 
-**4. Update processing stats**
-- After approving/dismissing items, refresh the `humanReviewCount` in the parent stats banner so the amber "33 flagged" card updates
+- **ReasonCodeChart** — The data is under `reason_code_distribution.distribution[]` with fields `reason_group`, `count`, `percentage`, `details`. Update the chart to use these fields.
 
-### Technical details
-- Queries use existing `booking_transcriptions` table — no schema changes needed
-- The `research_human_review` boolean column already exists for toggling
-- The `research_classification` JSONB column holds the reason code to override
-- Reason code options can be derived from the existing reason code distribution data or a static list
+- **IssueClustersPanel** — Map `case_count` → frequency, `key_quotes` → quotes, `root_cause` → root cause, `recommended_action.action/priority` → action card. Remove `severity_distribution` dependency.
+
+- **TopActionsPanel** — Use `action`, `description`, `owner`, `priority`. Auto-generate rank from array index. Remove dependency on `cases_affected`, `pct_of_batch`, `effort`, `quick_win`.
+
+- **BlindSpotsPanel** — Use `blind_spot`, `description`, `priority`. Remove `how_discovered`, `estimated_prevalence`, `recommended_detection_method`.
+
+- **HostAccountabilityPanel** — Use `flag` (as title), `description`, `quote`, `recommendation`. Remove `frequency`, `impact_on_retention`, `impact_on_legal_risk` dependencies.
+
+- **EmergingPatternsPanel** — Use `pattern`, `description`, `quote`. Remove `frequency`, `watch_or_act` dependencies.
+
+- **PaymentFrictionCard** — Render `summary`, `key_failures[]`, `recommendation` as narrative content instead of stat tiles.
+
+- **TransferFrictionCard** — Same approach: render narrative fields.
+
+### 2. Improve the page layout inspired by the reference image
+
+Reorganize the Research Insights page to present content in a more scannable, actionable format:
+
+- Executive Summary as a prominent header card with the key finding narrative
+- Issue Clusters with inline tags, root cause, and action in a single expandable card (similar to reference)
+- Blind Spots and Top Actions side-by-side in a two-column layout (matching reference)
+- Priority badges (P0/P1/P2) and severity badges (Critical/High) prominently displayed
+
+### 3. Make the aggregation prompt more consistent (optional stabilization)
+
+No prompt changes needed now — the UI should be flexible enough to handle the AI's output. But we'll add fallback field mapping in each component so both the "template" schema and the "actual" schema work.
 
