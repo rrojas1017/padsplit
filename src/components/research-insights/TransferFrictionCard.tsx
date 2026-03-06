@@ -1,13 +1,21 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { ArrowRightLeft, AlertTriangle } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
+import { ArrowRightLeft } from 'lucide-react';
+
+interface FrictionPoint {
+  point: string;
+  description?: string;
+  quote?: string;
+  impact?: string;
+}
 
 interface TransferFrictionProps {
   data: {
-    // New narrative format
     summary?: string;
+    key_friction_points?: FrictionPoint[];
     key_failures?: string[];
     recommendation?: string;
-    // Legacy stat format
+    // Legacy
     considered_transfer?: number;
     considered_transfer_pct?: number;
     unaware_of_option?: number;
@@ -16,6 +24,14 @@ interface TransferFrictionProps {
     blocked_by_availability?: number;
     transfer_would_have_retained?: number;
   };
+}
+
+function ImpactBadge({ impact }: { impact?: string }) {
+  if (!impact) return null;
+  const l = impact.toLowerCase();
+  if (l === 'critical') return <Badge variant="destructive">Critical</Badge>;
+  if (l === 'high') return <Badge className="bg-amber-500/15 text-amber-600 border-amber-500/30">High</Badge>;
+  return <Badge variant="outline">{impact}</Badge>;
 }
 
 export function TransferFrictionCard({ data }: TransferFrictionProps) {
@@ -34,18 +50,29 @@ export function TransferFrictionCard({ data }: TransferFrictionProps) {
           <p className="text-sm text-muted-foreground leading-relaxed">{data.summary}</p>
         )}
 
-        {data.key_failures?.length ? (
-          <div>
-            <p className="text-xs font-semibold text-foreground mb-2 uppercase tracking-wide">Key Failures</p>
-            <ul className="space-y-2">
-              {data.key_failures.map((f, i) => (
-                <li key={i} className="flex items-start gap-2 text-sm">
-                  <AlertTriangle className="w-3.5 h-3.5 text-amber-500 mt-0.5 flex-shrink-0" />
-                  <span className="text-muted-foreground">{f}</span>
-                </li>
-              ))}
-            </ul>
+        {data.key_friction_points?.length ? (
+          <div className="space-y-3">
+            {data.key_friction_points.map((fp, i) => (
+              <div key={i} className="border border-border rounded-lg p-3 space-y-2">
+                <div className="flex items-start justify-between gap-2">
+                  <p className="text-sm font-medium text-foreground">{fp.point}</p>
+                  <ImpactBadge impact={fp.impact} />
+                </div>
+                {fp.description && <p className="text-xs text-muted-foreground">{fp.description}</p>}
+                {fp.quote && (
+                  <blockquote className="border-l-2 border-primary/40 pl-3 italic text-xs text-muted-foreground">"{fp.quote}"</blockquote>
+                )}
+              </div>
+            ))}
           </div>
+        ) : data.key_failures?.length ? (
+          <ul className="space-y-1.5">
+            {data.key_failures.map((f, i) => (
+              <li key={i} className="text-sm text-muted-foreground flex items-start gap-1.5">
+                <span className="text-destructive mt-1">•</span>{f}
+              </li>
+            ))}
+          </ul>
         ) : null}
 
         {/* Legacy stats */}

@@ -1,14 +1,9 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { EyeOff } from 'lucide-react';
-import { PriorityBadge } from './PriorityBadge';
 
 interface BlindSpot {
   blind_spot: string;
   description?: string;
-  how_discovered?: string;
-  estimated_prevalence?: string;
-  recommended_detection_method?: string;
-  priority?: string;
 }
 
 interface BlindSpotsPanelProps {
@@ -28,21 +23,10 @@ export function BlindSpotsPanel({ data }: BlindSpotsPanelProps) {
       </CardHeader>
       <CardContent className="space-y-3">
         {data.map((spot, i) => (
-          <div key={i} className="border border-border rounded-lg p-4 space-y-2">
-            <div className="flex items-start justify-between gap-2">
-              <p className="text-sm font-medium text-foreground">{spot.blind_spot}</p>
-              <PriorityBadge priority={spot.priority} />
-            </div>
-            {(spot.description || spot.how_discovered) && (
-              <p className="text-xs text-muted-foreground">{spot.description || spot.how_discovered}</p>
-            )}
-            {spot.estimated_prevalence && (
-              <p className="text-xs text-muted-foreground"><span className="font-medium">Est. prevalence:</span> {spot.estimated_prevalence}</p>
-            )}
-            {spot.recommended_detection_method && (
-              <div className="bg-muted/50 rounded p-2">
-                <p className="text-xs text-foreground"><span className="font-medium">Detection method:</span> {spot.recommended_detection_method}</p>
-              </div>
+          <div key={i} className="border border-border rounded-lg p-4 space-y-1">
+            <p className="text-sm font-medium text-foreground">{spot.blind_spot}</p>
+            {spot.description && (
+              <p className="text-xs text-muted-foreground">{spot.description}</p>
             )}
           </div>
         ))}
