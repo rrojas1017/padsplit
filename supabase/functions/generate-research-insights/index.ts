@@ -67,7 +67,7 @@ Respond with ONLY the JSON object below. No preamble, no markdown, no explanatio
     "headline": "Single sentence capturing the most important finding."
   },
   "reason_code_distribution": [
-    { "code": "Reason code", "count": 0, "pct": 0.0, "avg_preventability": 0.0 }
+    { "code": "Reason code", "count": 0, "pct": 0.0, "avg_preventability": 0.0, "booking_ids": ["booking-uuid-1"], "reason_codes_included": ["GRANULAR_CODE_1"] }
   ],
   "issue_clusters": [
     {
@@ -76,6 +76,7 @@ Respond with ONLY the JSON object below. No preamble, no markdown, no explanatio
       "frequency": 0,
       "pct_of_total": 0.0,
       "reason_codes_included": [],
+      "booking_ids": [],
       "severity_distribution": { "critical": 0, "high": 0, "medium": 0, "low": 0 },
       "representative_quotes": [],
       "common_early_warnings": [],
@@ -428,7 +429,7 @@ Deno.serve(async (req) => {
 
     const classifications = processedRecords.map((r: any) => {
       const t = Array.isArray(r.booking_transcriptions) ? r.booking_transcriptions[0] : r.booking_transcriptions;
-      return t.research_classification;
+      return { ...t.research_classification, _booking_id: r.id };
     });
 
     const extractions = processedRecords.map((r: any) => {
