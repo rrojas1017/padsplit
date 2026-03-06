@@ -1,0 +1,1 @@
+UPDATE research_insights SET status = 'failed', error_message = 'Timed out during processing' WHERE id = 'b6787fa1-0f45-4b35-ba1c-2607dfc9f561' AND status = 'processing';
