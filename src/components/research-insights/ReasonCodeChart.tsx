@@ -1,63 +1,109 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 
 interface ReasonCodeChartProps {
-  data: Array<{
+  data: {
+    distribution?: Array<{
+      reason_group: string;
+      count: number;
+      percentage: number;
+      details?: string;
+    }>;
+    methodology?: string;
+  } | Array<{
     code: string;
     count: number;
     pct: number;
-    avg_preventability: number;
+    avg_preventability?: number;
   }>;
 }
 
 export function ReasonCodeChart({ data }: ReasonCodeChartProps) {
-  if (!data?.length) return null;
+  if (!data) return null;
 
-  const sorted = [...data].sort((a, b) => b.count - a.count);
+  // Normalize data from either format
+  let chartData: Array<{ name: string; count: number; pct: number; details?: string }> = [];
+  let methodology: string | undefined;
 
-  const getBarColor = (preventability: number) => {
-    if (preventability >= 7) return 'hsl(var(--destructive))';
-    if (preventability >= 4) return 'hsl(45, 93%, 47%)';
-    return 'hsl(var(--muted-foreground))';
-  };
+  if (Array.isArray(data)) {
+    // Legacy format
+    chartData = data.map(d => ({ name: d.code, count: d.count, pct: d.pct, details: undefined }));
+  } else if (data.distribution?.length) {
+    chartData = data.distribution.map(d => ({
+      name: d.reason_group,
+      count: d.count,
+      pct: d.percentage,
+      details: d.details,
+    }));
+    methodology = data.methodology;
+  }
+
+  if (!chartData.length) return null;
+
+  const sorted = [...chartData].sort((a, b) => b.count - a.count);
+
+  const COLORS = [
+    'hsl(var(--destructive))',
+    'hsl(142, 71%, 45%)',
+    'hsl(45, 93%, 47%)',
+    'hsl(var(--primary))',
+    'hsl(var(--muted-foreground))',
+  ];
 
   return (
     <Card>
       <CardHeader>
         <CardTitle className="text-base">Reason Code Distribution</CardTitle>
       </CardHeader>
-      <CardContent>
-        <ResponsiveContainer width="100%" height={Math.max(300, sorted.length * 36)}>
-          <BarChart data={sorted} layout="vertical" margin={{ left: 200, right: 30, top: 5, bottom: 5 }}>
+      <CardContent className="space-y-4">
+        <ResponsiveContainer width="100%" height={Math.max(250, sorted.length * 50)}>
+          <BarChart data={sorted} layout="vertical" margin={{ left: 220, right: 30, top: 5, bottom: 5 }}>
             <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
             <XAxis type="number" className="text-xs fill-muted-foreground" />
-            <YAxis 
-              type="category" 
-              dataKey="code" 
-              width={190} 
+            <YAxis
+              type="category"
+              dataKey="name"
+              width={210}
               tick={{ fontSize: 11 }}
               className="fill-muted-foreground"
             />
-            <Tooltip 
-              formatter={(value: number, name: string, props: any) => {
-                if (name === 'count') return [`${value} cases (${props.payload.pct?.toFixed(1)}%)`, 'Count'];
-                return [value, name];
+            <Tooltip
+              formatter={(value: number, _name: string, props: any) => {
+                return [`${value} cases (${props.payload.pct?.toFixed(1)}%)`, 'Count'];
               }}
               contentStyle={{ background: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', borderRadius: '8px' }}
               labelStyle={{ color: 'hsl(var(--foreground))' }}
             />
             <Bar dataKey="count" radius={[0, 4, 4, 0]}>
-              {sorted.map((entry, index) => (
-                <Cell key={index} fill={getBarColor(entry.avg_preventability)} />
+              {sorted.map((_entry, index) => (
+                <Cell key={index} fill={COLORS[index % COLORS.length]} />
               ))}
             </Bar>
           </BarChart>
         </ResponsiveContainer>
-        <div className="flex items-center gap-4 mt-3 text-xs text-muted-foreground justify-center">
-          <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-sm bg-destructive inline-block" /> High preventability (7+)</span>
-          <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-sm inline-block" style={{ background: 'hsl(45, 93%, 47%)' }} /> Medium (4-6)</span>
-          <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-sm bg-muted-foreground inline-block" /> Low (1-3)</span>
+
+        {/* Detail cards */}
+        <div className="space-y-2">
+          {sorted.map((item, i) => (
+            <div key={i} className="flex items-start gap-3 text-sm border border-border rounded-lg p-3">
+              <div className="w-3 h-3 rounded-sm flex-shrink-0 mt-1" style={{ background: COLORS[i % COLORS.length] }} />
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="font-medium text-foreground">{item.name}</p>
+                  <Badge variant="secondary" className="flex-shrink-0">{item.count} ({item.pct?.toFixed(1)}%)</Badge>
+                </div>
+                {item.details && (
+                  <p className="text-xs text-muted-foreground mt-1">{item.details}</p>
+                )}
+              </div>
+            </div>
+          ))}
         </div>
+
+        {methodology && (
+          <p className="text-xs text-muted-foreground italic border-t border-border pt-3">{methodology}</p>
+        )}
       </CardContent>
     </Card>
   );
