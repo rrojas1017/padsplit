@@ -1,123 +1,37 @@
 
 
-## Redesign Research Insights from Scratch
+## Drill Down from Reason Codes to Actual Records
 
 ### Problem
-The UI components still don't render the actual report data because field names are mismatched. The data itself is excellent — rich, actionable, well-organized with P0/P1/P2 priorities, member quotes, and specific recommendations. The UI just needs to be rebuilt to match what the AI actually produces.
+The Reason Code Distribution chart shows aggregated counts (e.g., "Positive, Planned & Unavoidable Churn: 34") but there's no way to see which specific records belong to each category.
 
-### Actual Data Structure (from the completed report)
+### Solution
+Make each reason code row in `ReasonCodeChart` clickable. Clicking opens a dialog/drawer showing the actual records whose `research_classification.primary_reason_code` matches that category.
 
-```text
-executive_summary:
-  ├── title (string)
-  ├── key_findings (string - paragraph)
-  ├── period (string)
-  ├── recommendation_summary (string)
-  └── urgent_quote (string)
+### Implementation
 
-reason_code_distribution:
-  ├── total_cases (number)
-  ├── preventable_churn (number)
-  ├── unpreventable_churn (number)
-  └── by_category[]:
-      ├── category (string)
-      ├── count (number)
-      ├── percentage (number)
-      └── description (string)
+#### 1. Create `ReasonCodeDrillDown` component
+A dialog that receives the selected reason code string and queries `booking_transcriptions` joined with `bookings` where:
+- `bookings.record_type = 'research'`
+- `bookings.has_valid_conversation = true`
+- `research_classification->>'primary_reason_code'` matches the selected code
 
-issue_clusters[]:
-  ├── cluster_name (string)
-  ├── description (string)
-  ├── priority (string: "P0", "P1")
-  ├── recommended_action (string)
-  └── supporting_quotes[] (strings)
+Since PostgREST doesn't support direct JSONB text extraction filtering easily, we'll use a two-step approach:
+- Fetch all processed research records (with `research_processing_status = 'completed'`)
+- Client-side filter by `primary_reason_code` matching (fuzzy/contains match to handle slight AI wording variations)
 
-top_actions: (OBJECT, not array)
-  ├── p0_immediate_risk_mitigation[]:
-  │   ├── action (string)
-  │   ├── description (string)
-  │   └── ownership (string)
-  ├── p1_systemic_process_redesign[]:
-  │   └── (same shape)
-  └── quick_wins[]:
-      └── (same shape)
+The drill-down will display: member name, booking date, preventability score, root cause summary, and key quote. Each row will be collapsible for full classification details.
 
-operational_blind_spots[]:
-  ├── blind_spot (string)
-  └── description (string)
+#### 2. Update `ReasonCodeChart` component
+- Add `onClick` handler to each detail card row (the colored category rows at the bottom)
+- Add visual affordance: cursor-pointer, hover state, and a small `ExternalLink` icon
+- Track selected reason code in state, pass to `ReasonCodeDrillDown` dialog
 
-host_accountability_flags[]:
-  ├── flag (string)
-  ├── description (string)
-  └── priority (string)
+#### 3. Data flow
+- The report's `date_range_start`, `date_range_end`, and `campaign_id` will be passed through to scope the query correctly
+- Records will be fetched on-demand when a reason code is clicked (not pre-loaded)
 
-emerging_patterns[]:
-  ├── pattern (string)
-  ├── description (string)
-  └── quote (string)
-
-payment_friction_analysis:
-  ├── summary (string)
-  └── key_friction_points[]:
-      ├── point (string)
-      ├── description (string)
-      ├── quote (string)
-      └── impact (string: "Critical", "High")
-
-transfer_friction_analysis:
-  └── (same shape as payment)
-
-agent_performance_summary:
-  ├── strengths (string)
-  └── opportunities_for_improvement[]:
-      ├── area (string)
-      ├── description (string)
-      └── recommendation (string)
-```
-
-### Plan (10 files to update)
-
-#### 1. ExecutiveSummary.tsx — Rewrite
-Map to actual fields: `title`, `key_findings` (plural), `period`, `recommendation_summary`, `urgent_quote`. Show the title prominently, key findings as narrative paragraph, urgent quote in a highlighted callout, and recommendation summary in an action card.
-
-#### 2. ReasonCodeChart.tsx — Rewrite  
-Read `by_category[]` with fields `category`, `count`, `percentage`, `description`. Add stat cards at top for `total_cases`, `preventable_churn`, `unpreventable_churn`. Keep the horizontal bar chart but use the correct fields.
-
-#### 3. IssueClustersPanel.tsx — Rewrite
-Map `description` (not `cluster_description`), `priority` (string like "P0"), `recommended_action` (string, not object), `supporting_quotes[]` (not `representative_quotes`). Show priority badge prominently. Remove severity_distribution, root_cause references.
-
-#### 4. TopActionsPanel.tsx — Rewrite completely
-Data is an **object** with three keyed arrays (`p0_immediate_risk_mitigation`, `p1_systemic_process_redesign`, `quick_wins`), not a flat array. Render as three grouped sections with P0/P1/Quick Win headers. Each item has `action`, `description`, `ownership`.
-
-#### 5. BlindSpotsPanel.tsx — Minor fix
-Already mostly correct (`blind_spot`, `description`). Remove unused `priority`, `how_discovered`, `estimated_prevalence`, `recommended_detection_method` references.
-
-#### 6. HostAccountabilityPanel.tsx — Fix priority mapping
-Data has `flag`, `description`, `priority` (string like "P0", "P1"). Add PriorityBadge based on the `priority` field instead of parsing the title text.
-
-#### 7. EmergingPatternsPanel.tsx — Already correct
-Has `pattern`, `description`, `quote`. No `watch_or_act` in actual data — gracefully handles missing. Minimal changes.
-
-#### 8. PaymentFrictionCard.tsx — Rewrite
-Data has `summary` + `key_friction_points[]` (objects with `point`, `description`, `quote`, `impact`), not `key_failures[]` (strings). Render each friction point as a card with impact badge and member quote.
-
-#### 9. TransferFrictionCard.tsx — Rewrite (same pattern)
-Same structure as payment friction. Render `key_friction_points[]` with `point`, `description`, `quote`, `impact`.
-
-#### 10. AgentPerformanceCard.tsx — Rewrite
-Data has `strengths` (string) + `opportunities_for_improvement[]` (objects with `area`, `description`, `recommendation`), not `weaknesses[]` (strings). Render each opportunity as its own card with area title, description, and recommendation.
-
-#### 11. ResearchInsights.tsx page — Reorganize layout
-- Executive Summary full-width at top
-- Reason Code Distribution full-width with preventable/unpreventable stat cards
-- Issue Clusters full-width (collapsible, P0 first)
-- Top Actions full-width (grouped by priority tier)
-- Two-column layout: Payment Friction | Transfer Friction
-- Two-column layout: Blind Spots | Host Accountability
-- Agent Performance full-width
-- Emerging Patterns full-width
-- Human Review Queue and Processed Records at bottom
-
-### Note on Claude
-Claude (Anthropic) is not available through the supported AI models. The current Gemini 2.5 Pro model produced excellent, rich data — the problem was purely the UI not matching the output schema. No model change is needed.
+### Files changed
+- `src/components/research-insights/ReasonCodeChart.tsx` — add click handlers, state, dialog trigger
+- `src/components/research-insights/ReasonCodeDrillDown.tsx` — new component: dialog with record list
 
