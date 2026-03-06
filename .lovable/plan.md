@@ -1,43 +1,38 @@
 
 
-## Fix Stuck Report + Prevent Future Timeouts
+## Findings
 
-### Problem
-The `generate-research-insights` function processes 105 records in 3 sequential chunks of 50, each requiring a 60-120s AI call to gemini-2.5-pro. With 4 total calls (3 chunks + 1 synthesis), the background task exceeds the ~2 minute `waitUntil` limit and silently dies, leaving the report stuck in "processing" forever.
+### Report Status
+- **Latest report `d331bff9`** is stuck in "processing" with empty data. The `EdgeRuntime.waitUntil` background task silently died — even with parallel chunks, the total processing time (3 parallel AI calls + 1 synthesis) exceeds the edge runtime's actual background execution limit (~150 seconds). The 4-minute timeout guard also didn't fire because the runtime killed the entire promise.
+- **Previous report `b6787fa1`** actually completed successfully with rich narrative data (title, key_findings, top_recommendation covering all 105 records). This is the most recent valid report.
 
-### Immediate Fix
-1. Mark the stuck report `b6787fa1` as failed so the UI unblocks
-2. Update the function to prevent this from happening again
+### Preventability Data Factors
+- The `preventability_data_factors` field is **missing from all classification records**. The reprocessing ran before or without the updated `process-research-record` function, so records don't have the new data-driven fields yet.
 
-### Architecture Fix
-Change the multi-chunk processing from **sequential** to **parallel**:
+### Plan: Fix Both Issues
 
-**Current flow** (fails at ~2 min):
-```text
-chunk1 (90s) → chunk2 (90s) → chunk3 (90s) → synthesis (60s) = ~330s total
-```
+#### 1. Mark stuck report as failed + load last valid report
+Run a database update to mark `d331bff9` as failed. The UI will then fall back to showing `b6787fa1` (the completed one).
 
-**New flow** (fits in ~2.5 min):
-```text
-chunk1 ─┐
-chunk2 ─┼─ parallel (~90s) → synthesis (60s) = ~150s total
-chunk3 ─┘
-```
-
-Additionally, add a **global try/catch timeout** that marks the report as failed if processing exceeds 4 minutes, so reports never get permanently stuck.
-
-### Changes
-
-**File: `supabase/functions/generate-research-insights/index.ts`**
-- In `processInsights()`, change the chunk `for` loop to `Promise.all()` so all chunks process in parallel
-- Add a timeout wrapper (4 min) around the entire `processInsights` call that marks the report as "failed" if exceeded
-- Add error handling so if any chunk fails to parse, the function continues with available results
-
-**Database**: Run a one-time update to mark the stuck report as failed:
 ```sql
-UPDATE research_insights SET status = 'failed', error_message = 'Timed out during processing' WHERE id = 'b6787fa1-0f45-4b35-ba1c-2607dfc9f561' AND status = 'processing';
+UPDATE research_insights 
+SET status = 'failed', error_message = 'Background task dropped by runtime' 
+WHERE id = 'd331bff9-281c-4c45-ae68-809ef8c27dcb';
 ```
 
-### Result
-After the fix, generating a report will process all chunks simultaneously, completing in ~2.5 minutes instead of ~5.5 minutes. The user can then click "Generate Report" again successfully.
+#### 2. Fix the timeout architecture (generate-research-insights)
+The root cause is that `EdgeRuntime.waitUntil` has a hard ~150s limit that can't be extended. The fix is to move from background processing to **synchronous processing** — the HTTP response waits for completion. The Deno edge function has a 300s request timeout, which is sufficient for parallel chunks.
+
+**Changes to `supabase/functions/generate-research-insights/index.ts`:**
+- Remove `EdgeRuntime.waitUntil` and the timeout race
+- Process insights synchronously within the request handler
+- Return the completed insight ID in the response
+- The client already polls for status, so this is transparent
+
+#### 3. Verify preventability data factors
+Check the deployed `process-research-record` function to confirm the `fetchMemberHistory` code is present. If it is, a re-run of "Reprocess All" will populate the `preventability_data_factors` in classifications. The next generated report will then reflect data-driven scores.
+
+### Files to Edit
+- `supabase/functions/generate-research-insights/index.ts` — switch from background to synchronous processing
+- Database: one-time update to unblock the stuck report
 
