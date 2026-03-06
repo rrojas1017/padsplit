@@ -1,57 +1,43 @@
 
 
-## Data-Driven Preventability Scoring
+## Fix Stuck Report + Prevent Future Timeouts
 
-### Current State
-The `preventability_score` (1-10) in Prompt B is determined entirely by AI judgment from the transcript and extraction. There's no cross-reference with actual system data about what PadSplit knew or did before the member left.
+### Problem
+The `generate-research-insights` function processes 105 records in 3 sequential chunks of 50, each requiring a 60-120s AI call to gemini-2.5-pro. With 4 total calls (3 chunks + 1 synthesis), the background task exceeds the ~2 minute `waitUntil` limit and silently dies, leaving the report stuck in "processing" forever.
 
-### Available Data for Cross-Referencing
-The system already stores data that can inform preventability:
-- **Prior bookings** (`bookings` table) — same `contact_phone`/`contact_email` shows history (rebookings, prior statuses, how long they were a member)
-- **Contact communications** (`contact_communications` table) — emails/SMS sent to this member, showing whether outreach was attempted
-- **Detected issues** (`bookings.detected_issues` JSONB) — tagged pain points from prior calls
-- **Call transcriptions** (`booking_transcriptions`) — prior call analysis, agent feedback, QA scores
-- **Research calls** (`research_calls`) — linked survey responses
+### Immediate Fix
+1. Mark the stuck report `b6787fa1` as failed so the UI unblocks
+2. Update the function to prevent this from happening again
 
-### Approach
-Modify `process-research-record/index.ts` to:
+### Architecture Fix
+Change the multi-chunk processing from **sequential** to **parallel**:
 
-1. **Before Prompt B**, query the member's historical data using `contact_phone` or `member_name` from the extraction
-2. **Build a "member history context" object** with:
-   - Number of prior bookings and their statuses (moved in, cancelled, no-show)
-   - Communications sent (count, types, dates)
-   - Prior detected issues from other calls
-   - Whether they were previously flagged as high-churn-risk
-   - Time as a PadSplit member (first booking date → research date)
-3. **Feed this context to Prompt B** as a new section: `--- MEMBER HISTORY (SYSTEM DATA) ---`
-4. **Update Prompt B classification rules** to use this data:
-   - If communications were sent addressing the issue → raise preventability (signals existed, action was taken but failed)
-   - If NO communications were sent and issue was known → raise preventability (missed opportunity)
-   - If member had multiple prior bookings → raise regrettability (engaged member)
-   - If no prior system touchpoints exist for the issue → lower preventability (no visibility)
-5. **Add a `preventability_data_factors` field** to the classification output showing which system signals influenced the score
+**Current flow** (fails at ~2 min):
+```text
+chunk1 (90s) → chunk2 (90s) → chunk3 (90s) → synthesis (60s) = ~330s total
+```
+
+**New flow** (fits in ~2.5 min):
+```text
+chunk1 ─┐
+chunk2 ─┼─ parallel (~90s) → synthesis (60s) = ~150s total
+chunk3 ─┘
+```
+
+Additionally, add a **global try/catch timeout** that marks the report as failed if processing exceeds 4 minutes, so reports never get permanently stuck.
 
 ### Changes
 
-**File: `supabase/functions/process-research-record/index.ts`**
+**File: `supabase/functions/generate-research-insights/index.ts`**
+- In `processInsights()`, change the chunk `for` loop to `Promise.all()` so all chunks process in parallel
+- Add a timeout wrapper (4 min) around the entire `processInsights` call that marks the report as "failed" if exceeded
+- Add error handling so if any chunk fails to parse, the function continues with available results
 
-- Add `fetchMemberHistory()` helper that queries `bookings`, `contact_communications`, `booking_transcriptions`, and `detected_issues` for the member using phone/email/name match
-- Call it after Prompt A (which extracts `phone_number` and `member_name`)
-- Append the history context to the Prompt B user message
-- Update `DEFAULT_CLASSIFICATION_PROMPT` to include data-driven preventability rules and the new `preventability_data_factors` output field
-- The history lookup uses the service role client (already available), no RLS concerns
-
-### Output Schema Addition
-```json
-"preventability_data_factors": {
-  "prior_bookings_count": 2,
-  "communications_sent": 3,
-  "known_issues_before_departure": ["maintenance", "roommate_conflict"],
-  "issue_was_previously_reported": true,
-  "time_as_member_days": 180,
-  "score_adjustment": "+2 (issue was reported but not resolved)"
-}
+**Database**: Run a one-time update to mark the stuck report as failed:
+```sql
+UPDATE research_insights SET status = 'failed', error_message = 'Timed out during processing' WHERE id = 'b6787fa1-0f45-4b35-ba1c-2607dfc9f561' AND status = 'processing';
 ```
 
-This is a single-file change to the edge function. No schema changes needed — the new fields are stored inside the existing `research_classification` JSONB column.
+### Result
+After the fix, generating a report will process all chunks simultaneously, completing in ~2.5 minutes instead of ~5.5 minutes. The user can then click "Generate Report" again successfully.
 
