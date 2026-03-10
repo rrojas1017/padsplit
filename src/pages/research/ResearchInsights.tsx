@@ -229,12 +229,6 @@ export default function ResearchInsights() {
                   </p>
                 </div>
               </div>
-              {processingStats.pendingRecords > 0 && (
-                <Button onClick={handleBackfill} disabled={isBackfilling} variant="outline" size="sm" className="gap-1.5">
-                  {isBackfilling ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
-                  {isBackfilling ? 'Processing...' : 'Process All'}
-                </Button>
-              )}
             </div>
             {isBackfilling && processingStats.totalResearchRecords > 0 && (
               <Progress
