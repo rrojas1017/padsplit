@@ -258,7 +258,7 @@ async function processInsights(
     });
 
     // Handle batch sizing: split into chunks of 50
-    const CHUNK_SIZE = 50;
+    const CHUNK_SIZE = 30;
     let finalResult: any;
 
     if (recordSummaries.length <= CHUNK_SIZE) {
