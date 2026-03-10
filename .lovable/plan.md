@@ -1,60 +1,123 @@
 
 
-## Fix: Research Insights stuck showing failed report + synthesis timeout
+## Redesign Research Insights from Scratch
 
-### Two problems
+### Problem
+The UI components still don't render the actual report data because field names are mismatched. The data itself is excellent — rich, actionable, well-organized with P0/P1/P2 priorities, member quotes, and specific recommendations. The UI just needs to be rebuilt to match what the AI actually produces.
 
-1. **UI shows failed report instead of last good one**: `fetchReports` always selects the most recent report. When that's `failed`, users see the error screen with no way to access previous completed reports.
+### Actual Data Structure (from the completed report)
 
-2. **Synthesis step times out**: With 157 records split into 4 chunks, all 4 chunk analyses complete successfully (~6 min), but the final synthesis call (combining 4 large JSON results) gets killed by edge runtime shutdown at ~7 min wall clock.
+```text
+executive_summary:
+  ├── title (string)
+  ├── key_findings (string - paragraph)
+  ├── period (string)
+  ├── recommendation_summary (string)
+  └── urgent_quote (string)
 
-### Fix 1: UI fallback to last completed report
+reason_code_distribution:
+  ├── total_cases (number)
+  ├── preventable_churn (number)
+  ├── unpreventable_churn (number)
+  └── by_category[]:
+      ├── category (string)
+      ├── count (number)
+      ├── percentage (number)
+      └── description (string)
 
-**File: `src/hooks/useResearchInsightsData.ts`** — lines 81-87
+issue_clusters[]:
+  ├── cluster_name (string)
+  ├── description (string)
+  ├── priority (string: "P0", "P1")
+  ├── recommended_action (string)
+  └── supporting_quotes[] (strings)
 
-Change `fetchReports` to find the first **completed** report and select it. Only show a failed/processing report if there are no completed reports at all.
+top_actions: (OBJECT, not array)
+  ├── p0_immediate_risk_mitigation[]:
+  │   ├── action (string)
+  │   ├── description (string)
+  │   └── ownership (string)
+  ├── p1_systemic_process_redesign[]:
+  │   └── (same shape)
+  └── quick_wins[]:
+      └── (same shape)
 
-```typescript
-// After setting reports:
-const firstCompleted = (data || []).find(r => r.status === 'completed');
-if (firstCompleted) {
-  await fetchReportDetail(firstCompleted.id);
-} else if (data && data.length > 0) {
-  setSelectedReport(data[0] as ResearchInsightReport);
-} else {
-  setSelectedReport(null);
-}
+operational_blind_spots[]:
+  ├── blind_spot (string)
+  └── description (string)
+
+host_accountability_flags[]:
+  ├── flag (string)
+  ├── description (string)
+  └── priority (string)
+
+emerging_patterns[]:
+  ├── pattern (string)
+  ├── description (string)
+  └── quote (string)
+
+payment_friction_analysis:
+  ├── summary (string)
+  └── key_friction_points[]:
+      ├── point (string)
+      ├── description (string)
+      ├── quote (string)
+      └── impact (string: "Critical", "High")
+
+transfer_friction_analysis:
+  └── (same shape as payment)
+
+agent_performance_summary:
+  ├── strengths (string)
+  └── opportunities_for_improvement[]:
+      ├── area (string)
+      ├── description (string)
+      └── recommendation (string)
 ```
 
-### Fix 2: Make synthesis resilient to wall-clock limits
+### Plan (10 files to update)
 
-**File: `supabase/functions/generate-research-insights/index.ts`** — synthesis section (~lines 285-311)
+#### 1. ExecutiveSummary.tsx — Rewrite
+Map to actual fields: `title`, `key_findings` (plural), `period`, `recommendation_summary`, `urgent_quote`. Show the title prominently, key findings as narrative paragraph, urgent quote in a highlighted callout, and recommendation summary in an action card.
 
-The synthesis call sends all 4 full chunk JSON results (~massive payload) to the AI. This takes too long before the runtime kills the function.
+#### 2. ReasonCodeChart.tsx — Rewrite  
+Read `by_category[]` with fields `category`, `count`, `percentage`, `description`. Add stat cards at top for `total_cases`, `preventable_churn`, `unpreventable_churn`. Keep the horizontal bar chart but use the correct fields.
 
-Two changes:
-- **Use Gemini Flash** for the synthesis call (faster, cheaper) instead of Pro
-- **Add a programmatic merge fallback**: wrap the synthesis AI call in a `Promise.race` with a 90-second timeout. If it times out, merge chunk results programmatically (concatenate arrays, average numbers) — this gives a "good enough" report rather than failing entirely.
+#### 3. IssueClustersPanel.tsx — Rewrite
+Map `description` (not `cluster_description`), `priority` (string like "P0"), `recommended_action` (string, not object), `supporting_quotes[]` (not `representative_quotes`). Show priority badge prominently. Remove severity_distribution, root_cause references.
 
-```typescript
-// Synthesis with timeout fallback
-const synthesisPromise = callLovableAI(lovableApiKey, 'google/gemini-2.5-flash', temperature, ...);
-const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('synthesis_timeout')), 90000));
+#### 4. TopActionsPanel.tsx — Rewrite completely
+Data is an **object** with three keyed arrays (`p0_immediate_risk_mitigation`, `p1_systemic_process_redesign`, `quick_wins`), not a flat array. Render as three grouped sections with P0/P1/Quick Win headers. Each item has `action`, `description`, `ownership`.
 
-try {
-  const synthesisResult = await Promise.race([synthesisPromise, timeoutPromise]);
-  // parse as before
-} catch (e) {
-  if (e.message === 'synthesis_timeout') {
-    console.log('[Insights] Synthesis timed out, using programmatic merge');
-    finalResult = programmaticMerge(chunkResults);
-  } else throw e;
-}
-```
+#### 5. BlindSpotsPanel.tsx — Minor fix
+Already mostly correct (`blind_spot`, `description`). Remove unused `priority`, `how_discovered`, `estimated_prevalence`, `recommended_detection_method` references.
 
-Add a `programmaticMerge` helper that combines chunk results by concatenating arrays and taking the first chunk's scalar fields.
+#### 6. HostAccountabilityPanel.tsx — Fix priority mapping
+Data has `flag`, `description`, `priority` (string like "P0", "P1"). Add PriorityBadge based on the `priority` field instead of parsing the title text.
 
-### Summary of changes
-- **`src/hooks/useResearchInsightsData.ts`**: Auto-select latest completed report
-- **`supabase/functions/generate-research-insights/index.ts`**: Use Flash for synthesis + timeout fallback with programmatic merge
+#### 7. EmergingPatternsPanel.tsx — Already correct
+Has `pattern`, `description`, `quote`. No `watch_or_act` in actual data — gracefully handles missing. Minimal changes.
+
+#### 8. PaymentFrictionCard.tsx — Rewrite
+Data has `summary` + `key_friction_points[]` (objects with `point`, `description`, `quote`, `impact`), not `key_failures[]` (strings). Render each friction point as a card with impact badge and member quote.
+
+#### 9. TransferFrictionCard.tsx — Rewrite (same pattern)
+Same structure as payment friction. Render `key_friction_points[]` with `point`, `description`, `quote`, `impact`.
+
+#### 10. AgentPerformanceCard.tsx — Rewrite
+Data has `strengths` (string) + `opportunities_for_improvement[]` (objects with `area`, `description`, `recommendation`), not `weaknesses[]` (strings). Render each opportunity as its own card with area title, description, and recommendation.
+
+#### 11. ResearchInsights.tsx page — Reorganize layout
+- Executive Summary full-width at top
+- Reason Code Distribution full-width with preventable/unpreventable stat cards
+- Issue Clusters full-width (collapsible, P0 first)
+- Top Actions full-width (grouped by priority tier)
+- Two-column layout: Payment Friction | Transfer Friction
+- Two-column layout: Blind Spots | Host Accountability
+- Agent Performance full-width
+- Emerging Patterns full-width
+- Human Review Queue and Processed Records at bottom
+
+### Note on Claude
+Claude (Anthropic) is not available through the supported AI models. The current Gemini 2.5 Pro model produced excellent, rich data — the problem was purely the UI not matching the output schema. No model change is needed.
 

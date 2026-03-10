@@ -167,6 +167,52 @@ AGGREGATION RULES:
 7. QUICK WINS — for every major recommendation, identify a small fast action.
 8. BOOKING IDS — each record has a "_booking_id" field. Include the array of booking IDs in "reason_code_distribution" and "issue_clusters" so the UI can trace back to individual records. Also include "reason_codes_included" listing the granular primary_reason_code values grouped into each category.`;
 
+// Programmatic merge fallback: combines chunk results by concatenating arrays and averaging numbers
+function programmaticMerge(chunkResults: any[]): any {
+  if (chunkResults.length === 0) return {};
+  if (chunkResults.length === 1) return chunkResults[0];
+
+  const base = JSON.parse(JSON.stringify(chunkResults[0]));
+
+  // Merge executive_summary: sum counts, average percentages
+  if (base.executive_summary) {
+    const summaries = chunkResults.map(c => c.executive_summary).filter(Boolean);
+    const totalCases = summaries.reduce((s: number, e: any) => s + (e.total_cases || 0), 0);
+    base.executive_summary.total_cases = totalCases;
+    for (const pctKey of ['addressable_pct', 'non_addressable_pct', 'partially_addressable_pct', 'avg_preventability_score', 'high_regret_pct', 'payment_related_pct', 'host_related_pct', 'roommate_related_pct', 'life_event_pct']) {
+      const vals = summaries.map((e: any) => e[pctKey]).filter((v: any) => typeof v === 'number');
+      if (vals.length > 0) base.executive_summary[pctKey] = vals.reduce((a: number, b: number) => a + b, 0) / vals.length;
+    }
+    base.executive_summary.high_regret_count = summaries.reduce((s: number, e: any) => s + (e.high_regret_count || 0), 0);
+  }
+
+  // Merge array sections by concatenation and dedup by name/code
+  const arrayKeys = ['reason_code_distribution', 'issue_clusters', 'emerging_patterns', 'operational_blind_spots', 'host_accountability_flags', 'top_actions'];
+  for (const key of arrayKeys) {
+    const allItems = chunkResults.flatMap(c => c[key] || []);
+    base[key] = allItems;
+  }
+
+  // Merge object sections: agent_performance_summary
+  if (base.agent_performance_summary) {
+    const perfs = chunkResults.map(c => c.agent_performance_summary).filter(Boolean);
+    base.agent_performance_summary.total_calls_reviewed = perfs.reduce((s: number, p: any) => s + (p.total_calls_reviewed || 0), 0);
+    const avgQs = perfs.map((p: any) => p.avg_questions_covered).filter((v: any) => typeof v === 'number');
+    if (avgQs.length) base.agent_performance_summary.avg_questions_covered = avgQs.reduce((a: number, b: number) => a + b, 0) / avgQs.length;
+    base.agent_performance_summary.commonly_skipped_sections = [...new Set(perfs.flatMap((p: any) => p.commonly_skipped_sections || []))];
+    base.agent_performance_summary.positive_patterns = [...new Set(perfs.flatMap((p: any) => p.positive_patterns || []))];
+    base.agent_performance_summary.coaching_opportunities = [...new Set(perfs.flatMap((p: any) => p.coaching_opportunities || []))];
+  }
+
+  // Re-rank top_actions
+  if (base.top_actions) {
+    base.top_actions.sort((a: any, b: any) => (b.cases_affected || 0) - (a.cases_affected || 0));
+    base.top_actions = base.top_actions.slice(0, 10).map((a: any, i: number) => ({ ...a, rank: i + 1 }));
+  }
+
+  return base;
+}
+
 async function processInsights(
   supabaseUrl: string,
   supabaseServiceKey: string,
@@ -288,26 +334,44 @@ async function processInsights(
       } else {
         console.log(`[Insights] Synthesizing ${chunkResults.length} chunk results`);
         await updateProgress('synthesizing', chunks.length, chunks.length);
-        const synthesisResult = await callLovableAI(lovableApiKey, model, temperature, systemPrompt,
+
+        // Use Flash for synthesis (faster) with a 90s timeout fallback
+        const synthesisModel = 'google/gemini-2.5-flash';
+        const synthesisPromise = callLovableAI(lovableApiKey, synthesisModel, temperature, systemPrompt,
           `Date range: ${dateRange}\n\nYou previously analyzed ${recordSummaries.length} records in ${chunkResults.length} batches. Synthesize these batch results into a single unified insight report:\n\n${JSON.stringify(chunkResults, null, 2)}`
         );
-        try {
-          const jsonMatch = synthesisResult.content.match(/```(?:json)?\s*([\s\S]*?)```/);
-          finalResult = JSON.parse(jsonMatch ? jsonMatch[1].trim() : synthesisResult.content.trim());
-        } catch {
-          finalResult = chunkResults[0]; // Fallback to first chunk
-        }
+        const timeoutPromise = new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error('synthesis_timeout')), 90000)
+        );
 
-        await logApiCost(supabase, {
-          service_provider: 'lovable_ai',
-          service_type: 'research_aggregation_synthesis',
-          edge_function: 'generate-research-insights',
-          input_tokens: synthesisResult.inputTokens,
-          output_tokens: synthesisResult.outputTokens,
-          metadata: { model, prompt: 'C_synthesis' },
-          triggered_by_user_id: triggeredByUserId || undefined,
-          is_internal: false,
-        });
+        try {
+          const synthesisResult = await Promise.race([synthesisPromise, timeoutPromise]);
+          try {
+            const jsonMatch = synthesisResult.content.match(/```(?:json)?\s*([\s\S]*?)```/);
+            finalResult = JSON.parse(jsonMatch ? jsonMatch[1].trim() : synthesisResult.content.trim());
+          } catch {
+            console.warn('[Insights] Failed to parse synthesis JSON, using programmatic merge');
+            finalResult = programmaticMerge(chunkResults);
+          }
+
+          await logApiCost(supabase, {
+            service_provider: 'lovable_ai',
+            service_type: 'research_aggregation_synthesis',
+            edge_function: 'generate-research-insights',
+            input_tokens: synthesisResult.inputTokens,
+            output_tokens: synthesisResult.outputTokens,
+            metadata: { model: synthesisModel, prompt: 'C_synthesis' },
+            triggered_by_user_id: triggeredByUserId || undefined,
+            is_internal: false,
+          });
+        } catch (synthError: any) {
+          if (synthError?.message === 'synthesis_timeout') {
+            console.warn('[Insights] Synthesis timed out after 90s, using programmatic merge');
+            finalResult = programmaticMerge(chunkResults);
+          } else {
+            throw synthError;
+          }
+        }
       }
     }
 

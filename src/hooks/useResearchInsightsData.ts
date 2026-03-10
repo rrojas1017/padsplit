@@ -78,8 +78,10 @@ export function useResearchInsightsData() {
       if (error) throw error;
       setReports((data || []) as ResearchInsightReport[]);
 
-      if (data && data.length > 0 && data[0].status === 'completed') {
-        await fetchReportDetail(data[0].id);
+      // Prefer the latest completed report; only show failed/processing if no completed exists
+      const firstCompleted = (data || []).find(r => r.status === 'completed');
+      if (firstCompleted) {
+        await fetchReportDetail(firstCompleted.id);
       } else if (data && data.length > 0) {
         setSelectedReport(data[0] as ResearchInsightReport);
       } else {
