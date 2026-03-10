@@ -1,35 +1,123 @@
 
 
-## Fix: Research Insights generation failing with "Unexpected end of JSON input"
+## Redesign Research Insights from Scratch
 
-### What happened
+### Problem
+The UI components still don't render the actual report data because field names are mismatched. The data itself is excellent — rich, actionable, well-organized with P0/P1/P2 priorities, member quotes, and specific recommendations. The UI just needs to be rebuilt to match what the AI actually produces.
 
-The latest report (`68637751`) failed immediately after processing chunk 1/4. The AI model (Gemini 2.5 Pro) returned a truncated JSON response for the first chunk of 50 records. The `JSON.parse` threw "Unexpected end of JSON input", which was caught at the chunk level (line 313) but the error propagated because the chunk result was skipped. Looking at the pattern:
+### Actual Data Structure (from the completed report)
 
-- `68637751` (just now): Failed at chunk 1 — truncated AI response
-- `a40f62b4`: Failed during synthesis — edge function killed
-- `67e14d0c`: Failed during synthesis — edge function killed
-- Last success (`e6d4fc4f`): 114 records, 6 days ago
+```text
+executive_summary:
+  ├── title (string)
+  ├── key_findings (string - paragraph)
+  ├── period (string)
+  ├── recommendation_summary (string)
+  └── urgent_quote (string)
 
-The root causes are:
-1. No retry when a chunk's AI response is truncated/unparseable
-2. If all chunks fail to parse, `chunkResults` is empty and the synthesis call still fires with empty data, causing another failure
-3. The error at line 313 is silently swallowed but the outer `processInsights` catch picks up a later failure
+reason_code_distribution:
+  ├── total_cases (number)
+  ├── preventable_churn (number)
+  ├── unpreventable_churn (number)
+  └── by_category[]:
+      ├── category (string)
+      ├── count (number)
+      ├── percentage (number)
+      └── description (string)
 
-### Changes
+issue_clusters[]:
+  ├── cluster_name (string)
+  ├── description (string)
+  ├── priority (string: "P0", "P1")
+  ├── recommended_action (string)
+  └── supporting_quotes[] (strings)
 
-**File: `supabase/functions/generate-research-insights/index.ts`**
+top_actions: (OBJECT, not array)
+  ├── p0_immediate_risk_mitigation[]:
+  │   ├── action (string)
+  │   ├── description (string)
+  │   └── ownership (string)
+  ├── p1_systemic_process_redesign[]:
+  │   └── (same shape)
+  └── quick_wins[]:
+      └── (same shape)
 
-1. **Add per-chunk retry (1 retry with explicit "respond only with JSON" instruction)**
-   - Lines 304-328: When `JSON.parse` fails for a chunk, retry the AI call once with an explicit "no markdown, pure JSON only" instruction appended
-   - This handles the common case of truncated or markdown-wrapped responses
+operational_blind_spots[]:
+  ├── blind_spot (string)
+  └── description (string)
 
-2. **Guard against empty chunkResults before synthesis**
-   - After the chunk loop (line 329), if `chunkResults.length === 0`, mark the report as failed with a clear message ("All chunk analyses returned invalid JSON") instead of attempting synthesis on empty data
+host_accountability_flags[]:
+  ├── flag (string)
+  ├── description (string)
+  └── priority (string)
 
-3. **Add content length validation before parsing**
-   - Before `JSON.parse`, check if the AI response content length is reasonable (> 100 chars). If suspiciously short or empty, skip to retry immediately
+emerging_patterns[]:
+  ├── pattern (string)
+  ├── description (string)
+  └── quote (string)
 
-### Summary
-- `supabase/functions/generate-research-insights/index.ts`: Add per-chunk retry on JSON parse failure, guard against empty synthesis input, validate response length
+payment_friction_analysis:
+  ├── summary (string)
+  └── key_friction_points[]:
+      ├── point (string)
+      ├── description (string)
+      ├── quote (string)
+      └── impact (string: "Critical", "High")
+
+transfer_friction_analysis:
+  └── (same shape as payment)
+
+agent_performance_summary:
+  ├── strengths (string)
+  └── opportunities_for_improvement[]:
+      ├── area (string)
+      ├── description (string)
+      └── recommendation (string)
+```
+
+### Plan (10 files to update)
+
+#### 1. ExecutiveSummary.tsx — Rewrite
+Map to actual fields: `title`, `key_findings` (plural), `period`, `recommendation_summary`, `urgent_quote`. Show the title prominently, key findings as narrative paragraph, urgent quote in a highlighted callout, and recommendation summary in an action card.
+
+#### 2. ReasonCodeChart.tsx — Rewrite  
+Read `by_category[]` with fields `category`, `count`, `percentage`, `description`. Add stat cards at top for `total_cases`, `preventable_churn`, `unpreventable_churn`. Keep the horizontal bar chart but use the correct fields.
+
+#### 3. IssueClustersPanel.tsx — Rewrite
+Map `description` (not `cluster_description`), `priority` (string like "P0"), `recommended_action` (string, not object), `supporting_quotes[]` (not `representative_quotes`). Show priority badge prominently. Remove severity_distribution, root_cause references.
+
+#### 4. TopActionsPanel.tsx — Rewrite completely
+Data is an **object** with three keyed arrays (`p0_immediate_risk_mitigation`, `p1_systemic_process_redesign`, `quick_wins`), not a flat array. Render as three grouped sections with P0/P1/Quick Win headers. Each item has `action`, `description`, `ownership`.
+
+#### 5. BlindSpotsPanel.tsx — Minor fix
+Already mostly correct (`blind_spot`, `description`). Remove unused `priority`, `how_discovered`, `estimated_prevalence`, `recommended_detection_method` references.
+
+#### 6. HostAccountabilityPanel.tsx — Fix priority mapping
+Data has `flag`, `description`, `priority` (string like "P0", "P1"). Add PriorityBadge based on the `priority` field instead of parsing the title text.
+
+#### 7. EmergingPatternsPanel.tsx — Already correct
+Has `pattern`, `description`, `quote`. No `watch_or_act` in actual data — gracefully handles missing. Minimal changes.
+
+#### 8. PaymentFrictionCard.tsx — Rewrite
+Data has `summary` + `key_friction_points[]` (objects with `point`, `description`, `quote`, `impact`), not `key_failures[]` (strings). Render each friction point as a card with impact badge and member quote.
+
+#### 9. TransferFrictionCard.tsx — Rewrite (same pattern)
+Same structure as payment friction. Render `key_friction_points[]` with `point`, `description`, `quote`, `impact`.
+
+#### 10. AgentPerformanceCard.tsx — Rewrite
+Data has `strengths` (string) + `opportunities_for_improvement[]` (objects with `area`, `description`, `recommendation`), not `weaknesses[]` (strings). Render each opportunity as its own card with area title, description, and recommendation.
+
+#### 11. ResearchInsights.tsx page — Reorganize layout
+- Executive Summary full-width at top
+- Reason Code Distribution full-width with preventable/unpreventable stat cards
+- Issue Clusters full-width (collapsible, P0 first)
+- Top Actions full-width (grouped by priority tier)
+- Two-column layout: Payment Friction | Transfer Friction
+- Two-column layout: Blind Spots | Host Accountability
+- Agent Performance full-width
+- Emerging Patterns full-width
+- Human Review Queue and Processed Records at bottom
+
+### Note on Claude
+Claude (Anthropic) is not available through the supported AI models. The current Gemini 2.5 Pro model produced excellent, rich data — the problem was purely the UI not matching the output schema. No model change is needed.
 

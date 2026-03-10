@@ -303,15 +303,53 @@ async function processInsights(
 
       for (let i = 0; i < chunks.length; i++) {
         console.log(`[Insights] Processing chunk ${i + 1}/${chunks.length} (${chunks[i].length} records)`);
-        const result = await callLovableAI(lovableApiKey, model, temperature, systemPrompt,
-          `Date range: ${dateRange}\nBatch ${i + 1} of ${chunks.length}\n\nHere are ${chunks[i].length} classified move-out records:\n\n${JSON.stringify(chunks[i], null, 2)}`
-        );
+        const userMsg = `Date range: ${dateRange}\nBatch ${i + 1} of ${chunks.length}\n\nHere are ${chunks[i].length} classified move-out records:\n\n${JSON.stringify(chunks[i], null, 2)}`;
+        const result = await callLovableAI(lovableApiKey, model, temperature, systemPrompt, userMsg);
 
-        try {
-          const jsonMatch = result.content.match(/```(?:json)?\s*([\s\S]*?)```/);
-          chunkResults.push(JSON.parse(jsonMatch ? jsonMatch[1].trim() : result.content.trim()));
-        } catch {
-          console.error(`[Insights] Failed to parse chunk ${i + 1} result`);
+        let parsed: any = null;
+        const rawContent = result.content?.trim() || '';
+
+        // Attempt 1: parse the response
+        if (rawContent.length > 100) {
+          try {
+            const jsonMatch = rawContent.match(/```(?:json)?\s*([\s\S]*?)```/);
+            parsed = JSON.parse(jsonMatch ? jsonMatch[1].trim() : rawContent);
+          } catch {
+            console.warn(`[Insights] Chunk ${i + 1} parse failed (${rawContent.length} chars), retrying...`);
+          }
+        } else {
+          console.warn(`[Insights] Chunk ${i + 1} response too short (${rawContent.length} chars), retrying...`);
+        }
+
+        // Attempt 2: retry with explicit JSON-only instruction
+        if (!parsed) {
+          try {
+            const retryResult = await callLovableAI(lovableApiKey, model, temperature,
+              systemPrompt + '\n\nCRITICAL: Respond ONLY with raw JSON. No markdown, no code fences, no explanation. Just the JSON object.',
+              userMsg
+            );
+            const retryContent = retryResult.content?.trim() || '';
+            const retryMatch = retryContent.match(/```(?:json)?\s*([\s\S]*?)```/);
+            parsed = JSON.parse(retryMatch ? retryMatch[1].trim() : retryContent);
+            console.log(`[Insights] Chunk ${i + 1} retry succeeded`);
+
+            await logApiCost(supabase, {
+              service_provider: 'lovable_ai',
+              service_type: 'research_aggregation',
+              edge_function: 'generate-research-insights',
+              input_tokens: retryResult.inputTokens,
+              output_tokens: retryResult.outputTokens,
+              metadata: { model, prompt: 'C_retry', chunk: i + 1, totalChunks: chunks.length },
+              triggered_by_user_id: triggeredByUserId || undefined,
+              is_internal: false,
+            });
+          } catch (retryErr) {
+            console.error(`[Insights] Chunk ${i + 1} retry also failed: ${retryErr instanceof Error ? retryErr.message : retryErr}`);
+          }
+        }
+
+        if (parsed) {
+          chunkResults.push(parsed);
         }
 
         await logApiCost(supabase, {
@@ -327,6 +365,12 @@ async function processInsights(
 
         await updateProgress('analyzing', i + 1, chunks.length);
       }
+
+      // Guard: if no chunks parsed successfully, fail early
+      if (chunkResults.length === 0) {
+        throw new Error(`All ${chunks.length} chunk analyses returned invalid JSON — the AI model may be overloaded. Please retry.`);
+      }
+      console.log(`[Insights] ${chunkResults.length}/${chunks.length} chunks parsed successfully`);
 
       // Synthesize chunk results
       if (chunkResults.length === 1) {
