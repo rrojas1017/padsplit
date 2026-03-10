@@ -330,10 +330,16 @@ async function processInsights(
         // Attempt 2: retry with explicit JSON-only instruction
         if (!parsed) {
           try {
-            const retryResult = await callLovableAI(lovableApiKey, model, temperature,
-              systemPrompt + '\n\nCRITICAL: Respond ONLY with raw JSON. No markdown, no code fences, no explanation. Just the JSON object.',
-              userMsg
+            const retryTimeout = new Promise<never>((_, reject) =>
+              setTimeout(() => reject(new Error(`Chunk ${i + 1} retry timed out after 60s`)), 60000)
             );
+            const retryResult = await Promise.race([
+              callLovableAI(lovableApiKey, model, temperature,
+                systemPrompt + '\n\nCRITICAL: Respond ONLY with raw JSON. No markdown, no code fences, no explanation. Just the JSON object.',
+                userMsg
+              ),
+              retryTimeout,
+            ]);
             const retryContent = retryResult.content?.trim() || '';
             const retryMatch = retryContent.match(/```(?:json)?\s*([\s\S]*?)```/);
             parsed = JSON.parse(retryMatch ? retryMatch[1].trim() : retryContent);
