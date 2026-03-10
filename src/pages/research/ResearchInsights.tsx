@@ -329,8 +329,8 @@ export default function ResearchInsights() {
         </Card>
       )}
 
-      {/* Report content */}
-      {!isLoading && selectedReport?.status === 'completed' && reportData && (
+      {/* Report content — show last completed report even while generating */}
+      {!isLoading && reportData && (selectedReport?.status === 'completed' || isGenerating) && (
         <div className="space-y-8">
           {reportData.executive_summary && (
             <ExecutiveSummary data={reportData.executive_summary} />
