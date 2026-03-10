@@ -303,7 +303,7 @@ async function processInsights(
 
       for (let i = 0; i < chunks.length; i++) {
         console.log(`[Insights] Processing chunk ${i + 1}/${chunks.length} (${chunks[i].length} records)`);
-        const userMsg = `Date range: ${dateRange}\nBatch ${i + 1} of ${chunks.length}\n\nHere are ${chunks[i].length} classified move-out records:\n\n${JSON.stringify(chunks[i], null, 2)}`;
+        const userMsg = `Date range: ${dateRange}\nBatch ${i + 1} of ${chunks.length}\n\nHere are ${chunks[i].length} classified move-out records:\n\n${JSON.stringify(chunks[i])}`;
         const result = await callLovableAI(lovableApiKey, model, temperature, systemPrompt, userMsg);
 
         let parsed: any = null;
