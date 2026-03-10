@@ -258,14 +258,14 @@ async function processInsights(
     });
 
     // Handle batch sizing: split into chunks of 50
-    const CHUNK_SIZE = 50;
+    const CHUNK_SIZE = 30;
     let finalResult: any;
 
     if (recordSummaries.length <= CHUNK_SIZE) {
       // Single batch
       await updateProgress('analyzing', 0, 1);
       const result = await callLovableAI(lovableApiKey, model, temperature, systemPrompt,
-        `Date range: ${dateRange}\n\nHere are ${recordSummaries.length} classified move-out records:\n\n${JSON.stringify(recordSummaries, null, 2)}`
+        `Date range: ${dateRange}\n\nHere are ${recordSummaries.length} classified move-out records:\n\n${JSON.stringify(recordSummaries)}`
       );
 
       try {
@@ -274,7 +274,7 @@ async function processInsights(
       } catch {
         // Retry
         const retry = await callLovableAI(lovableApiKey, model, temperature, systemPrompt,
-          `Date range: ${dateRange}\n\nHere are ${recordSummaries.length} classified move-out records:\n\n${JSON.stringify(recordSummaries, null, 2)}\n\nYour previous response was not valid JSON. Respond ONLY with the JSON object, no preamble, no markdown backticks.`
+          `Date range: ${dateRange}\n\nHere are ${recordSummaries.length} classified move-out records:\n\n${JSON.stringify(recordSummaries)}\n\nYour previous response was not valid JSON. Respond ONLY with the JSON object, no preamble, no markdown backticks.`
         );
         const retryMatch = retry.content.match(/```(?:json)?\s*([\s\S]*?)```/);
         finalResult = JSON.parse(retryMatch ? retryMatch[1].trim() : retry.content.trim());
@@ -303,7 +303,7 @@ async function processInsights(
 
       for (let i = 0; i < chunks.length; i++) {
         console.log(`[Insights] Processing chunk ${i + 1}/${chunks.length} (${chunks[i].length} records)`);
-        const userMsg = `Date range: ${dateRange}\nBatch ${i + 1} of ${chunks.length}\n\nHere are ${chunks[i].length} classified move-out records:\n\n${JSON.stringify(chunks[i], null, 2)}`;
+        const userMsg = `Date range: ${dateRange}\nBatch ${i + 1} of ${chunks.length}\n\nHere are ${chunks[i].length} classified move-out records:\n\n${JSON.stringify(chunks[i])}`;
         const result = await callLovableAI(lovableApiKey, model, temperature, systemPrompt, userMsg);
 
         let parsed: any = null;
@@ -461,6 +461,7 @@ async function callLovableAI(
     },
     body: JSON.stringify({
       model,
+      max_tokens: 16384,
       messages: [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userPrompt },
