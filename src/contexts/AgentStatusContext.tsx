@@ -25,7 +25,7 @@ export function AgentStatusProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth();
   const [sessions, setSessions] = useState<AgentSession[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const heartbeatRef = useRef<NodeJS.Timeout | null>(null);
+  const heartbeatRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Fetch all active sessions (for viewing)
   const fetchSessions = useCallback(async () => {

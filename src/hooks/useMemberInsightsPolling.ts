@@ -11,7 +11,7 @@ export const useMemberInsightsPolling = ({
   onComplete, 
   pollingInterval = 10000 
 }: UseMemberInsightsPollingProps) => {
-  const pollingRef = useRef<NodeJS.Timeout | null>(null);
+  const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const activeInsightIdRef = useRef<string | null>(null);
 
   const stopPolling = useCallback(() => {
