@@ -466,6 +466,31 @@ Deno.serve(async (req) => {
       ? `${dateRangeStart} to ${dateRangeEnd}`
       : analysisPeriod || 'All Time';
 
+    // Concurrent invocation guard: check for existing processing records
+    const { data: existingProcessing } = await supabase
+      .from('research_insights')
+      .select('id, created_at')
+      .eq('status', 'processing')
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (existingProcessing) {
+      const createdAt = new Date(existingProcessing.created_at).getTime();
+      const thirtyMinutesAgo = Date.now() - 30 * 60 * 1000;
+      if (createdAt >= thirtyMinutesAgo) {
+        return new Response(
+          JSON.stringify({ success: false, error: 'An analysis is already in progress. Please wait for it to complete.' }),
+          { status: 409, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+      // Stale record — mark as failed
+      await supabase.from('research_insights')
+        .update({ status: 'failed', error_message: 'Timed out during processing' })
+        .eq('id', existingProcessing.id);
+      console.log(`[Insights] Marked stale record ${existingProcessing.id} as failed`);
+    }
+
     // Create insight record
     const { data: insight, error: insertError } = await supabase
       .from('research_insights')

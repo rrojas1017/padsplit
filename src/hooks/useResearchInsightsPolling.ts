@@ -86,7 +86,7 @@ export const useResearchInsightsPolling = ({
     try {
       const { data, error } = await supabase
         .from('research_insights')
-        .select('id, status')
+        .select('id, status, created_at')
         .eq('status', 'processing')
         .order('created_at', { ascending: false })
         .limit(1)
@@ -98,6 +98,18 @@ export const useResearchInsightsPolling = ({
       }
 
       if (data) {
+        // Staleness check: if processing for >30 minutes, mark as failed
+        const createdAt = new Date(data.created_at).getTime();
+        const thirtyMinutesAgo = Date.now() - 30 * 60 * 1000;
+        if (createdAt < thirtyMinutesAgo) {
+          console.log(`[Research Polling] Stale record ${data.id}, marking as failed`);
+          await supabase
+            .from('research_insights')
+            .update({ status: 'failed', error_message: 'Timed out during processing' })
+            .eq('id', data.id);
+          return null;
+        }
+
         console.log(`[Research Polling] Found existing processing: ${data.id}`);
         startPolling(data.id);
         return data.id;
