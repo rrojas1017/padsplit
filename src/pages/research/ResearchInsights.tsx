@@ -265,18 +265,22 @@ export default function ResearchInsights() {
               </div>
               <div>
                 <p className="text-sm font-medium text-foreground">
-                  {progress?.currentPhase === 'synthesizing'
-                    ? 'Synthesizing results...'
-                    : progress
-                      ? `Analyzing ${progress.totalRecords} records...`
-                      : 'Starting analysis...'}
+                  {phase === 'processing'
+                    ? `Processing ${processingStats.pendingRecords} pending records...`
+                    : progress?.currentPhase === 'synthesizing'
+                      ? 'Synthesizing results...'
+                      : progress
+                        ? `Analyzing ${progress.totalRecords} records...`
+                        : 'Starting analysis...'}
                 </p>
                 <p className="text-xs text-muted-foreground">
-                  {progress && progress.totalChunks > 1
-                    ? `Chunk ${progress.completedChunks} of ${progress.totalChunks} complete`
-                    : progress?.currentPhase === 'synthesizing'
-                      ? 'Combining chunk results into final report'
-                      : 'Preparing data for AI analysis'}
+                  {phase === 'processing'
+                    ? `${processingStats.processedRecords} of ${processingStats.totalResearchRecords} extracted so far`
+                    : progress && progress.totalChunks > 1
+                      ? `Chunk ${progress.completedChunks} of ${progress.totalChunks} complete`
+                      : progress?.currentPhase === 'synthesizing'
+                        ? 'Combining chunk results into final report'
+                        : 'Preparing data for AI analysis'}
                 </p>
               </div>
             </div>
