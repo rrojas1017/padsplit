@@ -1,5 +1,6 @@
 import { useState, useCallback, useEffect } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
+import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -30,6 +31,7 @@ export default function ResearchInsights() {
   const [campaignId, setCampaignId] = useState<string>('all');
   const [isGenerating, setIsGenerating] = useState(false);
   const [isBackfilling, setIsBackfilling] = useState(false);
+  const [phase, setPhase] = useState<'processing' | 'analyzing' | null>(null);
 
   const {
     reports,
@@ -49,6 +51,7 @@ export default function ResearchInsights() {
   const refreshCallback = useCallback(() => {
     refresh();
     setIsGenerating(false);
+    setPhase(null);
   }, [refresh]);
 
   const { startPolling, checkExistingAnalysis, progress } = useResearchInsightsPolling({
@@ -80,9 +83,58 @@ export default function ResearchInsights() {
     init();
   }, [checkExistingAnalysis]);
 
+  // Unified generate: auto-process pending records first, then generate report
   const handleGenerate = async () => {
     setIsGenerating(true);
     setGenerationStartTime(Date.now());
+
+    // If there are pending records, process them first
+    if (processingStats.pendingRecords > 0) {
+      setPhase('processing');
+      setIsBackfilling(true);
+      await triggerBackfill();
+
+      // Poll until all records are processed
+      await new Promise<void>((resolve) => {
+        const poll = setInterval(async () => {
+          await fetchProcessingStats();
+        }, 10000);
+
+        const check = setInterval(() => {
+          // Access latest stats via a fresh fetch
+          supabase
+            .from('booking_transcriptions')
+            .select('id', { count: 'exact', head: true })
+            .not('research_extraction', 'is', null)
+            .then(({ count: processedCount }) => {
+              supabase
+                .from('booking_transcriptions')
+                .select('id, bookings!inner(record_type, has_valid_conversation)', { count: 'exact', head: true })
+                .not('call_transcription', 'is', null)
+                .neq('call_transcription', '')
+                .eq('bookings.record_type', 'research')
+                .eq('bookings.has_valid_conversation', true)
+                .then(({ count: totalCount }) => {
+                  if ((totalCount || 0) - (processedCount || 0) <= 0) {
+                    clearInterval(poll);
+                    clearInterval(check);
+                    if ((window as any).__researchBackfillPoll) {
+                      clearInterval((window as any).__researchBackfillPoll);
+                      delete (window as any).__researchBackfillPoll;
+                    }
+                    setIsBackfilling(false);
+                    resolve();
+                  }
+                });
+            });
+        }, 10000);
+      });
+
+      await fetchProcessingStats();
+    }
+
+    // Now generate the report
+    setPhase('analyzing');
     const insightId = await generateReport({
       campaignId: campaignId !== 'all' ? campaignId : undefined,
       analysisPeriod: dateRange,
@@ -92,24 +144,9 @@ export default function ResearchInsights() {
       startPolling(insightId);
     } else {
       setIsGenerating(false);
+      setPhase(null);
     }
   };
-
-  const handleBackfill = async () => {
-    setIsBackfilling(true);
-    await triggerBackfill();
-  };
-
-  useEffect(() => {
-    if (isBackfilling && processingStats.pendingRecords === 0 && processingStats.totalResearchRecords > 0) {
-      setIsBackfilling(false);
-      if ((window as any).__researchBackfillPoll) {
-        clearInterval((window as any).__researchBackfillPoll);
-        delete (window as any).__researchBackfillPoll;
-      }
-      toast.success(`All ${processingStats.processedRecords} records processed!`);
-    }
-  }, [isBackfilling, processingStats]);
 
   const reportData = selectedReport?.data as any;
 
@@ -193,12 +230,6 @@ export default function ResearchInsights() {
                   </p>
                 </div>
               </div>
-              {processingStats.pendingRecords > 0 && (
-                <Button onClick={handleBackfill} disabled={isBackfilling} variant="outline" size="sm" className="gap-1.5">
-                  {isBackfilling ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
-                  {isBackfilling ? 'Processing...' : 'Process All'}
-                </Button>
-              )}
             </div>
             {isBackfilling && processingStats.totalResearchRecords > 0 && (
               <Progress
@@ -234,18 +265,22 @@ export default function ResearchInsights() {
               </div>
               <div>
                 <p className="text-sm font-medium text-foreground">
-                  {progress?.currentPhase === 'synthesizing'
-                    ? 'Synthesizing results...'
-                    : progress
-                      ? `Analyzing ${progress.totalRecords} records...`
-                      : 'Starting analysis...'}
+                  {phase === 'processing'
+                    ? `Processing ${processingStats.pendingRecords} pending records...`
+                    : progress?.currentPhase === 'synthesizing'
+                      ? 'Synthesizing results...'
+                      : progress
+                        ? `Analyzing ${progress.totalRecords} records...`
+                        : 'Starting analysis...'}
                 </p>
                 <p className="text-xs text-muted-foreground">
-                  {progress && progress.totalChunks > 1
-                    ? `Chunk ${progress.completedChunks} of ${progress.totalChunks} complete`
-                    : progress?.currentPhase === 'synthesizing'
-                      ? 'Combining chunk results into final report'
-                      : 'Preparing data for AI analysis'}
+                  {phase === 'processing'
+                    ? `${processingStats.processedRecords} of ${processingStats.totalResearchRecords} extracted so far`
+                    : progress && progress.totalChunks > 1
+                      ? `Chunk ${progress.completedChunks} of ${progress.totalChunks} complete`
+                      : progress?.currentPhase === 'synthesizing'
+                        ? 'Combining chunk results into final report'
+                        : 'Preparing data for AI analysis'}
                 </p>
               </div>
             </div>
@@ -286,9 +321,9 @@ export default function ResearchInsights() {
             </div>
             <h3 className="text-lg font-semibold text-foreground mb-2">No Research Insights Yet</h3>
             <p className="text-sm text-muted-foreground mb-4 max-w-md mx-auto">
-              {processingStats.processedRecords > 0
-                ? `${processingStats.processedRecords} records are ready. Click "Generate Report" to analyze patterns across all processed records.`
-                : `${processingStats.totalResearchRecords} research records found. Click "Process All" to extract insights from transcripts first.`}
+              {processingStats.totalResearchRecords > 0
+                ? `${processingStats.totalResearchRecords} research records found. Click "Generate Report" to process and analyze all records automatically.`
+                : 'No research records found yet. Log survey calls to start building insights.'}
             </p>
           </CardContent>
         </Card>
