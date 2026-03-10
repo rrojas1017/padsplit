@@ -288,26 +288,44 @@ async function processInsights(
       } else {
         console.log(`[Insights] Synthesizing ${chunkResults.length} chunk results`);
         await updateProgress('synthesizing', chunks.length, chunks.length);
-        const synthesisResult = await callLovableAI(lovableApiKey, model, temperature, systemPrompt,
+
+        // Use Flash for synthesis (faster) with a 90s timeout fallback
+        const synthesisModel = 'google/gemini-2.5-flash';
+        const synthesisPromise = callLovableAI(lovableApiKey, synthesisModel, temperature, systemPrompt,
           `Date range: ${dateRange}\n\nYou previously analyzed ${recordSummaries.length} records in ${chunkResults.length} batches. Synthesize these batch results into a single unified insight report:\n\n${JSON.stringify(chunkResults, null, 2)}`
         );
-        try {
-          const jsonMatch = synthesisResult.content.match(/```(?:json)?\s*([\s\S]*?)```/);
-          finalResult = JSON.parse(jsonMatch ? jsonMatch[1].trim() : synthesisResult.content.trim());
-        } catch {
-          finalResult = chunkResults[0]; // Fallback to first chunk
-        }
+        const timeoutPromise = new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error('synthesis_timeout')), 90000)
+        );
 
-        await logApiCost(supabase, {
-          service_provider: 'lovable_ai',
-          service_type: 'research_aggregation_synthesis',
-          edge_function: 'generate-research-insights',
-          input_tokens: synthesisResult.inputTokens,
-          output_tokens: synthesisResult.outputTokens,
-          metadata: { model, prompt: 'C_synthesis' },
-          triggered_by_user_id: triggeredByUserId || undefined,
-          is_internal: false,
-        });
+        try {
+          const synthesisResult = await Promise.race([synthesisPromise, timeoutPromise]);
+          try {
+            const jsonMatch = synthesisResult.content.match(/```(?:json)?\s*([\s\S]*?)```/);
+            finalResult = JSON.parse(jsonMatch ? jsonMatch[1].trim() : synthesisResult.content.trim());
+          } catch {
+            console.warn('[Insights] Failed to parse synthesis JSON, using programmatic merge');
+            finalResult = programmaticMerge(chunkResults);
+          }
+
+          await logApiCost(supabase, {
+            service_provider: 'lovable_ai',
+            service_type: 'research_aggregation_synthesis',
+            edge_function: 'generate-research-insights',
+            input_tokens: synthesisResult.inputTokens,
+            output_tokens: synthesisResult.outputTokens,
+            metadata: { model: synthesisModel, prompt: 'C_synthesis' },
+            triggered_by_user_id: triggeredByUserId || undefined,
+            is_internal: false,
+          });
+        } catch (synthError: any) {
+          if (synthError?.message === 'synthesis_timeout') {
+            console.warn('[Insights] Synthesis timed out after 90s, using programmatic merge');
+            finalResult = programmaticMerge(chunkResults);
+          } else {
+            throw synthError;
+          }
+        }
       }
     }
 
