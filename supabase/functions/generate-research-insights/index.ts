@@ -265,7 +265,7 @@ async function processInsights(
       // Single batch
       await updateProgress('analyzing', 0, 1);
       const result = await callLovableAI(lovableApiKey, model, temperature, systemPrompt,
-        `Date range: ${dateRange}\n\nHere are ${recordSummaries.length} classified move-out records:\n\n${JSON.stringify(recordSummaries, null, 2)}`
+        `Date range: ${dateRange}\n\nHere are ${recordSummaries.length} classified move-out records:\n\n${JSON.stringify(recordSummaries)}`
       );
 
       try {
