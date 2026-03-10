@@ -1,123 +1,48 @@
 
 
-## Redesign Research Insights from Scratch
+## Fix: Edge function killed before completing analysis
 
-### Problem
-The UI components still don't render the actual report data because field names are mismatched. The data itself is excellent — rich, actionable, well-organized with P0/P1/P2 priorities, member quotes, and specific recommendations. The UI just needs to be rebuilt to match what the AI actually produces.
+### Root Cause
 
-### Actual Data Structure (from the completed report)
+The polling fix IS working — the UI now correctly shows "Analyzing 175 records... Chunk 0 of 6 complete." But the **backend edge function is dying** before it can finish even chunk 1.
 
-```text
-executive_summary:
-  ├── title (string)
-  ├── key_findings (string - paragraph)
-  ├── period (string)
-  ├── recommendation_summary (string)
-  └── urgent_quote (string)
+The logs show:
+- 20:47:33 — Started chunk 1/6
+- 20:50:51 — Worker shutdown (killed after ~3 min)
+- No chunk completion logged
 
-reason_code_distribution:
-  ├── total_cases (number)
-  ├── preventable_churn (number)
-  ├── unpreventable_churn (number)
-  └── by_category[]:
-      ├── category (string)
-      ├── count (number)
-      ├── percentage (number)
-      └── description (string)
+The problem: **Gemini 2.5 Pro** is configured as the aggregation model. Pro takes 60-90+ seconds per chunk. With 6 chunks + synthesis, that's 7-10 minutes total. But `EdgeRuntime.waitUntil()` has a ~150-second background execution limit. The function gets killed mid-chunk-1.
 
-issue_clusters[]:
-  ├── cluster_name (string)
-  ├── description (string)
-  ├── priority (string: "P0", "P1")
-  ├── recommended_action (string)
-  └── supporting_quotes[] (strings)
+Report `e2446dea` is now permanently stuck as "processing," which also blocks new attempts due to the concurrency guard (line 587).
 
-top_actions: (OBJECT, not array)
-  ├── p0_immediate_risk_mitigation[]:
-  │   ├── action (string)
-  │   ├── description (string)
-  │   └── ownership (string)
-  ├── p1_systemic_process_redesign[]:
-  │   └── (same shape)
-  └── quick_wins[]:
-      └── (same shape)
+### Fix (2 changes)
 
-operational_blind_spots[]:
-  ├── blind_spot (string)
-  └── description (string)
+**1. Switch default aggregation model to Flash**
 
-host_accountability_flags[]:
-  ├── flag (string)
-  ├── description (string)
-  └── priority (string)
+Update the `research_prompts` table: change the aggregation model from `google/gemini-2.5-pro` to `google/gemini-2.5-flash`. Flash responds in 5-15 seconds per chunk vs 60-90s for Pro, so all 6 chunks + synthesis can complete well within the background execution window (~150s total vs the current ~600s).
 
-emerging_patterns[]:
-  ├── pattern (string)
-  ├── description (string)
-  └── quote (string)
+This is a database update only — no code change needed since line 570 already reads from the DB.
 
-payment_friction_analysis:
-  ├── summary (string)
-  └── key_friction_points[]:
-      ├── point (string)
-      ├── description (string)
-      ├── quote (string)
-      └── impact (string: "Critical", "High")
+**2. Mark the stuck report as failed**
 
-transfer_friction_analysis:
-  └── (same shape as payment)
+Update `e2446dea` status to `failed` so the concurrency guard doesn't block new attempts.
 
-agent_performance_summary:
-  ├── strengths (string)
-  └── opportunities_for_improvement[]:
-      ├── area (string)
-      ├── description (string)
-      └── recommendation (string)
+**3. Add a per-chunk timeout to prevent silent hangs**
+
+In `supabase/functions/generate-research-insights/index.ts`, wrap each `callLovableAI` in a `Promise.race` with a 60-second timeout. If a single chunk takes longer than 60s, it fails fast instead of hanging until the worker is killed. This ensures the error is caught and reported properly rather than the function silently dying.
+
+```typescript
+// Around line 307
+const chunkTimeout = new Promise<never>((_, reject) =>
+  setTimeout(() => reject(new Error(`Chunk ${i+1} timed out after 60s`)), 60000)
+);
+const result = await Promise.race([
+  callLovableAI(lovableApiKey, model, temperature, systemPrompt, userMsg),
+  chunkTimeout
+]);
 ```
 
-### Plan (10 files to update)
-
-#### 1. ExecutiveSummary.tsx — Rewrite
-Map to actual fields: `title`, `key_findings` (plural), `period`, `recommendation_summary`, `urgent_quote`. Show the title prominently, key findings as narrative paragraph, urgent quote in a highlighted callout, and recommendation summary in an action card.
-
-#### 2. ReasonCodeChart.tsx — Rewrite  
-Read `by_category[]` with fields `category`, `count`, `percentage`, `description`. Add stat cards at top for `total_cases`, `preventable_churn`, `unpreventable_churn`. Keep the horizontal bar chart but use the correct fields.
-
-#### 3. IssueClustersPanel.tsx — Rewrite
-Map `description` (not `cluster_description`), `priority` (string like "P0"), `recommended_action` (string, not object), `supporting_quotes[]` (not `representative_quotes`). Show priority badge prominently. Remove severity_distribution, root_cause references.
-
-#### 4. TopActionsPanel.tsx — Rewrite completely
-Data is an **object** with three keyed arrays (`p0_immediate_risk_mitigation`, `p1_systemic_process_redesign`, `quick_wins`), not a flat array. Render as three grouped sections with P0/P1/Quick Win headers. Each item has `action`, `description`, `ownership`.
-
-#### 5. BlindSpotsPanel.tsx — Minor fix
-Already mostly correct (`blind_spot`, `description`). Remove unused `priority`, `how_discovered`, `estimated_prevalence`, `recommended_detection_method` references.
-
-#### 6. HostAccountabilityPanel.tsx — Fix priority mapping
-Data has `flag`, `description`, `priority` (string like "P0", "P1"). Add PriorityBadge based on the `priority` field instead of parsing the title text.
-
-#### 7. EmergingPatternsPanel.tsx — Already correct
-Has `pattern`, `description`, `quote`. No `watch_or_act` in actual data — gracefully handles missing. Minimal changes.
-
-#### 8. PaymentFrictionCard.tsx — Rewrite
-Data has `summary` + `key_friction_points[]` (objects with `point`, `description`, `quote`, `impact`), not `key_failures[]` (strings). Render each friction point as a card with impact badge and member quote.
-
-#### 9. TransferFrictionCard.tsx — Rewrite (same pattern)
-Same structure as payment friction. Render `key_friction_points[]` with `point`, `description`, `quote`, `impact`.
-
-#### 10. AgentPerformanceCard.tsx — Rewrite
-Data has `strengths` (string) + `opportunities_for_improvement[]` (objects with `area`, `description`, `recommendation`), not `weaknesses[]` (strings). Render each opportunity as its own card with area title, description, and recommendation.
-
-#### 11. ResearchInsights.tsx page — Reorganize layout
-- Executive Summary full-width at top
-- Reason Code Distribution full-width with preventable/unpreventable stat cards
-- Issue Clusters full-width (collapsible, P0 first)
-- Top Actions full-width (grouped by priority tier)
-- Two-column layout: Payment Friction | Transfer Friction
-- Two-column layout: Blind Spots | Host Accountability
-- Agent Performance full-width
-- Emerging Patterns full-width
-- Human Review Queue and Processed Records at bottom
-
-### Note on Claude
-Claude (Anthropic) is not available through the supported AI models. The current Gemini 2.5 Pro model produced excellent, rich data — the problem was purely the UI not matching the output schema. No model change is needed.
+### Files to edit
+- `supabase/functions/generate-research-insights/index.ts` — add per-chunk timeout
+- Database migration: update `research_prompts` aggregation model to Flash, mark stuck report as failed
 
