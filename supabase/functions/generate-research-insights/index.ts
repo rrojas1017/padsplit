@@ -174,7 +174,6 @@ function programmaticMerge(chunkResults: any[]): any {
 
   const base = JSON.parse(JSON.stringify(chunkResults[0]));
 
-  // Merge executive_summary: sum counts, average percentages
   if (base.executive_summary) {
     const summaries = chunkResults.map(c => c.executive_summary).filter(Boolean);
     const totalCases = summaries.reduce((s: number, e: any) => s + (e.total_cases || 0), 0);
@@ -186,14 +185,12 @@ function programmaticMerge(chunkResults: any[]): any {
     base.executive_summary.high_regret_count = summaries.reduce((s: number, e: any) => s + (e.high_regret_count || 0), 0);
   }
 
-  // Merge array sections by concatenation and dedup by name/code
   const arrayKeys = ['reason_code_distribution', 'issue_clusters', 'emerging_patterns', 'operational_blind_spots', 'host_accountability_flags', 'top_actions'];
   for (const key of arrayKeys) {
     const allItems = chunkResults.flatMap(c => c[key] || []);
     base[key] = allItems;
   }
 
-  // Merge object sections: agent_performance_summary
   if (base.agent_performance_summary) {
     const perfs = chunkResults.map(c => c.agent_performance_summary).filter(Boolean);
     base.agent_performance_summary.total_calls_reviewed = perfs.reduce((s: number, p: any) => s + (p.total_calls_reviewed || 0), 0);
@@ -204,258 +201,12 @@ function programmaticMerge(chunkResults: any[]): any {
     base.agent_performance_summary.coaching_opportunities = [...new Set(perfs.flatMap((p: any) => p.coaching_opportunities || []))];
   }
 
-  // Re-rank top_actions
   if (base.top_actions) {
     base.top_actions.sort((a: any, b: any) => (b.cases_affected || 0) - (a.cases_affected || 0));
     base.top_actions = base.top_actions.slice(0, 10).map((a: any, i: number) => ({ ...a, rank: i + 1 }));
   }
 
   return base;
-}
-
-async function processInsights(
-  supabaseUrl: string,
-  supabaseServiceKey: string,
-  lovableApiKey: string,
-  insightId: string,
-  classifications: any[],
-  extractions: any[],
-  dateRange: string,
-  model: string,
-  temperature: number,
-  systemPrompt: string,
-  triggeredByUserId: string | null
-) {
-  const supabase = createClient(supabaseUrl, supabaseServiceKey);
-
-  // Helper to write progress to the data column
-  async function updateProgress(phase: string, completedChunks: number, totalChunks: number) {
-    try {
-      await supabase.from('research_insights').update({
-        data: { _progress: { totalChunks, completedChunks, totalRecords: classifications.length, currentPhase: phase } }
-      }).eq('id', insightId);
-    } catch (e) { console.error('[Insights] Progress update failed:', e); }
-  }
-
-  try {
-    console.log(`[Insights] Background processing started for ${insightId} with ${classifications.length} records`);
-
-    // Build combined data for Prompt C
-    const recordSummaries = classifications.map((c: any, i: number) => {
-      const extraction = extractions[i];
-      return {
-        ...c,
-        // Include key extraction fields for richer context
-        member_name: extraction?.member_name,
-        length_of_stay: extraction?.length_of_stay,
-        primary_reason_stated: extraction?.primary_reason_stated,
-        issues_count: extraction?.issues_mentioned?.length || 0,
-        blind_spots_count: extraction?.blind_spots?.length || 0,
-        payment_was_factor: extraction?.payment_context?.payment_was_factor,
-        transfer_considered: extraction?.transfer_context?.considered_transfer,
-        host_mentioned: extraction?.host_context?.host_mentioned,
-      };
-    });
-
-    // Handle batch sizing: split into chunks of 50
-    const CHUNK_SIZE = 30;
-    let finalResult: any;
-
-    if (recordSummaries.length <= CHUNK_SIZE) {
-      // Single batch
-      await updateProgress('analyzing', 0, 1);
-      const result = await callLovableAI(lovableApiKey, model, temperature, systemPrompt,
-        `Date range: ${dateRange}\n\nHere are ${recordSummaries.length} classified move-out records:\n\n${JSON.stringify(recordSummaries)}`
-      );
-
-      try {
-        const jsonMatch = result.content.match(/```(?:json)?\s*([\s\S]*?)```/);
-        finalResult = JSON.parse(jsonMatch ? jsonMatch[1].trim() : result.content.trim());
-      } catch {
-        // Retry
-        const retry = await callLovableAI(lovableApiKey, model, temperature, systemPrompt,
-          `Date range: ${dateRange}\n\nHere are ${recordSummaries.length} classified move-out records:\n\n${JSON.stringify(recordSummaries)}\n\nYour previous response was not valid JSON. Respond ONLY with the JSON object, no preamble, no markdown backticks.`
-        );
-        const retryMatch = retry.content.match(/```(?:json)?\s*([\s\S]*?)```/);
-        finalResult = JSON.parse(retryMatch ? retryMatch[1].trim() : retry.content.trim());
-      }
-
-      await logApiCost(supabase, {
-        service_provider: 'lovable_ai',
-        service_type: 'research_aggregation',
-        edge_function: 'generate-research-insights',
-        input_tokens: result.inputTokens,
-        output_tokens: result.outputTokens,
-        metadata: { model, prompt: 'C', records: recordSummaries.length },
-        triggered_by_user_id: triggeredByUserId || undefined,
-        is_internal: false,
-      });
-    } else {
-      // Multi-batch: split and synthesize
-      const chunks: any[][] = [];
-      for (let i = 0; i < recordSummaries.length; i += CHUNK_SIZE) {
-        chunks.push(recordSummaries.slice(i, i + CHUNK_SIZE));
-      }
-
-      console.log(`[Insights] Splitting ${recordSummaries.length} records into ${chunks.length} chunks`);
-      const chunkResults: any[] = [];
-      await updateProgress('analyzing', 0, chunks.length);
-
-      for (let i = 0; i < chunks.length; i++) {
-        console.log(`[Insights] Processing chunk ${i + 1}/${chunks.length} (${chunks[i].length} records)`);
-        const userMsg = `Date range: ${dateRange}\nBatch ${i + 1} of ${chunks.length}\n\nHere are ${chunks[i].length} classified move-out records:\n\n${JSON.stringify(chunks[i])}`;
-        const chunkTimeout = new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new Error(`Chunk ${i + 1} timed out after 60s`)), 60000)
-        );
-        const result = await Promise.race([
-          callLovableAI(lovableApiKey, model, temperature, systemPrompt, userMsg),
-          chunkTimeout,
-        ]);
-
-        let parsed: any = null;
-        const rawContent = result.content?.trim() || '';
-
-        // Attempt 1: parse the response
-        if (rawContent.length > 100) {
-          try {
-            const jsonMatch = rawContent.match(/```(?:json)?\s*([\s\S]*?)```/);
-            parsed = JSON.parse(jsonMatch ? jsonMatch[1].trim() : rawContent);
-          } catch {
-            console.warn(`[Insights] Chunk ${i + 1} parse failed (${rawContent.length} chars), retrying...`);
-          }
-        } else {
-          console.warn(`[Insights] Chunk ${i + 1} response too short (${rawContent.length} chars), retrying...`);
-        }
-
-        // Attempt 2: retry with explicit JSON-only instruction
-        if (!parsed) {
-          try {
-            const retryTimeout = new Promise<never>((_, reject) =>
-              setTimeout(() => reject(new Error(`Chunk ${i + 1} retry timed out after 60s`)), 60000)
-            );
-            const retryResult = await Promise.race([
-              callLovableAI(lovableApiKey, model, temperature,
-                systemPrompt + '\n\nCRITICAL: Respond ONLY with raw JSON. No markdown, no code fences, no explanation. Just the JSON object.',
-                userMsg
-              ),
-              retryTimeout,
-            ]);
-            const retryContent = retryResult.content?.trim() || '';
-            const retryMatch = retryContent.match(/```(?:json)?\s*([\s\S]*?)```/);
-            parsed = JSON.parse(retryMatch ? retryMatch[1].trim() : retryContent);
-            console.log(`[Insights] Chunk ${i + 1} retry succeeded`);
-
-            await logApiCost(supabase, {
-              service_provider: 'lovable_ai',
-              service_type: 'research_aggregation',
-              edge_function: 'generate-research-insights',
-              input_tokens: retryResult.inputTokens,
-              output_tokens: retryResult.outputTokens,
-              metadata: { model, prompt: 'C_retry', chunk: i + 1, totalChunks: chunks.length },
-              triggered_by_user_id: triggeredByUserId || undefined,
-              is_internal: false,
-            });
-          } catch (retryErr) {
-            console.error(`[Insights] Chunk ${i + 1} retry also failed: ${retryErr instanceof Error ? retryErr.message : retryErr}`);
-          }
-        }
-
-        if (parsed) {
-          chunkResults.push(parsed);
-        }
-
-        await logApiCost(supabase, {
-          service_provider: 'lovable_ai',
-          service_type: 'research_aggregation',
-          edge_function: 'generate-research-insights',
-          input_tokens: result.inputTokens,
-          output_tokens: result.outputTokens,
-          metadata: { model, prompt: 'C', chunk: i + 1, totalChunks: chunks.length },
-          triggered_by_user_id: triggeredByUserId || undefined,
-          is_internal: false,
-        });
-
-        await updateProgress('analyzing', i + 1, chunks.length);
-      }
-
-      // Guard: if no chunks parsed successfully, fail early
-      if (chunkResults.length === 0) {
-        throw new Error(`All ${chunks.length} chunk analyses returned invalid JSON — the AI model may be overloaded. Please retry.`);
-      }
-      console.log(`[Insights] ${chunkResults.length}/${chunks.length} chunks parsed successfully`);
-
-      // Synthesize chunk results
-      if (chunkResults.length === 1) {
-        finalResult = chunkResults[0];
-      } else {
-        console.log(`[Insights] Synthesizing ${chunkResults.length} chunk results`);
-        await updateProgress('synthesizing', chunks.length, chunks.length);
-
-        // Use Flash for synthesis (faster) with a 90s timeout fallback
-        const synthesisModel = 'google/gemini-2.5-flash';
-        const synthesisPromise = callLovableAI(lovableApiKey, synthesisModel, temperature, systemPrompt,
-          `Date range: ${dateRange}\n\nYou previously analyzed ${recordSummaries.length} records in ${chunkResults.length} batches. Synthesize these batch results into a single unified insight report:\n\n${JSON.stringify(chunkResults, null, 2)}`
-        );
-        const timeoutPromise = new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new Error('synthesis_timeout')), 90000)
-        );
-
-        try {
-          const synthesisResult = await Promise.race([synthesisPromise, timeoutPromise]);
-          try {
-            const jsonMatch = synthesisResult.content.match(/```(?:json)?\s*([\s\S]*?)```/);
-            finalResult = JSON.parse(jsonMatch ? jsonMatch[1].trim() : synthesisResult.content.trim());
-          } catch {
-            console.warn('[Insights] Failed to parse synthesis JSON, using programmatic merge');
-            finalResult = programmaticMerge(chunkResults);
-          }
-
-          await logApiCost(supabase, {
-            service_provider: 'lovable_ai',
-            service_type: 'research_aggregation_synthesis',
-            edge_function: 'generate-research-insights',
-            input_tokens: synthesisResult.inputTokens,
-            output_tokens: synthesisResult.outputTokens,
-            metadata: { model: synthesisModel, prompt: 'C_synthesis' },
-            triggered_by_user_id: triggeredByUserId || undefined,
-            is_internal: false,
-          });
-        } catch (synthError: any) {
-          if (synthError?.message === 'synthesis_timeout') {
-            console.warn('[Insights] Synthesis timed out after 90s, using programmatic merge');
-            finalResult = programmaticMerge(chunkResults);
-          } else {
-            throw synthError;
-          }
-        }
-      }
-    }
-
-    // Store results
-    const { error: updateError } = await supabase
-      .from('research_insights')
-      .update({
-        data: finalResult,
-        status: 'completed',
-        total_records_analyzed: classifications.length,
-      })
-      .eq('id', insightId);
-
-    if (updateError) {
-      throw new Error(`Failed to store insights: ${updateError.message}`);
-    }
-
-    console.log(`[Insights] Successfully completed insight ${insightId}`);
-
-  } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    console.error(`[Insights] Error:`, errorMessage);
-
-    await supabase
-      .from('research_insights')
-      .update({ status: 'failed', error_message: errorMessage })
-      .eq('id', insightId);
-  }
 }
 
 async function callLovableAI(
@@ -496,6 +247,254 @@ async function callLovableAI(
   };
 }
 
+// ── Self-chaining: process ONE chunk, store result, self-invoke for next ──
+
+async function processOneChunk(
+  supabaseUrl: string,
+  supabaseServiceKey: string,
+  lovableApiKey: string,
+  insightId: string,
+  chunkIndex: number,
+  totalChunks: number,
+) {
+  const supabase = createClient(supabaseUrl, supabaseServiceKey);
+
+  try {
+    // Load the insight record to get _meta and _chunks
+    const { data: insight, error: loadErr } = await supabase
+      .from('research_insights')
+      .select('data, status')
+      .eq('id', insightId)
+      .single();
+
+    if (loadErr || !insight) {
+      console.error(`[Chain] Failed to load insight ${insightId}:`, loadErr?.message);
+      return;
+    }
+
+    if (insight.status !== 'processing') {
+      console.log(`[Chain] Insight ${insightId} is no longer processing (status: ${insight.status}), stopping.`);
+      return;
+    }
+
+    const meta = (insight.data as any)?._meta;
+    if (!meta) {
+      console.error(`[Chain] No _meta found in insight ${insightId}`);
+      await supabase.from('research_insights').update({ status: 'failed', error_message: 'Missing _meta in data' }).eq('id', insightId);
+      return;
+    }
+
+    const { chunks, dateRange, model, temperature, systemPrompt, triggeredByUserId } = meta;
+    const existingChunkResults: any[] = (insight.data as any)?._chunks || [];
+
+    const chunk = chunks[chunkIndex];
+    if (!chunk) {
+      console.error(`[Chain] Chunk ${chunkIndex} not found in _meta`);
+      return;
+    }
+
+    console.log(`[Chain] Processing chunk ${chunkIndex + 1}/${totalChunks} (${chunk.length} records) for insight ${insightId}`);
+
+    // Update progress
+    await supabase.from('research_insights').update({
+      data: {
+        ...(insight.data as any),
+        _progress: { totalChunks, completedChunks: chunkIndex, totalRecords: meta.totalRecords, currentPhase: 'analyzing' },
+      }
+    }).eq('id', insightId);
+
+    // Process this chunk
+    const userMsg = `Date range: ${dateRange}\nBatch ${chunkIndex + 1} of ${totalChunks}\n\nHere are ${chunk.length} classified move-out records:\n\n${JSON.stringify(chunk)}`;
+    
+    const chunkTimeout = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error(`Chunk ${chunkIndex + 1} timed out after 60s`)), 60000)
+    );
+    const result = await Promise.race([
+      callLovableAI(lovableApiKey, model, temperature, systemPrompt, userMsg),
+      chunkTimeout,
+    ]);
+
+    let parsed: any = null;
+    const rawContent = result.content?.trim() || '';
+
+    if (rawContent.length > 100) {
+      try {
+        const jsonMatch = rawContent.match(/```(?:json)?\s*([\s\S]*?)```/);
+        parsed = JSON.parse(jsonMatch ? jsonMatch[1].trim() : rawContent);
+      } catch {
+        console.warn(`[Chain] Chunk ${chunkIndex + 1} parse failed (${rawContent.length} chars), retrying...`);
+      }
+    }
+
+    if (!parsed) {
+      try {
+        const retryTimeout = new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error(`Chunk ${chunkIndex + 1} retry timed out`)), 60000)
+        );
+        const retryResult = await Promise.race([
+          callLovableAI(lovableApiKey, model, temperature,
+            systemPrompt + '\n\nCRITICAL: Respond ONLY with raw JSON. No markdown, no code fences, no explanation.',
+            userMsg
+          ),
+          retryTimeout,
+        ]);
+        const retryContent = retryResult.content?.trim() || '';
+        const retryMatch = retryContent.match(/```(?:json)?\s*([\s\S]*?)```/);
+        parsed = JSON.parse(retryMatch ? retryMatch[1].trim() : retryContent);
+        console.log(`[Chain] Chunk ${chunkIndex + 1} retry succeeded`);
+
+        await logApiCost(supabase, {
+          service_provider: 'lovable_ai', service_type: 'research_aggregation',
+          edge_function: 'generate-research-insights',
+          input_tokens: retryResult.inputTokens, output_tokens: retryResult.outputTokens,
+          metadata: { model, prompt: 'C_retry', chunk: chunkIndex + 1, totalChunks },
+          triggered_by_user_id: triggeredByUserId || undefined, is_internal: false,
+        });
+      } catch (retryErr) {
+        console.error(`[Chain] Chunk ${chunkIndex + 1} retry also failed: ${retryErr instanceof Error ? retryErr.message : retryErr}`);
+      }
+    }
+
+    await logApiCost(supabase, {
+      service_provider: 'lovable_ai', service_type: 'research_aggregation',
+      edge_function: 'generate-research-insights',
+      input_tokens: result.inputTokens, output_tokens: result.outputTokens,
+      metadata: { model, prompt: 'C', chunk: chunkIndex + 1, totalChunks },
+      triggered_by_user_id: triggeredByUserId || undefined, is_internal: false,
+    });
+
+    const newChunkResults = [...existingChunkResults];
+    if (parsed) newChunkResults.push(parsed);
+
+    const isLastChunk = chunkIndex >= totalChunks - 1;
+
+    if (!isLastChunk) {
+      // Store chunk result and progress, then self-invoke for next chunk
+      await supabase.from('research_insights').update({
+        data: {
+          ...(insight.data as any),
+          _chunks: newChunkResults,
+          _progress: { totalChunks, completedChunks: chunkIndex + 1, totalRecords: meta.totalRecords, currentPhase: 'analyzing' },
+        }
+      }).eq('id', insightId);
+
+      console.log(`[Chain] Chunk ${chunkIndex + 1} done, self-invoking for chunk ${chunkIndex + 2}`);
+      await selfInvokeResume(supabaseUrl, supabaseServiceKey, insightId, chunkIndex + 1, totalChunks);
+    } else {
+      // Last chunk — synthesize
+      console.log(`[Chain] All ${totalChunks} chunks done (${newChunkResults.length} parsed), synthesizing...`);
+
+      await supabase.from('research_insights').update({
+        data: {
+          ...(insight.data as any),
+          _chunks: newChunkResults,
+          _progress: { totalChunks, completedChunks: totalChunks, totalRecords: meta.totalRecords, currentPhase: 'synthesizing' },
+        }
+      }).eq('id', insightId);
+
+      if (newChunkResults.length === 0) {
+        await supabase.from('research_insights').update({
+          status: 'failed', error_message: 'All chunk analyses returned invalid JSON — the AI model may be overloaded. Please retry.'
+        }).eq('id', insightId);
+        return;
+      }
+
+      let finalResult: any;
+      if (newChunkResults.length === 1) {
+        finalResult = newChunkResults[0];
+      } else {
+        // Synthesize
+        const synthesisModel = 'google/gemini-2.5-flash';
+        try {
+          const synthTimeout = new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error('synthesis_timeout')), 90000)
+          );
+          const synthesisResult = await Promise.race([
+            callLovableAI(lovableApiKey, synthesisModel, temperature, systemPrompt,
+              `Date range: ${dateRange}\n\nYou previously analyzed ${meta.totalRecords} records in ${newChunkResults.length} batches. Synthesize these batch results into a single unified insight report:\n\n${JSON.stringify(newChunkResults, null, 2)}`
+            ),
+            synthTimeout,
+          ]);
+
+          try {
+            const jsonMatch = synthesisResult.content.match(/```(?:json)?\s*([\s\S]*?)```/);
+            finalResult = JSON.parse(jsonMatch ? jsonMatch[1].trim() : synthesisResult.content.trim());
+          } catch {
+            console.warn('[Chain] Synthesis parse failed, using programmatic merge');
+            finalResult = programmaticMerge(newChunkResults);
+          }
+
+          await logApiCost(supabase, {
+            service_provider: 'lovable_ai', service_type: 'research_aggregation_synthesis',
+            edge_function: 'generate-research-insights',
+            input_tokens: synthesisResult.inputTokens, output_tokens: synthesisResult.outputTokens,
+            metadata: { model: synthesisModel, prompt: 'C_synthesis' },
+            triggered_by_user_id: triggeredByUserId || undefined, is_internal: false,
+          });
+        } catch (synthErr: any) {
+          if (synthErr?.message === 'synthesis_timeout') {
+            console.warn('[Chain] Synthesis timed out, using programmatic merge');
+            finalResult = programmaticMerge(newChunkResults);
+          } else {
+            throw synthErr;
+          }
+        }
+      }
+
+      // Store final result
+      await supabase.from('research_insights').update({
+        data: finalResult,
+        status: 'completed',
+        total_records_analyzed: meta.totalRecords,
+      }).eq('id', insightId);
+
+      console.log(`[Chain] ✓ Insight ${insightId} completed successfully`);
+    }
+
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    console.error(`[Chain] Error processing chunk ${chunkIndex}:`, errorMessage);
+
+    const supabase = createClient(supabaseUrl, supabaseServiceKey);
+    await supabase.from('research_insights').update({
+      status: 'failed', error_message: `Chunk ${chunkIndex + 1} failed: ${errorMessage}`
+    }).eq('id', insightId);
+  }
+}
+
+async function selfInvokeResume(supabaseUrl: string, supabaseServiceKey: string, insightId: string, chunkIndex: number, totalChunks: number, attempt = 1) {
+  try {
+    const response = await fetch(`${supabaseUrl}/functions/v1/generate-research-insights`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${supabaseServiceKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ resume: true, insightId, chunkIndex, totalChunks }),
+    });
+
+    if (response.ok) {
+      const body = await response.text();
+      console.log(`[Chain] Self-invoke success for chunk ${chunkIndex + 1}`);
+    } else {
+      const text = await response.text();
+      console.error(`[Chain] Self-invoke failed (${response.status}): ${text}`);
+      if (attempt < 2) {
+        await new Promise(r => setTimeout(r, 2000));
+        await selfInvokeResume(supabaseUrl, supabaseServiceKey, insightId, chunkIndex, totalChunks, attempt + 1);
+      }
+    }
+  } catch (error) {
+    console.error('[Chain] Self-invoke network error:', error);
+    if (attempt < 2) {
+      await new Promise(r => setTimeout(r, 2000));
+      await selfInvokeResume(supabaseUrl, supabaseServiceKey, insightId, chunkIndex, totalChunks, attempt + 1);
+    }
+  }
+}
+
+// ── Main handler ──
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -507,7 +506,25 @@ Deno.serve(async (req) => {
   const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
   try {
-    const { campaignId, dateRangeStart, dateRangeEnd, analysisPeriod } = await req.json();
+    const body = await req.json();
+
+    // ── RESUME path: self-chaining invocation ──
+    if (body.resume) {
+      const { insightId, chunkIndex, totalChunks } = body;
+      console.log(`[Chain] Resume invocation: chunk ${chunkIndex + 1}/${totalChunks} for ${insightId}`);
+
+      EdgeRuntime.waitUntil(
+        processOneChunk(supabaseUrl, supabaseServiceKey, lovableApiKey, insightId, chunkIndex, totalChunks)
+      );
+
+      return new Response(
+        JSON.stringify({ success: true, message: `Processing chunk ${chunkIndex + 1}` }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // ── INITIAL path: fetch records, create insight, start chain ──
+    const { campaignId, dateRangeStart, dateRangeEnd, analysisPeriod } = body;
 
     // Get user ID from JWT
     const authHeader = req.headers.get('Authorization') || '';
@@ -537,18 +554,11 @@ Deno.serve(async (req) => {
       .eq('has_valid_conversation', true)
       .eq('booking_transcriptions.research_processing_status', 'completed');
 
-    if (campaignId) {
-      query = query.eq('research_call_id', campaignId);
-    }
-    if (dateRangeStart) {
-      query = query.gte('booking_date', dateRangeStart);
-    }
-    if (dateRangeEnd) {
-      query = query.lte('booking_date', dateRangeEnd);
-    }
+    if (campaignId) query = query.eq('research_call_id', campaignId);
+    if (dateRangeStart) query = query.gte('booking_date', dateRangeStart);
+    if (dateRangeEnd) query = query.lte('booking_date', dateRangeEnd);
 
     const { data: records, error: fetchError } = await query;
-
     if (fetchError) throw new Error(`Failed to fetch records: ${fetchError.message}`);
 
     const processedRecords = (records || []).filter((r: any) => {
@@ -579,7 +589,7 @@ Deno.serve(async (req) => {
       .select('prompt_key, prompt_text, temperature, model');
 
     const aggPrompt = prompts?.find((p: any) => p.prompt_key === 'aggregation');
-    const model = aggPrompt?.model || 'google/gemini-2.5-pro';
+    const model = aggPrompt?.model || 'google/gemini-2.5-flash';
     const temperature = Number(aggPrompt?.temperature) || 0.4;
     const systemPrompt = aggPrompt?.prompt_text || DEFAULT_AGGREGATION_PROMPT;
 
@@ -587,7 +597,7 @@ Deno.serve(async (req) => {
       ? `${dateRangeStart} to ${dateRangeEnd}`
       : analysisPeriod || 'All Time';
 
-    // Concurrent invocation guard: check for existing processing records
+    // Concurrent invocation guard
     const { data: existingProcessing } = await supabase
       .from('research_insights')
       .select('id, created_at')
@@ -605,19 +615,54 @@ Deno.serve(async (req) => {
           { status: 409, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
-      // Stale record — mark as failed
       await supabase.from('research_insights')
         .update({ status: 'failed', error_message: 'Timed out during processing' })
         .eq('id', existingProcessing.id);
       console.log(`[Insights] Marked stale record ${existingProcessing.id} as failed`);
     }
 
-    // Create insight record
+    // Build combined record summaries for chunking
+    const recordSummaries = classifications.map((c: any, i: number) => {
+      const extraction = extractions[i];
+      return {
+        ...c,
+        member_name: extraction?.member_name,
+        length_of_stay: extraction?.length_of_stay,
+        primary_reason_stated: extraction?.primary_reason_stated,
+        issues_count: extraction?.issues_mentioned?.length || 0,
+        blind_spots_count: extraction?.blind_spots?.length || 0,
+        payment_was_factor: extraction?.payment_context?.payment_was_factor,
+        transfer_considered: extraction?.transfer_context?.considered_transfer,
+        host_mentioned: extraction?.host_context?.host_mentioned,
+      };
+    });
+
+    // Split into chunks
+    const CHUNK_SIZE = 30;
+    const chunks: any[][] = [];
+    for (let i = 0; i < recordSummaries.length; i += CHUNK_SIZE) {
+      chunks.push(recordSummaries.slice(i, i + CHUNK_SIZE));
+    }
+    const totalChunks = chunks.length;
+
+    // Create insight record with _meta storing all chunk data
     const { data: insight, error: insertError } = await supabase
       .from('research_insights')
       .insert({
         campaign_id: campaignId || null,
-        data: {},
+        data: {
+          _meta: {
+            chunks,
+            dateRange,
+            model,
+            temperature,
+            systemPrompt,
+            triggeredByUserId,
+            totalRecords: processedRecords.length,
+          },
+          _chunks: [],
+          _progress: { totalChunks, completedChunks: 0, totalRecords: processedRecords.length, currentPhase: 'analyzing' },
+        },
         insight_type: 'aggregate',
         caller_type: null,
         status: 'processing',
@@ -634,23 +679,11 @@ Deno.serve(async (req) => {
       throw new Error(`Failed to create insight record: ${insertError?.message}`);
     }
 
-    console.log(`[Insights] Created insight ${insight.id}, starting background processing for ${processedRecords.length} records`);
+    console.log(`[Insights] Created insight ${insight.id}, starting self-chaining for ${processedRecords.length} records in ${totalChunks} chunks`);
 
-    // Background processing
+    // Start processing chunk 0 in background
     EdgeRuntime.waitUntil(
-      processInsights(
-        supabaseUrl,
-        supabaseServiceKey,
-        lovableApiKey,
-        insight.id,
-        classifications,
-        extractions,
-        dateRange,
-        model,
-        temperature,
-        systemPrompt,
-        triggeredByUserId
-      )
+      processOneChunk(supabaseUrl, supabaseServiceKey, lovableApiKey, insight.id, 0, totalChunks)
     );
 
     return new Response(

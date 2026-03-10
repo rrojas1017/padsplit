@@ -1,66 +1,123 @@
 
 
-## Fix: Edge function killed before completing chunked analysis
+## Redesign Research Insights from Scratch
 
 ### Problem
-`EdgeRuntime.waitUntil()` has a hard ~150-second background execution limit. Even with Gemini Flash (~10-15s per chunk), processing 6 chunks sequentially plus synthesis (7 AI calls total) takes ~90-120s best case, but with retries or slightly slower responses it exceeds the limit. The worker gets killed mid-processing, leaving the report stuck as "processing" forever.
+The UI components still don't render the actual report data because field names are mismatched. The data itself is excellent — rich, actionable, well-organized with P0/P1/P2 priorities, member quotes, and specific recommendations. The UI just needs to be rebuilt to match what the AI actually produces.
 
-Report `cb9f648c` is currently stuck — completed only chunk 1/6 before being killed.
-
-### Solution: Self-chaining architecture
-
-Convert the edge function from processing all chunks in one invocation to a **self-chaining** pattern where:
-
-1. Each invocation processes **one chunk** (well within the time limit)
-2. After completing a chunk, the function stores the partial result and **re-invokes itself** with a `resume` payload containing the insight ID and the next chunk index
-3. Once all chunks are done, the final invocation runs synthesis and marks the report as completed
-
-This is the same pattern used successfully by `batch-process-research-records`.
-
-### Technical Changes
-
-**File: `supabase/functions/generate-research-insights/index.ts`**
-
-1. **Add a `resume` code path** to `Deno.serve`: Accept `{ resume: true, insightId, chunkIndex, totalChunks }` as an alternative to the initial generation payload. When resuming, load partial state from the DB instead of re-fetching all records.
-
-2. **Store partial chunk results in the DB**: After each chunk completes, append the chunk result to a `_chunks` array inside the `data` JSONB column. This preserves progress across invocations.
-
-3. **Self-invoke for the next chunk**: After storing a chunk result, call `fetch()` to invoke the same edge function with the `resume` payload. Use `EdgeRuntime.waitUntil()` for this self-call so the current invocation can return immediately.
-
-4. **On final chunk**: Run synthesis (or `programmaticMerge` on timeout), store the final result, and mark as completed.
-
-5. **Mark stuck report as failed**: Database update to clear `cb9f648c`.
-
-### Pseudocode
+### Actual Data Structure (from the completed report)
 
 ```text
-Deno.serve(req):
-  if req.body.resume:
-    // Load insight record, get stored _chunks array
-    // Process chunk[chunkIndex] only
-    // Append result to _chunks in DB
-    // If chunkIndex < totalChunks - 1:
-    //   self-invoke with chunkIndex + 1
-    // Else:
-    //   run synthesis on all _chunks
-    //   mark completed
-  else:
-    // Existing: fetch records, create insight, compute chunks
-    // Store chunk metadata (totalChunks, classifications) in data._meta
-    // Process chunk 0 only
-    // Self-invoke with chunkIndex = 1
+executive_summary:
+  ├── title (string)
+  ├── key_findings (string - paragraph)
+  ├── period (string)
+  ├── recommendation_summary (string)
+  └── urgent_quote (string)
+
+reason_code_distribution:
+  ├── total_cases (number)
+  ├── preventable_churn (number)
+  ├── unpreventable_churn (number)
+  └── by_category[]:
+      ├── category (string)
+      ├── count (number)
+      ├── percentage (number)
+      └── description (string)
+
+issue_clusters[]:
+  ├── cluster_name (string)
+  ├── description (string)
+  ├── priority (string: "P0", "P1")
+  ├── recommended_action (string)
+  └── supporting_quotes[] (strings)
+
+top_actions: (OBJECT, not array)
+  ├── p0_immediate_risk_mitigation[]:
+  │   ├── action (string)
+  │   ├── description (string)
+  │   └── ownership (string)
+  ├── p1_systemic_process_redesign[]:
+  │   └── (same shape)
+  └── quick_wins[]:
+      └── (same shape)
+
+operational_blind_spots[]:
+  ├── blind_spot (string)
+  └── description (string)
+
+host_accountability_flags[]:
+  ├── flag (string)
+  ├── description (string)
+  └── priority (string)
+
+emerging_patterns[]:
+  ├── pattern (string)
+  ├── description (string)
+  └── quote (string)
+
+payment_friction_analysis:
+  ├── summary (string)
+  └── key_friction_points[]:
+      ├── point (string)
+      ├── description (string)
+      ├── quote (string)
+      └── impact (string: "Critical", "High")
+
+transfer_friction_analysis:
+  └── (same shape as payment)
+
+agent_performance_summary:
+  ├── strengths (string)
+  └── opportunities_for_improvement[]:
+      ├── area (string)
+      ├── description (string)
+      └── recommendation (string)
 ```
 
-### Data flow
+### Plan (10 files to update)
 
-```text
-Invocation 1: Create record → process chunk 0 → store → self-invoke(chunk=1)
-Invocation 2: Load record → process chunk 1 → store → self-invoke(chunk=2)
-...
-Invocation 6: Load record → process chunk 5 → store → synthesize → mark completed
-```
+#### 1. ExecutiveSummary.tsx — Rewrite
+Map to actual fields: `title`, `key_findings` (plural), `period`, `recommendation_summary`, `urgent_quote`. Show the title prominently, key findings as narrative paragraph, urgent quote in a highlighted callout, and recommendation summary in an action card.
 
-### Files to edit
-- `supabase/functions/generate-research-insights/index.ts` — restructure to self-chaining
-- Database: mark `cb9f648c` as failed
+#### 2. ReasonCodeChart.tsx — Rewrite  
+Read `by_category[]` with fields `category`, `count`, `percentage`, `description`. Add stat cards at top for `total_cases`, `preventable_churn`, `unpreventable_churn`. Keep the horizontal bar chart but use the correct fields.
+
+#### 3. IssueClustersPanel.tsx — Rewrite
+Map `description` (not `cluster_description`), `priority` (string like "P0"), `recommended_action` (string, not object), `supporting_quotes[]` (not `representative_quotes`). Show priority badge prominently. Remove severity_distribution, root_cause references.
+
+#### 4. TopActionsPanel.tsx — Rewrite completely
+Data is an **object** with three keyed arrays (`p0_immediate_risk_mitigation`, `p1_systemic_process_redesign`, `quick_wins`), not a flat array. Render as three grouped sections with P0/P1/Quick Win headers. Each item has `action`, `description`, `ownership`.
+
+#### 5. BlindSpotsPanel.tsx — Minor fix
+Already mostly correct (`blind_spot`, `description`). Remove unused `priority`, `how_discovered`, `estimated_prevalence`, `recommended_detection_method` references.
+
+#### 6. HostAccountabilityPanel.tsx — Fix priority mapping
+Data has `flag`, `description`, `priority` (string like "P0", "P1"). Add PriorityBadge based on the `priority` field instead of parsing the title text.
+
+#### 7. EmergingPatternsPanel.tsx — Already correct
+Has `pattern`, `description`, `quote`. No `watch_or_act` in actual data — gracefully handles missing. Minimal changes.
+
+#### 8. PaymentFrictionCard.tsx — Rewrite
+Data has `summary` + `key_friction_points[]` (objects with `point`, `description`, `quote`, `impact`), not `key_failures[]` (strings). Render each friction point as a card with impact badge and member quote.
+
+#### 9. TransferFrictionCard.tsx — Rewrite (same pattern)
+Same structure as payment friction. Render `key_friction_points[]` with `point`, `description`, `quote`, `impact`.
+
+#### 10. AgentPerformanceCard.tsx — Rewrite
+Data has `strengths` (string) + `opportunities_for_improvement[]` (objects with `area`, `description`, `recommendation`), not `weaknesses[]` (strings). Render each opportunity as its own card with area title, description, and recommendation.
+
+#### 11. ResearchInsights.tsx page — Reorganize layout
+- Executive Summary full-width at top
+- Reason Code Distribution full-width with preventable/unpreventable stat cards
+- Issue Clusters full-width (collapsible, P0 first)
+- Top Actions full-width (grouped by priority tier)
+- Two-column layout: Payment Friction | Transfer Friction
+- Two-column layout: Blind Spots | Host Accountability
+- Agent Performance full-width
+- Emerging Patterns full-width
+- Human Review Queue and Processed Records at bottom
+
+### Note on Claude
+Claude (Anthropic) is not available through the supported AI models. The current Gemini 2.5 Pro model produced excellent, rich data — the problem was purely the UI not matching the output schema. No model change is needed.
 
