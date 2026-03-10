@@ -81,9 +81,58 @@ export default function ResearchInsights() {
     init();
   }, [checkExistingAnalysis]);
 
+  // Unified generate: auto-process pending records first, then generate report
   const handleGenerate = async () => {
     setIsGenerating(true);
     setGenerationStartTime(Date.now());
+
+    // If there are pending records, process them first
+    if (processingStats.pendingRecords > 0) {
+      setPhase('processing');
+      setIsBackfilling(true);
+      await triggerBackfill();
+
+      // Poll until all records are processed
+      await new Promise<void>((resolve) => {
+        const poll = setInterval(async () => {
+          await fetchProcessingStats();
+        }, 10000);
+
+        const check = setInterval(() => {
+          // Access latest stats via a fresh fetch
+          supabase
+            .from('booking_transcriptions')
+            .select('id', { count: 'exact', head: true })
+            .not('research_extraction', 'is', null)
+            .then(({ count: processedCount }) => {
+              supabase
+                .from('booking_transcriptions')
+                .select('id, bookings!inner(record_type, has_valid_conversation)', { count: 'exact', head: true })
+                .not('call_transcription', 'is', null)
+                .neq('call_transcription', '')
+                .eq('bookings.record_type', 'research')
+                .eq('bookings.has_valid_conversation', true)
+                .then(({ count: totalCount }) => {
+                  if ((totalCount || 0) - (processedCount || 0) <= 0) {
+                    clearInterval(poll);
+                    clearInterval(check);
+                    if ((window as any).__researchBackfillPoll) {
+                      clearInterval((window as any).__researchBackfillPoll);
+                      delete (window as any).__researchBackfillPoll;
+                    }
+                    setIsBackfilling(false);
+                    resolve();
+                  }
+                });
+            });
+        }, 10000);
+      });
+
+      await fetchProcessingStats();
+    }
+
+    // Now generate the report
+    setPhase('analyzing');
     const insightId = await generateReport({
       campaignId: campaignId !== 'all' ? campaignId : undefined,
       analysisPeriod: dateRange,
@@ -93,24 +142,9 @@ export default function ResearchInsights() {
       startPolling(insightId);
     } else {
       setIsGenerating(false);
+      setPhase(null);
     }
   };
-
-  const handleBackfill = async () => {
-    setIsBackfilling(true);
-    await triggerBackfill();
-  };
-
-  useEffect(() => {
-    if (isBackfilling && processingStats.pendingRecords === 0 && processingStats.totalResearchRecords > 0) {
-      setIsBackfilling(false);
-      if ((window as any).__researchBackfillPoll) {
-        clearInterval((window as any).__researchBackfillPoll);
-        delete (window as any).__researchBackfillPoll;
-      }
-      toast.success(`All ${processingStats.processedRecords} records processed!`);
-    }
-  }, [isBackfilling, processingStats]);
 
   const reportData = selectedReport?.data as any;
 
