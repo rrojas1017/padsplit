@@ -321,9 +321,9 @@ export default function ResearchInsights() {
             </div>
             <h3 className="text-lg font-semibold text-foreground mb-2">No Research Insights Yet</h3>
             <p className="text-sm text-muted-foreground mb-4 max-w-md mx-auto">
-              {processingStats.processedRecords > 0
-                ? `${processingStats.processedRecords} records are ready. Click "Generate Report" to analyze patterns across all processed records.`
-                : `${processingStats.totalResearchRecords} research records found. Click "Process All" to extract insights from transcripts first.`}
+              {processingStats.totalResearchRecords > 0
+                ? `${processingStats.totalResearchRecords} research records found. Click "Generate Report" to process and analyze all records automatically.`
+                : 'No research records found yet. Log survey calls to start building insights.'}
             </p>
           </CardContent>
         </Card>
