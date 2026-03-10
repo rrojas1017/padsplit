@@ -304,7 +304,13 @@ async function processInsights(
       for (let i = 0; i < chunks.length; i++) {
         console.log(`[Insights] Processing chunk ${i + 1}/${chunks.length} (${chunks[i].length} records)`);
         const userMsg = `Date range: ${dateRange}\nBatch ${i + 1} of ${chunks.length}\n\nHere are ${chunks[i].length} classified move-out records:\n\n${JSON.stringify(chunks[i])}`;
-        const result = await callLovableAI(lovableApiKey, model, temperature, systemPrompt, userMsg);
+        const chunkTimeout = new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error(`Chunk ${i + 1} timed out after 60s`)), 60000)
+        );
+        const result = await Promise.race([
+          callLovableAI(lovableApiKey, model, temperature, systemPrompt, userMsg),
+          chunkTimeout,
+        ]);
 
         let parsed: any = null;
         const rawContent = result.content?.trim() || '';
