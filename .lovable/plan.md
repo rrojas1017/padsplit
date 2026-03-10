@@ -1,123 +1,45 @@
 
 
-## Redesign Research Insights from Scratch
+## Fix: Research Insights page stuck on "Synthesizing results"
 
-### Problem
-The UI components still don't render the actual report data because field names are mismatched. The data itself is excellent — rich, actionable, well-organized with P0/P1/P2 priorities, member quotes, and specific recommendations. The UI just needs to be rebuilt to match what the AI actually produces.
+### Root cause
+Record `67e14d0c-05d2-4d1d-8342-342ca559f058` has been stuck in `status: 'processing'` since March 9th (~9 hours ago). The edge function timed out during the synthesis phase but never wrote `failed` status. Every time you visit the page, `checkExistingAnalysis` finds this stuck record and starts polling it indefinitely.
 
-### Actual Data Structure (from the completed report)
+### Fix (two parts)
 
-```text
-executive_summary:
-  ├── title (string)
-  ├── key_findings (string - paragraph)
-  ├── period (string)
-  ├── recommendation_summary (string)
-  └── urgent_quote (string)
+**1. Database: Mark the stuck record as failed (migration)**
 
-reason_code_distribution:
-  ├── total_cases (number)
-  ├── preventable_churn (number)
-  ├── unpreventable_churn (number)
-  └── by_category[]:
-      ├── category (string)
-      ├── count (number)
-      ├── percentage (number)
-      └── description (string)
-
-issue_clusters[]:
-  ├── cluster_name (string)
-  ├── description (string)
-  ├── priority (string: "P0", "P1")
-  ├── recommended_action (string)
-  └── supporting_quotes[] (strings)
-
-top_actions: (OBJECT, not array)
-  ├── p0_immediate_risk_mitigation[]:
-  │   ├── action (string)
-  │   ├── description (string)
-  │   └── ownership (string)
-  ├── p1_systemic_process_redesign[]:
-  │   └── (same shape)
-  └── quick_wins[]:
-      └── (same shape)
-
-operational_blind_spots[]:
-  ├── blind_spot (string)
-  └── description (string)
-
-host_accountability_flags[]:
-  ├── flag (string)
-  ├── description (string)
-  └── priority (string)
-
-emerging_patterns[]:
-  ├── pattern (string)
-  ├── description (string)
-  └── quote (string)
-
-payment_friction_analysis:
-  ├── summary (string)
-  └── key_friction_points[]:
-      ├── point (string)
-      ├── description (string)
-      ├── quote (string)
-      └── impact (string: "Critical", "High")
-
-transfer_friction_analysis:
-  └── (same shape as payment)
-
-agent_performance_summary:
-  ├── strengths (string)
-  └── opportunities_for_improvement[]:
-      ├── area (string)
-      ├── description (string)
-      └── recommendation (string)
+```sql
+UPDATE research_insights 
+SET status = 'failed', error_message = 'Timed out during processing'
+WHERE id = '67e14d0c-05d2-4d1d-8342-342ca559f058' AND status = 'processing';
 ```
 
-### Plan (10 files to update)
+**2. Frontend: Add staleness detection in `useResearchInsightsPolling.ts`**
 
-#### 1. ExecutiveSummary.tsx — Rewrite
-Map to actual fields: `title`, `key_findings` (plural), `period`, `recommendation_summary`, `urgent_quote`. Show the title prominently, key findings as narrative paragraph, urgent quote in a highlighted callout, and recommendation summary in an action card.
+In `checkExistingAnalysis`, add a staleness check: if a `processing` record was created more than 30 minutes ago, auto-mark it as failed instead of polling it. This prevents future stuck states from blocking the page.
 
-#### 2. ReasonCodeChart.tsx — Rewrite  
-Read `by_category[]` with fields `category`, `count`, `percentage`, `description`. Add stat cards at top for `total_cases`, `preventable_churn`, `unpreventable_churn`. Keep the horizontal bar chart but use the correct fields.
+```typescript
+// In checkExistingAnalysis, after finding a processing record:
+const createdAt = new Date(data.created_at).getTime();
+const thirtyMinutesAgo = Date.now() - 30 * 60 * 1000;
+if (createdAt < thirtyMinutesAgo) {
+  // Stale — mark as failed
+  await supabase.from('research_insights')
+    .update({ status: 'failed', error_message: 'Timed out during processing' })
+    .eq('id', data.id);
+  return null;
+}
+```
 
-#### 3. IssueClustersPanel.tsx — Rewrite
-Map `description` (not `cluster_description`), `priority` (string like "P0"), `recommended_action` (string, not object), `supporting_quotes[]` (not `representative_quotes`). Show priority badge prominently. Remove severity_distribution, root_cause references.
+This requires fetching `created_at` in the select query as well.
 
-#### 4. TopActionsPanel.tsx — Rewrite completely
-Data is an **object** with three keyed arrays (`p0_immediate_risk_mitigation`, `p1_systemic_process_redesign`, `quick_wins`), not a flat array. Render as three grouped sections with P0/P1/Quick Win headers. Each item has `action`, `description`, `ownership`.
+**3. Edge function: Add a concurrent invocation guard** (in `generate-research-insights/index.ts`)
 
-#### 5. BlindSpotsPanel.tsx — Minor fix
-Already mostly correct (`blind_spot`, `description`). Remove unused `priority`, `how_discovered`, `estimated_prevalence`, `recommended_detection_method` references.
+Before creating a new insight record, check if there's already a `processing` record. If one exists and is < 30 min old, return an error. If > 30 min old, mark it failed first, then proceed. This prevents orphaned records from accumulating.
 
-#### 6. HostAccountabilityPanel.tsx — Fix priority mapping
-Data has `flag`, `description`, `priority` (string like "P0", "P1"). Add PriorityBadge based on the `priority` field instead of parsing the title text.
-
-#### 7. EmergingPatternsPanel.tsx — Already correct
-Has `pattern`, `description`, `quote`. No `watch_or_act` in actual data — gracefully handles missing. Minimal changes.
-
-#### 8. PaymentFrictionCard.tsx — Rewrite
-Data has `summary` + `key_friction_points[]` (objects with `point`, `description`, `quote`, `impact`), not `key_failures[]` (strings). Render each friction point as a card with impact badge and member quote.
-
-#### 9. TransferFrictionCard.tsx — Rewrite (same pattern)
-Same structure as payment friction. Render `key_friction_points[]` with `point`, `description`, `quote`, `impact`.
-
-#### 10. AgentPerformanceCard.tsx — Rewrite
-Data has `strengths` (string) + `opportunities_for_improvement[]` (objects with `area`, `description`, `recommendation`), not `weaknesses[]` (strings). Render each opportunity as its own card with area title, description, and recommendation.
-
-#### 11. ResearchInsights.tsx page — Reorganize layout
-- Executive Summary full-width at top
-- Reason Code Distribution full-width with preventable/unpreventable stat cards
-- Issue Clusters full-width (collapsible, P0 first)
-- Top Actions full-width (grouped by priority tier)
-- Two-column layout: Payment Friction | Transfer Friction
-- Two-column layout: Blind Spots | Host Accountability
-- Agent Performance full-width
-- Emerging Patterns full-width
-- Human Review Queue and Processed Records at bottom
-
-### Note on Claude
-Claude (Anthropic) is not available through the supported AI models. The current Gemini 2.5 Pro model produced excellent, rich data — the problem was purely the UI not matching the output schema. No model change is needed.
+### What stays the same
+- All insight components and data rendering
+- The polling mechanism itself (just adds a staleness check)
+- The `processInsights` background function logic
 
