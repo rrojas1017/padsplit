@@ -274,7 +274,7 @@ async function processInsights(
       } catch {
         // Retry
         const retry = await callLovableAI(lovableApiKey, model, temperature, systemPrompt,
-          `Date range: ${dateRange}\n\nHere are ${recordSummaries.length} classified move-out records:\n\n${JSON.stringify(recordSummaries, null, 2)}\n\nYour previous response was not valid JSON. Respond ONLY with the JSON object, no preamble, no markdown backticks.`
+          `Date range: ${dateRange}\n\nHere are ${recordSummaries.length} classified move-out records:\n\n${JSON.stringify(recordSummaries)}\n\nYour previous response was not valid JSON. Respond ONLY with the JSON object, no preamble, no markdown backticks.`
         );
         const retryMatch = retry.content.match(/```(?:json)?\s*([\s\S]*?)```/);
         finalResult = JSON.parse(retryMatch ? retryMatch[1].trim() : retry.content.trim());
