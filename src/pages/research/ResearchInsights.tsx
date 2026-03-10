@@ -30,6 +30,7 @@ export default function ResearchInsights() {
   const [campaignId, setCampaignId] = useState<string>('all');
   const [isGenerating, setIsGenerating] = useState(false);
   const [isBackfilling, setIsBackfilling] = useState(false);
+  const [phase, setPhase] = useState<'processing' | 'analyzing' | null>(null);
 
   const {
     reports,
