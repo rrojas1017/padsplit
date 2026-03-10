@@ -51,6 +51,7 @@ export default function ResearchInsights() {
   const refreshCallback = useCallback(() => {
     refresh();
     setIsGenerating(false);
+    setPhase(null);
   }, [refresh]);
 
   const { startPolling, checkExistingAnalysis, progress } = useResearchInsightsPolling({
