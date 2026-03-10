@@ -18,11 +18,14 @@ export const useResearchInsightsPolling = ({
   onComplete, 
   pollingInterval = 10000 
 }: UseResearchInsightsPollingProps) => {
-  const pollingRef = useRef<NodeJS.Timeout | null>(null);
+  const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const activeInsightIdRef = useRef<string | null>(null);
   const [progress, setProgress] = useState<InsightProgress | null>(null);
   const lastProgressJsonRef = useRef<string | null>(null);
   const staleCountRef = useRef(0);
+  const onCompleteRef = useRef(onComplete);
+
+  useEffect(() => { onCompleteRef.current = onComplete; }, [onComplete]);
 
   const stopPolling = useCallback(() => {
     if (pollingRef.current) {
@@ -71,8 +74,7 @@ export const useResearchInsightsPolling = ({
           });
         }
 
-        // Stale progress detection: if progress hasn't changed for 3 polls
-        // and the report is older than 10 minutes, mark as failed
+        // Stale progress detection
         const currentProgressJson = JSON.stringify(progressData || null);
         if (currentProgressJson === lastProgressJsonRef.current) {
           staleCountRef.current++;
@@ -91,7 +93,7 @@ export const useResearchInsightsPolling = ({
               .eq('id', activeInsightIdRef.current);
             stopPolling();
             toast.error('Report generation timed out. Please try again.');
-            onComplete();
+            onCompleteRef.current();
             return;
           }
         }
@@ -101,17 +103,17 @@ export const useResearchInsightsPolling = ({
         if (data?.status === 'completed') {
           stopPolling();
           toast.success(`Research insights complete! Analyzed ${data.total_records_analyzed} records`);
-          onComplete();
+          onCompleteRef.current();
         } else if (data?.status === 'failed') {
           stopPolling();
           toast.error(data.error_message || 'Research insights generation failed');
-          onComplete();
+          onCompleteRef.current();
         }
       } catch (error) {
         console.error('[Research Polling] Error:', error);
       }
     }, pollingInterval);
-  }, [onComplete, pollingInterval, stopPolling]);
+  }, [pollingInterval, stopPolling]);
 
   const checkExistingAnalysis = useCallback(async () => {
     try {
@@ -129,7 +131,6 @@ export const useResearchInsightsPolling = ({
       }
 
       if (data) {
-        // Staleness check: if processing for >15 minutes, mark as failed
         const createdAt = new Date(data.created_at).getTime();
         const fifteenMinutesAgo = Date.now() - 15 * 60 * 1000;
         if (createdAt < fifteenMinutesAgo) {
@@ -153,9 +154,15 @@ export const useResearchInsightsPolling = ({
     }
   }, [startPolling]);
 
+  // Only cleanup on unmount — not on every re-render
   useEffect(() => {
-    return () => { stopPolling(); };
-  }, [stopPolling]);
+    return () => {
+      if (pollingRef.current) {
+        clearInterval(pollingRef.current);
+        pollingRef.current = null;
+      }
+    };
+  }, []);
 
   return {
     startPolling,

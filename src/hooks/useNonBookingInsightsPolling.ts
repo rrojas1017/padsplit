@@ -13,7 +13,7 @@ export const useNonBookingInsightsPolling = ({
   pollingInterval = 10000,
   maxPollingDurationMs = 5 * 60 * 1000 // 5 minutes default
 }: UseNonBookingInsightsPollingProps) => {
-  const pollingRef = useRef<NodeJS.Timeout | null>(null);
+  const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const activeInsightIdRef = useRef<string | null>(null);
   const pollingStartTimeRef = useRef<number | null>(null);
 
