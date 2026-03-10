@@ -21,6 +21,8 @@ export const useResearchInsightsPolling = ({
   const pollingRef = useRef<NodeJS.Timeout | null>(null);
   const activeInsightIdRef = useRef<string | null>(null);
   const [progress, setProgress] = useState<InsightProgress | null>(null);
+  const lastProgressJsonRef = useRef<string | null>(null);
+  const staleCountRef = useRef(0);
 
   const stopPolling = useCallback(() => {
     if (pollingRef.current) {
@@ -28,12 +30,16 @@ export const useResearchInsightsPolling = ({
       pollingRef.current = null;
     }
     activeInsightIdRef.current = null;
+    lastProgressJsonRef.current = null;
+    staleCountRef.current = 0;
     setProgress(null);
   }, []);
 
   const startPolling = useCallback((insightId: string) => {
     stopPolling();
     activeInsightIdRef.current = insightId;
+    lastProgressJsonRef.current = null;
+    staleCountRef.current = 0;
     console.log(`[Research Polling] Started for insight: ${insightId}`);
 
     pollingRef.current = setInterval(async () => {
@@ -45,7 +51,7 @@ export const useResearchInsightsPolling = ({
       try {
         const { data, error } = await supabase
           .from('research_insights')
-          .select('status, total_records_analyzed, error_message, data')
+          .select('status, total_records_analyzed, error_message, data, created_at')
           .eq('id', activeInsightIdRef.current)
           .single();
 
@@ -65,7 +71,32 @@ export const useResearchInsightsPolling = ({
           });
         }
 
-        console.log(`[Research Polling] Status: ${data?.status}, Records: ${data?.total_records_analyzed}`);
+        // Stale progress detection: if progress hasn't changed for 3 polls
+        // and the report is older than 10 minutes, mark as failed
+        const currentProgressJson = JSON.stringify(progressData || null);
+        if (currentProgressJson === lastProgressJsonRef.current) {
+          staleCountRef.current++;
+        } else {
+          staleCountRef.current = 0;
+          lastProgressJsonRef.current = currentProgressJson;
+        }
+
+        if (staleCountRef.current >= 3 && data?.created_at) {
+          const reportAge = Date.now() - new Date(data.created_at).getTime();
+          if (reportAge > 10 * 60 * 1000) {
+            console.log(`[Research Polling] Stale progress detected for ${activeInsightIdRef.current}, marking as failed`);
+            await supabase
+              .from('research_insights')
+              .update({ status: 'failed', error_message: 'Edge function terminated during processing — no progress for 30+ seconds' })
+              .eq('id', activeInsightIdRef.current);
+            stopPolling();
+            toast.error('Report generation timed out. Please try again.');
+            onComplete();
+            return;
+          }
+        }
+
+        console.log(`[Research Polling] Status: ${data?.status}, Records: ${data?.total_records_analyzed}, StaleCount: ${staleCountRef.current}`);
 
         if (data?.status === 'completed') {
           stopPolling();
@@ -98,10 +129,10 @@ export const useResearchInsightsPolling = ({
       }
 
       if (data) {
-        // Staleness check: if processing for >30 minutes, mark as failed
+        // Staleness check: if processing for >15 minutes, mark as failed
         const createdAt = new Date(data.created_at).getTime();
-        const thirtyMinutesAgo = Date.now() - 30 * 60 * 1000;
-        if (createdAt < thirtyMinutesAgo) {
+        const fifteenMinutesAgo = Date.now() - 15 * 60 * 1000;
+        if (createdAt < fifteenMinutesAgo) {
           console.log(`[Research Polling] Stale record ${data.id}, marking as failed`);
           await supabase
             .from('research_insights')
