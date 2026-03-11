@@ -490,7 +490,7 @@ async function processOneChunk(
 
       let finalResult: any;
       if (newChunkResults.length === 1) {
-        finalResult = newChunkResults[0];
+        finalResult = normalizeChunkResult(newChunkResults[0]);
       } else {
         // Synthesize
         const synthesisModel = 'google/gemini-2.5-flash';
@@ -507,10 +507,16 @@ async function processOneChunk(
 
           try {
             const jsonMatch = synthesisResult.content.match(/```(?:json)?\s*([\s\S]*?)```/);
-            finalResult = JSON.parse(jsonMatch ? jsonMatch[1].trim() : synthesisResult.content.trim());
+            const parsed = JSON.parse(jsonMatch ? jsonMatch[1].trim() : synthesisResult.content.trim());
+            finalResult = normalizeChunkResult(parsed);
           } catch {
             console.warn('[Chain] Synthesis parse failed, using programmatic merge');
-            finalResult = programmaticMerge(newChunkResults);
+            try {
+              finalResult = programmaticMerge(newChunkResults);
+            } catch (mergeErr) {
+              console.error('[Chain] Programmatic merge also failed:', mergeErr);
+              finalResult = normalizeChunkResult(newChunkResults[0]);
+            }
           }
 
           await logApiCost(supabase, {
@@ -521,16 +527,17 @@ async function processOneChunk(
             triggered_by_user_id: triggeredByUserId || undefined, is_internal: false,
           });
         } catch (synthErr: any) {
-          if (synthErr?.message === 'synthesis_timeout') {
-            console.warn('[Chain] Synthesis timed out, using programmatic merge');
+          console.warn(`[Chain] Synthesis error: ${synthErr?.message}, using programmatic merge`);
+          try {
             finalResult = programmaticMerge(newChunkResults);
-          } else {
-            throw synthErr;
+          } catch (mergeErr) {
+            console.error('[Chain] Programmatic merge also failed:', mergeErr);
+            finalResult = normalizeChunkResult(newChunkResults[0]);
           }
         }
       }
 
-      // Store final result
+      // Store final result — always succeed at this point
       await supabase.from('research_insights').update({
         data: finalResult,
         status: 'completed',
