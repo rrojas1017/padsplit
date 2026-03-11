@@ -334,8 +334,11 @@ function programmaticMerge(chunkResults: any[]): any {
 
   const base = JSON.parse(JSON.stringify(normalized[0]));
 
-  // Merge executive_summary (guaranteed to be object after normalization)
-  const summaries = normalized.map(c => c.executive_summary).filter(Boolean);
+  // Merge executive_summary — ensure it's an object before assigning
+  if (!base.executive_summary || typeof base.executive_summary !== 'object') {
+    base.executive_summary = { headline: '', total_cases: 0, date_range: 'not specified' };
+  }
+  const summaries = normalized.map(c => c.executive_summary).filter((e: any) => e && typeof e === 'object');
   const totalCases = summaries.reduce((s: number, e: any) => s + (typeof e.total_cases === 'number' ? e.total_cases : 0), 0);
   base.executive_summary.total_cases = totalCases;
   for (const pctKey of ['addressable_pct', 'non_addressable_pct', 'partially_addressable_pct', 'avg_preventability_score', 'high_regret_pct', 'payment_related_pct', 'host_related_pct', 'roommate_related_pct', 'life_event_pct']) {
