@@ -1,65 +1,123 @@
 
-Root-cause analysis (from live runtime + code):
-1) Frontend/backend contract mismatch prevents reliable UI tracking.
-- `useResearchInsightsData.generateReport()` expects `data?.insight_id`, but edge function returns `insightId`.
-- Client sends snake_case payload (`campaign_id`, `analysis_period`), function reads camelCase (`campaignId`, `analysisPeriod`), so filters/period are ignored.
-- Effect: users click Generate, backend starts, but UI often stops showing active progress correctly.
 
-2) Aggregation pipeline still fails at synthesis due schema drift in chunk outputs.
-- Current chunks are valid JSON, but `executive_summary` is often a string instead of object.
-- `programmaticMerge()` assumes object and crashes (`Cannot create property 'total_cases' on string ...`), causing final failure after chunk processing.
+## Redesign Research Insights from Scratch
 
-3) Failure recovery is incomplete.
-- Stuck/failed processing records continue to create confusion in list state and “latest processing” checks.
+### Problem
+The UI components still don't render the actual report data because field names are mismatched. The data itself is excellent — rich, actionable, well-organized with P0/P1/P2 priorities, member quotes, and specific recommendations. The UI just needs to be rebuilt to match what the AI actually produces.
 
-Implementation plan (deep reset of research insights generation reliability):
-A) Fix API contract alignment (frontend + edge function)
-- File: `src/hooks/useResearchInsightsData.ts`
-  - Accept both response keys: `insight_id` and `insightId`.
-  - Keep robust error extraction for function errors.
-- File: `supabase/functions/generate-research-insights/index.ts`
-  - Accept both input naming styles:
-    - `campaignId || campaign_id`
-    - `dateRangeStart || date_range_start`
-    - `dateRangeEnd || date_range_end`
-    - `analysisPeriod || analysis_period`
-  - Return both keys for backward compatibility:
-    - `{ insightId, insight_id }`.
+### Actual Data Structure (from the completed report)
 
-B) Harden chunk parsing + normalization before storage
-- File: `supabase/functions/generate-research-insights/index.ts`
-  - Add `normalizeChunkResult(raw)` to enforce canonical shape before pushing to `_chunks`.
-  - If `executive_summary` is a string, convert to:
-    - `{ headline: <string>, total_cases: chunk.length, ...safe defaults }`.
-  - Ensure all expected arrays exist (`reason_code_distribution`, `issue_clusters`, `top_actions`, etc.).
-  - Reject non-object chunk payloads; log and continue with structured fallback object instead of raw model output.
+```text
+executive_summary:
+  ├── title (string)
+  ├── key_findings (string - paragraph)
+  ├── period (string)
+  ├── recommendation_summary (string)
+  └── urgent_quote (string)
 
-C) Replace fragile merge with schema-safe merge
-- File: `supabase/functions/generate-research-insights/index.ts`
-  - Update `programmaticMerge()` to operate only on normalized objects.
-  - Add guards for every nested field type before property writes.
-  - If synthesis AI result is malformed, always fall back to merge without throwing.
+reason_code_distribution:
+  ├── total_cases (number)
+  ├── preventable_churn (number)
+  ├── unpreventable_churn (number)
+  └── by_category[]:
+      ├── category (string)
+      ├── count (number)
+      ├── percentage (number)
+      └── description (string)
 
-D) Make finalization resilient
-- File: `supabase/functions/generate-research-insights/index.ts`
-  - Wrap synthesis parse with strict validation (`isValidAggregateReport`).
-  - If invalid: use merge result.
-  - If merge still partial: write a minimal valid report (never leave status as failed for type-shape issues alone).
-  - Keep hard-fail only for true infra errors (DB/auth/network).
+issue_clusters[]:
+  ├── cluster_name (string)
+  ├── description (string)
+  ├── priority (string: "P0", "P1")
+  ├── recommended_action (string)
+  └── supporting_quotes[] (strings)
 
-E) Cleanup + operational safety
-- Data fix (one-time): mark currently stuck/invalid `processing` rows as `failed` with explicit message.
-- Keep existing staleness guard, but ensure only one active processing report is considered when actually fresh.
+top_actions: (OBJECT, not array)
+  ├── p0_immediate_risk_mitigation[]:
+  │   ├── action (string)
+  │   ├── description (string)
+  │   └── ownership (string)
+  ├── p1_systemic_process_redesign[]:
+  │   └── (same shape)
+  └── quick_wins[]:
+      └── (same shape)
 
-Technical details section:
-- Key bug to fix immediately: `insight_id` vs `insightId` mismatch (this is the biggest “nothing happens” UX symptom).
-- Key reliability fix: normalize AI JSON shape at chunk boundary, not only at final synthesis.
-- Principle: AI output is untrusted structure; enforce schema before storing/merging.
-- No schema migration required; this is code-level hardening and data cleanup only.
+operational_blind_spots[]:
+  ├── blind_spot (string)
+  └── description (string)
 
-Validation plan after implementation:
-1) Trigger report generation and confirm UI immediately enters “Generating…” with chunk progress.
-2) Verify progress advances chunk-by-chunk to synthesis and completes.
-3) Confirm new report appears in selector with `status=completed`.
-4) Run with different date range + campaign filters and confirm backend respects selected filters.
-5) Re-run end-to-end on a large dataset (150+ records) to confirm no regression in self-chaining.
+host_accountability_flags[]:
+  ├── flag (string)
+  ├── description (string)
+  └── priority (string)
+
+emerging_patterns[]:
+  ├── pattern (string)
+  ├── description (string)
+  └── quote (string)
+
+payment_friction_analysis:
+  ├── summary (string)
+  └── key_friction_points[]:
+      ├── point (string)
+      ├── description (string)
+      ├── quote (string)
+      └── impact (string: "Critical", "High")
+
+transfer_friction_analysis:
+  └── (same shape as payment)
+
+agent_performance_summary:
+  ├── strengths (string)
+  └── opportunities_for_improvement[]:
+      ├── area (string)
+      ├── description (string)
+      └── recommendation (string)
+```
+
+### Plan (10 files to update)
+
+#### 1. ExecutiveSummary.tsx — Rewrite
+Map to actual fields: `title`, `key_findings` (plural), `period`, `recommendation_summary`, `urgent_quote`. Show the title prominently, key findings as narrative paragraph, urgent quote in a highlighted callout, and recommendation summary in an action card.
+
+#### 2. ReasonCodeChart.tsx — Rewrite  
+Read `by_category[]` with fields `category`, `count`, `percentage`, `description`. Add stat cards at top for `total_cases`, `preventable_churn`, `unpreventable_churn`. Keep the horizontal bar chart but use the correct fields.
+
+#### 3. IssueClustersPanel.tsx — Rewrite
+Map `description` (not `cluster_description`), `priority` (string like "P0"), `recommended_action` (string, not object), `supporting_quotes[]` (not `representative_quotes`). Show priority badge prominently. Remove severity_distribution, root_cause references.
+
+#### 4. TopActionsPanel.tsx — Rewrite completely
+Data is an **object** with three keyed arrays (`p0_immediate_risk_mitigation`, `p1_systemic_process_redesign`, `quick_wins`), not a flat array. Render as three grouped sections with P0/P1/Quick Win headers. Each item has `action`, `description`, `ownership`.
+
+#### 5. BlindSpotsPanel.tsx — Minor fix
+Already mostly correct (`blind_spot`, `description`). Remove unused `priority`, `how_discovered`, `estimated_prevalence`, `recommended_detection_method` references.
+
+#### 6. HostAccountabilityPanel.tsx — Fix priority mapping
+Data has `flag`, `description`, `priority` (string like "P0", "P1"). Add PriorityBadge based on the `priority` field instead of parsing the title text.
+
+#### 7. EmergingPatternsPanel.tsx — Already correct
+Has `pattern`, `description`, `quote`. No `watch_or_act` in actual data — gracefully handles missing. Minimal changes.
+
+#### 8. PaymentFrictionCard.tsx — Rewrite
+Data has `summary` + `key_friction_points[]` (objects with `point`, `description`, `quote`, `impact`), not `key_failures[]` (strings). Render each friction point as a card with impact badge and member quote.
+
+#### 9. TransferFrictionCard.tsx — Rewrite (same pattern)
+Same structure as payment friction. Render `key_friction_points[]` with `point`, `description`, `quote`, `impact`.
+
+#### 10. AgentPerformanceCard.tsx — Rewrite
+Data has `strengths` (string) + `opportunities_for_improvement[]` (objects with `area`, `description`, `recommendation`), not `weaknesses[]` (strings). Render each opportunity as its own card with area title, description, and recommendation.
+
+#### 11. ResearchInsights.tsx page — Reorganize layout
+- Executive Summary full-width at top
+- Reason Code Distribution full-width with preventable/unpreventable stat cards
+- Issue Clusters full-width (collapsible, P0 first)
+- Top Actions full-width (grouped by priority tier)
+- Two-column layout: Payment Friction | Transfer Friction
+- Two-column layout: Blind Spots | Host Accountability
+- Agent Performance full-width
+- Emerging Patterns full-width
+- Human Review Queue and Processed Records at bottom
+
+### Note on Claude
+Claude (Anthropic) is not available through the supported AI models. The current Gemini 2.5 Pro model produced excellent, rich data — the problem was purely the UI not matching the output schema. No model change is needed.
+

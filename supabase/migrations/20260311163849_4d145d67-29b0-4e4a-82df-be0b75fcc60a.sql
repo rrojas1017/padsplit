@@ -1,0 +1,1 @@
+UPDATE research_insights SET status = 'failed', error_message = 'Cleaned up stuck processing record during reliability fix' WHERE status = 'processing';
