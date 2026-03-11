@@ -783,6 +783,7 @@ Deno.serve(async (req) => {
       JSON.stringify({
         success: true,
         insightId: insight.id,
+        insight_id: insight.id,
         recordCount: processedRecords.length,
         message: 'Insight generation started',
       }),

@@ -147,7 +147,7 @@ export function useResearchInsightsData() {
         throw error;
       }
       toast.info('Research insights generation started...');
-      return data?.insight_id;
+      return data?.insight_id || data?.insightId;
     } catch (error: any) {
       console.error('Error generating report:', error);
       // Try to extract message from FunctionsHttpError
