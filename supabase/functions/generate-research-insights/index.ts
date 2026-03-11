@@ -613,7 +613,11 @@ Deno.serve(async (req) => {
     }
 
     // ── INITIAL path: fetch records, create insight, start chain ──
-    const { campaignId, dateRangeStart, dateRangeEnd, analysisPeriod } = body;
+    // Accept both camelCase and snake_case input params
+    const campaignId = body.campaignId || body.campaign_id || null;
+    const dateRangeStart = body.dateRangeStart || body.date_range_start || null;
+    const dateRangeEnd = body.dateRangeEnd || body.date_range_end || null;
+    const analysisPeriod = body.analysisPeriod || body.analysis_period || null;
 
     // Get user ID from JWT
     const authHeader = req.headers.get('Authorization') || '';
