@@ -1,74 +1,123 @@
 
 
-## Research Insights -- Full Code Package
+## Redesign Research Insights from Scratch
 
-Here is the complete source code for the Research Insights section. The core problem remains: report `8f806a9f` has all `reason_code_distribution` counts zeroed out by a failed SQL migration, and it appears to be the **only** report in the database. Marking it as `failed` means the UI now shows "Report generation failed" instead of data.
+### Problem
+The UI components still don't render the actual report data because field names are mismatched. The data itself is excellent — rich, actionable, well-organized with P0/P1/P2 priorities, member quotes, and specific recommendations. The UI just needs to be rebuilt to match what the AI actually produces.
 
-**The fix is simple**: generate a fresh report. The backend normalization code is now hardened. But below is every file you requested.
+### Actual Data Structure (from the completed report)
 
----
+```text
+executive_summary:
+  ├── title (string)
+  ├── key_findings (string - paragraph)
+  ├── period (string)
+  ├── recommendation_summary (string)
+  └── urgent_quote (string)
 
-### Files included (16 total)
+reason_code_distribution:
+  ├── total_cases (number)
+  ├── preventable_churn (number)
+  ├── unpreventable_churn (number)
+  └── by_category[]:
+      ├── category (string)
+      ├── count (number)
+      ├── percentage (number)
+      └── description (string)
 
-**Page + Layout:**
-1. `src/pages/research/ResearchInsights.tsx` (405 lines)
+issue_clusters[]:
+  ├── cluster_name (string)
+  ├── description (string)
+  ├── priority (string: "P0", "P1")
+  ├── recommended_action (string)
+  └── supporting_quotes[] (strings)
 
-**UI Components (10):**
-2. `src/components/research-insights/ExecutiveSummary.tsx` (109 lines)
-3. `src/components/research-insights/ReasonCodeChart.tsx` (220 lines)
-4. `src/components/research-insights/ReasonCodeDrillDown.tsx` (304 lines)
-5. `src/components/research-insights/IssueClustersPanel.tsx` (123 lines)
-6. `src/components/research-insights/TopActionsPanel.tsx` (147 lines)
-7. `src/components/research-insights/BlindSpotsPanel.tsx` (50 lines)
-8. `src/components/research-insights/HostAccountabilityPanel.tsx` (87 lines)
-9. `src/components/research-insights/EmergingPatternsPanel.tsx` (74 lines)
-10. `src/components/research-insights/PaymentFrictionCard.tsx` (110 lines)
-11. `src/components/research-insights/TransferFrictionCard.tsx` (121 lines)
-12. `src/components/research-insights/AgentPerformanceCard.tsx` (116 lines)
-13. `src/components/research-insights/PriorityBadge.tsx` (37 lines)
-14. `src/components/research-insights/HumanReviewQueue.tsx` (90 lines)
-15. `src/components/research-insights/ProcessedRecordsList.tsx` (154 lines)
-16. `src/components/research-insights/ResearchPromptsSettings.tsx` (192 lines)
+top_actions: (OBJECT, not array)
+  ├── p0_immediate_risk_mitigation[]:
+  │   ├── action (string)
+  │   ├── description (string)
+  │   └── ownership (string)
+  ├── p1_systemic_process_redesign[]:
+  │   └── (same shape)
+  └── quick_wins[]:
+      └── (same shape)
 
-**Hooks (2):**
-17. `src/hooks/useResearchInsightsData.ts` (214 lines)
-18. `src/hooks/useResearchInsightsPolling.ts` (174 lines)
+operational_blind_spots[]:
+  ├── blind_spot (string)
+  └── description (string)
 
-**Backend:**
-19. `supabase/functions/generate-research-insights/index.ts` (846 lines)
+host_accountability_flags[]:
+  ├── flag (string)
+  ├── description (string)
+  └── priority (string)
 
----
+emerging_patterns[]:
+  ├── pattern (string)
+  ├── description (string)
+  └── quote (string)
 
-### Current Database State
+payment_friction_analysis:
+  ├── summary (string)
+  └── key_friction_points[]:
+      ├── point (string)
+      ├── description (string)
+      ├── quote (string)
+      └── impact (string: "Critical", "High")
 
-The only report (`8f806a9f`) has status `failed` with error "Data corrupted by migration". The `reason_code_distribution` array has 60+ entries all with `count: 0`. The `executive_summary` is intact with valid data (191 cases analyzed, rich narrative). Other sections (issue_clusters, top_actions, blind_spots, etc.) appear to have valid data.
+transfer_friction_analysis:
+  └── (same shape as payment)
 
-**To restore**: simply click "Generate Report" in the UI to produce a fresh report through the now-hardened pipeline.
+agent_performance_summary:
+  ├── strengths (string)
+  └── opportunities_for_improvement[]:
+      ├── area (string)
+      ├── description (string)
+      └── recommendation (string)
+```
 
----
+### Plan (10 files to update)
 
-### Schema context for the AI report data
+#### 1. ExecutiveSummary.tsx — Rewrite
+Map to actual fields: `title`, `key_findings` (plural), `period`, `recommendation_summary`, `urgent_quote`. Show the title prominently, key findings as narrative paragraph, urgent quote in a highlighted callout, and recommendation summary in an action card.
 
-The `research_insights.data` JSONB column stores the full report. The aggregation prompt (Prompt C) in the edge function defines the expected output schema. The AI can return data in two formats:
+#### 2. ReasonCodeChart.tsx — Rewrite  
+Read `by_category[]` with fields `category`, `count`, `percentage`, `description`. Add stat cards at top for `total_cases`, `preventable_churn`, `unpreventable_churn`. Keep the horizontal bar chart but use the correct fields.
 
-**Format A (prompt default -- array-based):**
-- `reason_code_distribution`: array of `{ code, count, pct, booking_ids, reason_codes_included }`
-- `top_actions`: flat array of `{ rank, action, rationale, priority, owner }`
-- `host_accountability_flags`: array of `{ issue_pattern, frequency, impact_on_retention }`
+#### 3. IssueClustersPanel.tsx — Rewrite
+Map `description` (not `cluster_description`), `priority` (string like "P0"), `recommended_action` (string, not object), `supporting_quotes[]` (not `representative_quotes`). Show priority badge prominently. Remove severity_distribution, root_cause references.
 
-**Format B (narrative -- sometimes returned by Gemini):**
-- `reason_code_distribution`: `{ total_cases, preventable_churn, by_category: [{ category, count, percentage, description }] }`
-- `top_actions`: object with `{ p0_immediate_risk_mitigation: [], p1_systemic_process_redesign: [], quick_wins: [] }`
-- `executive_summary`: `{ title, key_findings, period, recommendation_summary, urgent_quote }`
-- `host_accountability_flags`: `[{ flag, description, priority }]`
+#### 4. TopActionsPanel.tsx — Rewrite completely
+Data is an **object** with three keyed arrays (`p0_immediate_risk_mitigation`, `p1_systemic_process_redesign`, `quick_wins`), not a flat array. Render as three grouped sections with P0/P1/Quick Win headers. Each item has `action`, `description`, `ownership`.
 
-The UI components handle both formats defensively. The `normalizeChunkResult()` function in the edge function converts Format B objects/strings into Format A arrays.
+#### 5. BlindSpotsPanel.tsx — Minor fix
+Already mostly correct (`blind_spot`, `description`). Remove unused `priority`, `how_discovered`, `estimated_prevalence`, `recommended_detection_method` references.
 
----
+#### 6. HostAccountabilityPanel.tsx — Fix priority mapping
+Data has `flag`, `description`, `priority` (string like "P0", "P1"). Add PriorityBadge based on the `priority` field instead of parsing the title text.
 
-### What actually needs to happen
+#### 7. EmergingPatternsPanel.tsx — Already correct
+Has `pattern`, `description`, `quote`. No `watch_or_act` in actual data — gracefully handles missing. Minimal changes.
 
-1. **Delete the corrupted report** or just generate a new one -- the pipeline is hardened now
-2. The UI code is correct and handles both data formats
-3. No component redesign needed -- the "mess" is caused by zeroed-out data from the bad migration, not broken UI code
+#### 8. PaymentFrictionCard.tsx — Rewrite
+Data has `summary` + `key_friction_points[]` (objects with `point`, `description`, `quote`, `impact`), not `key_failures[]` (strings). Render each friction point as a card with impact badge and member quote.
+
+#### 9. TransferFrictionCard.tsx — Rewrite (same pattern)
+Same structure as payment friction. Render `key_friction_points[]` with `point`, `description`, `quote`, `impact`.
+
+#### 10. AgentPerformanceCard.tsx — Rewrite
+Data has `strengths` (string) + `opportunities_for_improvement[]` (objects with `area`, `description`, `recommendation`), not `weaknesses[]` (strings). Render each opportunity as its own card with area title, description, and recommendation.
+
+#### 11. ResearchInsights.tsx page — Reorganize layout
+- Executive Summary full-width at top
+- Reason Code Distribution full-width with preventable/unpreventable stat cards
+- Issue Clusters full-width (collapsible, P0 first)
+- Top Actions full-width (grouped by priority tier)
+- Two-column layout: Payment Friction | Transfer Friction
+- Two-column layout: Blind Spots | Host Accountability
+- Agent Performance full-width
+- Emerging Patterns full-width
+- Human Review Queue and Processed Records at bottom
+
+### Note on Claude
+Claude (Anthropic) is not available through the supported AI models. The current Gemini 2.5 Pro model produced excellent, rich data — the problem was purely the UI not matching the output schema. No model change is needed.
 

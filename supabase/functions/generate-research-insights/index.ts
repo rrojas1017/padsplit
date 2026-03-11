@@ -175,49 +175,98 @@ function normalizeChunkResult(raw: any): any {
     return createEmptyChunkResult();
   }
 
-  const result = { ...raw };
+  // Deep clone to avoid mutating the original and ensure all nested values are plain objects
+  let result: any;
+  try {
+    result = JSON.parse(JSON.stringify(raw));
+  } catch {
+    console.warn('[Normalize] Failed to deep clone chunk, using shallow copy');
+    result = { ...raw };
+  }
 
-  // executive_summary: must be an object
-  if (typeof result.executive_summary === 'string') {
+  // executive_summary: must be an object — forcefully wrap strings
+  if (!result.executive_summary || typeof result.executive_summary !== 'object' || Array.isArray(result.executive_summary)) {
+    const headline = typeof result.executive_summary === 'string' ? result.executive_summary : 'Analysis complete';
     result.executive_summary = {
-      headline: result.executive_summary,
+      headline,
+      key_findings: typeof result.executive_summary === 'string' ? result.executive_summary : '',
       total_cases: 0,
       date_range: 'not specified',
       addressable_pct: 0, non_addressable_pct: 0, partially_addressable_pct: 0,
       avg_preventability_score: 0, high_regret_count: 0, high_regret_pct: 0,
       payment_related_pct: 0, host_related_pct: 0, roommate_related_pct: 0, life_event_pct: 0,
     };
-  } else if (!result.executive_summary || typeof result.executive_summary !== 'object') {
-    result.executive_summary = { headline: 'Analysis complete', total_cases: 0, date_range: 'not specified' };
   }
 
   // Ensure all expected array fields exist and normalize items
   const arrayKeys = ['reason_code_distribution', 'issue_clusters', 'emerging_patterns', 'operational_blind_spots', 'host_accountability_flags'];
 
-  // reason_code_distribution may come as key-value map { "Payment": 5, "Host": 3 }
-  if (result.reason_code_distribution && typeof result.reason_code_distribution === 'object' && !Array.isArray(result.reason_code_distribution)) {
-    const map = result.reason_code_distribution;
-    // Extract count from each value: could be a plain number, or a nested object with a count/total field
-    const extractCount = (v: any): number => {
-      if (typeof v === 'number') return v;
-      if (v && typeof v === 'object') {
-        if (typeof v.count === 'number') return v.count;
-        if (typeof v.total === 'number') return v.total;
-        if (typeof v.frequency === 'number') return v.frequency;
+  // reason_code_distribution may come as:
+  // Format A: array of { code, count, pct }
+  // Format B: object { total_cases, preventable_churn, by_category: [...] }
+  // Format C: key-value map { "Payment": 5, "Host": 3 } or { "Payment": { count: 5, ... } }
+  // Format D: string (just wrap as empty)
+  if (typeof result.reason_code_distribution === 'string') {
+    result.reason_code_distribution = [];
+  } else if (result.reason_code_distribution && typeof result.reason_code_distribution === 'object' && !Array.isArray(result.reason_code_distribution)) {
+    const rcd = result.reason_code_distribution;
+    // Format B: has by_category array — extract it
+    if (Array.isArray(rcd.by_category)) {
+      const total = rcd.total_cases || rcd.by_category.reduce((s: number, c: any) => s + (c.count || 0), 0);
+      result.reason_code_distribution = rcd.by_category.map((d: any) => ({
+        code: d.category || d.code || 'Unknown',
+        reason_group: d.category || d.code || 'Unknown',
+        category: d.category || d.code || 'Unknown',
+        count: d.count || 0,
+        pct: d.percentage || (total > 0 ? ((d.count || 0) / total * 100) : 0),
+        percentage: d.percentage || (total > 0 ? ((d.count || 0) / total * 100) : 0),
+        description: d.description || d.details || '',
+        booking_ids: d.booking_ids || [],
+        reason_codes_included: d.reason_codes_included || [],
+      }));
+      // Preserve top-level stats in executive_summary if available
+      if (typeof rcd.total_cases === 'number' && result.executive_summary) {
+        result.executive_summary.total_cases = result.executive_summary.total_cases || rcd.total_cases;
       }
-      return 0;
-    };
-    const counts = Object.entries(map).map(([key, val]) => ({ key, count: extractCount(val), raw: val }));
-    const total = counts.reduce((s, c) => s + c.count, 0);
-    result.reason_code_distribution = counts.map(({ key, count, raw }) => ({
-      code: key, reason_group: key, category: key,
-      count,
-      pct: total > 0 ? (count / total * 100) : 0,
-      percentage: total > 0 ? (count / total * 100) : 0,
-      description: raw && typeof raw === 'object' ? (raw.description || raw.details || '') : '',
-      booking_ids: raw && typeof raw === 'object' ? (raw.booking_ids || []) : [],
-      reason_codes_included: raw && typeof raw === 'object' ? (raw.reason_codes_included || []) : [],
-    }));
+    } else if (Array.isArray(rcd.distribution)) {
+      // Format B variant with distribution key
+      const total = rcd.total_cases || rcd.distribution.reduce((s: number, c: any) => s + (c.count || 0), 0);
+      result.reason_code_distribution = rcd.distribution.map((d: any) => ({
+        code: d.reason_group || d.code || 'Unknown',
+        reason_group: d.reason_group || d.code || 'Unknown',
+        category: d.reason_group || d.code || 'Unknown',
+        count: d.count || 0,
+        pct: d.percentage || (total > 0 ? ((d.count || 0) / total * 100) : 0),
+        percentage: d.percentage || (total > 0 ? ((d.count || 0) / total * 100) : 0),
+        description: d.details || d.description || '',
+        booking_ids: d.booking_ids || [],
+        reason_codes_included: d.reason_codes_included || [],
+      }));
+    } else {
+      // Format C: plain key-value map — filter out metadata keys
+      const metadataKeys = new Set(['total_cases', 'preventable_churn', 'unpreventable_churn', 'methodology']);
+      const extractCount = (v: any): number => {
+        if (typeof v === 'number') return v;
+        if (v && typeof v === 'object') {
+          if (typeof v.count === 'number') return v.count;
+          if (typeof v.total === 'number') return v.total;
+          if (typeof v.frequency === 'number') return v.frequency;
+        }
+        return 0;
+      };
+      const entries = Object.entries(rcd).filter(([key]) => !metadataKeys.has(key));
+      const counts = entries.map(([key, val]) => ({ key, count: extractCount(val), raw: val }));
+      const total = counts.reduce((s, c) => s + c.count, 0);
+      result.reason_code_distribution = counts.map(({ key, count, raw }) => ({
+        code: key, reason_group: key, category: key,
+        count,
+        pct: total > 0 ? (count / total * 100) : 0,
+        percentage: total > 0 ? (count / total * 100) : 0,
+        description: raw && typeof raw === 'object' ? (raw.description || raw.details || '') : '',
+        booking_ids: raw && typeof raw === 'object' ? (raw.booking_ids || []) : [],
+        reason_codes_included: raw && typeof raw === 'object' ? (raw.reason_codes_included || []) : [],
+      }));
+    }
   }
 
   for (const key of arrayKeys) {
@@ -285,8 +334,11 @@ function programmaticMerge(chunkResults: any[]): any {
 
   const base = JSON.parse(JSON.stringify(normalized[0]));
 
-  // Merge executive_summary (guaranteed to be object after normalization)
-  const summaries = normalized.map(c => c.executive_summary).filter(Boolean);
+  // Merge executive_summary — ensure it's an object before assigning
+  if (!base.executive_summary || typeof base.executive_summary !== 'object') {
+    base.executive_summary = { headline: '', total_cases: 0, date_range: 'not specified' };
+  }
+  const summaries = normalized.map(c => c.executive_summary).filter((e: any) => e && typeof e === 'object');
   const totalCases = summaries.reduce((s: number, e: any) => s + (typeof e.total_cases === 'number' ? e.total_cases : 0), 0);
   base.executive_summary.total_cases = totalCases;
   for (const pctKey of ['addressable_pct', 'non_addressable_pct', 'partially_addressable_pct', 'avg_preventability_score', 'high_regret_pct', 'payment_related_pct', 'host_related_pct', 'roommate_related_pct', 'life_event_pct']) {
