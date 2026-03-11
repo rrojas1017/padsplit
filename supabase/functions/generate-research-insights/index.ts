@@ -167,43 +167,128 @@ AGGREGATION RULES:
 7. QUICK WINS — for every major recommendation, identify a small fast action.
 8. BOOKING IDS — each record has a "_booking_id" field. Include the array of booking IDs in "reason_code_distribution" and "issue_clusters" so the UI can trace back to individual records. Also include "reason_codes_included" listing the granular primary_reason_code values grouped into each category.`;
 
-// Programmatic merge fallback: combines chunk results by concatenating arrays and averaging numbers
-function programmaticMerge(chunkResults: any[]): any {
-  if (chunkResults.length === 0) return {};
-  if (chunkResults.length === 1) return chunkResults[0];
-
-  const base = JSON.parse(JSON.stringify(chunkResults[0]));
-
-  if (base.executive_summary) {
-    const summaries = chunkResults.map(c => c.executive_summary).filter(Boolean);
-    const totalCases = summaries.reduce((s: number, e: any) => s + (e.total_cases || 0), 0);
-    base.executive_summary.total_cases = totalCases;
-    for (const pctKey of ['addressable_pct', 'non_addressable_pct', 'partially_addressable_pct', 'avg_preventability_score', 'high_regret_pct', 'payment_related_pct', 'host_related_pct', 'roommate_related_pct', 'life_event_pct']) {
-      const vals = summaries.map((e: any) => e[pctKey]).filter((v: any) => typeof v === 'number');
-      if (vals.length > 0) base.executive_summary[pctKey] = vals.reduce((a: number, b: number) => a + b, 0) / vals.length;
-    }
-    base.executive_summary.high_regret_count = summaries.reduce((s: number, e: any) => s + (e.high_regret_count || 0), 0);
+// Normalize a single chunk result to enforce canonical shape.
+// AI output is untrusted — any field may be missing, wrong type, or string instead of object.
+function normalizeChunkResult(raw: any): any {
+  if (!raw || typeof raw !== 'object') {
+    console.warn('[Normalize] Chunk result is not an object, creating fallback');
+    return createEmptyChunkResult();
   }
 
-  const arrayKeys = ['reason_code_distribution', 'issue_clusters', 'emerging_patterns', 'operational_blind_spots', 'host_accountability_flags', 'top_actions'];
+  const result = { ...raw };
+
+  // executive_summary: must be an object
+  if (typeof result.executive_summary === 'string') {
+    result.executive_summary = {
+      headline: result.executive_summary,
+      total_cases: 0,
+      date_range: 'not specified',
+      addressable_pct: 0, non_addressable_pct: 0, partially_addressable_pct: 0,
+      avg_preventability_score: 0, high_regret_count: 0, high_regret_pct: 0,
+      payment_related_pct: 0, host_related_pct: 0, roommate_related_pct: 0, life_event_pct: 0,
+    };
+  } else if (!result.executive_summary || typeof result.executive_summary !== 'object') {
+    result.executive_summary = { headline: 'Analysis complete', total_cases: 0, date_range: 'not specified' };
+  }
+
+  // Ensure all expected array fields exist
+  const arrayKeys = ['reason_code_distribution', 'issue_clusters', 'emerging_patterns', 'operational_blind_spots', 'host_accountability_flags'];
   for (const key of arrayKeys) {
-    const allItems = chunkResults.flatMap(c => c[key] || []);
-    base[key] = allItems;
+    if (!Array.isArray(result[key])) result[key] = [];
   }
 
-  if (base.agent_performance_summary) {
-    const perfs = chunkResults.map(c => c.agent_performance_summary).filter(Boolean);
-    base.agent_performance_summary.total_calls_reviewed = perfs.reduce((s: number, p: any) => s + (p.total_calls_reviewed || 0), 0);
+  // top_actions: can be array or object with priority-keyed arrays
+  if (result.top_actions && typeof result.top_actions === 'object' && !Array.isArray(result.top_actions)) {
+    // Object form — keep as-is (plan.md schema)
+  } else if (!Array.isArray(result.top_actions)) {
+    result.top_actions = [];
+  }
+
+  // payment_friction_analysis: must be object
+  if (!result.payment_friction_analysis || typeof result.payment_friction_analysis !== 'object') {
+    result.payment_friction_analysis = { payment_related_moveouts: 0, recommendation: '' };
+  }
+
+  // transfer_friction_analysis: must be object
+  if (!result.transfer_friction_analysis || typeof result.transfer_friction_analysis !== 'object') {
+    result.transfer_friction_analysis = { considered_transfer: 0, recommendation: '' };
+  }
+
+  // agent_performance_summary: must be object
+  if (!result.agent_performance_summary || typeof result.agent_performance_summary !== 'object') {
+    result.agent_performance_summary = { total_calls_reviewed: 0, commonly_skipped_sections: [], positive_patterns: [], coaching_opportunities: [] };
+  }
+
+  return result;
+}
+
+function createEmptyChunkResult(): any {
+  return {
+    executive_summary: { headline: 'No data', total_cases: 0, date_range: 'not specified' },
+    reason_code_distribution: [],
+    issue_clusters: [],
+    emerging_patterns: [],
+    operational_blind_spots: [],
+    host_accountability_flags: [],
+    top_actions: [],
+    payment_friction_analysis: { payment_related_moveouts: 0, recommendation: '' },
+    transfer_friction_analysis: { considered_transfer: 0, recommendation: '' },
+    agent_performance_summary: { total_calls_reviewed: 0, commonly_skipped_sections: [], positive_patterns: [], coaching_opportunities: [] },
+  };
+}
+
+// Programmatic merge fallback: combines normalized chunk results
+function programmaticMerge(chunkResults: any[]): any {
+  // Normalize all chunks first
+  const normalized = chunkResults.map(c => normalizeChunkResult(c));
+  
+  if (normalized.length === 0) return createEmptyChunkResult();
+  if (normalized.length === 1) return normalized[0];
+
+  const base = JSON.parse(JSON.stringify(normalized[0]));
+
+  // Merge executive_summary (guaranteed to be object after normalization)
+  const summaries = normalized.map(c => c.executive_summary).filter(Boolean);
+  const totalCases = summaries.reduce((s: number, e: any) => s + (typeof e.total_cases === 'number' ? e.total_cases : 0), 0);
+  base.executive_summary.total_cases = totalCases;
+  for (const pctKey of ['addressable_pct', 'non_addressable_pct', 'partially_addressable_pct', 'avg_preventability_score', 'high_regret_pct', 'payment_related_pct', 'host_related_pct', 'roommate_related_pct', 'life_event_pct']) {
+    const vals = summaries.map((e: any) => e[pctKey]).filter((v: any) => typeof v === 'number');
+    if (vals.length > 0) base.executive_summary[pctKey] = vals.reduce((a: number, b: number) => a + b, 0) / vals.length;
+  }
+  base.executive_summary.high_regret_count = summaries.reduce((s: number, e: any) => s + (typeof e.high_regret_count === 'number' ? e.high_regret_count : 0), 0);
+
+  // Merge array fields
+  const arrayKeys = ['reason_code_distribution', 'issue_clusters', 'emerging_patterns', 'operational_blind_spots', 'host_accountability_flags'];
+  for (const key of arrayKeys) {
+    base[key] = normalized.flatMap(c => Array.isArray(c[key]) ? c[key] : []);
+  }
+
+  // Merge top_actions — handle both array and object forms
+  const allTopActions: any[] = [];
+  for (const c of normalized) {
+    if (Array.isArray(c.top_actions)) {
+      allTopActions.push(...c.top_actions);
+    } else if (c.top_actions && typeof c.top_actions === 'object') {
+      // Object form with priority keys
+      for (const key of Object.keys(c.top_actions)) {
+        if (Array.isArray(c.top_actions[key])) allTopActions.push(...c.top_actions[key]);
+      }
+    }
+  }
+  if (allTopActions.length > 0) {
+    allTopActions.sort((a: any, b: any) => (b.cases_affected || 0) - (a.cases_affected || 0));
+    base.top_actions = allTopActions.slice(0, 10).map((a: any, i: number) => ({ ...a, rank: i + 1 }));
+  }
+
+  // Merge agent_performance_summary
+  const perfs = normalized.map(c => c.agent_performance_summary).filter(p => p && typeof p === 'object');
+  if (perfs.length > 0) {
+    base.agent_performance_summary.total_calls_reviewed = perfs.reduce((s: number, p: any) => s + (typeof p.total_calls_reviewed === 'number' ? p.total_calls_reviewed : 0), 0);
     const avgQs = perfs.map((p: any) => p.avg_questions_covered).filter((v: any) => typeof v === 'number');
     if (avgQs.length) base.agent_performance_summary.avg_questions_covered = avgQs.reduce((a: number, b: number) => a + b, 0) / avgQs.length;
-    base.agent_performance_summary.commonly_skipped_sections = [...new Set(perfs.flatMap((p: any) => p.commonly_skipped_sections || []))];
-    base.agent_performance_summary.positive_patterns = [...new Set(perfs.flatMap((p: any) => p.positive_patterns || []))];
-    base.agent_performance_summary.coaching_opportunities = [...new Set(perfs.flatMap((p: any) => p.coaching_opportunities || []))];
-  }
-
-  if (base.top_actions) {
-    base.top_actions.sort((a: any, b: any) => (b.cases_affected || 0) - (a.cases_affected || 0));
-    base.top_actions = base.top_actions.slice(0, 10).map((a: any, i: number) => ({ ...a, rank: i + 1 }));
+    base.agent_performance_summary.commonly_skipped_sections = [...new Set(perfs.flatMap((p: any) => Array.isArray(p.commonly_skipped_sections) ? p.commonly_skipped_sections : []))];
+    base.agent_performance_summary.positive_patterns = [...new Set(perfs.flatMap((p: any) => Array.isArray(p.positive_patterns) ? p.positive_patterns : []))];
+    base.agent_performance_summary.coaching_opportunities = [...new Set(perfs.flatMap((p: any) => Array.isArray(p.coaching_opportunities) ? p.coaching_opportunities : []))];
   }
 
   return base;
