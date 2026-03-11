@@ -24,7 +24,9 @@ export function BlindSpotsPanel({ data }: BlindSpotsPanelProps) {
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-3">
-        {data.map((spot, i) => (
+        {data.map((rawSpot, i) => {
+          const spot: BlindSpot = typeof rawSpot === 'string' ? { blind_spot: rawSpot } : rawSpot;
+          return (
           <div
             key={i}
             className="border border-border rounded-lg p-4 space-y-1 hover:bg-amber-500/5 transition-colors"
@@ -40,7 +42,8 @@ export function BlindSpotsPanel({ data }: BlindSpotsPanelProps) {
               </div>
             </div>
           </div>
-        ))}
+        );
+        })}
       </CardContent>
     </Card>
   );

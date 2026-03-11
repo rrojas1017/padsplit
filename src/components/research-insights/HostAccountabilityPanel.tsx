@@ -41,7 +41,8 @@ export function HostAccountabilityPanel({ data }: HostAccountabilityPanelProps) 
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-3">
-        {data.map((item, i) => {
+        {data.map((rawItem, i) => {
+          const item: HostFlag = typeof rawItem === 'string' ? { flag: rawItem } : rawItem;
           const title = item.flag || item.issue_pattern;
           const borderColor = getPriorityBorderColor(item.priority);
 
