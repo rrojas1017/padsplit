@@ -197,12 +197,26 @@ function normalizeChunkResult(raw: any): any {
   // reason_code_distribution may come as key-value map { "Payment": 5, "Host": 3 }
   if (result.reason_code_distribution && typeof result.reason_code_distribution === 'object' && !Array.isArray(result.reason_code_distribution)) {
     const map = result.reason_code_distribution;
-    const total = Object.values(map).reduce((s: number, v: any) => s + (typeof v === 'number' ? v : 0), 0);
-    result.reason_code_distribution = Object.entries(map).map(([key, val]) => ({
+    // Extract count from each value: could be a plain number, or a nested object with a count/total field
+    const extractCount = (v: any): number => {
+      if (typeof v === 'number') return v;
+      if (v && typeof v === 'object') {
+        if (typeof v.count === 'number') return v.count;
+        if (typeof v.total === 'number') return v.total;
+        if (typeof v.frequency === 'number') return v.frequency;
+      }
+      return 0;
+    };
+    const counts = Object.entries(map).map(([key, val]) => ({ key, count: extractCount(val), raw: val }));
+    const total = counts.reduce((s, c) => s + c.count, 0);
+    result.reason_code_distribution = counts.map(({ key, count, raw }) => ({
       code: key, reason_group: key, category: key,
-      count: typeof val === 'number' ? val : 0,
-      pct: total > 0 ? ((typeof val === 'number' ? val : 0) / total * 100) : 0,
-      percentage: total > 0 ? ((typeof val === 'number' ? val : 0) / total * 100) : 0,
+      count,
+      pct: total > 0 ? (count / total * 100) : 0,
+      percentage: total > 0 ? (count / total * 100) : 0,
+      description: raw && typeof raw === 'object' ? (raw.description || raw.details || '') : '',
+      booking_ids: raw && typeof raw === 'object' ? (raw.booking_ids || []) : [],
+      reason_codes_included: raw && typeof raw === 'object' ? (raw.reason_codes_included || []) : [],
     }));
   }
 
