@@ -25,7 +25,9 @@ interface ExecutiveSummaryProps {
   };
 }
 
-export function ExecutiveSummary({ data }: ExecutiveSummaryProps) {
+export function ExecutiveSummary({ data: rawData }: ExecutiveSummaryProps) {
+  // Defensive: if data is a raw string, wrap it
+  const data: ExecutiveSummaryProps['data'] = typeof rawData === 'string' ? { headline: rawData } : rawData;
   const title = data.title || data.headline;
   const findings = data.key_findings || data.key_finding;
   const recommendation = data.recommendation_summary || data.urgent_recommendation;

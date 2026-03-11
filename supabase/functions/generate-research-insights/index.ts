@@ -191,10 +191,34 @@ function normalizeChunkResult(raw: any): any {
     result.executive_summary = { headline: 'Analysis complete', total_cases: 0, date_range: 'not specified' };
   }
 
-  // Ensure all expected array fields exist
+  // Ensure all expected array fields exist and normalize items
   const arrayKeys = ['reason_code_distribution', 'issue_clusters', 'emerging_patterns', 'operational_blind_spots', 'host_accountability_flags'];
+
+  // reason_code_distribution may come as key-value map { "Payment": 5, "Host": 3 }
+  if (result.reason_code_distribution && typeof result.reason_code_distribution === 'object' && !Array.isArray(result.reason_code_distribution)) {
+    const map = result.reason_code_distribution;
+    const total = Object.values(map).reduce((s: number, v: any) => s + (typeof v === 'number' ? v : 0), 0);
+    result.reason_code_distribution = Object.entries(map).map(([key, val]) => ({
+      code: key, reason_group: key, category: key,
+      count: typeof val === 'number' ? val : 0,
+      pct: total > 0 ? ((typeof val === 'number' ? val : 0) / total * 100) : 0,
+      percentage: total > 0 ? ((typeof val === 'number' ? val : 0) / total * 100) : 0,
+    }));
+  }
+
   for (const key of arrayKeys) {
-    if (!Array.isArray(result[key])) result[key] = [];
+    if (!Array.isArray(result[key])) { result[key] = []; continue; }
+    // Normalize individual items: strings → objects
+    result[key] = result[key].map((item: any) => {
+      if (typeof item !== 'string') return item;
+      switch (key) {
+        case 'operational_blind_spots': return { blind_spot: item };
+        case 'host_accountability_flags': return { flag: item };
+        case 'emerging_patterns': return { pattern: item };
+        case 'issue_clusters': return { cluster: item, description: item };
+        default: return { value: item };
+      }
+    });
   }
 
   // top_actions: can be array or object with priority-keyed arrays

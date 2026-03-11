@@ -35,7 +35,8 @@ export function EmergingPatternsPanel({ data }: EmergingPatternsPanelProps) {
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-3">
-        {data.map((item, i) => {
+        {data.map((rawItem, i) => {
+          const item: EmergingPattern = typeof rawItem === 'string' ? { pattern: rawItem } : rawItem;
           const detail = item.evidence || item.description;
           const borderColor = getStatusBorderColor(item.watch_or_act);
 

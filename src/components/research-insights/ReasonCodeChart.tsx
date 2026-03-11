@@ -58,7 +58,16 @@ export function ReasonCodeChart({ data }: ReasonCodeChartProps) {
   let unpreventable: number | undefined;
   let methodology: string | undefined;
 
-  if (Array.isArray(data)) {
+  // Handle plain object map format: { "Payment": 5, "Host": 3 }
+  if (data && typeof data === 'object' && !Array.isArray(data) && !('by_category' in data) && !('distribution' in data) && !('total_cases' in data)) {
+    const map = data as Record<string, number>;
+    const total = Object.values(map).reduce((s, v) => s + (typeof v === 'number' ? v : 0), 0);
+    chartData = Object.entries(map).map(([key, val]) => ({
+      name: key,
+      count: typeof val === 'number' ? val : 0,
+      pct: total > 0 ? ((typeof val === 'number' ? val : 0) / total * 100) : 0,
+    }));
+  } else if (Array.isArray(data)) {
     chartData = data.map(d => ({
       name: d.code || d.reason_group || d.category || 'Unknown',
       count: d.count,

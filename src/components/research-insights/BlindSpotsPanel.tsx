@@ -42,7 +42,8 @@ export function BlindSpotsPanel({ data }: BlindSpotsPanelProps) {
               </div>
             </div>
           </div>
-        ))}
+        );
+        })}
       </CardContent>
     </Card>
   );
