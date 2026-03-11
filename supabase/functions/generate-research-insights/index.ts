@@ -449,7 +449,11 @@ async function processOneChunk(
     });
 
     const newChunkResults = [...existingChunkResults];
-    if (parsed) newChunkResults.push(parsed);
+    if (parsed) {
+      const normalized = normalizeChunkResult(parsed);
+      newChunkResults.push(normalized);
+      console.log(`[Chain] Chunk ${chunkIndex + 1} normalized and stored`);
+    }
 
     const isLastChunk = chunkIndex >= totalChunks - 1;
 
