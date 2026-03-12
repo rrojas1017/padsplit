@@ -348,9 +348,83 @@ function programmaticMerge(chunkResults: any[]): any {
   base.executive_summary.high_regret_count = summaries.reduce((s: number, e: any) => s + (typeof e.high_regret_count === 'number' ? e.high_regret_count : 0), 0);
 
   // Merge array fields
-  const arrayKeys = ['reason_code_distribution', 'issue_clusters', 'emerging_patterns', 'operational_blind_spots', 'host_accountability_flags'];
+  const arrayKeys = ['issue_clusters', 'emerging_patterns', 'operational_blind_spots', 'host_accountability_flags'];
   for (const key of arrayKeys) {
     base[key] = normalized.flatMap(c => Array.isArray(c[key]) ? c[key] : []);
+  }
+
+  // Merge reason_code_distribution with deduplication
+  const allReasonCodes = normalized.flatMap(c => Array.isArray(c.reason_code_distribution) ? c.reason_code_distribution : []);
+  const reasonMap = new Map<string, any>();
+  
+  // Normalize key: lowercase, trim, convert ENUM_STYLE to readable, collapse synonyms
+  const normalizeReasonKey = (code: string): string => {
+    let key = code.trim();
+    // Convert ENUM_STYLE_CODES to readable: MEMBER_FINANCIAL_HARDSHIP → member financial hardship
+    if (/^[A-Z_]+$/.test(key)) {
+      key = key.toLowerCase().replace(/_/g, ' ');
+    }
+    key = key.toLowerCase();
+    // Collapse "external circumstances - X" to just "X"
+    key = key.replace(/^external circumstances\s*[-–—:]\s*/i, '');
+    // Collapse "personal reasons - X" to just "X"
+    key = key.replace(/^personal reasons\s*[-–—:]\s*/i, '');
+    return key;
+  };
+
+  for (const item of allReasonCodes) {
+    const rawCode = item.code || item.category || item.reason_group || 'Unknown';
+    const normalizedKey = normalizeReasonKey(rawCode);
+    const existing = reasonMap.get(normalizedKey);
+    if (existing) {
+      existing.count += (item.count || 0);
+      if (Array.isArray(item.booking_ids)) existing.booking_ids.push(...item.booking_ids);
+      if (Array.isArray(item.reason_codes_included)) existing.reason_codes_included.push(...item.reason_codes_included);
+    } else {
+      // Use the most readable version of the name (prefer original casing over lowercased)
+      reasonMap.set(normalizedKey, {
+        code: rawCode,
+        reason_group: rawCode,
+        category: rawCode,
+        count: item.count || 0,
+        description: item.description || item.details || '',
+        booking_ids: Array.isArray(item.booking_ids) ? [...item.booking_ids] : [],
+        reason_codes_included: Array.isArray(item.reason_codes_included) ? [...item.reason_codes_included] : [],
+      });
+    }
+  }
+
+  // Recalculate percentages, sort, and cap at top 20 + "Other"
+  const mergedReasons = Array.from(reasonMap.values());
+  const totalCount = mergedReasons.reduce((s, r) => s + r.count, 0);
+  for (const r of mergedReasons) {
+    r.pct = totalCount > 0 ? (r.count / totalCount * 100) : 0;
+    r.percentage = r.pct;
+    // Deduplicate arrays
+    r.booking_ids = [...new Set(r.booking_ids)];
+    r.reason_codes_included = [...new Set(r.reason_codes_included)];
+  }
+  mergedReasons.sort((a, b) => b.count - a.count);
+
+  const MAX_REASON_CODES = 20;
+  if (mergedReasons.length > MAX_REASON_CODES) {
+    const top = mergedReasons.slice(0, MAX_REASON_CODES);
+    const rest = mergedReasons.slice(MAX_REASON_CODES);
+    const otherCount = rest.reduce((s, r) => s + r.count, 0);
+    top.push({
+      code: `Other (${rest.length} categories)`,
+      reason_group: `Other (${rest.length} categories)`,
+      category: `Other (${rest.length} categories)`,
+      count: otherCount,
+      pct: totalCount > 0 ? (otherCount / totalCount * 100) : 0,
+      percentage: totalCount > 0 ? (otherCount / totalCount * 100) : 0,
+      description: `Aggregated from ${rest.length} smaller categories`,
+      booking_ids: rest.flatMap(r => r.booking_ids),
+      reason_codes_included: rest.flatMap(r => r.reason_codes_included),
+    });
+    base.reason_code_distribution = top;
+  } else {
+    base.reason_code_distribution = mergedReasons;
   }
 
   // Merge top_actions — handle both array and object forms

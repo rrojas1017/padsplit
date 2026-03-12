@@ -107,6 +107,23 @@ export function ReasonCodeChart({ data }: ReasonCodeChartProps) {
 
   const sorted = [...chartData].sort((a, b) => b.count - a.count);
 
+  // Cap at top 15 — group remainder as "Other"
+  const MAX_VISIBLE = 15;
+  let displayData = sorted;
+  if (sorted.length > MAX_VISIBLE) {
+    const top = sorted.slice(0, MAX_VISIBLE);
+    const rest = sorted.slice(MAX_VISIBLE);
+    const otherCount = rest.reduce((s, r) => s + r.count, 0);
+    const otherPct = rest.reduce((s, r) => s + r.pct, 0);
+    top.push({
+      name: `Other (${rest.length} categories)`,
+      count: otherCount,
+      pct: otherPct,
+      details: `Aggregated from ${rest.length} smaller categories`,
+    });
+    displayData = top;
+  }
+
   const COLORS = [
     'hsl(var(--destructive))',
     'hsl(142, 71%, 45%)',
@@ -116,7 +133,7 @@ export function ReasonCodeChart({ data }: ReasonCodeChartProps) {
     'hsl(262, 83%, 58%)',
   ];
 
-  const handleReasonClick = (item: typeof sorted[0], colorIndex: number) => {
+  const handleReasonClick = (item: typeof displayData[0], colorIndex: number) => {
     setSelectedReason(item.name);
     setSelectedColor(COLORS[colorIndex % COLORS.length]);
     setSelectedBookingIds(item.bookingIds);
@@ -149,8 +166,8 @@ export function ReasonCodeChart({ data }: ReasonCodeChartProps) {
             </div>
           )}
 
-          <ResponsiveContainer width="100%" height={Math.max(250, sorted.length * 50)}>
-            <BarChart data={sorted} layout="vertical" margin={{ left: 180, right: 30, top: 5, bottom: 5 }}>
+          <ResponsiveContainer width="100%" height={Math.max(250, displayData.length * 50)}>
+            <BarChart data={displayData} layout="vertical" margin={{ left: 180, right: 30, top: 5, bottom: 5 }}>
               <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
               <XAxis type="number" className="text-xs fill-muted-foreground" />
               <YAxis
@@ -167,8 +184,8 @@ export function ReasonCodeChart({ data }: ReasonCodeChartProps) {
                 contentStyle={{ background: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', borderRadius: '8px' }}
                 labelStyle={{ color: 'hsl(var(--foreground))' }}
               />
-              <Bar dataKey="count" radius={[0, 4, 4, 0]} className="cursor-pointer" onClick={(_data: any, index: number) => handleReasonClick(sorted[index], index)}>
-                {sorted.map((_entry, index) => (
+              <Bar dataKey="count" radius={[0, 4, 4, 0]} className="cursor-pointer" onClick={(_data: any, index: number) => handleReasonClick(displayData[index], index)}>
+                {displayData.map((_entry, index) => (
                   <Cell key={index} fill={COLORS[index % COLORS.length]} />
                 ))}
               </Bar>
@@ -177,7 +194,7 @@ export function ReasonCodeChart({ data }: ReasonCodeChartProps) {
 
           {/* Detail cards — clickable with left color stripe */}
           <div className="space-y-2">
-            {sorted.map((item, i) => (
+            {displayData.map((item, i) => (
               <div
                 key={i}
                 className="flex items-start gap-3 text-sm rounded-lg p-3 cursor-pointer hover:bg-muted/50 transition-all duration-200 group border border-border overflow-hidden"
