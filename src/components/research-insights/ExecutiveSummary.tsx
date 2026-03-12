@@ -60,8 +60,8 @@ export function ExecutiveSummary({ data: rawData }: ExecutiveSummaryProps) {
         </div>
 
         <CardContent className="p-6 space-y-4">
-          {findings && (
-            <p className="text-sm text-muted-foreground leading-relaxed">{findings}</p>
+          {bodyText && (
+            <p className="text-sm text-muted-foreground leading-relaxed">{bodyText}</p>
           )}
 
           {data.quantified_impact && (

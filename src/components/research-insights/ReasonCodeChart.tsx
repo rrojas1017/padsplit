@@ -166,8 +166,8 @@ export function ReasonCodeChart({ data }: ReasonCodeChartProps) {
             </div>
           )}
 
-          <ResponsiveContainer width="100%" height={Math.max(250, sorted.length * 50)}>
-            <BarChart data={sorted} layout="vertical" margin={{ left: 180, right: 30, top: 5, bottom: 5 }}>
+          <ResponsiveContainer width="100%" height={Math.max(250, displayData.length * 50)}>
+            <BarChart data={displayData} layout="vertical" margin={{ left: 180, right: 30, top: 5, bottom: 5 }}>
               <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
               <XAxis type="number" className="text-xs fill-muted-foreground" />
               <YAxis
@@ -184,8 +184,8 @@ export function ReasonCodeChart({ data }: ReasonCodeChartProps) {
                 contentStyle={{ background: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', borderRadius: '8px' }}
                 labelStyle={{ color: 'hsl(var(--foreground))' }}
               />
-              <Bar dataKey="count" radius={[0, 4, 4, 0]} className="cursor-pointer" onClick={(_data: any, index: number) => handleReasonClick(sorted[index], index)}>
-                {sorted.map((_entry, index) => (
+              <Bar dataKey="count" radius={[0, 4, 4, 0]} className="cursor-pointer" onClick={(_data: any, index: number) => handleReasonClick(displayData[index], index)}>
+                {displayData.map((_entry, index) => (
                   <Cell key={index} fill={COLORS[index % COLORS.length]} />
                 ))}
               </Bar>
@@ -194,7 +194,7 @@ export function ReasonCodeChart({ data }: ReasonCodeChartProps) {
 
           {/* Detail cards — clickable with left color stripe */}
           <div className="space-y-2">
-            {sorted.map((item, i) => (
+            {displayData.map((item, i) => (
               <div
                 key={i}
                 className="flex items-start gap-3 text-sm rounded-lg p-3 cursor-pointer hover:bg-muted/50 transition-all duration-200 group border border-border overflow-hidden"
