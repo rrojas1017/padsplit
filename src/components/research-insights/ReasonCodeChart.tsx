@@ -133,7 +133,7 @@ export function ReasonCodeChart({ data }: ReasonCodeChartProps) {
     'hsl(262, 83%, 58%)',
   ];
 
-  const handleReasonClick = (item: typeof sorted[0], colorIndex: number) => {
+  const handleReasonClick = (item: typeof displayData[0], colorIndex: number) => {
     setSelectedReason(item.name);
     setSelectedColor(COLORS[colorIndex % COLORS.length]);
     setSelectedBookingIds(item.bookingIds);
