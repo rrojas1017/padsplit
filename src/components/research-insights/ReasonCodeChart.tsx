@@ -107,6 +107,23 @@ export function ReasonCodeChart({ data }: ReasonCodeChartProps) {
 
   const sorted = [...chartData].sort((a, b) => b.count - a.count);
 
+  // Cap at top 15 — group remainder as "Other"
+  const MAX_VISIBLE = 15;
+  let displayData = sorted;
+  if (sorted.length > MAX_VISIBLE) {
+    const top = sorted.slice(0, MAX_VISIBLE);
+    const rest = sorted.slice(MAX_VISIBLE);
+    const otherCount = rest.reduce((s, r) => s + r.count, 0);
+    const otherPct = rest.reduce((s, r) => s + r.pct, 0);
+    top.push({
+      name: `Other (${rest.length} categories)`,
+      count: otherCount,
+      pct: otherPct,
+      details: `Aggregated from ${rest.length} smaller categories`,
+    });
+    displayData = top;
+  }
+
   const COLORS = [
     'hsl(var(--destructive))',
     'hsl(142, 71%, 45%)',
