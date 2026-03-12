@@ -1,123 +1,35 @@
 
 
-## Redesign Research Insights from Scratch
+## Fix Research Insights UI Issues
 
-### Problem
-The UI components still don't render the actual report data because field names are mismatched. The data itself is excellent — rich, actionable, well-organized with P0/P1/P2 priorities, member quotes, and specific recommendations. The UI just needs to be rebuilt to match what the AI actually produces.
+### Problems Identified (from live inspection)
 
-### Actual Data Structure (from the completed report)
+1. **Reason Code Chart is 132 entries tall (~6600px)** — The backend's `programmaticMerge` doesn't consolidate duplicate reason codes across chunks. Categories like "Job Relocation" and "External Circumstances - Job Relocation" remain separate. Raw enum codes like "MAINTENANCE_UNINHABITABLE" mix with readable names.
 
-```text
-executive_summary:
-  ├── title (string)
-  ├── key_findings (string - paragraph)
-  ├── period (string)
-  ├── recommendation_summary (string)
-  └── urgent_quote (string)
+2. **Executive Summary uses a full paragraph as the title** — The AI returned `headline` as a long paragraph (identical to `key_findings`) and no `title` field. The component renders this paragraph in the hero banner title AND repeats it as body text. The `date_range` is "not specified".
 
-reason_code_distribution:
-  ├── total_cases (number)
-  ├── preventable_churn (number)
-  ├── unpreventable_churn (number)
-  └── by_category[]:
-      ├── category (string)
-      ├── count (number)
-      ├── percentage (number)
-      └── description (string)
+3. **No summary stat cards** — `total_cases`, `preventable_churn`, `unpreventable_churn` are all 0 in the executive summary, so the stat tiles don't appear.
 
-issue_clusters[]:
-  ├── cluster_name (string)
-  ├── description (string)
-  ├── priority (string: "P0", "P1")
-  ├── recommended_action (string)
-  └── supporting_quotes[] (strings)
+### Plan
 
-top_actions: (OBJECT, not array)
-  ├── p0_immediate_risk_mitigation[]:
-  │   ├── action (string)
-  │   ├── description (string)
-  │   └── ownership (string)
-  ├── p1_systemic_process_redesign[]:
-  │   └── (same shape)
-  └── quick_wins[]:
-      └── (same shape)
+#### 1. Fix ReasonCodeChart.tsx — Cap at top 15, group rest as "Other"
+- After sorting, take top 15 entries and aggregate the remainder into a single "Other" entry
+- This prevents the chart from being 6600px tall
+- Chart height becomes manageable (~750px)
 
-operational_blind_spots[]:
-  ├── blind_spot (string)
-  └── description (string)
+#### 2. Fix ExecutiveSummary.tsx — Handle missing title gracefully
+- If `title` is missing and `headline` is longer than 120 characters, use a generic title like "Research Insights Summary" and treat `headline` as body text only
+- If `headline` equals `key_findings`, don't show both — show body text once
+- Hide the period badge if value is "not specified" or empty
 
-host_accountability_flags[]:
-  ├── flag (string)
-  ├── description (string)
-  └── priority (string)
+#### 3. Fix programmaticMerge in edge function — Consolidate duplicate reason codes
+- When merging `reason_code_distribution` arrays across chunks, normalize the `code`/`category` key (lowercase, trim, collapse synonyms like "Job Relocation" / "External Circumstances - Job Relocation")
+- Sum counts for matching codes and recalculate percentages based on the total
+- Limit final output to top 20 categories plus "Other"
+- Also map raw enum codes (e.g., "MEMBER_FINANCIAL_HARDSHIP") to readable labels
 
-emerging_patterns[]:
-  ├── pattern (string)
-  ├── description (string)
-  └── quote (string)
-
-payment_friction_analysis:
-  ├── summary (string)
-  └── key_friction_points[]:
-      ├── point (string)
-      ├── description (string)
-      ├── quote (string)
-      └── impact (string: "Critical", "High")
-
-transfer_friction_analysis:
-  └── (same shape as payment)
-
-agent_performance_summary:
-  ├── strengths (string)
-  └── opportunities_for_improvement[]:
-      ├── area (string)
-      ├── description (string)
-      └── recommendation (string)
-```
-
-### Plan (10 files to update)
-
-#### 1. ExecutiveSummary.tsx — Rewrite
-Map to actual fields: `title`, `key_findings` (plural), `period`, `recommendation_summary`, `urgent_quote`. Show the title prominently, key findings as narrative paragraph, urgent quote in a highlighted callout, and recommendation summary in an action card.
-
-#### 2. ReasonCodeChart.tsx — Rewrite  
-Read `by_category[]` with fields `category`, `count`, `percentage`, `description`. Add stat cards at top for `total_cases`, `preventable_churn`, `unpreventable_churn`. Keep the horizontal bar chart but use the correct fields.
-
-#### 3. IssueClustersPanel.tsx — Rewrite
-Map `description` (not `cluster_description`), `priority` (string like "P0"), `recommended_action` (string, not object), `supporting_quotes[]` (not `representative_quotes`). Show priority badge prominently. Remove severity_distribution, root_cause references.
-
-#### 4. TopActionsPanel.tsx — Rewrite completely
-Data is an **object** with three keyed arrays (`p0_immediate_risk_mitigation`, `p1_systemic_process_redesign`, `quick_wins`), not a flat array. Render as three grouped sections with P0/P1/Quick Win headers. Each item has `action`, `description`, `ownership`.
-
-#### 5. BlindSpotsPanel.tsx — Minor fix
-Already mostly correct (`blind_spot`, `description`). Remove unused `priority`, `how_discovered`, `estimated_prevalence`, `recommended_detection_method` references.
-
-#### 6. HostAccountabilityPanel.tsx — Fix priority mapping
-Data has `flag`, `description`, `priority` (string like "P0", "P1"). Add PriorityBadge based on the `priority` field instead of parsing the title text.
-
-#### 7. EmergingPatternsPanel.tsx — Already correct
-Has `pattern`, `description`, `quote`. No `watch_or_act` in actual data — gracefully handles missing. Minimal changes.
-
-#### 8. PaymentFrictionCard.tsx — Rewrite
-Data has `summary` + `key_friction_points[]` (objects with `point`, `description`, `quote`, `impact`), not `key_failures[]` (strings). Render each friction point as a card with impact badge and member quote.
-
-#### 9. TransferFrictionCard.tsx — Rewrite (same pattern)
-Same structure as payment friction. Render `key_friction_points[]` with `point`, `description`, `quote`, `impact`.
-
-#### 10. AgentPerformanceCard.tsx — Rewrite
-Data has `strengths` (string) + `opportunities_for_improvement[]` (objects with `area`, `description`, `recommendation`), not `weaknesses[]` (strings). Render each opportunity as its own card with area title, description, and recommendation.
-
-#### 11. ResearchInsights.tsx page — Reorganize layout
-- Executive Summary full-width at top
-- Reason Code Distribution full-width with preventable/unpreventable stat cards
-- Issue Clusters full-width (collapsible, P0 first)
-- Top Actions full-width (grouped by priority tier)
-- Two-column layout: Payment Friction | Transfer Friction
-- Two-column layout: Blind Spots | Host Accountability
-- Agent Performance full-width
-- Emerging Patterns full-width
-- Human Review Queue and Processed Records at bottom
-
-### Note on Claude
-Claude (Anthropic) is not available through the supported AI models. The current Gemini 2.5 Pro model produced excellent, rich data — the problem was purely the UI not matching the output schema. No model change is needed.
+### Files to edit
+- `src/components/research-insights/ReasonCodeChart.tsx` — Add top-15 grouping
+- `src/components/research-insights/ExecutiveSummary.tsx` — Fix title/body duplication
+- `supabase/functions/generate-research-insights/index.ts` — Fix reason code consolidation in `programmaticMerge`
 
