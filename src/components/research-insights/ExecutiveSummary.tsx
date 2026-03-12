@@ -28,12 +28,22 @@ interface ExecutiveSummaryProps {
 export function ExecutiveSummary({ data: rawData }: ExecutiveSummaryProps) {
   // Defensive: if data is a raw string, wrap it
   const data: ExecutiveSummaryProps['data'] = typeof rawData === 'string' ? { headline: rawData } : rawData;
-  const title = data.title || data.headline;
+  
+  const rawTitle = data.title || data.headline;
   const findings = data.key_findings || data.key_finding;
   const recommendation = data.recommendation_summary || data.urgent_recommendation;
-  const period = data.period || data.date_range;
+  const rawPeriod = data.period || data.date_range;
 
-  if (title || findings) {
+  // If title is too long (>120 chars) or identical to findings, use generic title and treat it as body
+  const titleTooLong = rawTitle && rawTitle.length > 120;
+  const titleMatchesFindings = rawTitle && findings && rawTitle.trim() === findings.trim();
+  const title = (titleTooLong || titleMatchesFindings) ? 'Research Insights Summary' : rawTitle;
+  const bodyText = titleMatchesFindings ? findings : (titleTooLong ? rawTitle : findings);
+  
+  // Hide period if empty or "not specified"
+  const period = rawPeriod && rawPeriod.toLowerCase() !== 'not specified' && rawPeriod.trim() !== '' ? rawPeriod : null;
+
+  if (title || bodyText) {
     return (
       <Card className="shadow-md overflow-hidden border-primary/20">
         {/* Hero banner header */}
