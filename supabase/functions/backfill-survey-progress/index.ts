@@ -33,6 +33,7 @@ Deno.serve(async (req) => {
     .eq('has_valid_conversation', true)
     .is('booking_transcriptions.survey_progress', null)
     .not('booking_transcriptions.call_transcription', 'is', null)
+    .neq('booking_transcriptions.call_transcription', '')
     .limit(dryRun ? 1 : BATCH_SIZE);
 
   if (error) {
@@ -53,7 +54,8 @@ Deno.serve(async (req) => {
       .eq('record_type', 'research')
       .eq('has_valid_conversation', true)
       .is('booking_transcriptions.survey_progress', null)
-      .not('booking_transcriptions.call_transcription', 'is', null);
+      .not('booking_transcriptions.call_transcription', 'is', null)
+      .neq('booking_transcriptions.call_transcription', '');
 
     return new Response(JSON.stringify({ dryRun: true, remaining: count }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -93,9 +95,10 @@ Deno.serve(async (req) => {
 
   for (const record of records!) {
     try {
-      const transcription = (record as any).booking_transcriptions;
+      const rawTranscription = (record as any).booking_transcriptions;
+      const transcription = Array.isArray(rawTranscription) ? rawTranscription[0] : rawTranscription;
       const transcript = transcription?.call_transcription;
-      if (!transcript) continue;
+      if (!transcript) { console.log(`[Backfill] Skipping ${record.id}: no transcript`); continue; }
 
       const surveyPrompt = `You are analyzing a research survey call transcript. Determine which survey questions were covered/addressed during the call.
 
