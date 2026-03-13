@@ -33,6 +33,7 @@ Deno.serve(async (req) => {
     .eq('has_valid_conversation', true)
     .is('booking_transcriptions.survey_progress', null)
     .not('booking_transcriptions.call_transcription', 'is', null)
+    .neq('booking_transcriptions.call_transcription', '')
     .limit(dryRun ? 1 : BATCH_SIZE);
 
   if (error) {
