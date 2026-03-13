@@ -54,7 +54,8 @@ Deno.serve(async (req) => {
       .eq('record_type', 'research')
       .eq('has_valid_conversation', true)
       .is('booking_transcriptions.survey_progress', null)
-      .not('booking_transcriptions.call_transcription', 'is', null);
+      .not('booking_transcriptions.call_transcription', 'is', null)
+      .neq('booking_transcriptions.call_transcription', '');
 
     return new Response(JSON.stringify({ dryRun: true, remaining: count }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
