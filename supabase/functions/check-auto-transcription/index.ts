@@ -67,6 +67,16 @@ serve(async (req) => {
       );
     }
 
+    // Guard against junk URL values like "N/A", "none", "-", etc.
+    const trimmedLink = bookingData.kixie_link.trim().toLowerCase();
+    if (!trimmedLink.startsWith('http')) {
+      console.log(`[check-auto-transcription] Invalid kixie_link for booking ${bookingId}: "${bookingData.kixie_link}" — skipping`);
+      return new Response(
+        JSON.stringify({ triggered: false, reason: 'Invalid kixie_link (not a URL)' }),
+        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
     // Atomic claim via RPC to bypass PostgREST schema cache issues (error 42703).
     // The RPC function uses raw SQL which always works regardless of cache state.
     try {
