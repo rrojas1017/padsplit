@@ -352,10 +352,9 @@ serve(async (req) => {
           failCount++;
         }
 
-        // Pace requests: 30 seconds between to avoid rate limiting
+        // Pace requests: 2 seconds between to avoid hammering
         if (i < failedBookings.length - 1) {
-          console.log('[BATCH-RETRY] Waiting 30 seconds before next booking...');
-          await new Promise(resolve => setTimeout(resolve, 30000));
+          await new Promise(resolve => setTimeout(resolve, 2000));
         }
       }
 
