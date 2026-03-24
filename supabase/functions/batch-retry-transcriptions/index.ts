@@ -375,7 +375,7 @@ serve(async (req) => {
           member_name: b.member_name,
           booking_date: b.booking_date
         })),
-        message: `Started re-transcription for ${failedBookings.length} bookings. Processing in background with 30-second pacing.`
+        message: `Started re-transcription for ${failedBookings.length} bookings. Processing in background with 2-second pacing.`
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
