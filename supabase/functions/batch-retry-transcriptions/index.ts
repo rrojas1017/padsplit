@@ -166,10 +166,9 @@ serve(async (req) => {
             failCount++;
           }
 
-          // Pace requests: 30 seconds between to avoid rate limiting
+          // Pace requests: 2 seconds between to avoid hammering
           if (i < targetBookings.length - 1) {
-            console.log('[BATCH-RETRY] Waiting 30 seconds before next booking...');
-            await new Promise(resolve => setTimeout(resolve, 30000));
+            await new Promise(resolve => setTimeout(resolve, 2000));
           }
         }
 
@@ -189,7 +188,7 @@ serve(async (req) => {
             member_name: b.member_name,
             booking_date: b.booking_date
           })),
-          message: `Started re-transcription for ${targetBookings.length} bookings. Processing in background with 30-second pacing. ETA: ~${Math.ceil(targetBookings.length * 0.5)} minutes.`
+          message: `Started re-transcription for ${targetBookings.length} bookings. Processing in background with 2-second pacing.`
         }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
@@ -353,10 +352,9 @@ serve(async (req) => {
           failCount++;
         }
 
-        // Pace requests: 30 seconds between to avoid rate limiting
+        // Pace requests: 2 seconds between to avoid hammering
         if (i < failedBookings.length - 1) {
-          console.log('[BATCH-RETRY] Waiting 30 seconds before next booking...');
-          await new Promise(resolve => setTimeout(resolve, 30000));
+          await new Promise(resolve => setTimeout(resolve, 2000));
         }
       }
 
@@ -377,7 +375,7 @@ serve(async (req) => {
           member_name: b.member_name,
           booking_date: b.booking_date
         })),
-        message: `Started re-transcription for ${failedBookings.length} bookings. Processing in background with 30-second pacing.`
+        message: `Started re-transcription for ${failedBookings.length} bookings. Processing in background with 2-second pacing.`
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
