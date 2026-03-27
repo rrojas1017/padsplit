@@ -12,20 +12,33 @@ interface FlatAction extends TopAction {
   _group: string;
 }
 
+function normalizeAction(a: any): TopAction {
+  return {
+    action: a.action || a.recommendation || a.description || '',
+    impact: a.impact || a.rationale || a.expected_impact || '',
+    priority: a.priority || 'P1',
+    owner: a.owner || a.ownership || undefined,
+    effort: a.effort || undefined,
+    rank: a.rank || undefined,
+    cases: a.cases || undefined,
+    timeline: a.timeline || undefined,
+  };
+}
+
 function flattenActions(data: TopAction[] | Record<string, TopAction[]>): FlatAction[] {
   if (Array.isArray(data)) {
-    return data.map((a) => ({ ...a, _group: a.priority || 'Action' }));
+    return data.map((a) => ({ ...normalizeAction(a), _group: a.priority || 'Action' }) as FlatAction);
   }
   const rows: FlatAction[] = [];
   const grouped = data as Record<string, any[]>;
   (grouped.p0_immediate_risk_mitigation || []).forEach((a: any) =>
-    rows.push({ ...a, _group: 'P0', priority: a.priority || 'P0' })
+    rows.push({ ...normalizeAction(a), _group: 'P0', priority: a.priority || 'P0' } as FlatAction)
   );
   (grouped.p1_systemic_process_redesign || []).forEach((a: any) =>
-    rows.push({ ...a, _group: 'P1', priority: a.priority || 'P1' })
+    rows.push({ ...normalizeAction(a), _group: 'P1', priority: a.priority || 'P1' } as FlatAction)
   );
   (grouped.quick_wins || []).forEach((a: any) =>
-    rows.push({ ...a, _group: 'Quick Win', priority: a.priority || 'Quick Win' })
+    rows.push({ ...normalizeAction(a), _group: 'Quick Win', priority: a.priority || 'Quick Win' } as FlatAction)
   );
   return rows;
 }
@@ -46,7 +59,13 @@ function effortBadge(effort?: string) {
 
 export function TopActionsTable({ data }: TopActionsTableProps) {
   const rows = flattenActions(data);
-  if (!rows.length) return null;
+  if (!rows.length) return (
+    <Card className="shadow-sm">
+      <CardContent className="py-8 text-center text-sm text-muted-foreground">
+        No actions in this report.
+      </CardContent>
+    </Card>
+  );
 
   const hasOwner = rows.some((r) => r.owner || (r as any).ownership);
 
