@@ -388,7 +388,7 @@ export default function ResearchInsights() {
                 />
               )}
               {reportData.issue_clusters && (
-                <IssueClustersPanel data={reportData.issue_clusters} maxVisible={5} />
+                <IssueClustersPanel data={reportData.issue_clusters as any} maxVisible={5} />
               )}
               {reportData.emerging_patterns && (
                 <EmergingPatternsPanel data={reportData.emerging_patterns} />
