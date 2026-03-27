@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent } from '@/components/ui/card';
@@ -6,12 +7,17 @@ import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Progress } from '@/components/ui/progress';
-import { Sparkles, RefreshCw, Loader2, Database, AlertTriangle } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
+import { Sparkles, RefreshCw, Loader2, Database, AlertTriangle, LayoutDashboard, SearchCode, Settings2, ChevronDown } from 'lucide-react';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
 import { useResearchInsightsData, DateRangeOption } from '@/hooks/useResearchInsightsData';
 import { useResearchInsightsPolling } from '@/hooks/useResearchInsightsPolling';
 import { useResearchCampaigns } from '@/hooks/useResearchCampaigns';
+import { deriveKPIs } from '@/types/research-insights';
+import type { ResearchInsightData } from '@/types/research-insights';
 
 import { ExecutiveSummary } from '@/components/research-insights/ExecutiveSummary';
 import { ReasonCodeChart } from '@/components/research-insights/ReasonCodeChart';
@@ -21,17 +27,28 @@ import { TransferFrictionCard } from '@/components/research-insights/TransferFri
 import { BlindSpotsPanel } from '@/components/research-insights/BlindSpotsPanel';
 import { HostAccountabilityPanel } from '@/components/research-insights/HostAccountabilityPanel';
 import { AgentPerformanceCard } from '@/components/research-insights/AgentPerformanceCard';
-import { TopActionsPanel } from '@/components/research-insights/TopActionsPanel';
+import { TopActionsTable } from '@/components/research-insights/TopActionsTable';
 import { EmergingPatternsPanel } from '@/components/research-insights/EmergingPatternsPanel';
 import { HumanReviewQueue } from '@/components/research-insights/HumanReviewQueue';
 import { ProcessedRecordsList } from '@/components/research-insights/ProcessedRecordsList';
+import { InsightsKPIRow } from '@/components/research-insights/InsightsKPIRow';
+import { ReasonCodeDrillDown } from '@/components/research-insights/ReasonCodeDrillDown';
+
+type TabValue = 'dashboard' | 'analysis' | 'operations';
 
 export default function ResearchInsights() {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const currentTab = (searchParams.get('tab') as TabValue) || 'dashboard';
+  const setTab = (tab: string) => setSearchParams({ tab }, { replace: true });
+
   const [dateRange, setDateRange] = useState<DateRangeOption>('allTime');
   const [campaignId, setCampaignId] = useState<string>('all');
   const [isGenerating, setIsGenerating] = useState(false);
   const [isBackfilling, setIsBackfilling] = useState(false);
   const [phase, setPhase] = useState<'processing' | 'analyzing' | null>(null);
+  const [drillDownCode, setDrillDownCode] = useState<string | null>(null);
+  const [reviewOpen, setReviewOpen] = useState(false);
+  const [recordsOpen, setRecordsOpen] = useState(false);
 
   const {
     reports,
@@ -61,7 +78,6 @@ export default function ResearchInsights() {
   const [generationStartTime, setGenerationStartTime] = useState<number | null>(null);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
 
-  // Elapsed time counter
   useEffect(() => {
     if (!isGenerating || !generationStartTime) {
       setElapsedSeconds(0);
@@ -83,25 +99,21 @@ export default function ResearchInsights() {
     init();
   }, [checkExistingAnalysis]);
 
-  // Unified generate: auto-process pending records first, then generate report
   const handleGenerate = async () => {
     setIsGenerating(true);
     setGenerationStartTime(Date.now());
 
-    // If there are pending records, process them first
     if (processingStats.pendingRecords > 0) {
       setPhase('processing');
       setIsBackfilling(true);
       await triggerBackfill();
 
-      // Poll until all records are processed
       await new Promise<void>((resolve) => {
         const poll = setInterval(async () => {
           await fetchProcessingStats();
         }, 10000);
 
         const check = setInterval(() => {
-          // Access latest stats via a fresh fetch
           supabase
             .from('booking_transcriptions')
             .select('id', { count: 'exact', head: true })
@@ -133,7 +145,6 @@ export default function ResearchInsights() {
       await fetchProcessingStats();
     }
 
-    // Now generate the report
     setPhase('analyzing');
     const insightId = await generateReport({
       campaignId: campaignId !== 'all' ? campaignId : undefined,
@@ -148,11 +159,12 @@ export default function ResearchInsights() {
     }
   };
 
-  const reportData = selectedReport?.data as any;
+  const reportData = selectedReport?.data as ResearchInsightData | null;
+  const kpis = deriveKPIs(reportData, processingStats);
 
   return (
     <DashboardLayout title="Research Insights" subtitle="AI-processed findings from move-out research">
-      {/* Controls Bar — frosted glass */}
+      {/* Controls Bar */}
       <div className="flex flex-wrap items-center gap-3 mb-8 p-4 rounded-xl bg-card/80 backdrop-blur border border-border shadow-sm">
         <Select value={campaignId} onValueChange={setCampaignId}>
           <SelectTrigger className="w-[200px]">
@@ -215,7 +227,7 @@ export default function ResearchInsights() {
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <div className="w-9 h-9 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
-                  <Database className="w-4.5 h-4.5 text-primary" />
+                  <Database className="w-4 h-4 text-primary" />
                 </div>
                 <div>
                   <p className="text-sm font-medium text-foreground">
@@ -244,7 +256,7 @@ export default function ResearchInsights() {
           <Card className="min-w-[180px] shadow-sm border-amber-500/20">
             <CardContent className="p-4 flex items-center gap-3">
               <div className="w-9 h-9 rounded-full bg-amber-500/10 flex items-center justify-center flex-shrink-0">
-                <AlertTriangle className="w-4.5 h-4.5 text-amber-500" />
+                <AlertTriangle className="w-4 h-4 text-amber-500" />
               </div>
               <div>
                 <p className="text-sm font-medium text-foreground">{processingStats.humanReviewCount} flagged</p>
@@ -261,7 +273,7 @@ export default function ResearchInsights() {
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <div className="w-9 h-9 rounded-full bg-primary/15 flex items-center justify-center flex-shrink-0">
-                <Loader2 className="w-4.5 h-4.5 text-primary animate-spin" />
+                <Loader2 className="w-4 h-4 text-primary animate-spin" />
               </div>
               <div>
                 <p className="text-sm font-medium text-foreground">
@@ -329,57 +341,112 @@ export default function ResearchInsights() {
         </Card>
       )}
 
-      {/* Report content — show last completed report even while generating */}
+      {/* Report content */}
       {!isLoading && reportData && (selectedReport?.status === 'completed' || isGenerating) && (
-        <div className="space-y-8">
-          {reportData.executive_summary && (
-            <ExecutiveSummary data={reportData.executive_summary} />
-          )}
+        <div className="space-y-6">
+          {/* KPI Row */}
+          <InsightsKPIRow kpis={kpis} />
 
-          {reportData.reason_code_distribution && (
-            <ReasonCodeChart data={reportData.reason_code_distribution} />
-          )}
+          {/* Tabbed Layout */}
+          <Tabs value={currentTab} onValueChange={setTab}>
+            <TabsList className="grid w-full grid-cols-3">
+              <TabsTrigger value="dashboard" className="gap-2">
+                <LayoutDashboard className="w-4 h-4" />
+                <span className="hidden sm:inline">Dashboard</span>
+              </TabsTrigger>
+              <TabsTrigger value="analysis" className="gap-2">
+                <SearchCode className="w-4 h-4" />
+                <span className="hidden sm:inline">Analysis</span>
+              </TabsTrigger>
+              <TabsTrigger value="operations" className="gap-2">
+                <Settings2 className="w-4 h-4" />
+                <span className="hidden sm:inline">Operations</span>
+              </TabsTrigger>
+            </TabsList>
 
-          {reportData.issue_clusters && (
-            <IssueClustersPanel data={reportData.issue_clusters} />
-          )}
-
-          {reportData.top_actions && (
-            <TopActionsPanel data={reportData.top_actions} />
-          )}
-
-          {(reportData.payment_friction_analysis || reportData.transfer_friction_analysis) && (
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {reportData.payment_friction_analysis && (
-                <PaymentFrictionCard data={reportData.payment_friction_analysis} />
+            <TabsContent value="dashboard" className="space-y-6 mt-6">
+              {reportData.executive_summary && (
+                <ExecutiveSummary data={reportData.executive_summary} />
               )}
-              {reportData.transfer_friction_analysis && (
-                <TransferFrictionCard data={reportData.transfer_friction_analysis} />
+              {reportData.top_actions && (
+                <TopActionsTable data={reportData.top_actions} />
               )}
-            </div>
-          )}
+            </TabsContent>
 
-          {(reportData.operational_blind_spots || reportData.host_accountability_flags) && (
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <TabsContent value="analysis" className="space-y-6 mt-6">
+              {reportData.reason_code_distribution && (
+                <ReasonCodeChart
+                  data={reportData.reason_code_distribution}
+                  onCodeClick={(code) => setDrillDownCode(code)}
+                />
+              )}
+              {reportData.issue_clusters && (
+                <IssueClustersPanel data={reportData.issue_clusters} maxVisible={5} />
+              )}
+              {reportData.emerging_patterns && (
+                <EmergingPatternsPanel data={reportData.emerging_patterns} />
+              )}
               {reportData.operational_blind_spots && (
                 <BlindSpotsPanel data={reportData.operational_blind_spots} />
               )}
+            </TabsContent>
+
+            <TabsContent value="operations" className="space-y-6 mt-6">
               {reportData.host_accountability_flags && (
                 <HostAccountabilityPanel data={reportData.host_accountability_flags} />
               )}
-            </div>
-          )}
+              {(reportData.payment_friction_analysis || reportData.transfer_friction_analysis) && (
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  {reportData.payment_friction_analysis && (
+                    <PaymentFrictionCard data={reportData.payment_friction_analysis} />
+                  )}
+                  {reportData.transfer_friction_analysis && (
+                    <TransferFrictionCard data={reportData.transfer_friction_analysis} />
+                  )}
+                </div>
+              )}
+              {reportData.agent_performance_summary && (
+                <AgentPerformanceCard data={reportData.agent_performance_summary} />
+              )}
+            </TabsContent>
+          </Tabs>
 
-          {reportData.agent_performance_summary && (
-            <AgentPerformanceCard data={reportData.agent_performance_summary} />
-          )}
+          {/* Collapsible footer sections */}
+          <div className="space-y-3 pt-4 border-t border-border">
+            <Collapsible open={reviewOpen} onOpenChange={setReviewOpen}>
+              <CollapsibleTrigger className="w-full">
+                <div className="flex items-center justify-between p-3 rounded-lg border border-border hover:bg-muted/50 transition-colors">
+                  <div className="flex items-center gap-2">
+                    <AlertTriangle className="w-4 h-4 text-amber-500" />
+                    <span className="text-sm font-medium text-foreground">Human Review Queue</span>
+                    {processingStats.humanReviewCount > 0 && (
+                      <Badge variant="secondary" className="text-xs">{processingStats.humanReviewCount}</Badge>
+                    )}
+                  </div>
+                  <ChevronDown className={`w-4 h-4 transition-transform ${reviewOpen ? 'rotate-180' : ''}`} />
+                </div>
+              </CollapsibleTrigger>
+              <CollapsibleContent className="mt-3">
+                <HumanReviewQueue />
+              </CollapsibleContent>
+            </Collapsible>
 
-          {reportData.emerging_patterns && (
-            <EmergingPatternsPanel data={reportData.emerging_patterns} />
-          )}
-
-          <HumanReviewQueue />
-          <ProcessedRecordsList />
+            <Collapsible open={recordsOpen} onOpenChange={setRecordsOpen}>
+              <CollapsibleTrigger className="w-full">
+                <div className="flex items-center justify-between p-3 rounded-lg border border-border hover:bg-muted/50 transition-colors">
+                  <div className="flex items-center gap-2">
+                    <Database className="w-4 h-4 text-primary" />
+                    <span className="text-sm font-medium text-foreground">Processed Records</span>
+                    <Badge variant="secondary" className="text-xs">{processingStats.processedRecords}</Badge>
+                  </div>
+                  <ChevronDown className={`w-4 h-4 transition-transform ${recordsOpen ? 'rotate-180' : ''}`} />
+                </div>
+              </CollapsibleTrigger>
+              <CollapsibleContent className="mt-3">
+                <ProcessedRecordsList />
+              </CollapsibleContent>
+            </Collapsible>
+          </div>
         </div>
       )}
 
@@ -400,6 +467,14 @@ export default function ResearchInsights() {
           <Skeleton className="h-64 w-full rounded-xl" />
         </div>
       )}
+
+      {/* Drill-down modal for reason codes */}
+      <ReasonCodeDrillDown
+        open={!!drillDownCode}
+        onOpenChange={(open) => { if (!open) setDrillDownCode(null); }}
+        reasonCode={drillDownCode || ''}
+        reasonColor="hsl(var(--primary))"
+      />
     </DashboardLayout>
   );
 }

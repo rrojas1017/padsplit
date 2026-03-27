@@ -1,3 +1,4 @@
+/** @deprecated Use TopActionsTable instead */
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Target } from 'lucide-react';
