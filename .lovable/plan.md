@@ -1,52 +1,45 @@
 
 
-## Implement Research Insights Redesign
+## Update `src/types/research-insights.ts` to strict schema
 
-All 7 steps from the spec, implemented in a single pass. No backend changes.
+### Problem
+The current types file uses loose/flexible interfaces with many optional variant field names (e.g., `blind_spot` OR `title`, `cluster_name` OR `name`, `watch_or_act` OR `status`). The user wants a clean, strict schema as their canonical reference.
 
-### New Files
+### Compatibility concern
+The existing components (BlindSpotsPanel, IssueClustersPanel, HostAccountabilityPanel, EmergingPatternsPanel) use **their own inline interfaces** — they do NOT import from the shared types file. So replacing the shared types file will NOT break them.
 
-**1. `src/types/research-insights.ts`**
-Shared type definitions: `ResearchInsightData`, `ExecutiveSummary`, `ReasonCodeItem`, `IssueCluster`, `TopAction`, `FrictionAnalysis`, `BlindSpot`, `HostAccountabilityFlag`, `AgentPerformanceSummary`, `EmergingPattern`, `InsightProgress`, `ProcessingStats`, plus `deriveKPIs()` helper. Exact interfaces as specified.
+The only consumers of the shared types are:
+1. **`ResearchInsights.tsx`** — imports `deriveKPIs` and `ResearchInsightData`
+2. **`TopActionsTable.tsx`** — imports `TopAction` and `TopActionsGrouped`
 
-**2. `src/components/research-insights/InsightsKPIRow.tsx`**
-5 stat cards in a responsive grid (2→3→5 cols). Cards: Total Cases, Preventable %, Top Reason Code, Flagged for Review, Avg Preventability. Color-coded thresholds (red/amber/green). Icons from lucide-react.
+### Changes needed
 
-**3. `src/components/research-insights/TopActionsTable.tsx`**
-Compact table replacing TopActionsPanel. Handles both grouped object format (`p0_immediate_risk_mitigation`, `p1_systemic_process_redesign`, `quick_wins`) and flat array format. Rows grouped by priority with colored left borders. Columns: Priority, Action, Owner, Effort, Impact.
+**1. `src/types/research-insights.ts`** — Replace entirely with the user's strict version. Key differences from current:
+- Adds `ResearchInsightRow` envelope type
+- `ExecutiveSummary`: drops legacy field aliases (`title`, `key_finding`, `total_cases`, `addressable_pct`, etc.)
+- `ReasonCodeItem`: `code` and `percentage` required, drops `reason_group`/`category`/`pct` aliases
+- `IssueCluster`: field names change (`name` not `cluster_name`, `codes` not sub-arrays, `action`/`owner` inline)
+- `TopAction`: removes `TopActionsGrouped` type, `description`/`rationale`/`ownership`/`cases_affected` aliases dropped
+- `BlindSpot`: `title` + `description` (not `blind_spot`)
+- `HostAccountabilityFlag`: `issue` (not `flag`/`issue_pattern`)
+- `EmergingPattern`: `status` enum (not `watch_or_act`)
+- `ProcessingStats`: snake_case field names (`total_research_records` not `totalResearchRecords`)
+- `deriveKPIs`: simplified, uses new field names
 
-### Modified Files
+**2. `src/pages/research/ResearchInsights.tsx`** — Line 163: adapt the `deriveKPIs` call to map the hook's camelCase `processingStats` to the new snake_case `ProcessingStats`:
+```ts
+const mappedStats = {
+  total_research_records: processingStats.totalResearchRecords,
+  processed_records: processingStats.processedRecords,
+  flagged_for_review: processingStats.humanReviewCount,
+  pending_records: processingStats.pendingRecords,
+  failed_records: 0,
+};
+const kpis = deriveKPIs(reportData, mappedStats);
+```
 
-**4. `src/components/research-insights/ReasonCodeChart.tsx`**
-- `DEFAULT_VISIBLE = 8` constant, toggle between top 8 and all
-- Detail cards hidden behind "Show category details" toggle (collapsed by default)
-- New `onCodeClick?: (code: string) => void` prop for external drill-down control
-- Internal `ReasonCodeDrillDown` still works as fallback when no `onCodeClick` provided
-
-**5. `src/components/research-insights/IssueClustersPanel.tsx`**
-- New `maxVisible?: number` prop
-- When set, caps displayed clusters with "Show all N clusters" toggle button
-
-**6. `src/pages/research/ResearchInsights.tsx`** (full rewrite)
-- Controls bar, processing stats banner, generation progress banner — preserved as-is
-- New `InsightsKPIRow` below progress, shown when `reportData` exists
-- 3-tab layout using `@/components/ui/tabs`: Dashboard, Analysis, Operations
-- Tab state synced with URL via `useSearchParams` (`?tab=dashboard|analysis|operations`)
-- Dashboard tab: ExecutiveSummary + TopActionsTable
-- Analysis tab: ReasonCodeChart (with `onCodeClick`) + IssueClustersPanel (`maxVisible={5}`) + EmergingPatternsPanel + BlindSpotsPanel
-- Operations tab: HostAccountabilityPanel + PaymentFrictionCard/TransferFrictionCard (2-col grid) + AgentPerformanceCard
-- Collapsible footer: HumanReviewQueue + ProcessedRecordsList (both closed by default, showing count badges)
-- ReasonCodeDrillDown modal triggered by `drillDownCode` state
-
-**7. `src/components/research-insights/TopActionsPanel.tsx`**
-- Add `@deprecated` comment pointing to TopActionsTable. File kept for backward compatibility.
+**3. `src/components/research-insights/TopActionsTable.tsx`** — Remove the `TopActionsGrouped` import (no longer exported). Keep the runtime `flattenActions` logic that handles both grouped object and flat array formats by using inline type guards instead of the removed type. Change `row.ownership` fallback references since `ownership` no longer exists in the type (keep at runtime for backward compat with `as any`).
 
 ### What stays unchanged
-ExecutiveSummary, PaymentFrictionCard, TransferFrictionCard, BlindSpotsPanel, HostAccountabilityPanel, AgentPerformanceCard, EmergingPatternsPanel, HumanReviewQueue, ProcessedRecordsList, ReasonCodeDrillDown, PriorityBadge, all hooks, no backend changes.
-
-### Technical Notes
-- `reportData` cast as `ResearchInsightData` instead of `any`
-- `deriveKPIs(reportData, stats)` computes KPI values from report data with fallbacks
-- Both data formats (grouped object and flat array) handled defensively in TopActionsTable and ReasonCodeChart
-- Tab default is "dashboard" when no `?tab` param present
+All 10+ child components keep their own inline interfaces. The hook keeps its camelCase `ProcessingStats`. No backend changes.
 
