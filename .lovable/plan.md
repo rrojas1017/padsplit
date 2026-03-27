@@ -1,32 +1,52 @@
 
 
-## Fix: Retry the remaining 402-failed records with proper batching
+## Implement Research Insights Redesign
 
-### Problem
-The `batch-retry-transcriptions` function uses 30-second pacing between records, but edge functions have a ~150-second wall-clock timeout. This means each invocation only processes ~4-5 records before being killed, leaving most records unprocessed.
+All 7 steps from the spec, implemented in a single pass. No backend changes.
 
-### Solution: Fire-and-forget pattern (no pacing inside the function)
+### New Files
 
-Instead of sequential processing with 30s delays inside a single function call, change the approach:
+**1. `src/types/research-insights.ts`**
+Shared type definitions: `ResearchInsightData`, `ExecutiveSummary`, `ReasonCodeItem`, `IssueCluster`, `TopAction`, `FrictionAnalysis`, `BlindSpot`, `HostAccountabilityFlag`, `AgentPerformanceSummary`, `EmergingPattern`, `InsightProgress`, `ProcessingStats`, plus `deriveKPIs()` helper. Exact interfaces as specified.
 
-1. **Modify `batch-retry-transcriptions`** to remove the 30-second internal pacing and instead fire off all transcription calls concurrently (or with minimal delay like 1-2 seconds), since `transcribe-call` is an independent function that handles its own processing.
+**2. `src/components/research-insights/InsightsKPIRow.tsx`**
+5 stat cards in a responsive grid (2→3→5 cols). Cards: Total Cases, Preventable %, Top Reason Code, Flagged for Review, Avg Preventability. Color-coded thresholds (red/amber/green). Icons from lucide-react.
 
-2. **Invoke in small batches of 5-10 IDs** from the client/script side, with the pacing happening *between invocations* rather than inside the function.
+**3. `src/components/research-insights/TopActionsTable.tsx`**
+Compact table replacing TopActionsPanel. Handles both grouped object format (`p0_immediate_risk_mitigation`, `p1_systemic_process_redesign`, `quick_wins`) and flat array format. Rows grouped by priority with colored left borders. Columns: Priority, Action, Owner, Effort, Impact.
 
-### Changes
+### Modified Files
 
-#### 1. Update `batch-retry-transcriptions` edge function
-- Reduce the internal delay from 30 seconds to 2 seconds (just enough to avoid hammering the API)
-- This allows ~50+ records per invocation instead of ~4-5
+**4. `src/components/research-insights/ReasonCodeChart.tsx`**
+- `DEFAULT_VISIBLE = 8` constant, toggle between top 8 and all
+- Detail cards hidden behind "Show category details" toggle (collapsed by default)
+- New `onCodeClick?: (code: string) => void` prop for external drill-down control
+- Internal `ReasonCodeDrillDown` still works as fallback when no `onCodeClick` provided
 
-#### 2. Re-trigger the remaining failed records
-- Query for all bookings still showing `transcription_error_message LIKE '%402%'` (currently 71)
-- Also query for records that were reset but failed again during the retry attempt
-- Invoke in batches of 30-40 IDs per call
+**5. `src/components/research-insights/IssueClustersPanel.tsx`**
+- New `maxVisible?: number` prop
+- When set, caps displayed clusters with "Show all N clusters" toggle button
 
-### Files to update
-- `supabase/functions/batch-retry-transcriptions/index.ts` (reduce pacing from 30s to 2s)
+**6. `src/pages/research/ResearchInsights.tsx`** (full rewrite)
+- Controls bar, processing stats banner, generation progress banner — preserved as-is
+- New `InsightsKPIRow` below progress, shown when `reportData` exists
+- 3-tab layout using `@/components/ui/tabs`: Dashboard, Analysis, Operations
+- Tab state synced with URL via `useSearchParams` (`?tab=dashboard|analysis|operations`)
+- Dashboard tab: ExecutiveSummary + TopActionsTable
+- Analysis tab: ReasonCodeChart (with `onCodeClick`) + IssueClustersPanel (`maxVisible={5}`) + EmergingPatternsPanel + BlindSpotsPanel
+- Operations tab: HostAccountabilityPanel + PaymentFrictionCard/TransferFrictionCard (2-col grid) + AgentPerformanceCard
+- Collapsible footer: HumanReviewQueue + ProcessedRecordsList (both closed by default, showing count badges)
+- ReasonCodeDrillDown modal triggered by `drillDownCode` state
 
-### Runtime action
-- After deploying the updated function, re-invoke it with the remaining failed booking IDs
+**7. `src/components/research-insights/TopActionsPanel.tsx`**
+- Add `@deprecated` comment pointing to TopActionsTable. File kept for backward compatibility.
+
+### What stays unchanged
+ExecutiveSummary, PaymentFrictionCard, TransferFrictionCard, BlindSpotsPanel, HostAccountabilityPanel, AgentPerformanceCard, EmergingPatternsPanel, HumanReviewQueue, ProcessedRecordsList, ReasonCodeDrillDown, PriorityBadge, all hooks, no backend changes.
+
+### Technical Notes
+- `reportData` cast as `ResearchInsightData` instead of `any`
+- `deriveKPIs(reportData, stats)` computes KPI values from report data with fallbacks
+- Both data formats (grouped object and flat array) handled defensively in TopActionsTable and ReasonCodeChart
+- Tab default is "dashboard" when no `?tab` param present
 
