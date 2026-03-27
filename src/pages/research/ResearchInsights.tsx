@@ -160,7 +160,14 @@ export default function ResearchInsights() {
   };
 
   const reportData = selectedReport?.data as ResearchInsightData | null;
-  const kpis = deriveKPIs(reportData, processingStats);
+  const mappedStats: import('@/types/research-insights').ProcessingStats = {
+    total_research_records: processingStats.totalResearchRecords,
+    processed_records: processingStats.processedRecords,
+    flagged_for_review: processingStats.humanReviewCount,
+    pending_records: processingStats.pendingRecords,
+    failed_records: 0,
+  };
+  const kpis = deriveKPIs(reportData, mappedStats);
 
   return (
     <DashboardLayout title="Research Insights" subtitle="AI-processed findings from move-out research">

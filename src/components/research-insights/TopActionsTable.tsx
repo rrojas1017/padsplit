@@ -2,20 +2,31 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Target } from 'lucide-react';
 import { PriorityBadge } from './PriorityBadge';
-import type { TopAction, TopActionsGrouped } from '@/types/research-insights';
+import type { TopAction } from '@/types/research-insights';
 
 interface TopActionsTableProps {
-  data: TopAction[] | TopActionsGrouped;
+  data: TopAction[] | Record<string, TopAction[]>;
 }
 
-function flattenActions(data: TopAction[] | TopActionsGrouped): Array<TopAction & { _group: string }> {
+interface FlatAction extends TopAction {
+  _group: string;
+}
+
+function flattenActions(data: TopAction[] | Record<string, TopAction[]>): FlatAction[] {
   if (Array.isArray(data)) {
     return data.map((a) => ({ ...a, _group: a.priority || 'Action' }));
   }
-  const rows: Array<TopAction & { _group: string }> = [];
-  (data.p0_immediate_risk_mitigation || []).forEach((a) => rows.push({ ...a, _group: 'P0', priority: a.priority || 'P0' }));
-  (data.p1_systemic_process_redesign || []).forEach((a) => rows.push({ ...a, _group: 'P1', priority: a.priority || 'P1' }));
-  (data.quick_wins || []).forEach((a) => rows.push({ ...a, _group: 'Quick Win', priority: a.priority || 'Quick Win' }));
+  const rows: FlatAction[] = [];
+  const grouped = data as Record<string, any[]>;
+  (grouped.p0_immediate_risk_mitigation || []).forEach((a: any) =>
+    rows.push({ ...a, _group: 'P0', priority: a.priority || 'P0' })
+  );
+  (grouped.p1_systemic_process_redesign || []).forEach((a: any) =>
+    rows.push({ ...a, _group: 'P1', priority: a.priority || 'P1' })
+  );
+  (grouped.quick_wins || []).forEach((a: any) =>
+    rows.push({ ...a, _group: 'Quick Win', priority: a.priority || 'Quick Win' })
+  );
   return rows;
 }
 
@@ -37,7 +48,7 @@ export function TopActionsTable({ data }: TopActionsTableProps) {
   const rows = flattenActions(data);
   if (!rows.length) return null;
 
-  const hasOwner = rows.some((r) => r.ownership || r.owner);
+  const hasOwner = rows.some((r) => r.owner || (r as any).ownership);
 
   return (
     <Card className="shadow-sm">
@@ -63,8 +74,8 @@ export function TopActionsTable({ data }: TopActionsTableProps) {
             </thead>
             <tbody>
               {rows.map((row, i) => {
-                const desc = row.description || row.rationale || row.impact;
-                const owner = row.ownership || row.owner;
+                const desc = row.impact || (row as any).description || (row as any).rationale;
+                const owner = row.owner || (row as any).ownership;
                 return (
                   <tr
                     key={i}

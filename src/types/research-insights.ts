@@ -1,8 +1,30 @@
+// src/types/research-insights.ts
+// Shared TypeScript interfaces for the research insights JSONB report shape.
+// Replaces all inline `any` types across the 14 components.
+// Derived from the actual data written by generate-research-insights edge function.
+
+// ── Report envelope (row from research_insights table) ──
+
+export interface ResearchInsightRow {
+  id: string;
+  created_at: string;
+  updated_at: string;
+  status: 'pending' | 'processing' | 'completed' | 'failed';
+  data: ResearchInsightData;
+  total_records_analyzed: number;
+  campaign_id?: string;
+  campaign_name?: string;
+  generated_by?: string;
+  error_message?: string;
+}
+
+// ── The JSONB blob inside data column ──
+
 export interface ResearchInsightData {
   executive_summary: ExecutiveSummary;
   reason_code_distribution: ReasonCodeItem[];
   issue_clusters: IssueCluster[];
-  top_actions: TopAction[] | TopActionsGrouped;
+  top_actions: TopAction[];
   payment_friction_analysis: FrictionAnalysis;
   transfer_friction_analysis: FrictionAnalysis;
   operational_blind_spots: BlindSpot[];
@@ -12,177 +34,172 @@ export interface ResearchInsightData {
   _progress?: InsightProgress;
 }
 
+// ── Executive Summary ──
+
 export interface ExecutiveSummary {
-  headline?: string;
-  title?: string;
-  key_findings?: string;
-  key_finding?: string;
-  recommendations?: string[];
-  recommendation_summary?: string;
-  urgent_recommendation?: string;
+  headline: string;
+  key_findings: string[];
+  recommendations: string[];
   total_cases_analyzed?: number;
-  total_cases?: number;
   preventable_percent?: number;
-  addressable_pct?: number;
   top_reason?: string;
   avg_preventability?: number;
-  avg_preventability_score?: number;
-  urgent_quote?: string;
-  quantified_impact?: string;
-  period?: string;
-  date_range?: string;
-  high_regret_count?: number;
-  high_regret_pct?: number;
-  payment_related_pct?: number;
-  host_related_pct?: number;
 }
+
+// ── Reason Code Distribution ──
 
 export interface ReasonCodeItem {
-  code?: string;
-  reason_group?: string;
-  category?: string;
+  code: string;
   count: number;
-  pct?: number;
-  percentage?: number;
-  severity?: string;
+  percentage: number;
+  severity?: 'Critical' | 'High' | 'Medium' | 'Low';
   description?: string;
-  details?: string;
-  addressability?: string;
+  addressability?: 'Addressable' | 'Partially addressable' | 'Not addressable';
   preventability?: number;
-  regrettability?: string;
+  regrettability?: 'High' | 'Medium' | 'Low';
   sub_codes?: string[];
   example_quotes?: string[];
-  booking_ids?: string[];
-  reason_codes_included?: string[];
 }
 
+// ── Issue Clusters ──
+
 export interface IssueCluster {
-  cluster_name: string;
-  description?: string;
-  cluster_description?: string;
-  priority?: string;
-  recommended_action?: string | { action: string; owner?: string; priority?: string };
-  supporting_quotes?: string[];
-  representative_quotes?: string[];
-  key_quotes?: string[];
-  frequency?: number;
+  name: string;
+  codes: string[];
+  severity: 'Critical' | 'High' | 'Medium' | 'Low';
+  priority: 'P0' | 'P1' | 'P2' | 'P3';
+  root_cause: string;
+  action: string;
+  owner?: string;
+  effort?: 'Low' | 'Medium' | 'High';
   case_count?: number;
-  systemic_root_cause?: string;
-  root_cause?: string;
+  quotes?: string[];
 }
+
+// ── Top Actions ──
 
 export interface TopAction {
   rank?: number;
   action: string;
-  description?: string;
-  rationale?: string;
-  impact?: string;
-  priority?: string;
-  ownership?: string;
+  impact: string;
+  priority: 'P0' | 'P1' | 'Quick Win';
   owner?: string;
-  effort?: string;
-  cases_affected?: number;
-  pct_of_batch?: number;
-  quick_win?: string | null;
+  effort?: 'Low' | 'Medium' | 'High';
+  cases?: number;
   timeline?: string;
 }
 
-export interface TopActionsGrouped {
-  p0_immediate_risk_mitigation?: TopAction[];
-  p1_systemic_process_redesign?: TopAction[];
-  quick_wins?: TopAction[];
-}
+// ── Friction Analysis (shared shape for payment + transfer) ──
 
 export interface FrictionPoint {
   point: string;
-  severity?: string;
+  severity: 'Critical' | 'High' | 'Medium' | 'Low';
   frequency?: number;
   description?: string;
   impact?: string;
-  quote?: string;
 }
 
 export interface FrictionAnalysis {
-  friction_points?: FrictionPoint[];
-  key_friction_points?: FrictionPoint[];
+  friction_points: FrictionPoint[];
   stats?: Record<string, string | number>;
   summary?: string;
   retention_rate?: number;
   resolution_rate?: number;
 }
 
+// ── Blind Spots ──
+
 export interface BlindSpot {
-  blind_spot?: string;
-  title?: string;
-  description?: string;
-  severity?: string;
+  title: string;
+  description: string;
+  severity?: 'Critical' | 'High' | 'Medium' | 'Low';
   recommendation?: string;
 }
 
+// ── Host Accountability ──
+
 export interface HostAccountabilityFlag {
-  flag?: string;
-  issue_pattern?: string;
-  issue?: string;
-  priority?: string;
+  issue: string;
+  priority: 'P0' | 'P1' | 'P2' | 'P3';
   description?: string;
   frequency?: number;
   host_type?: string;
   recommendation?: string;
-  quote?: string;
 }
 
+// ── Agent Performance ──
+
 export interface AgentPerformanceSummary {
-  strengths?: string[] | Array<{ area: string; description?: string }>;
-  weaknesses?: string[] | Array<{ area: string; description?: string }>;
-  coaching_opportunities?: Array<{ area: string; description?: string; recommendation?: string }>;
+  strengths: string[];
+  weaknesses: string[];
+  coaching_opportunities?: string[];
   top_performers?: string[];
   common_gaps?: string[];
 }
 
+// ── Emerging Patterns ──
+
 export interface EmergingPattern {
   pattern: string;
-  status?: string;
+  status: 'act' | 'investigate' | 'monitor' | 'watch';
   description?: string;
-  evidence?: string;
   frequency?: number;
-  trend?: string;
+  trend?: 'increasing' | 'stable' | 'decreasing';
   first_seen?: string;
-  quote?: string;
 }
+
+// ── Generation Progress (internal) ──
 
 export interface InsightProgress {
   totalChunks: number;
   completedChunks: number;
   totalRecords: number;
-  currentPhase: string;
+  currentPhase: 'chunking' | 'analyzing' | 'synthesizing' | 'complete' | 'failed';
 }
 
+// ── Processing Stats (from useResearchInsightsData) ──
+
 export interface ProcessingStats {
-  totalResearchRecords: number;
-  processedRecords: number;
-  pendingRecords: number;
-  humanReviewCount: number;
+  total_research_records: number;
+  processed_records: number;
+  flagged_for_review: number;
+  pending_records: number;
+  failed_records: number;
 }
+
+// ── KPI derivation helper ──
 
 export function deriveKPIs(data: ResearchInsightData | null, stats: ProcessingStats | null) {
   if (!data) {
     return {
-      totalCases: stats?.processedRecords ?? 0,
+      totalCases: stats?.processed_records ?? 0,
       preventablePercent: 0,
       topReasonCode: '—',
-      flaggedForReview: stats?.humanReviewCount ?? 0,
+      flaggedForReview: stats?.flagged_for_review ?? 0,
       avgPreventability: 0,
     };
   }
-  const es = data.executive_summary;
-  const reasons = Array.isArray(data.reason_code_distribution) ? data.reason_code_distribution : [];
-  const totalFromReasons = reasons.reduce((s, r) => s + r.count, 0);
+
+  const reasons = data.reason_code_distribution || [];
+  const addressableCount = reasons.filter(
+    (r) => r.addressability === 'Addressable' || r.addressability === 'Partially addressable'
+  ).length;
 
   return {
-    totalCases: es?.total_cases_analyzed ?? es?.total_cases ?? stats?.processedRecords ?? totalFromReasons,
-    preventablePercent: es?.preventable_percent ?? es?.addressable_pct ?? 0,
-    topReasonCode: reasons[0]?.code ?? reasons[0]?.reason_group ?? reasons[0]?.category ?? es?.top_reason ?? '—',
-    flaggedForReview: stats?.humanReviewCount ?? 0,
-    avgPreventability: es?.avg_preventability ?? es?.avg_preventability_score ?? 0,
+    totalCases:
+      data.executive_summary?.total_cases_analyzed ??
+      stats?.processed_records ??
+      reasons.reduce((sum, r) => sum + r.count, 0),
+    preventablePercent:
+      data.executive_summary?.preventable_percent ??
+      (reasons.length > 0 ? Math.round((addressableCount / reasons.length) * 100) : 0),
+    topReasonCode:
+      reasons[0]?.code ?? data.executive_summary?.top_reason ?? '—',
+    flaggedForReview: stats?.flagged_for_review ?? 0,
+    avgPreventability:
+      data.executive_summary?.avg_preventability ??
+      (reasons.length > 0
+        ? reasons.reduce((sum, r) => sum + (r.preventability ?? 0), 0) / reasons.length
+        : 0),
   };
 }
