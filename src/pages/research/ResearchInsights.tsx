@@ -391,10 +391,10 @@ export default function ResearchInsights() {
                 <IssueClustersPanel data={reportData.issue_clusters as any} maxVisible={5} />
               )}
               {reportData.emerging_patterns && (
-                <EmergingPatternsPanel data={reportData.emerging_patterns} />
+                <EmergingPatternsPanel data={reportData.emerging_patterns} maxVisible={5} />
               )}
               {reportData.operational_blind_spots && (
-                <BlindSpotsPanel data={reportData.operational_blind_spots as any} />
+                <BlindSpotsPanel data={reportData.operational_blind_spots as any} maxVisible={5} />
               )}
             </TabsContent>
 
