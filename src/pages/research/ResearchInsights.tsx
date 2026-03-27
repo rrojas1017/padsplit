@@ -400,7 +400,7 @@ export default function ResearchInsights() {
 
             <TabsContent value="operations" className="space-y-6 mt-6">
               {reportData.host_accountability_flags && (
-                <HostAccountabilityPanel data={reportData.host_accountability_flags} />
+                <HostAccountabilityPanel data={reportData.host_accountability_flags} maxVisible={8} />
               )}
               {(reportData.payment_friction_analysis || reportData.transfer_friction_analysis) && (
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
