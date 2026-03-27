@@ -387,7 +387,7 @@ export default function ResearchInsights() {
                 <EmergingPatternsPanel data={reportData.emerging_patterns} />
               )}
               {reportData.operational_blind_spots && (
-                <BlindSpotsPanel data={reportData.operational_blind_spots} />
+                <BlindSpotsPanel data={reportData.operational_blind_spots as any} />
               )}
             </TabsContent>
 
