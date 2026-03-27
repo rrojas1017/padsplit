@@ -1,4 +1,7 @@
+import { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { EyeOff } from 'lucide-react';
 
 interface BlindSpot {
@@ -8,10 +11,15 @@ interface BlindSpot {
 
 interface BlindSpotsPanelProps {
   data: BlindSpot[];
+  maxVisible?: number;
 }
 
-export function BlindSpotsPanel({ data }: BlindSpotsPanelProps) {
+export function BlindSpotsPanel({ data, maxVisible }: BlindSpotsPanelProps) {
+  const [showAll, setShowAll] = useState(false);
   if (!data?.length) return null;
+
+  const visible = maxVisible && !showAll ? data.slice(0, maxVisible) : data;
+  const hasMore = maxVisible != null && data.length > maxVisible;
 
   return (
     <Card className="shadow-sm">
@@ -21,29 +29,35 @@ export function BlindSpotsPanel({ data }: BlindSpotsPanelProps) {
             <EyeOff className="w-4 h-4 text-amber-500" />
           </div>
           Operational Blind Spots
+          <Badge variant="secondary" className="ml-auto">{data.length}</Badge>
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-3">
-        {data.map((rawSpot, i) => {
+        {visible.map((rawSpot, i) => {
           const spot: BlindSpot = typeof rawSpot === 'string' ? { blind_spot: rawSpot } : rawSpot;
           return (
-          <div
-            key={i}
-            className="border border-border rounded-lg p-4 space-y-1 hover:bg-amber-500/5 transition-colors"
-            style={{ borderLeftWidth: '4px', borderLeftColor: 'hsl(45, 93%, 47%)' }}
-          >
-            <div className="flex items-start gap-2">
-              <span className="text-xs font-bold text-amber-600 bg-amber-500/10 rounded-full w-5 h-5 flex items-center justify-center flex-shrink-0 mt-0.5">{i + 1}</span>
-              <div>
-                <p className="text-sm font-medium text-foreground">{spot.blind_spot}</p>
-                {spot.description && (
-                  <p className="text-xs text-muted-foreground mt-1">{spot.description}</p>
-                )}
+            <div
+              key={i}
+              className="border border-border rounded-lg p-4 space-y-1 hover:bg-amber-500/5 transition-colors"
+              style={{ borderLeftWidth: '4px', borderLeftColor: 'hsl(45, 93%, 47%)' }}
+            >
+              <div className="flex items-start gap-2">
+                <span className="text-xs font-bold text-amber-600 bg-amber-500/10 rounded-full w-5 h-5 flex items-center justify-center flex-shrink-0 mt-0.5">{i + 1}</span>
+                <div>
+                  <p className="text-sm font-medium text-foreground">{spot.blind_spot}</p>
+                  {spot.description && (
+                    <p className="text-xs text-muted-foreground mt-1">{spot.description}</p>
+                  )}
+                </div>
               </div>
             </div>
-          </div>
-        );
+          );
         })}
+        {hasMore && !showAll && (
+          <Button variant="ghost" size="sm" onClick={() => setShowAll(true)} className="w-full text-primary">
+            Show all {data.length} blind spots
+          </Button>
+        )}
       </CardContent>
     </Card>
   );

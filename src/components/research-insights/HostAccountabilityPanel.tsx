@@ -1,4 +1,7 @@
+import { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { Home } from 'lucide-react';
 import { PriorityBadge } from './PriorityBadge';
 
@@ -16,6 +19,7 @@ interface HostFlag {
 
 interface HostAccountabilityPanelProps {
   data: HostFlag[];
+  maxVisible?: number;
 }
 
 function getPriorityBorderColor(priority?: string): string {
@@ -27,8 +31,12 @@ function getPriorityBorderColor(priority?: string): string {
   return 'hsl(var(--border))';
 }
 
-export function HostAccountabilityPanel({ data }: HostAccountabilityPanelProps) {
+export function HostAccountabilityPanel({ data, maxVisible }: HostAccountabilityPanelProps) {
+  const [showAll, setShowAll] = useState(false);
   if (!data?.length) return null;
+
+  const visible = maxVisible && !showAll ? data.slice(0, maxVisible) : data;
+  const hasMore = maxVisible != null && data.length > maxVisible;
 
   return (
     <Card className="shadow-sm">
@@ -38,10 +46,11 @@ export function HostAccountabilityPanel({ data }: HostAccountabilityPanelProps) 
             <Home className="w-4 h-4 text-orange-500" />
           </div>
           Host Accountability Flags
+          <Badge variant="secondary" className="ml-auto">{data.length}</Badge>
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-3">
-        {data.map((rawItem, i) => {
+        {visible.map((rawItem, i) => {
           const item: HostFlag = typeof rawItem === 'string' ? { flag: rawItem } : rawItem;
           const title = item.flag || item.issue_pattern;
           const borderColor = getPriorityBorderColor(item.priority);
@@ -81,6 +90,11 @@ export function HostAccountabilityPanel({ data }: HostAccountabilityPanelProps) 
             </div>
           );
         })}
+        {hasMore && !showAll && (
+          <Button variant="ghost" size="sm" onClick={() => setShowAll(true)} className="w-full text-primary">
+            Show all {data.length} flags
+          </Button>
+        )}
       </CardContent>
     </Card>
   );

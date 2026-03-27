@@ -1,5 +1,7 @@
+import { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { TrendingUp } from 'lucide-react';
 
 interface EmergingPattern {
@@ -13,6 +15,7 @@ interface EmergingPattern {
 
 interface EmergingPatternsPanelProps {
   data: EmergingPattern[];
+  maxVisible?: number;
 }
 
 function getStatusBorderColor(status?: string): string {
@@ -21,8 +24,12 @@ function getStatusBorderColor(status?: string): string {
   return 'hsl(var(--border))';
 }
 
-export function EmergingPatternsPanel({ data }: EmergingPatternsPanelProps) {
+export function EmergingPatternsPanel({ data, maxVisible }: EmergingPatternsPanelProps) {
+  const [showAll, setShowAll] = useState(false);
   if (!data?.length) return null;
+
+  const visible = maxVisible && !showAll ? data.slice(0, maxVisible) : data;
+  const hasMore = maxVisible != null && data.length > maxVisible;
 
   return (
     <Card className="shadow-sm">
@@ -32,10 +39,11 @@ export function EmergingPatternsPanel({ data }: EmergingPatternsPanelProps) {
             <TrendingUp className="w-4 h-4 text-violet-500" />
           </div>
           Emerging Patterns
+          <Badge variant="secondary" className="ml-auto">{data.length}</Badge>
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-3">
-        {data.map((rawItem, i) => {
+        {visible.map((rawItem, i) => {
           const item: EmergingPattern = typeof rawItem === 'string' ? { pattern: rawItem } : rawItem;
           const detail = item.evidence || item.description;
           const borderColor = getStatusBorderColor(item.watch_or_act);
@@ -68,6 +76,11 @@ export function EmergingPatternsPanel({ data }: EmergingPatternsPanelProps) {
             </div>
           );
         })}
+        {hasMore && !showAll && (
+          <Button variant="ghost" size="sm" onClick={() => setShowAll(true)} className="w-full text-primary">
+            Show all {data.length} patterns
+          </Button>
+        )}
       </CardContent>
     </Card>
   );

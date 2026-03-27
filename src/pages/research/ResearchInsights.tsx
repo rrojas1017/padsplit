@@ -160,6 +160,12 @@ export default function ResearchInsights() {
   };
 
   const reportData = selectedReport?.data as ResearchInsightData | null;
+  // Debug: log report data shape for KPI troubleshooting
+  if (reportData) {
+    console.log('[ResearchInsights] reportData keys:', Object.keys(reportData));
+    console.log('[ResearchInsights] executive_summary:', reportData.executive_summary);
+    console.log('[ResearchInsights] first reason_code:', reportData.reason_code_distribution?.[0]);
+  }
   const mappedStats: import('@/types/research-insights').ProcessingStats = {
     total_research_records: processingStats.totalResearchRecords,
     processed_records: processingStats.processedRecords,
@@ -391,16 +397,16 @@ export default function ResearchInsights() {
                 <IssueClustersPanel data={reportData.issue_clusters as any} maxVisible={5} />
               )}
               {reportData.emerging_patterns && (
-                <EmergingPatternsPanel data={reportData.emerging_patterns} />
+                <EmergingPatternsPanel data={reportData.emerging_patterns} maxVisible={5} />
               )}
               {reportData.operational_blind_spots && (
-                <BlindSpotsPanel data={reportData.operational_blind_spots as any} />
+                <BlindSpotsPanel data={reportData.operational_blind_spots as any} maxVisible={5} />
               )}
             </TabsContent>
 
             <TabsContent value="operations" className="space-y-6 mt-6">
               {reportData.host_accountability_flags && (
-                <HostAccountabilityPanel data={reportData.host_accountability_flags} />
+                <HostAccountabilityPanel data={reportData.host_accountability_flags} maxVisible={8} />
               )}
               {(reportData.payment_friction_analysis || reportData.transfer_friction_analysis) && (
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

@@ -1,9 +1,12 @@
 import { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { AlertTriangle } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { format } from 'date-fns';
+
+const PAGE_SIZE = 20;
 
 interface ReviewItem {
   id: string;
@@ -17,6 +20,7 @@ interface ReviewItem {
 export function HumanReviewQueue() {
   const [items, setItems] = useState<ReviewItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
 
   useEffect(() => {
     const fetchReviewQueue = async () => {
@@ -54,6 +58,9 @@ export function HumanReviewQueue() {
   if (isLoading) return null;
   if (!items.length) return null;
 
+  const visible = items.slice(0, visibleCount);
+  const remaining = items.length - visibleCount;
+
   return (
     <Card className="shadow-sm border-amber-500/20">
       <CardHeader className="bg-amber-500/5 rounded-t-lg">
@@ -67,7 +74,7 @@ export function HumanReviewQueue() {
       </CardHeader>
       <CardContent className="pt-4">
         <div className="space-y-2">
-          {items.map((item) => (
+          {visible.map((item) => (
             <div
               key={item.id}
               className="flex items-center justify-between p-3 rounded-lg border border-border"
@@ -83,6 +90,16 @@ export function HumanReviewQueue() {
               </div>
             </div>
           ))}
+          {remaining > 0 && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setVisibleCount((prev) => prev + PAGE_SIZE)}
+              className="w-full text-primary"
+            >
+              Show more ({remaining} remaining)
+            </Button>
+          )}
         </div>
       </CardContent>
     </Card>
