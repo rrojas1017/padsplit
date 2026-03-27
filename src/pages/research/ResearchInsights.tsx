@@ -406,7 +406,7 @@ export default function ResearchInsights() {
                 </div>
               )}
               {reportData.agent_performance_summary && (
-                <AgentPerformanceCard data={reportData.agent_performance_summary} />
+                <AgentPerformanceCard data={reportData.agent_performance_summary as any} />
               )}
             </TabsContent>
           </Tabs>
