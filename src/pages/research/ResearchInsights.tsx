@@ -160,6 +160,12 @@ export default function ResearchInsights() {
   };
 
   const reportData = selectedReport?.data as ResearchInsightData | null;
+  // Debug: log report data shape for KPI troubleshooting
+  if (reportData) {
+    console.log('[ResearchInsights] reportData keys:', Object.keys(reportData));
+    console.log('[ResearchInsights] executive_summary:', reportData.executive_summary);
+    console.log('[ResearchInsights] first reason_code:', reportData.reason_code_distribution?.[0]);
+  }
   const mappedStats: import('@/types/research-insights').ProcessingStats = {
     total_research_records: processingStats.totalResearchRecords,
     processed_records: processingStats.processedRecords,
