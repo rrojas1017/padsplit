@@ -1,4 +1,5 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { ChevronDown, Lightbulb } from 'lucide-react';
 import { useState } from 'react';
@@ -21,6 +22,7 @@ interface IssueCluster {
 
 interface IssueClustersProps {
   data: IssueCluster[];
+  maxVisible?: number;
 }
 
 function getPriorityBorderColor(priority?: string): string {
@@ -32,7 +34,9 @@ function getPriorityBorderColor(priority?: string): string {
   return 'hsl(var(--border))';
 }
 
-export function IssueClustersPanel({ data }: IssueClustersProps) {
+export function IssueClustersPanel({ data, maxVisible }: IssueClustersProps) {
+  const [showAll, setShowAll] = useState(false);
+
   if (!data?.length) return null;
 
   const sorted = [...data].sort((a, b) => {
@@ -41,15 +45,23 @@ export function IssueClustersPanel({ data }: IssueClustersProps) {
     return pa.localeCompare(pb);
   });
 
+  const capped = maxVisible && !showAll ? sorted.slice(0, maxVisible) : sorted;
+  const hasMore = maxVisible ? sorted.length > maxVisible : false;
+
   return (
     <Card className="shadow-sm">
       <CardHeader>
         <CardTitle className="text-base">Issue Clusters</CardTitle>
       </CardHeader>
       <CardContent className="space-y-3">
-        {sorted.map((cluster, i) => (
+        {capped.map((cluster, i) => (
           <ClusterCard key={i} cluster={cluster} />
         ))}
+        {hasMore && (
+          <Button variant="ghost" size="sm" onClick={() => setShowAll(!showAll)} className="w-full text-xs">
+            {showAll ? 'Show fewer' : `Show all ${sorted.length} clusters`}
+          </Button>
+        )}
       </CardContent>
     </Card>
   );

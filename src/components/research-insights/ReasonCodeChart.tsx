@@ -1,54 +1,26 @@
 import { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
-import { ExternalLink } from 'lucide-react';
+import { ExternalLink, ChevronDown, ChevronUp } from 'lucide-react';
 import { ReasonCodeDrillDown } from './ReasonCodeDrillDown';
 
-interface CategoryItem {
-  category: string;
-  count: number;
-  percentage: number;
-  description?: string;
-  booking_ids?: string[];
-  reason_codes_included?: string[];
-}
+const DEFAULT_VISIBLE = 8;
 
 interface ReasonCodeChartProps {
-  data: {
-    total_cases?: number;
-    preventable_churn?: number;
-    unpreventable_churn?: number;
-    by_category?: CategoryItem[];
-    distribution?: Array<{
-      reason_group: string;
-      count: number;
-      percentage: number;
-      details?: string;
-      booking_ids?: string[];
-      reason_codes_included?: string[];
-    }>;
-    methodology?: string;
-  } | Array<{
-    code?: string;
-    reason_group?: string;
-    category?: string;
-    count: number;
-    pct?: number;
-    percentage?: number;
-    details?: string;
-    description?: string;
-    booking_ids?: string[];
-    reason_codes_included?: string[];
-  }>;
+  data: any;
+  onCodeClick?: (code: string) => void;
 }
 
-export function ReasonCodeChart({ data }: ReasonCodeChartProps) {
+export function ReasonCodeChart({ data, onCodeClick }: ReasonCodeChartProps) {
   const [selectedReason, setSelectedReason] = useState<string | null>(null);
-  const [selectedColor, setSelectedColor] = useState<string>('');
+  const [selectedColor, setSelectedColor] = useState('');
   const [selectedBookingIds, setSelectedBookingIds] = useState<string[] | undefined>();
   const [selectedIncludedCodes, setSelectedIncludedCodes] = useState<string[] | undefined>();
   const [selectedDescription, setSelectedDescription] = useState<string | undefined>();
+  const [showAll, setShowAll] = useState(false);
+  const [showDetails, setShowDetails] = useState(false);
 
   if (!data) return null;
 
@@ -61,14 +33,14 @@ export function ReasonCodeChart({ data }: ReasonCodeChartProps) {
   // Handle plain object map format: { "Payment": 5, "Host": 3 }
   if (data && typeof data === 'object' && !Array.isArray(data) && !('by_category' in data) && !('distribution' in data) && !('total_cases' in data)) {
     const map = data as Record<string, number>;
-    const total = Object.values(map).reduce((s, v) => s + (typeof v === 'number' ? v : 0), 0);
+    const total = Object.values(map).reduce((s: number, v: any) => s + (typeof v === 'number' ? v : 0), 0);
     chartData = Object.entries(map).map(([key, val]) => ({
       name: key,
       count: typeof val === 'number' ? val : 0,
       pct: total > 0 ? ((typeof val === 'number' ? val : 0) / total * 100) : 0,
     }));
   } else if (Array.isArray(data)) {
-    chartData = data.map(d => ({
+    chartData = data.map((d: any) => ({
       name: d.code || d.reason_group || d.category || 'Unknown',
       count: d.count,
       pct: d.pct ?? d.percentage ?? 0,
@@ -81,9 +53,8 @@ export function ReasonCodeChart({ data }: ReasonCodeChartProps) {
     preventable = data.preventable_churn;
     unpreventable = data.unpreventable_churn;
     methodology = data.methodology;
-
     if (data.by_category?.length) {
-      chartData = data.by_category.map(d => ({
+      chartData = data.by_category.map((d: any) => ({
         name: d.category,
         count: d.count,
         pct: d.percentage,
@@ -92,7 +63,7 @@ export function ReasonCodeChart({ data }: ReasonCodeChartProps) {
         includedCodes: d.reason_codes_included,
       }));
     } else if (data.distribution?.length) {
-      chartData = data.distribution.map(d => ({
+      chartData = data.distribution.map((d: any) => ({
         name: d.reason_group,
         count: d.count,
         pct: d.percentage,
@@ -106,22 +77,23 @@ export function ReasonCodeChart({ data }: ReasonCodeChartProps) {
   if (!chartData.length) return null;
 
   const sorted = [...chartData].sort((a, b) => b.count - a.count);
+  const totalItems = sorted.length;
 
-  // Cap at top 15 — group remainder as "Other"
-  const MAX_VISIBLE = 15;
-  let displayData = sorted;
-  if (sorted.length > MAX_VISIBLE) {
-    const top = sorted.slice(0, MAX_VISIBLE);
-    const rest = sorted.slice(MAX_VISIBLE);
+  // Cap visible items
+  const visibleCount = showAll ? totalItems : Math.min(DEFAULT_VISIBLE, totalItems);
+  let displayData = sorted.slice(0, visibleCount);
+
+  // If capped and there are more, add "Other" row
+  if (!showAll && totalItems > DEFAULT_VISIBLE) {
+    const rest = sorted.slice(DEFAULT_VISIBLE);
     const otherCount = rest.reduce((s, r) => s + r.count, 0);
     const otherPct = rest.reduce((s, r) => s + r.pct, 0);
-    top.push({
-      name: `Other (${rest.length} categories)`,
+    displayData.push({
+      name: `Other (${rest.length})`,
       count: otherCount,
       pct: otherPct,
       details: `Aggregated from ${rest.length} smaller categories`,
     });
-    displayData = top;
   }
 
   const COLORS = [
@@ -134,6 +106,10 @@ export function ReasonCodeChart({ data }: ReasonCodeChartProps) {
   ];
 
   const handleReasonClick = (item: typeof displayData[0], colorIndex: number) => {
+    if (onCodeClick) {
+      onCodeClick(item.name);
+      return;
+    }
     setSelectedReason(item.name);
     setSelectedColor(COLORS[colorIndex % COLORS.length]);
     setSelectedBookingIds(item.bookingIds);
@@ -144,11 +120,15 @@ export function ReasonCodeChart({ data }: ReasonCodeChartProps) {
   return (
     <>
       <Card className="shadow-sm overflow-hidden">
-        <CardHeader>
+        <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle className="text-base">Reason Code Distribution</CardTitle>
+          {totalItems > DEFAULT_VISIBLE && (
+            <Button variant="ghost" size="sm" onClick={() => setShowAll(!showAll)} className="text-xs gap-1">
+              {showAll ? <><ChevronUp className="w-3 h-3" />Show top {DEFAULT_VISIBLE}</> : <><ChevronDown className="w-3 h-3" />Show all {totalItems}</>}
+            </Button>
+          )}
         </CardHeader>
         <CardContent className="space-y-4">
-          {/* Summary stat cards */}
           {totalCases != null && (
             <div className="grid grid-cols-3 gap-3">
               <div className="text-center p-3 rounded-xl bg-gradient-to-br from-muted/30 to-muted/60 border border-border">
@@ -174,8 +154,13 @@ export function ReasonCodeChart({ data }: ReasonCodeChartProps) {
                 type="category"
                 dataKey="name"
                 width={170}
-                tick={{ fontSize: 11 }}
+                tick={{ fontSize: 11, cursor: 'pointer' }}
                 className="fill-muted-foreground"
+                onClick={(_data: any, index: number) => {
+                  if (index >= 0 && index < displayData.length) {
+                    handleReasonClick(displayData[index], index);
+                  }
+                }}
               />
               <Tooltip
                 formatter={(value: number, _name: string, props: any) => {
@@ -192,30 +177,36 @@ export function ReasonCodeChart({ data }: ReasonCodeChartProps) {
             </BarChart>
           </ResponsiveContainer>
 
-          {/* Detail cards — clickable with left color stripe */}
-          <div className="space-y-2">
-            {displayData.map((item, i) => (
-              <div
-                key={i}
-                className="flex items-start gap-3 text-sm rounded-lg p-3 cursor-pointer hover:bg-muted/50 transition-all duration-200 group border border-border overflow-hidden"
-                style={{ borderLeftWidth: '4px', borderLeftColor: COLORS[i % COLORS.length] }}
-                onClick={() => handleReasonClick(item, i)}
-              >
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center justify-between gap-2">
-                    <p className="font-medium text-foreground group-hover:text-primary transition-colors">{item.name}</p>
-                    <div className="flex items-center gap-1.5 flex-shrink-0">
-                      <Badge variant="secondary">{item.count} ({item.pct?.toFixed(1)}%)</Badge>
-                      <ExternalLink className="w-3.5 h-3.5 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
+          {/* Toggle for detail cards */}
+          <Button variant="ghost" size="sm" onClick={() => setShowDetails(!showDetails)} className="text-xs gap-1 w-full">
+            {showDetails ? <><ChevronUp className="w-3 h-3" />Hide category details</> : <><ChevronDown className="w-3 h-3" />Show category details</>}
+          </Button>
+
+          {showDetails && (
+            <div className="space-y-2">
+              {displayData.map((item, i) => (
+                <div
+                  key={i}
+                  className="flex items-start gap-3 text-sm rounded-lg p-3 cursor-pointer hover:bg-muted/50 transition-all duration-200 group border border-border overflow-hidden"
+                  style={{ borderLeftWidth: '4px', borderLeftColor: COLORS[i % COLORS.length] }}
+                  onClick={() => handleReasonClick(item, i)}
+                >
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="font-medium text-foreground group-hover:text-primary transition-colors">{item.name}</p>
+                      <div className="flex items-center gap-1.5 flex-shrink-0">
+                        <Badge variant="secondary">{item.count} ({item.pct?.toFixed(1)}%)</Badge>
+                        <ExternalLink className="w-3.5 h-3.5 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
+                      </div>
                     </div>
+                    {item.details && (
+                      <p className="text-xs text-muted-foreground mt-1">{item.details}</p>
+                    )}
                   </div>
-                  {item.details && (
-                    <p className="text-xs text-muted-foreground mt-1">{item.details}</p>
-                  )}
                 </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
 
           {methodology && (
             <p className="text-xs text-muted-foreground italic border-t border-border pt-3">{methodology}</p>
@@ -223,15 +214,17 @@ export function ReasonCodeChart({ data }: ReasonCodeChartProps) {
         </CardContent>
       </Card>
 
-      <ReasonCodeDrillDown
-        open={!!selectedReason}
-        onOpenChange={(open) => { if (!open) setSelectedReason(null); }}
-        reasonCode={selectedReason || ''}
-        reasonColor={selectedColor}
-        bookingIds={selectedBookingIds}
-        includedReasonCodes={selectedIncludedCodes}
-        categoryDescription={selectedDescription}
-      />
+      {!onCodeClick && (
+        <ReasonCodeDrillDown
+          open={!!selectedReason}
+          onOpenChange={(open) => { if (!open) setSelectedReason(null); }}
+          reasonCode={selectedReason || ''}
+          reasonColor={selectedColor}
+          bookingIds={selectedBookingIds}
+          includedReasonCodes={selectedIncludedCodes}
+          categoryDescription={selectedDescription}
+        />
+      )}
     </>
   );
 }
