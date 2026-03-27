@@ -373,7 +373,7 @@ export default function ResearchInsights() {
 
             <TabsContent value="dashboard" className="space-y-6 mt-6">
               {reportData.executive_summary && (
-                <ExecutiveSummary data={reportData.executive_summary} />
+                <ExecutiveSummary data={reportData.executive_summary as any} />
               )}
               {reportData.top_actions && (
                 <TopActionsTable data={reportData.top_actions} />
