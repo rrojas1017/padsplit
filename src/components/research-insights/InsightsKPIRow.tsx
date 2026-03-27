@@ -19,15 +19,15 @@ export function InsightsKPIRow({ kpis }: { kpis: KPIValues }) {
   const cards = [
     {
       label: 'Total Cases',
-      value: kpis.totalCases.toLocaleString(),
+      value: kpis.totalCases > 0 ? kpis.totalCases.toLocaleString() : '—',
       icon: BarChart3,
       color: 'text-primary',
     },
     {
       label: 'Preventable %',
-      value: `${kpis.preventablePercent.toFixed(0)}%`,
+      value: kpis.preventablePercent > 0 ? `${kpis.preventablePercent.toFixed(0)}%` : '—',
       icon: Target,
-      color: kpiColor(kpis.preventablePercent, 50, 30),
+      color: kpis.preventablePercent > 0 ? kpiColor(kpis.preventablePercent, 50, 30) : 'text-muted-foreground',
     },
     {
       label: 'Top Reason',
