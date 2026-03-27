@@ -59,7 +59,13 @@ function effortBadge(effort?: string) {
 
 export function TopActionsTable({ data }: TopActionsTableProps) {
   const rows = flattenActions(data);
-  if (!rows.length) return null;
+  if (!rows.length) return (
+    <Card className="shadow-sm">
+      <CardContent className="py-8 text-center text-sm text-muted-foreground">
+        No actions in this report.
+      </CardContent>
+    </Card>
+  );
 
   const hasOwner = rows.some((r) => r.owner || (r as any).ownership);
 
