@@ -1,45 +1,64 @@
 
 
-## Update `src/types/research-insights.ts` to strict schema
+## Fix 6 Post-Redesign Bugs — Single Pass
 
-### Problem
-The current types file uses loose/flexible interfaces with many optional variant field names (e.g., `blind_spot` OR `title`, `cluster_name` OR `name`, `watch_or_act` OR `status`). The user wants a clean, strict schema as their canonical reference.
+### Bug 1: Dashboard tab content verification + data debugging
 
-### Compatibility concern
-The existing components (BlindSpotsPanel, IssueClustersPanel, HostAccountabilityPanel, EmergingPatternsPanel) use **their own inline interfaces** — they do NOT import from the shared types file. So replacing the shared types file will NOT break them.
+The tab routing code (lines 374-418) is actually correct — Dashboard has ExecutiveSummary + TopActionsTable, Operations has HostAccountabilityPanel. The likely issue is the `executive_summary` JSONB blob using field names the component doesn't expect. 
 
-The only consumers of the shared types are:
-1. **`ResearchInsights.tsx`** — imports `deriveKPIs` and `ResearchInsightData`
-2. **`TopActionsTable.tsx`** — imports `TopAction` and `TopActionsGrouped`
+**Fix**: Add a temporary `console.log` in ResearchInsights.tsx right after line 162 to dump `reportData` keys and the executive_summary object. Also, the ExecutiveSummary component expects `headline`/`key_findings` as strings (not arrays), while the strict type defines `key_findings: string[]`. The `as any` cast on line 376 hides this. No code change needed for routing — it's correct.
 
-### Changes needed
+### Bug 2: KPI row shows 0% / dash
 
-**1. `src/types/research-insights.ts`** — Replace entirely with the user's strict version. Key differences from current:
-- Adds `ResearchInsightRow` envelope type
-- `ExecutiveSummary`: drops legacy field aliases (`title`, `key_finding`, `total_cases`, `addressable_pct`, etc.)
-- `ReasonCodeItem`: `code` and `percentage` required, drops `reason_group`/`category`/`pct` aliases
-- `IssueCluster`: field names change (`name` not `cluster_name`, `codes` not sub-arrays, `action`/`owner` inline)
-- `TopAction`: removes `TopActionsGrouped` type, `description`/`rationale`/`ownership`/`cases_affected` aliases dropped
-- `BlindSpot`: `title` + `description` (not `blind_spot`)
-- `HostAccountabilityFlag`: `issue` (not `flag`/`issue_pattern`)
-- `EmergingPattern`: `status` enum (not `watch_or_act`)
-- `ProcessingStats`: snake_case field names (`total_research_records` not `totalResearchRecords`)
-- `deriveKPIs`: simplified, uses new field names
+`deriveKPIs` relies on `executive_summary.preventable_percent` and `executive_summary.avg_preventability` — fields the AI report may not populate. Also computes `addressableCount` from `reason_code_distribution[].addressability` which may use different values.
 
-**2. `src/pages/research/ResearchInsights.tsx`** — Line 163: adapt the `deriveKPIs` call to map the hook's camelCase `processingStats` to the new snake_case `ProcessingStats`:
-```ts
-const mappedStats = {
-  total_research_records: processingStats.totalResearchRecords,
-  processed_records: processingStats.processedRecords,
-  flagged_for_review: processingStats.humanReviewCount,
-  pending_records: processingStats.pendingRecords,
-  failed_records: 0,
-};
-const kpis = deriveKPIs(reportData, mappedStats);
-```
+**Fix**: Make `deriveKPIs` more resilient — try multiple field name variants (`preventable_percent`, `addressable_pct`, `preventable_pct`), and for `avgPreventability` also check `avg_preventability_score`. Add fallback computation from reason codes when executive_summary fields are missing.
 
-**3. `src/components/research-insights/TopActionsTable.tsx`** — Remove the `TopActionsGrouped` import (no longer exported). Keep the runtime `flattenActions` logic that handles both grouped object and flat array formats by using inline type guards instead of the removed type. Change `row.ownership` fallback references since `ownership` no longer exists in the type (keep at runtime for backward compat with `as any`).
+### Bug 3: EmergingPatternsPanel — add maxVisible
 
-### What stays unchanged
-All 10+ child components keep their own inline interfaces. The hook keeps its camelCase `ProcessingStats`. No backend changes.
+**File**: `src/components/research-insights/EmergingPatternsPanel.tsx`
+- Add `maxVisible?: number` prop (default: show all for backward compat)
+- Add `useState` for `showAll` toggle
+- Slice `data` to `maxVisible` when not expanded
+- Add "Show all N patterns" button
+
+**In ResearchInsights.tsx line 394**: Pass `maxVisible={5}`.
+
+### Bug 4: BlindSpotsPanel — add maxVisible
+
+**File**: `src/components/research-insights/BlindSpotsPanel.tsx`
+- Same pattern: `maxVisible?: number` prop, `useState` toggle, slice + "Show all" button
+
+**In ResearchInsights.tsx line 397**: Pass `maxVisible={5}`.
+
+### Bug 5: HostAccountabilityPanel — add maxVisible
+
+**File**: `src/components/research-insights/HostAccountabilityPanel.tsx`  
+- Add `maxVisible?: number` prop with default behavior (show all when not set)
+- Add "Show all N flags" toggle
+- The component already handles both string and object formats correctly (line 45)
+
+**In ResearchInsights.tsx line 403**: Pass `maxVisible={8}`.
+
+### Bug 6: HumanReviewQueue pagination
+
+**File**: `src/components/research-insights/HumanReviewQueue.tsx`
+- Add `visibleCount` state starting at 20
+- Slice `items` to `visibleCount`
+- Add "Show more (N remaining)" button
+
+**ProcessedRecordsList.tsx** already has a 10-item cap with "Show All" toggle (line 61/76-79), so it only needs the default page size reduced or kept as-is. No change needed.
+
+### Files modified (6 files)
+
+| File | Change |
+|---|---|
+| `src/types/research-insights.ts` | Make `deriveKPIs` handle field name variants |
+| `src/pages/research/ResearchInsights.tsx` | Pass `maxVisible` props; add data debug log |
+| `src/components/research-insights/EmergingPatternsPanel.tsx` | Add `maxVisible` prop + toggle |
+| `src/components/research-insights/BlindSpotsPanel.tsx` | Add `maxVisible` prop + toggle |
+| `src/components/research-insights/HostAccountabilityPanel.tsx` | Add `maxVisible` prop + toggle |
+| `src/components/research-insights/HumanReviewQueue.tsx` | Add 20-item pagination |
+
+No backend changes. No new files.
 
