@@ -160,7 +160,14 @@ export default function ResearchInsights() {
   };
 
   const reportData = selectedReport?.data as ResearchInsightData | null;
-  const kpis = deriveKPIs(reportData, processingStats);
+  const mappedStats: import('@/types/research-insights').ProcessingStats = {
+    total_research_records: processingStats.totalResearchRecords,
+    processed_records: processingStats.processedRecords,
+    flagged_for_review: processingStats.humanReviewCount,
+    pending_records: processingStats.pendingRecords,
+    failed_records: 0,
+  };
+  const kpis = deriveKPIs(reportData, mappedStats);
 
   return (
     <DashboardLayout title="Research Insights" subtitle="AI-processed findings from move-out research">
@@ -366,7 +373,7 @@ export default function ResearchInsights() {
 
             <TabsContent value="dashboard" className="space-y-6 mt-6">
               {reportData.executive_summary && (
-                <ExecutiveSummary data={reportData.executive_summary} />
+                <ExecutiveSummary data={reportData.executive_summary as any} />
               )}
               {reportData.top_actions && (
                 <TopActionsTable data={reportData.top_actions} />
@@ -381,7 +388,7 @@ export default function ResearchInsights() {
                 />
               )}
               {reportData.issue_clusters && (
-                <IssueClustersPanel data={reportData.issue_clusters} maxVisible={5} />
+                <IssueClustersPanel data={reportData.issue_clusters as any} maxVisible={5} />
               )}
               {reportData.emerging_patterns && (
                 <EmergingPatternsPanel data={reportData.emerging_patterns} />
