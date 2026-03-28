@@ -24,6 +24,15 @@ function getStatusBorderColor(status?: string): string {
   return 'hsl(var(--border))';
 }
 
+function parsePattern(text: string): { title: string; description: string } {
+  const match = text.match(/^\*\*([^*]+)\*\*\s*(.*)/s);
+  if (match) return { title: match[1], description: match[2] };
+  const dotIdx = text.indexOf('. ');
+  if (dotIdx > 0 && dotIdx < 80) return { title: text.slice(0, dotIdx + 1), description: text.slice(dotIdx + 2) };
+  if (text.length > 60) return { title: text.slice(0, 60) + '…', description: text };
+  return { title: text, description: '' };
+}
+
 export function EmergingPatternsPanel({ data, maxVisible }: EmergingPatternsPanelProps) {
   const [showAll, setShowAll] = useState(false);
   if (!data?.length) return null;
