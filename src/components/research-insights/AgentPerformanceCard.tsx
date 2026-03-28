@@ -74,13 +74,13 @@ export function AgentPerformanceCard({ data }: AgentPerformanceProps) {
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
-        {data.strengths && (
+        {strengthItems.length > 0 && (
           <div className="bg-gradient-to-br from-emerald-500/5 to-emerald-500/10 border border-emerald-500/20 rounded-xl p-4">
             <div className="flex items-center gap-2 mb-2">
               <ThumbsUp className="w-4 h-4 text-emerald-500" />
               <p className="text-xs font-semibold text-foreground uppercase tracking-wide">Strengths</p>
             </div>
-            <p className="text-sm text-muted-foreground">{data.strengths}</p>
+            <ItemList items={strengthItems} accent="emerald" />
           </div>
         )}
 
