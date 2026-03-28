@@ -103,7 +103,9 @@ export function TopActionsTable({ data }: TopActionsTableProps) {
                     <td className="px-4 py-3">
                       <PriorityBadge priority={row.priority} />
                     </td>
-                    <td className="px-4 py-3 text-foreground font-medium">{row.action}</td>
+                    <td className="px-4 py-3 max-w-[400px]">
+                      <span className="text-foreground font-medium text-[13px] leading-snug line-clamp-2" title={row.action}>{row.action}</span>
+                    </td>
                     {hasOwner && (
                       <td className="px-4 py-3">
                         {owner && <Badge variant="outline" className="text-xs">{owner}</Badge>}
