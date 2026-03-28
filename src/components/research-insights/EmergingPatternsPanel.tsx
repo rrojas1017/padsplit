@@ -24,6 +24,15 @@ function getStatusBorderColor(status?: string): string {
   return 'hsl(var(--border))';
 }
 
+function parsePattern(text: string): { title: string; description: string } {
+  const match = text.match(/^\*\*([^*]+)\*\*\s*(.*)/s);
+  if (match) return { title: match[1], description: match[2] };
+  const dotIdx = text.indexOf('. ');
+  if (dotIdx > 0 && dotIdx < 80) return { title: text.slice(0, dotIdx + 1), description: text.slice(dotIdx + 2) };
+  if (text.length > 60) return { title: text.slice(0, 60) + '…', description: text };
+  return { title: text, description: '' };
+}
+
 export function EmergingPatternsPanel({ data, maxVisible }: EmergingPatternsPanelProps) {
   const [showAll, setShowAll] = useState(false);
   if (!data?.length) return null;
@@ -55,7 +64,7 @@ export function EmergingPatternsPanel({ data, maxVisible }: EmergingPatternsPane
               style={{ borderLeftWidth: '4px', borderLeftColor: borderColor }}
             >
               <div className="flex items-start justify-between gap-2">
-                <p className="text-sm font-medium text-foreground">{item.pattern}</p>
+                <p className="text-sm font-medium text-foreground">{parsePattern(item.pattern).title}</p>
                 {item.watch_or_act && (
                   item.watch_or_act === 'act_now'
                     ? <Badge variant="destructive">Act Now</Badge>
@@ -64,7 +73,9 @@ export function EmergingPatternsPanel({ data, maxVisible }: EmergingPatternsPane
                     : <Badge variant="outline">Monitor</Badge>
                 )}
               </div>
-              {detail && <p className="text-xs text-muted-foreground">{detail}</p>}
+              {(detail || parsePattern(item.pattern).description) && (
+                <p className="text-xs text-muted-foreground line-clamp-2">{detail || parsePattern(item.pattern).description}</p>
+              )}
               {item.quote && (
                 <blockquote className="border-l-2 border-accent pl-3 italic text-xs text-muted-foreground">
                   "{item.quote}"

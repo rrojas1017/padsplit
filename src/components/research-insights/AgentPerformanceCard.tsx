@@ -1,4 +1,6 @@
+import { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
 import { UserCheck, ThumbsUp, AlertTriangle, Lightbulb } from 'lucide-react';
 
 interface OpportunityItem {
@@ -21,8 +23,45 @@ interface AgentPerformanceProps {
   };
 }
 
+function parseMarkdownItems(input: string | string[] | undefined): string[] {
+  if (!input) return [];
+  if (Array.isArray(input)) return input;
+  if (typeof input !== 'string') return [];
+  // Split on **bold** markers, numbered lists, or newlines
+  const parts = input
+    .split(/(?:\*\*[^*]+\*\*|(?:^|\n)\d+\.\s)/)
+    .map(s => s.trim().replace(/^[*\-•:]\s*/, '').trim())
+    .filter(s => s.length > 10);
+  if (parts.length > 1) return parts;
+  // Fallback: split on sentence boundaries
+  return input.split(/(?<=[.!?])\s+/).filter(s => s.length > 10);
+}
+
+function ItemList({ items, accent }: { items: string[]; accent: 'emerald' | 'amber' }) {
+  const [showAll, setShowAll] = useState(false);
+  const visible = showAll ? items : items.slice(0, 5);
+  const dotColor = accent === 'emerald' ? 'bg-emerald-500' : 'bg-amber-500';
+  return (
+    <div className="space-y-2">
+      {visible.map((item, i) => (
+        <div key={i} className="flex items-start gap-2">
+          <div className={`w-1.5 h-1.5 rounded-full ${dotColor} mt-1.5 flex-shrink-0`} />
+          <p className="text-sm text-muted-foreground">{item}</p>
+        </div>
+      ))}
+      {items.length > 5 && !showAll && (
+        <Button variant="ghost" size="sm" onClick={() => setShowAll(true)} className="text-xs text-primary">
+          Show {items.length - 5} more
+        </Button>
+      )}
+    </div>
+  );
+}
+
 export function AgentPerformanceCard({ data }: AgentPerformanceProps) {
   if (!data) return null;
+  const strengthItems = parseMarkdownItems(data.strengths);
+  const weaknessItems = parseMarkdownItems(data.weaknesses as any);
 
   return (
     <Card className="shadow-sm">
@@ -35,13 +74,13 @@ export function AgentPerformanceCard({ data }: AgentPerformanceProps) {
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
-        {data.strengths && (
+        {strengthItems.length > 0 && (
           <div className="bg-gradient-to-br from-emerald-500/5 to-emerald-500/10 border border-emerald-500/20 rounded-xl p-4">
             <div className="flex items-center gap-2 mb-2">
               <ThumbsUp className="w-4 h-4 text-emerald-500" />
               <p className="text-xs font-semibold text-foreground uppercase tracking-wide">Strengths</p>
             </div>
-            <p className="text-sm text-muted-foreground">{data.strengths}</p>
+            <ItemList items={strengthItems} accent="emerald" />
           </div>
         )}
 
@@ -70,17 +109,13 @@ export function AgentPerformanceCard({ data }: AgentPerformanceProps) {
               ))}
             </div>
           </div>
-        ) : data.weaknesses?.length ? (
+        ) : weaknessItems.length > 0 ? (
           <div>
             <div className="flex items-center gap-2 mb-2">
               <AlertTriangle className="w-4 h-4 text-amber-500" />
               <p className="text-xs font-semibold text-foreground uppercase tracking-wide">Weaknesses & Gaps</p>
             </div>
-            <ul className="space-y-2">
-              {data.weaknesses.map((w, i) => (
-                <li key={i} className="text-sm text-muted-foreground border border-border rounded-lg p-3">{w}</li>
-              ))}
-            </ul>
+            <ItemList items={weaknessItems} accent="amber" />
           </div>
         ) : null}
 
