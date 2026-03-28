@@ -1,39 +1,59 @@
 
 
-## Fix Research Insights Dashboard — 5 targeted fixes
+## UI Refinement Pass — 5 Visual Fixes for Research Insights
 
-### Analysis of real data
+### 1. ReasonCodeChart.tsx — Fix cramped bars
 
-From the console logs, the actual data shape is clear. The ExecutiveSummary component **already handles** `key_findings` as a string (line 33 assigns it, line 64 renders it as `{bodyText}` — no `.map()` call). The component IS rendering. The `deriveKPIs` function already checks `addressable_pct` and `avg_preventability_score` — but they're all 0 in the real data.
+The chart uses Recharts `BarChart` with `layout="vertical"` and `margin={{ left: 180 }}`. The left margin is already generous. The real fix: reduce YAxis `width` from 170 to 150, and ensure the card has no width constraints. The bars already use `ResponsiveContainer width="100%"` so they fill available space. Minor tweak only.
 
-The real problem: **all KPI values are 0, displaying as "0%" instead of "—"**, making the dashboard look broken.
+**Changes (line 150-158):**
+- Reduce `margin.left` from 180 to 160
+- Reduce YAxis `width` from 170 to 150  
+- Add `tickFormatter` to truncate long labels at 25 chars
 
-### Changes
+### 2. TopActionsTable.tsx — Truncate long text
 
-**1. `src/types/research-insights.ts` — deriveKPIs already resilient, no change needed**
-The function already checks `addressable_pct`, `avg_preventability_score`, `total_cases` via the fallback chain on lines 193/199/207. The values ARE found — they're just 0.
+**Changes (lines 106, 113):**
+- Action cell: add `max-w-[400px]`, wrap text in `<span>` with `line-clamp-2` and `title={row.action}`
+- Impact cell: add `max-w-[250px]`, `line-clamp-1`, `title={desc}`
 
-**2. `src/components/research-insights/InsightsKPIRow.tsx` — Show "—" for zero values**
-- Total Cases: if 0, show "—" instead of "0"
-- Preventable %: if 0, show "—" instead of "0%"
-- Avg Preventability: already shows "—" for 0 (line 47)
+### 3. HostAccountabilityPanel.tsx — Infer severity from text
 
-**3. `src/components/research-insights/TopActionsTable.tsx` — Add empty state and defensive normalization**
-- Normalize each item defensively: fall back `action` from `recommendation`/`description`, `impact` from `rationale`/`expected_impact`
-- Add an empty state message when no actions exist after normalization
+The component already handles both string and object formats. For string items, add `inferSeverity()` to detect critical/high/medium keywords and apply colored left borders.
 
-**4. `src/components/research-insights/ReasonCodeChart.tsx` — No change needed**
-Already handles arrays with `pct` fallback (line 46: `d.pct ?? d.percentage ?? 0`). Missing `severity` doesn't break anything — colors come from the fixed COLORS array, not from severity fields.
+**Changes:**
+- Add `inferSeverity(text)` function checking for keywords (harassment, discrimination, illegal → critical; uninhabitable, unsafe, threatening → high; else medium)
+- Map severity to border color classes
+- Apply to string-format items in the render
 
-**5. `src/components/research-insights/ExecutiveSummary.tsx` — No change needed**
-Already handles `key_findings` as string (line 33). Already handles long headlines (line 38-40). Already renders the hero banner correctly with the real data shape.
+### 4. AgentPerformanceCard.tsx — Parse markdown strings
 
-### Summary of actual file changes
+The `strengths` field comes as a single string with `**bold**` markers. Currently rendered as one `<p>` tag.
 
-| File | Change |
-|---|---|
-| `InsightsKPIRow.tsx` | Show "—" for 0 values on Total Cases and Preventable % |
-| `TopActionsTable.tsx` | Add defensive field normalization + empty state fallback |
+**Changes:**
+- Add `parseMarkdownItems(data)` that handles both `string` and `string[]`
+- For strings: split on `**...**` patterns or newlines, extract meaningful segments
+- Render as bullet list with emerald accent dots
+- Cap at 5 visible items with "Show more" toggle
+- Same treatment for `weaknesses` when it arrives as a string
 
-2 files changed. The other 3 files (deriveKPIs, ExecutiveSummary, ReasonCodeChart) already handle the real data correctly.
+### 5. EmergingPatternsPanel.tsx — Extract title from text
+
+Pattern items may have `pattern` as a full paragraph. Extract a title.
+
+**Changes:**
+- Add `parsePattern(text)`: check for `**Title**` markdown prefix, else use first sentence (up to 80 chars) as title
+- Render title in `font-medium` on first line, description below in `text-xs text-muted-foreground line-clamp-2`
+
+### Files modified (5)
+
+| # | File | Fix |
+|---|---|---|
+| 1 | `ReasonCodeChart.tsx` | Reduce left margin/YAxis width, truncate long labels |
+| 2 | `TopActionsTable.tsx` | `line-clamp-2` on action, `line-clamp-1` on impact, `title` attrs |
+| 3 | `HostAccountabilityPanel.tsx` | `inferSeverity()` for string items, colored left borders |
+| 4 | `AgentPerformanceCard.tsx` | Parse markdown strings into bullet lists, cap at 5 |
+| 5 | `EmergingPatternsPanel.tsx` | Extract title from pattern text, two-line layout |
+
+No backend changes. No new files.
 
