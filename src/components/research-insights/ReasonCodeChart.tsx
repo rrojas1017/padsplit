@@ -164,7 +164,8 @@ export function ReasonCodeChart({ data, onCodeClick }: ReasonCodeChartProps) {
               />
               <Tooltip
                 formatter={(value: number, _name: string, props: any) => {
-                  return [`${value} cases (${props.payload.pct?.toFixed(1)}%)`, 'Count'];
+                  const pct = typeof props.payload.pct === 'number' ? props.payload.pct : parseFloat(String(props.payload.pct || 0));
+                  return [`${value} cases (${isNaN(pct) ? '—' : pct.toFixed(1)}%)`, 'Count'];
                 }}
                 contentStyle={{ background: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', borderRadius: '8px' }}
                 labelStyle={{ color: 'hsl(var(--foreground))' }}
@@ -195,7 +196,7 @@ export function ReasonCodeChart({ data, onCodeClick }: ReasonCodeChartProps) {
                     <div className="flex items-center justify-between gap-2">
                       <p className="font-medium text-foreground group-hover:text-primary transition-colors">{item.name}</p>
                       <div className="flex items-center gap-1.5 flex-shrink-0">
-                        <Badge variant="secondary">{item.count} ({item.pct?.toFixed(1)}%)</Badge>
+                        <Badge variant="secondary">{item.count} ({typeof item.pct === 'number' ? item.pct.toFixed(1) : parseFloat(String(item.pct || 0)).toFixed(1)}%)</Badge>
                         <ExternalLink className="w-3.5 h-3.5 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
                       </div>
                     </div>
