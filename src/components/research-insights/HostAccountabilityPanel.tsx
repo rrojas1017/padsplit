@@ -31,6 +31,21 @@ function getPriorityBorderColor(priority?: string): string {
   return 'hsl(var(--border))';
 }
 
+function inferSeverity(text: string): 'critical' | 'high' | 'medium' {
+  const lower = text.toLowerCase();
+  if (lower.includes('harassment') || lower.includes('assault') || lower.includes('discrimination') || lower.includes('illegal'))
+    return 'critical';
+  if (lower.includes('uninhabitable') || lower.includes('unsafe') || lower.includes('threatening') || lower.includes('negligence'))
+    return 'high';
+  return 'medium';
+}
+
+const severityBorderColor: Record<string, string> = {
+  critical: 'hsl(var(--destructive))',
+  high: 'hsl(45, 93%, 47%)',
+  medium: 'hsl(var(--border))',
+};
+
 export function HostAccountabilityPanel({ data, maxVisible }: HostAccountabilityPanelProps) {
   const [showAll, setShowAll] = useState(false);
   if (!data?.length) return null;
