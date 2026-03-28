@@ -64,7 +64,7 @@ export function EmergingPatternsPanel({ data, maxVisible }: EmergingPatternsPane
               style={{ borderLeftWidth: '4px', borderLeftColor: borderColor }}
             >
               <div className="flex items-start justify-between gap-2">
-                <p className="text-sm font-medium text-foreground">{item.pattern}</p>
+                <p className="text-sm font-medium text-foreground">{parsePattern(item.pattern).title}</p>
                 {item.watch_or_act && (
                   item.watch_or_act === 'act_now'
                     ? <Badge variant="destructive">Act Now</Badge>
