@@ -147,14 +147,15 @@ export function ReasonCodeChart({ data, onCodeClick }: ReasonCodeChartProps) {
           )}
 
           <ResponsiveContainer width="100%" height={Math.max(250, displayData.length * 50)}>
-            <BarChart data={displayData} layout="vertical" margin={{ left: 180, right: 30, top: 5, bottom: 5 }}>
+            <BarChart data={displayData} layout="vertical" margin={{ left: 160, right: 30, top: 5, bottom: 5 }}>
               <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
               <XAxis type="number" className="text-xs fill-muted-foreground" />
               <YAxis
                 type="category"
                 dataKey="name"
-                width={170}
+                width={150}
                 tick={{ fontSize: 11, cursor: 'pointer' }}
+                tickFormatter={(value: string) => value.length > 25 ? value.slice(0, 25) + '…' : value}
                 className="fill-muted-foreground"
                 onClick={(_data: any, index: number) => {
                   if (index >= 0 && index < displayData.length) {

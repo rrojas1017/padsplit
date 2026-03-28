@@ -112,7 +112,9 @@ export function TopActionsTable({ data }: TopActionsTableProps) {
                       </td>
                     )}
                     <td className="px-4 py-3">{effortBadge(row.effort)}</td>
-                    <td className="px-4 py-3 text-muted-foreground text-xs max-w-[300px]">{desc}</td>
+                    <td className="px-4 py-3 max-w-[250px]">
+                      <span className="text-muted-foreground text-xs line-clamp-1" title={desc}>{desc}</span>
+                    </td>
                   </tr>
                 );
               })}

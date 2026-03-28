@@ -109,17 +109,13 @@ export function AgentPerformanceCard({ data }: AgentPerformanceProps) {
               ))}
             </div>
           </div>
-        ) : data.weaknesses?.length ? (
+        ) : weaknessItems.length > 0 ? (
           <div>
             <div className="flex items-center gap-2 mb-2">
               <AlertTriangle className="w-4 h-4 text-amber-500" />
               <p className="text-xs font-semibold text-foreground uppercase tracking-wide">Weaknesses & Gaps</p>
             </div>
-            <ul className="space-y-2">
-              {data.weaknesses.map((w, i) => (
-                <li key={i} className="text-sm text-muted-foreground border border-border rounded-lg p-3">{w}</li>
-              ))}
-            </ul>
+            <ItemList items={weaknessItems} accent="amber" />
           </div>
         ) : null}
 

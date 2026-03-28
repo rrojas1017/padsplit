@@ -73,7 +73,9 @@ export function EmergingPatternsPanel({ data, maxVisible }: EmergingPatternsPane
                     : <Badge variant="outline">Monitor</Badge>
                 )}
               </div>
-              {detail && <p className="text-xs text-muted-foreground">{detail}</p>}
+              {(detail || parsePattern(item.pattern).description) && (
+                <p className="text-xs text-muted-foreground line-clamp-2">{detail || parsePattern(item.pattern).description}</p>
+              )}
               {item.quote && (
                 <blockquote className="border-l-2 border-accent pl-3 italic text-xs text-muted-foreground">
                   "{item.quote}"

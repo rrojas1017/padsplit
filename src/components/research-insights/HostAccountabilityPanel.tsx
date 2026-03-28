@@ -68,7 +68,10 @@ export function HostAccountabilityPanel({ data, maxVisible }: HostAccountability
         {visible.map((rawItem, i) => {
           const item: HostFlag = typeof rawItem === 'string' ? { flag: rawItem } : rawItem;
           const title = item.flag || item.issue_pattern;
-          const borderColor = getPriorityBorderColor(item.priority);
+          const isStringOnly = typeof rawItem === 'string';
+          const borderColor = isStringOnly
+            ? severityBorderColor[inferSeverity(rawItem)]
+            : getPriorityBorderColor(item.priority);
 
           return (
             <div
