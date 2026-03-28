@@ -164,7 +164,8 @@ export function ReasonCodeChart({ data, onCodeClick }: ReasonCodeChartProps) {
               />
               <Tooltip
                 formatter={(value: number, _name: string, props: any) => {
-                  return [`${value} cases (${props.payload.pct?.toFixed(1)}%)`, 'Count'];
+                  const pct = typeof props.payload.pct === 'number' ? props.payload.pct : parseFloat(String(props.payload.pct || 0));
+                  return [`${value} cases (${isNaN(pct) ? '—' : pct.toFixed(1)}%)`, 'Count'];
                 }}
                 contentStyle={{ background: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', borderRadius: '8px' }}
                 labelStyle={{ color: 'hsl(var(--foreground))' }}
