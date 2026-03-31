@@ -19,12 +19,17 @@ const CAMPAIGN_TYPE_LABELS: Record<string, string> = {
   satisfaction: 'Satisfaction',
   market_research: 'Market Research',
   retention: 'Retention',
+  audience_survey: 'Audience Survey',
 };
 
 const AUDIENCE_LABELS: Record<string, string> = {
   existing_member: 'Existing Members',
   former_booking: 'Former Bookings',
   rejected: 'Rejected Leads',
+  account_created: 'Account Created',
+  application_started: 'Application Started',
+  approved_not_booked: 'Approved (Not Booked)',
+  active_member: 'Active Members',
 };
 
 export default function ScriptBuilder() {
