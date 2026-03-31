@@ -144,8 +144,20 @@ export function useDashboardData(dateRange: DateRangeFilterType, customDates?: C
 
   const useDirect = needsDirectQuery(dateRange);
 
+  // Fix: when we need direct data but haven't fetched yet, show loading
+  const effectiveLoading = useDirect 
+    ? (isDirectLoading || directBookings === null) 
+    : contextLoading;
+
+  const effectiveBookings = useDirect ? (directBookings || []) : contextBookings;
+
+  // Debug logging for data discrepancies
+  if (!effectiveLoading && useDirect && directBookings) {
+    console.log(`[useDashboardData] ${dateRange}: fetched ${directBookings.length} total rows`);
+  }
+
   return {
-    bookings: useDirect ? (directBookings || []) : contextBookings,
-    isLoading: useDirect ? isDirectLoading : contextLoading,
+    bookings: effectiveBookings,
+    isLoading: effectiveLoading,
   };
 }
