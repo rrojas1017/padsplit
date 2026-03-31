@@ -101,6 +101,7 @@ export default function ScriptBuilder() {
               <SelectItem value="satisfaction">Satisfaction</SelectItem>
               <SelectItem value="market_research">Market Research</SelectItem>
               <SelectItem value="retention">Retention</SelectItem>
+              <SelectItem value="audience_survey">Audience Survey</SelectItem>
             </SelectContent>
           </Select>
           <span className="text-sm text-muted-foreground">{filtered.length} script{filtered.length !== 1 ? 's' : ''}</span>
