@@ -1,0 +1,2 @@
+ALTER TABLE research_scripts DROP CONSTRAINT research_scripts_target_audience_check;
+ALTER TABLE research_scripts ADD CONSTRAINT research_scripts_target_audience_check CHECK (target_audience = ANY (ARRAY['existing_member'::text, 'former_booking'::text, 'rejected'::text, 'account_created'::text, 'application_started'::text, 'approved_not_booked'::text, 'active_member'::text]));
