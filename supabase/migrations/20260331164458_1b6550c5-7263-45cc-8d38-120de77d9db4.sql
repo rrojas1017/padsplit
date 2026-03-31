@@ -1,0 +1,2 @@
+ALTER TABLE research_scripts DROP CONSTRAINT research_scripts_campaign_type_check;
+ALTER TABLE research_scripts ADD CONSTRAINT research_scripts_campaign_type_check CHECK (campaign_type = ANY (ARRAY['satisfaction'::text, 'market_research'::text, 'retention'::text, 'audience_survey'::text]));

@@ -16,12 +16,17 @@ const CAMPAIGN_TYPES = [
   { value: 'satisfaction', label: 'Member Satisfaction (NPS)' },
   { value: 'market_research', label: 'Market Research' },
   { value: 'retention', label: 'Retention Check-in' },
+  { value: 'audience_survey', label: 'Audience Survey' },
 ];
 
 const TARGET_AUDIENCES = [
   { value: 'existing_member', label: 'Existing Members' },
   { value: 'former_booking', label: 'Former Bookings' },
   { value: 'rejected', label: 'Rejected Leads' },
+  { value: 'account_created', label: 'Account Created' },
+  { value: 'application_started', label: 'Application Started' },
+  { value: 'approved_not_booked', label: 'Approved (Not Booked)' },
+  { value: 'active_member', label: 'Active Members' },
 ];
 
 const QUESTION_TYPES = [
