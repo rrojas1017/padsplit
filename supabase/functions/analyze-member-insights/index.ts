@@ -272,7 +272,9 @@ async function fetchBookingsInBatches(
             )
           `)
           .eq('transcription_status', 'completed')
+          .eq('record_type', 'booking')
           .neq('status', 'Non Booking')
+          .neq('status', 'Research')
           .gte('booking_date', start)
           .lte('booking_date', end)
           .range(offset, offset + BATCH_SIZE - 1);

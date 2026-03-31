@@ -93,8 +93,8 @@ async function fetchAllBookings(dateFilter?: { from: string; to: string }): Prom
     hasMore = (data?.length || 0) === PAGE_SIZE;
     from += PAGE_SIZE;
 
-    // Safety cap at 10,000
-    if (allRows.length >= 10000) break;
+    // Safety cap at 25,000
+    if (allRows.length >= 25000) break;
   }
 
   return allRows.map(transformRow);

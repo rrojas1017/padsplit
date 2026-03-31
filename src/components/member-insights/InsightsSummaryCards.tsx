@@ -59,7 +59,7 @@ const InsightsSummaryCards = ({ insight }: InsightsSummaryCardsProps) => {
         <CardContent className="pt-6">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm text-muted-foreground">Calls Analyzed</p>
+              <p className="text-sm text-muted-foreground">Booking Calls Analyzed</p>
               <div className="flex items-center gap-2">
                 <p className="text-3xl font-bold">{insight.total_calls_analyzed}</p>
                 {hasTrendData && (
