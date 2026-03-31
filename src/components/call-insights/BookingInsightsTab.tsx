@@ -360,7 +360,7 @@ export function BookingInsightsTab({ dateRange, onDateRangeChange }: BookingInsi
             <SelectContent>
               {insights.map((insight) => (
                 <SelectItem key={insight.id} value={insight.id}>
-                  {format(new Date(insight.created_at), 'MMM d, yyyy h:mm a')} - {insight.total_calls_analyzed} calls
+                  {format(new Date(insight.created_at), 'MMM d, yyyy h:mm a')} - {insight.total_calls_analyzed} booking calls
                 </SelectItem>
               ))}
             </SelectContent>
