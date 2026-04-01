@@ -94,7 +94,9 @@ export function TopActionsTable({ data }: TopActionsTableProps) {
                     <PriorityBadge priority={row.priority} />
                   </td>
                   <td className="px-2 py-3">
-                    <p className="text-foreground text-[13px] leading-relaxed">{row.action}</p>
+                    <p className="text-foreground text-[13px] leading-relaxed">
+                      {row.action.replace(/^P[0-3]\s*[:\-–—]\s*/i, '')}
+                    </p>
                   </td>
                   <td className="px-2 py-3 text-center">
                     {row.quickWin ? (
