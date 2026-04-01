@@ -505,7 +505,16 @@ export function ReasonCodeChart({ data, onCodeClick, onViewAllMembers }: ReasonC
 
   // ── Level 1: Side-by-side overview ──
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+    <div className="space-y-4">
+      {otherPct > 10 && (
+        <Alert className="border-amber-200 bg-amber-50">
+          <AlertTriangle className="w-4 h-4 text-amber-500" />
+          <AlertDescription className="text-sm">
+            <strong>{otherPct}%</strong> of records are classified as "Other" — consider running AI re-classification or reviewing the classification prompts.
+          </AlertDescription>
+        </Alert>
+      )}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
       {/* Reason Code Distribution */}
       {clusters.length > 0 && (
         <Card className="shadow-sm overflow-hidden">
