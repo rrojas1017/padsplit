@@ -234,9 +234,9 @@ function FlagRow({ item, rawItem }: { item: HostFlag; rawItem: any }) {
 
 export function HostAccountabilityPanel({ data, maxVisible }: HostAccountabilityPanelProps) {
   const [showAll, setShowAll] = useState(false);
-  if (!data?.length) return null;
 
   const sorted = useMemo(() => {
+    if (!data?.length) return [];
     const items = data.map(rawItem => {
       const item: HostFlag = typeof rawItem === 'string' ? { flag: rawItem } : rawItem;
       const title = item.flag || item.issue_pattern || (typeof rawItem === 'string' ? rawItem : '');
