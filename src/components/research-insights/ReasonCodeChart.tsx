@@ -182,7 +182,7 @@ export function ReasonCodeChart({ data, onCodeClick }: ReasonCodeChartProps) {
           <ResponsiveContainer width="100%" height={Math.max(250, displayData.length * 50)}>
             <BarChart data={displayData} layout="vertical" margin={{ left: 160, right: 30, top: 5, bottom: 5 }}>
               <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
-              <XAxis type="number" className="text-xs fill-muted-foreground" />
+              <XAxis type="number" className="text-xs fill-muted-foreground" domain={[0, 'auto']} tickFormatter={(v: number) => `${v.toFixed(0)}%`} />
               <YAxis
                 type="category"
                 dataKey="name"
@@ -198,13 +198,27 @@ export function ReasonCodeChart({ data, onCodeClick }: ReasonCodeChartProps) {
               />
               <Tooltip
                 formatter={(value: number, _name: string, props: any) => {
-                  const pct = typeof props.payload.pct === 'number' ? props.payload.pct : parseFloat(String(props.payload.pct || 0));
-                  return [`${value} cases (${isNaN(pct) ? '—' : pct.toFixed(1)}%)`, 'Count'];
+                  const count = props.payload.count || 0;
+                  return [`${value.toFixed(1)}% (${count} cases)`, 'Share'];
                 }}
                 contentStyle={{ background: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', borderRadius: '8px' }}
                 labelStyle={{ color: 'hsl(var(--foreground))' }}
               />
-              <Bar dataKey="count" radius={[0, 4, 4, 0]} className="cursor-pointer" onClick={(_data: any, index: number) => handleReasonClick(displayData[index], index)}>
+              <Bar
+                dataKey="pct"
+                radius={[0, 4, 4, 0]}
+                className="cursor-pointer"
+                onClick={(_data: any, index: number) => handleReasonClick(displayData[index], index)}
+                label={({ x, y, width: w, height: h, value, index }: any) => {
+                  const item = displayData[index];
+                  if (!item) return null;
+                  return (
+                    <text x={(x || 0) + (w || 0) + 4} y={(y || 0) + (h || 0) / 2 + 4} fontSize={10} fill="hsl(var(--muted-foreground))">
+                      {`${Number(value).toFixed(0)}% (${item.count})`}
+                    </text>
+                  );
+                }}
+              >
                 {displayData.map((_entry, index) => (
                   <Cell key={index} fill={COLORS[index % COLORS.length]} />
                 ))}
