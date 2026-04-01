@@ -211,6 +211,7 @@ function AddressabilityDrillDown({ bucket, total, onViewAllMembers, onBack }: {
 }) {
   const [memberPreviews, setMemberPreviews] = useState<MemberPreview[]>([]);
   const [membersLoading, setMembersLoading] = useState(false);
+  const [detailId, setDetailId] = useState<string | null>(null);
 
   useEffect(() => {
     async function fetchMembers() {
