@@ -1,15 +1,25 @@
 import { Card, CardContent } from '@/components/ui/card';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { BarChart3, Target, TrendingUp, AlertTriangle, Home } from 'lucide-react';
+import { BarChart3, Target, TrendingUp, AlertTriangle, Home, ArrowUp, ArrowDown, Minus } from 'lucide-react';
 import type { DerivedKPIs } from '@/types/research-insights';
+import type { TrendDirection } from '@/hooks/useResearchTrends';
 
-export function InsightsKPIRow({ kpis }: { kpis: DerivedKPIs }) {
+interface InsightsKPIRowProps {
+  kpis: DerivedKPIs;
+  direction?: TrendDirection | null;
+}
+
+export function InsightsKPIRow({ kpis, direction }: InsightsKPIRowProps) {
   const cards = [
     {
       label: 'Total Cases',
       value: kpis.totalCases > 0 ? kpis.totalCases.toLocaleString() : 'N/A',
       icon: BarChart3,
       color: 'text-primary',
+      trend: direction ? {
+        dir: direction.totalCases,
+        delta: direction.totalCasesDelta,
+      } : null,
     },
     {
       label: 'Addressable %',
@@ -65,7 +75,19 @@ export function InsightsKPIRow({ kpis }: { kpis: DerivedKPIs }) {
                   {card.value}
                 </p>
               )}
-              <p className="text-xs text-muted-foreground">{card.label}</p>
+              <div className="flex items-center gap-1">
+                <p className="text-xs text-muted-foreground">{card.label}</p>
+                {'trend' in card && card.trend && (
+                  <span className={`inline-flex items-center text-[10px] font-medium ${
+                    card.trend.dir === 'up' ? 'text-emerald-500' : card.trend.dir === 'down' ? 'text-destructive' : 'text-muted-foreground'
+                  }`}>
+                    {card.trend.dir === 'up' ? <ArrowUp className="w-3 h-3" /> : card.trend.dir === 'down' ? <ArrowDown className="w-3 h-3" /> : <Minus className="w-3 h-3" />}
+                    {card.trend.delta !== 0 && (
+                      <span>{card.trend.delta > 0 ? '+' : ''}{card.trend.delta}</span>
+                    )}
+                  </span>
+                )}
+              </div>
             </div>
           </CardContent>
         </Card>
