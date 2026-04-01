@@ -133,7 +133,7 @@ X-Client-Secret: sk_your_client_secret_here`}</CodeBlock>
           {/* Example Request */}
           <h3 className="text-xs font-bold uppercase tracking-[0.15em] text-muted-foreground mt-8 mb-3">Example Request</h3>
           <CodeBlock language="bash">{`curl -X POST \\
-  https://api.padsplit.tools/functions/v1/submit-conversation-audio \\
+  https://padsplit.tools/api/submit-conversation-audio \\
   -H "Content-Type: application/json" \\
   -H "X-Client-ID: app_your_client_id" \\
   -H "X-Client-Secret: sk_your_secret" \\
