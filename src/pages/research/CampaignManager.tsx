@@ -142,14 +142,14 @@ export default function CampaignManager() {
                         <span className="text-xs text-muted-foreground truncate">{c.script_name}</span>
                       </div>
                       <div className="flex items-center gap-1 mt-0.5">
-                        <span className="font-mono text-[10px] text-muted-foreground" title={c.id}>campaign_id: {c.id}</span>
+                        <span className="font-mono text-[10px] text-muted-foreground truncate" title={`campaign: "${c.name}"`}>campaign: "{c.name}"</span>
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
-                            navigator.clipboard.writeText(c.id);
-                            toast.success('campaign_id copied to clipboard');
+                            navigator.clipboard.writeText(c.name);
+                            toast.success('Campaign name copied for API use');
                           }}
-                          className="text-muted-foreground hover:text-foreground transition-colors"
+                          className="text-muted-foreground hover:text-foreground transition-colors shrink-0"
                         >
                           <Copy className="w-2.5 h-2.5" />
                         </button>
