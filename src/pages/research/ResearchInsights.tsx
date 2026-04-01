@@ -499,7 +499,7 @@ export default function ResearchInsights() {
                 </div>
               </CollapsibleTrigger>
               <CollapsibleContent className="mt-3">
-                <HumanReviewQueue />
+                <HumanReviewQueue onExportModal={openExportModal} />
               </CollapsibleContent>
             </Collapsible>
 
