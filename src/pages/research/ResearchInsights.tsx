@@ -228,9 +228,9 @@ export default function ResearchInsights() {
 
   const handleDownloadPDF = async () => {
     if (!reportData) return;
-    toast.info('Generating Executive Brief...');
+    toast.info('Generating AI Executive Brief...');
     try {
-      await generateExecutivePDF(reportData, trends, selectedReport?.created_at);
+      await generateExecutivePDF(reportData, trends, selectedReport?.created_at, selectedReport?.id);
       toast.success('PDF downloaded successfully');
     } catch (err) {
       console.error('PDF generation error:', err);
