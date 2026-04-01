@@ -27,6 +27,7 @@ interface PaymentFrictionProps {
     friction_points?: any[];
     stats?: Record<string, any>;
   };
+  onExportModal?: (filter: ExportFilter, title: string, filename: string) => void;
 }
 
 function parseFrictionFromText(summary: string): FrictionPoint[] {
