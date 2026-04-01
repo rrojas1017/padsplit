@@ -7,26 +7,29 @@ const corsHeaders = {
 
 const BATCH_SIZE = 10;
 
-const RECLASSIFICATION_PROMPT = `You are classifying a PadSplit member move-out call. Based on the transcript and extracted data below, assign this record to ONE of these specific reason codes. You MUST pick one of these — do NOT use "Other" or "Unspecified".
+const RECLASSIFICATION_PROMPT = `You are classifying a PadSplit member move-out call. Based on the transcript and extracted data below, assign this record to ONE of these specific reason codes.
 
-ALLOWED REASON CODES (pick exactly one):
-1. "Host Negligence / Property Condition" — property issues, maintenance, mold, pests, dirty, uninhabitable, host unresponsive, misrepresentation
-2. "Payment Friction / Financial Hardship" — can't afford, rent increase, payment schedules, late fees, collections, billing disputes
-3. "Roommate Conflict / Safety Concern" — roommate issues, noise, cleanliness, harassment, drugs, theft, safety fears
-4. "Communication Breakdown / Support Dissatisfaction" — PadSplit support unresponsive, conflicting info, feeling unheard, process failures
-5. "Policy Confusion / Lack of Flexibility" — transfer rules, guest policies, house rules, expectations vs reality, shared bathroom objection
-6. "External Life Event / Positive Move-On" — buying home, job relocation, family, graduation, personal reasons, temporary housing, moving out of town, needed own space, incarceration, health
-7. "Data Error / Invalid Record" — member never moved in, wrong person contacted, identity theft, duplicate record
+CLASSIFICATION RULES — MANDATORY:
+Classify this record into EXACTLY ONE of these 7 codes. "Other" is NOT a valid option. Every record MUST be assigned to one of these:
 
-IMPORTANT RULES:
-- "I needed my own space" = External Life Event (wanting independence)
-- "Rent is too high / going up" = Payment Friction
-- "I never moved in / wrong person" = Data Error / Invalid Record
-- "Temporary housing / short-term" = External Life Event
-- "Got arrested / incarcerated" = External Life Event
-- "Didn't want to share bathroom" = Policy Confusion (expectations mismatch)
-- Vague reasons like "personal" or "just because" = External Life Event (when no specific PadSplit-related issue is mentioned)
-- If the transcript reveals a DIFFERENT issue than what the member stated (e.g. member says "personal reasons" but transcript reveals host harassment), classify based on the ACTUAL issue in the transcript, not the stated reason.
+1. "Host Negligence / Property Condition" — property issues, maintenance, mold, pests, dirty, uninhabitable, host unresponsive, misrepresentation, renovation issues, overcrowding due to host
+2. "Payment Friction / Financial Hardship" — can't afford, rent increase, rent too high, payment schedules, late fees, collections, billing disputes, pricing concerns, saving money
+3. "Roommate Conflict / Safety Concern" — roommate issues, noise, cleanliness from roommates, harassment, drugs, theft, safety fears, assault, hostile environment from other members
+4. "Communication Breakdown / Support Dissatisfaction" — PadSplit support unresponsive, conflicting info, feeling unheard, process failures, app issues, platform problems
+5. "Policy Confusion / Lack of Flexibility" — transfer rules, guest policies, house rules, expectations vs reality, shared bathroom/kitchen objection, didn't realize it was shared living
+6. "External Life Event / Positive Move-On" — buying home, job relocation, family, graduation, personal reasons, temporary housing, moving out of town, needed own space, incarceration, health issues, military, got arrested, relationship change, found other housing, wanted independence, vague "personal reasons", "just because" with no PadSplit complaint
+7. "Data Error / Invalid Record" — member never moved in, wrong person contacted, identity theft, duplicate record, member denies move-out, call too short for classification. Always set human_review_recommended = true.
+
+EDGE CASE RULES:
+- Vague reasons ("personal", "just because", "needed a change") with NO specific PadSplit complaint = External Life Event
+- "Needed my own space" / "wanted independence" = External Life Event
+- "Rent too high" / "can't afford" / "price increase" = Payment Friction
+- "Didn't like sharing bathroom/kitchen" = Policy Confusion
+- "Got arrested" / "going through something" = External Life Event
+- If member gives vague reason but transcript reveals a real issue later, classify based on the ACTUAL issue
+- If multiple issues, pick the one discussed most or that upset the member most
+- If transcript is unintelligible or under 30 words = Data Error
+- NEVER output "Other", "Unspecified", "Unknown", or "General"
 
 Respond with ONLY a JSON object:
 {
