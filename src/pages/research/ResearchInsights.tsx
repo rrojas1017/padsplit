@@ -10,15 +10,17 @@ import { Progress } from '@/components/ui/progress';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
-import { Sparkles, RefreshCw, Loader2, Database, AlertTriangle, LayoutDashboard, SearchCode, Settings2, ChevronDown, Download, Users } from 'lucide-react';
+import { Sparkles, RefreshCw, Loader2, Database, AlertTriangle, LayoutDashboard, SearchCode, Settings2, ChevronDown, FileText, Users } from 'lucide-react';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
 import { useResearchInsightsData, DateRangeOption } from '@/hooks/useResearchInsightsData';
 import { useResearchInsightsPolling } from '@/hooks/useResearchInsightsPolling';
 import { useResearchCampaigns } from '@/hooks/useResearchCampaigns';
 import { useIsAdmin } from '@/hooks/useIsAdmin';
+import { useResearchTrends } from '@/hooks/useResearchTrends';
 import { deriveKPIs, isAudienceSurveyData } from '@/types/research-insights';
-import type { ResearchInsightData, AudienceSurveyInsightData, CampaignType } from '@/types/research-insights';
+import type { AudienceSurveyInsightData, CampaignType } from '@/types/research-insights';
+import { generateExecutivePDF } from '@/utils/generate-executive-pdf';
 
 import { ExecutiveSummary } from '@/components/research-insights/ExecutiveSummary';
 import { ReasonCodeChart } from '@/components/research-insights/ReasonCodeChart';
@@ -37,8 +39,19 @@ import { MemberDataTab } from '@/components/research-insights/MemberDataTab';
 
 import { AudienceSurveyDashboard } from '@/components/audience-survey/AudienceSurveyDashboard';
 import { ExportMembersModal } from '@/components/research-insights/ExportMembersModal';
-import { exportFullReport, exportMemberList } from '@/utils/export-report';
+import { exportFullReport } from '@/utils/export-report';
 import type { ExportFilter } from '@/hooks/useExportMembers';
+
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 
 type TabValue = 'overview' | 'issues' | 'operations' | 'members';
 
@@ -61,8 +74,10 @@ export default function ResearchInsights() {
   const [exportFilter, setExportFilter] = useState<ExportFilter>({ type: 'full_report' });
   const [exportTitle, setExportTitle] = useState('Export Members');
   const [exportFilename, setExportFilename] = useState('export.csv');
+  const [showRegenConfirm, setShowRegenConfirm] = useState(false);
 
   const { isAdmin } = useIsAdmin();
+  const { trends, direction } = useResearchTrends();
 
   const openExportModal = useCallback((filter: ExportFilter, title: string, filename: string) => {
     if (!isAdmin) return;
@@ -186,6 +201,15 @@ export default function ResearchInsights() {
     }
   };
 
+  const handleManualRegenerate = () => {
+    setShowRegenConfirm(true);
+  };
+
+  const confirmRegenerate = () => {
+    setShowRegenConfirm(false);
+    handleGenerate();
+  };
+
   const reportData = selectedReport?.data as any;
   const isAudienceSurvey = campaignType === 'audience_survey';
 
@@ -202,16 +226,26 @@ export default function ResearchInsights() {
     ? 'Marketing research insights from audience survey campaigns'
     : 'Member churn analysis from move-out survey campaigns';
 
-  const handleFullExport = () => {
-    if (reportData) {
-      exportFullReport(reportData);
+  const handleDownloadPDF = async () => {
+    if (!reportData) return;
+    toast.info('Generating Executive Brief...');
+    try {
+      await generateExecutivePDF(reportData, trends, selectedReport?.created_at);
+      toast.success('PDF downloaded successfully');
+    } catch (err) {
+      console.error('PDF generation error:', err);
+      toast.error('Failed to generate PDF');
     }
   };
+
+  const lastUpdated = selectedReport?.created_at
+    ? format(new Date(selectedReport.created_at), 'MMM d, yyyy h:mm a')
+    : null;
 
   return (
     <DashboardLayout title="Research Insights" subtitle={subtitle}>
       {/* Controls Bar */}
-      <div className="flex flex-wrap items-center gap-3 mb-8 p-4 rounded-xl bg-card/80 backdrop-blur border border-border shadow-sm">
+      <div className="flex flex-wrap items-center gap-3 mb-6 p-4 rounded-xl bg-card/80 backdrop-blur border border-border shadow-sm">
         <Select value={campaignType} onValueChange={handleCampaignTypeChange}>
           <SelectTrigger className="w-[220px]">
             <SelectValue />
@@ -251,21 +285,42 @@ export default function ResearchInsights() {
           </SelectContent>
         </Select>
 
-        <Button onClick={handleGenerate} disabled={isGenerating} className="gap-2">
-          {isGenerating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
-          {isGenerating ? 'Generating...' : 'Generate Report'}
-        </Button>
+        <div className="flex items-center gap-2 ml-auto">
+          {/* Last updated badge + manual refresh */}
+          {lastUpdated && (
+            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <span>Last updated: {lastUpdated}</span>
+              {isAdmin && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-6 w-6"
+                  onClick={handleManualRegenerate}
+                  disabled={isGenerating}
+                  title="Regenerate report"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${isGenerating ? 'animate-spin' : ''}`} />
+                </Button>
+              )}
+            </div>
+          )}
 
-        {isAdmin && reportData && !isAudienceSurvey && (
-          <Button variant="outline" className="gap-2" onClick={handleFullExport}>
-            <Download className="w-4 h-4" />
-            Export Full Report
-          </Button>
-        )}
+          {/* Generate report — show only if no reports exist */}
+          {!selectedReport && !isGenerating && (
+            <Button onClick={handleGenerate} disabled={isGenerating} className="gap-2">
+              <Sparkles className="w-4 h-4" />
+              Generate Report
+            </Button>
+          )}
 
-        <Button onClick={refresh} variant="outline" size="icon" title="Refresh">
-          <RefreshCw className="w-4 h-4" />
-        </Button>
+          {/* Download Executive Brief PDF */}
+          {isAdmin && reportData && !isAudienceSurvey && (
+            <Button variant="outline" className="gap-2" onClick={handleDownloadPDF}>
+              <FileText className="w-4 h-4" />
+              Executive Brief (PDF)
+            </Button>
+          )}
+        </div>
 
         {reports.length > 1 && (
           <Select
@@ -288,7 +343,7 @@ export default function ResearchInsights() {
       </div>
 
       {/* Processing Status Banner */}
-      <div className="mb-8 flex flex-wrap gap-3">
+      <div className="mb-6 flex flex-wrap gap-3">
         <Card className="flex-1 min-w-[250px] shadow-sm">
           <CardContent className="p-4 space-y-3">
             <div className="flex items-center justify-between">
@@ -336,7 +391,7 @@ export default function ResearchInsights() {
 
       {/* In-progress banner */}
       {isGenerating && (
-        <div className="mb-8 rounded-xl p-6 space-y-3 border border-primary/20 bg-gradient-to-r from-primary/5 via-primary/10 to-primary/5 shadow-sm">
+        <div className="mb-6 rounded-xl p-6 space-y-3 border border-primary/20 bg-gradient-to-r from-primary/5 via-primary/10 to-primary/5 shadow-sm">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <div className="w-9 h-9 rounded-full bg-primary/15 flex items-center justify-center flex-shrink-0">
@@ -406,6 +461,12 @@ export default function ResearchInsights() {
                 ? `${processingStats.processedRecords} processed records found. Click "Generate Report" to analyze them.`
                 : 'No research records found yet. Log survey calls to start building insights.'}
             </p>
+            {processingStats.totalResearchRecords > 0 && (
+              <Button onClick={handleGenerate} className="gap-2">
+                <Sparkles className="w-4 h-4" />
+                Generate Report
+              </Button>
+            )}
           </CardContent>
         </Card>
       )}
@@ -418,7 +479,7 @@ export default function ResearchInsights() {
       {/* Report content — MOVE-OUT SURVEY */}
       {!isLoading && reportData && !isAudienceSurvey && (selectedReport?.status === 'completed' || isGenerating) && (
         <div className="space-y-6">
-          {kpis && <InsightsKPIRow kpis={kpis} />}
+          {kpis && <InsightsKPIRow kpis={kpis} direction={direction} />}
 
           <Tabs value={currentTab} onValueChange={setTab}>
             <TabsList className="grid w-full grid-cols-4">
@@ -451,8 +512,8 @@ export default function ResearchInsights() {
                   onCodeClick={(code) => setDrillDownCode(code)}
                 />
               )}
-              {reportData.top_actions && (
-                <TopActionsTable data={reportData.top_actions} />
+              {reportData.emerging_patterns && (
+                <EmergingPatternsPanel data={reportData.emerging_patterns} maxVisible={5} />
               )}
             </TabsContent>
 
@@ -461,8 +522,8 @@ export default function ResearchInsights() {
               {reportData.issue_clusters && (
                 <IssueClustersPanel data={reportData.issue_clusters as any} maxVisible={5} />
               )}
-              {reportData.emerging_patterns && (
-                <EmergingPatternsPanel data={reportData.emerging_patterns} maxVisible={5} />
+              {reportData.top_actions && (
+                <TopActionsTable data={reportData.top_actions} />
               )}
               {reportData.operational_blind_spots && (
                 <BlindSpotsPanel data={reportData.operational_blind_spots as any} maxVisible={5} />
@@ -553,6 +614,22 @@ export default function ResearchInsights() {
         title={exportTitle}
         defaultFilename={exportFilename}
       />
+
+      {/* Regeneration confirmation dialog */}
+      <AlertDialog open={showRegenConfirm} onOpenChange={setShowRegenConfirm}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Regenerate Report?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will regenerate the report from all current data. This may take a few minutes. Continue?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmRegenerate}>Continue</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </DashboardLayout>
   );
 }
