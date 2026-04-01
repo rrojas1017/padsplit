@@ -56,6 +56,17 @@ export default function ResearchInsights() {
   const [drillDownCode, setDrillDownCode] = useState<string | null>(null);
   const [reviewOpen, setReviewOpen] = useState(false);
   const [recordsOpen, setRecordsOpen] = useState(false);
+  const [exportModalOpen, setExportModalOpen] = useState(false);
+  const [exportFilter, setExportFilter] = useState<ExportFilter>({ type: 'full_report' });
+  const [exportTitle, setExportTitle] = useState('Export Members');
+  const [exportFilename, setExportFilename] = useState('export.csv');
+
+  const openExportModal = useCallback((filter: ExportFilter, title: string, filename: string) => {
+    setExportFilter(filter);
+    setExportTitle(title);
+    setExportFilename(filename);
+    setExportModalOpen(true);
+  }, []);
 
   const {
     reports,
