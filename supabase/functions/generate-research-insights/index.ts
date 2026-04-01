@@ -899,10 +899,11 @@ async function processOneChunk(
 
       let finalResult: any;
       if (newChunkResults.length === 1) {
-        finalResult = normalizeChunkResult(newChunkResults[0]);
+        finalResult = normalizeChunk(newChunkResults[0]);
       } else {
         // Synthesize
         const synthesisModel = 'google/gemini-2.5-flash';
+        const mergeFn = isAudience ? programmaticMergeAudience : programmaticMerge;
         try {
           const synthTimeout = new Promise<never>((_, reject) =>
             setTimeout(() => reject(new Error('synthesis_timeout')), 90000)
@@ -917,14 +918,14 @@ async function processOneChunk(
           try {
             const jsonMatch = synthesisResult.content.match(/```(?:json)?\s*([\s\S]*?)```/);
             const parsed = JSON.parse(jsonMatch ? jsonMatch[1].trim() : synthesisResult.content.trim());
-            finalResult = normalizeChunkResult(parsed);
+            finalResult = normalizeChunk(parsed);
           } catch {
             console.warn('[Chain] Synthesis parse failed, using programmatic merge');
             try {
-              finalResult = programmaticMerge(newChunkResults);
+              finalResult = mergeFn(newChunkResults);
             } catch (mergeErr) {
               console.error('[Chain] Programmatic merge also failed:', mergeErr);
-              finalResult = normalizeChunkResult(newChunkResults[0]);
+              finalResult = normalizeChunk(newChunkResults[0]);
             }
           }
 
@@ -938,10 +939,10 @@ async function processOneChunk(
         } catch (synthErr: any) {
           console.warn(`[Chain] Synthesis error: ${synthErr?.message}, using programmatic merge`);
           try {
-            finalResult = programmaticMerge(newChunkResults);
+            finalResult = mergeFn(newChunkResults);
           } catch (mergeErr) {
             console.error('[Chain] Programmatic merge also failed:', mergeErr);
-            finalResult = normalizeChunkResult(newChunkResults[0]);
+            finalResult = normalizeChunk(newChunkResults[0]);
           }
         }
       }
