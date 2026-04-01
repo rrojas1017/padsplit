@@ -108,7 +108,7 @@ export async function exportByKeywords(keywords: string[], filename: string) {
 export async function exportHumanReviewQueue(filename: string) {
   const { data, error } = await supabase
     .from('booking_transcriptions')
-    .select('booking_id, research_classification, bookings!inner(member_name, booking_date, contact_phone, contact_email)')
+    .select('booking_id, research_classification, research_extraction, bookings!inner(member_name, booking_date, contact_phone, contact_email)')
     .eq('research_human_review', true)
     .not('research_classification', 'is', null);
   if (error) throw error;
