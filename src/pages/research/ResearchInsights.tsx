@@ -10,12 +10,13 @@ import { Progress } from '@/components/ui/progress';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
-import { Sparkles, RefreshCw, Loader2, Database, AlertTriangle, LayoutDashboard, SearchCode, Settings2, ChevronDown, Download } from 'lucide-react';
+import { Sparkles, RefreshCw, Loader2, Database, AlertTriangle, LayoutDashboard, SearchCode, Settings2, ChevronDown, Download, Users } from 'lucide-react';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
 import { useResearchInsightsData, DateRangeOption } from '@/hooks/useResearchInsightsData';
 import { useResearchInsightsPolling } from '@/hooks/useResearchInsightsPolling';
 import { useResearchCampaigns } from '@/hooks/useResearchCampaigns';
+import { useIsAdmin } from '@/hooks/useIsAdmin';
 import { deriveKPIs, isAudienceSurveyData } from '@/types/research-insights';
 import type { ResearchInsightData, AudienceSurveyInsightData, CampaignType } from '@/types/research-insights';
 
@@ -30,19 +31,20 @@ import { AgentPerformanceCard } from '@/components/research-insights/AgentPerfor
 import { TopActionsTable } from '@/components/research-insights/TopActionsTable';
 import { EmergingPatternsPanel } from '@/components/research-insights/EmergingPatternsPanel';
 import { HumanReviewQueue } from '@/components/research-insights/HumanReviewQueue';
-import { ProcessedRecordsList } from '@/components/research-insights/ProcessedRecordsList';
 import { InsightsKPIRow } from '@/components/research-insights/InsightsKPIRow';
 import { ReasonCodeDrillDown } from '@/components/research-insights/ReasonCodeDrillDown';
+import { MemberDataTab } from '@/components/research-insights/MemberDataTab';
 
 import { AudienceSurveyDashboard } from '@/components/audience-survey/AudienceSurveyDashboard';
 import { ExportMembersModal } from '@/components/research-insights/ExportMembersModal';
+import { exportFullReport, exportMemberList } from '@/utils/export-report';
 import type { ExportFilter } from '@/hooks/useExportMembers';
 
-type TabValue = 'dashboard' | 'analysis' | 'operations';
+type TabValue = 'overview' | 'issues' | 'operations' | 'members';
 
 export default function ResearchInsights() {
   const [searchParams, setSearchParams] = useSearchParams();
-  const currentTab = (searchParams.get('tab') as TabValue) || 'dashboard';
+  const currentTab = (searchParams.get('tab') as TabValue) || 'overview';
   const setTab = (tab: string) => setSearchParams({ tab, campaign: campaignType }, { replace: true });
 
   const [campaignType, setCampaignType] = useState<CampaignType>(
@@ -55,18 +57,20 @@ export default function ResearchInsights() {
   const [phase, setPhase] = useState<'processing' | 'analyzing' | null>(null);
   const [drillDownCode, setDrillDownCode] = useState<string | null>(null);
   const [reviewOpen, setReviewOpen] = useState(false);
-  const [recordsOpen, setRecordsOpen] = useState(false);
   const [exportModalOpen, setExportModalOpen] = useState(false);
   const [exportFilter, setExportFilter] = useState<ExportFilter>({ type: 'full_report' });
   const [exportTitle, setExportTitle] = useState('Export Members');
   const [exportFilename, setExportFilename] = useState('export.csv');
 
+  const { isAdmin } = useIsAdmin();
+
   const openExportModal = useCallback((filter: ExportFilter, title: string, filename: string) => {
+    if (!isAdmin) return;
     setExportFilter(filter);
     setExportTitle(title);
     setExportFilename(filename);
     setExportModalOpen(true);
-  }, []);
+  }, [isAdmin]);
 
   const {
     reports,
@@ -185,7 +189,6 @@ export default function ResearchInsights() {
   const reportData = selectedReport?.data as any;
   const isAudienceSurvey = campaignType === 'audience_survey';
 
-  // Move-out specific KPIs
   const mappedStats: import('@/types/research-insights').ProcessingStats = {
     total_research_records: processingStats.totalResearchRecords,
     processed_records: processingStats.processedRecords,
@@ -199,11 +202,16 @@ export default function ResearchInsights() {
     ? 'Marketing research insights from audience survey campaigns'
     : 'Member churn analysis from move-out survey campaigns';
 
+  const handleFullExport = () => {
+    if (reportData) {
+      exportFullReport(reportData);
+    }
+  };
+
   return (
     <DashboardLayout title="Research Insights" subtitle={subtitle}>
       {/* Controls Bar */}
       <div className="flex flex-wrap items-center gap-3 mb-8 p-4 rounded-xl bg-card/80 backdrop-blur border border-border shadow-sm">
-        {/* Campaign Type Switcher */}
         <Select value={campaignType} onValueChange={handleCampaignTypeChange}>
           <SelectTrigger className="w-[220px]">
             <SelectValue />
@@ -248,16 +256,8 @@ export default function ResearchInsights() {
           {isGenerating ? 'Generating...' : 'Generate Report'}
         </Button>
 
-        {reportData && !isAudienceSurvey && (
-          <Button
-            variant="outline"
-            className="gap-2"
-            onClick={() => openExportModal(
-              { type: 'full_report' },
-              'Export Full Report',
-              'research_full_report.csv'
-            )}
-          >
+        {isAdmin && reportData && !isAudienceSurvey && (
+          <Button variant="outline" className="gap-2" onClick={handleFullExport}>
             <Download className="w-4 h-4" />
             Export Full Report
           </Button>
@@ -421,39 +421,45 @@ export default function ResearchInsights() {
           {kpis && <InsightsKPIRow kpis={kpis} />}
 
           <Tabs value={currentTab} onValueChange={setTab}>
-            <TabsList className="grid w-full grid-cols-3">
-              <TabsTrigger value="dashboard" className="gap-2">
+            <TabsList className="grid w-full grid-cols-4">
+              <TabsTrigger value="overview" className="gap-2">
                 <LayoutDashboard className="w-4 h-4" />
-                <span className="hidden sm:inline">Dashboard</span>
+                <span className="hidden sm:inline">Overview</span>
               </TabsTrigger>
-              <TabsTrigger value="analysis" className="gap-2">
+              <TabsTrigger value="issues" className="gap-2">
                 <SearchCode className="w-4 h-4" />
-                <span className="hidden sm:inline">Analysis</span>
+                <span className="hidden sm:inline">Issues & Root Causes</span>
               </TabsTrigger>
               <TabsTrigger value="operations" className="gap-2">
                 <Settings2 className="w-4 h-4" />
                 <span className="hidden sm:inline">Operations</span>
               </TabsTrigger>
+              <TabsTrigger value="members" className="gap-2">
+                <Users className="w-4 h-4" />
+                <span className="hidden sm:inline">Member Data</span>
+              </TabsTrigger>
             </TabsList>
 
-            <TabsContent value="dashboard" className="space-y-6 mt-6">
+            {/* TAB 1: Overview */}
+            <TabsContent value="overview" className="space-y-6 mt-6">
               {reportData.executive_summary && (
                 <ExecutiveSummary data={reportData.executive_summary as any} />
               )}
-              {reportData.top_actions && (
-                <TopActionsTable data={reportData.top_actions} onExportModal={openExportModal} />
-              )}
-            </TabsContent>
-
-            <TabsContent value="analysis" className="space-y-6 mt-6">
               {reportData.reason_code_distribution && (
                 <ReasonCodeChart
                   data={reportData.reason_code_distribution}
                   onCodeClick={(code) => setDrillDownCode(code)}
                 />
               )}
+              {reportData.top_actions && (
+                <TopActionsTable data={reportData.top_actions} onExportModal={isAdmin ? openExportModal : undefined} />
+              )}
+            </TabsContent>
+
+            {/* TAB 2: Issues & Root Causes */}
+            <TabsContent value="issues" className="space-y-6 mt-6">
               {reportData.issue_clusters && (
-                <IssueClustersPanel data={reportData.issue_clusters as any} maxVisible={5} onExportModal={openExportModal} />
+                <IssueClustersPanel data={reportData.issue_clusters as any} maxVisible={5} onExportModal={isAdmin ? openExportModal : undefined} />
               )}
               {reportData.emerging_patterns && (
                 <EmergingPatternsPanel data={reportData.emerging_patterns} maxVisible={5} />
@@ -463,17 +469,18 @@ export default function ResearchInsights() {
               )}
             </TabsContent>
 
+            {/* TAB 3: Operations */}
             <TabsContent value="operations" className="space-y-6 mt-6">
               {reportData.host_accountability_flags && (
-                <HostAccountabilityPanel data={reportData.host_accountability_flags} maxVisible={8} onExportModal={openExportModal} />
+                <HostAccountabilityPanel data={reportData.host_accountability_flags} maxVisible={8} onExportModal={isAdmin ? openExportModal : undefined} />
               )}
               {(reportData.payment_friction_analysis || reportData.transfer_friction_analysis) && (
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                   {reportData.payment_friction_analysis && (
-                    <PaymentFrictionCard data={reportData.payment_friction_analysis} onExportModal={openExportModal} />
+                    <PaymentFrictionCard data={reportData.payment_friction_analysis} onExportModal={isAdmin ? openExportModal : undefined} />
                   )}
                   {reportData.transfer_friction_analysis && (
-                    <TransferFrictionCard data={reportData.transfer_friction_analysis} onExportModal={openExportModal} />
+                    <TransferFrictionCard data={reportData.transfer_friction_analysis} onExportModal={isAdmin ? openExportModal : undefined} />
                   )}
                 </div>
               )}
@@ -481,9 +488,14 @@ export default function ResearchInsights() {
                 <AgentPerformanceCard data={reportData.agent_performance_summary as any} />
               )}
             </TabsContent>
+
+            {/* TAB 4: Member Data */}
+            <TabsContent value="members" className="space-y-6 mt-6">
+              <MemberDataTab isAdmin={isAdmin} />
+            </TabsContent>
           </Tabs>
 
-          {/* Collapsible footer sections */}
+          {/* Human Review Queue - collapsible footer */}
           <div className="space-y-3 pt-4 border-t border-border">
             <Collapsible open={reviewOpen} onOpenChange={setReviewOpen}>
               <CollapsibleTrigger className="w-full">
@@ -499,23 +511,7 @@ export default function ResearchInsights() {
                 </div>
               </CollapsibleTrigger>
               <CollapsibleContent className="mt-3">
-                <HumanReviewQueue onExportModal={openExportModal} />
-              </CollapsibleContent>
-            </Collapsible>
-
-            <Collapsible open={recordsOpen} onOpenChange={setRecordsOpen}>
-              <CollapsibleTrigger className="w-full">
-                <div className="flex items-center justify-between p-3 rounded-lg border border-border hover:bg-muted/50 transition-colors">
-                  <div className="flex items-center gap-2">
-                    <Database className="w-4 h-4 text-primary" />
-                    <span className="text-sm font-medium text-foreground">Processed Records</span>
-                    <Badge variant="secondary" className="text-xs">{processingStats.processedRecords}</Badge>
-                  </div>
-                  <ChevronDown className={`w-4 h-4 transition-transform ${recordsOpen ? 'rotate-180' : ''}`} />
-                </div>
-              </CollapsibleTrigger>
-              <CollapsibleContent className="mt-3">
-                <ProcessedRecordsList />
+                <HumanReviewQueue onExportModal={isAdmin ? openExportModal : undefined} />
               </CollapsibleContent>
             </Collapsible>
           </div>
