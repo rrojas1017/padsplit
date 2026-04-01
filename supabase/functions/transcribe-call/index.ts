@@ -1899,24 +1899,60 @@ async function processTranscription(bookingId: string, kixieUrl: string, skipTts
     if (isResearch && hasValidConversation && transcription) {
       try {
         console.log('[Background] Extracting survey progress for research record...');
-        const bookingNotes = bookingData?.notes || '';
-        const campaignMatch = bookingNotes.match(/Campaign:\s*(.+?)\s*\|/);
-        const campaignName = campaignMatch?.[1]?.trim();
         
-        // Try campaign name lookup first, fall back to first available script
+        // Look up campaign via conversation_submissions → campaign_key, fall back to notes regex
         let questions: any[] | null = null;
-        if (campaignName) {
+        let campaignName: string | null = null;
+        
+        // Try conversation_submissions campaign_key lookup first
+        const { data: submissionData } = await supabase
+          .from('conversation_submissions')
+          .select('campaign')
+          .eq('booking_id', bookingId)
+          .maybeSingle();
+        
+        if (submissionData?.campaign) {
+          campaignName = submissionData.campaign;
           const { data: campaignData } = await supabase
             .from('research_campaigns')
             .select('script_id, research_scripts!research_campaigns_script_id_fkey(questions)')
-            .eq('name', campaignName)
+            .eq('campaign_key', campaignName)
             .maybeSingle();
           questions = (campaignData as any)?.research_scripts?.questions || null;
+          if (questions) {
+            console.log(`[Background] Matched campaign_key "${campaignName}" → found script with ${questions.length} questions`);
+          }
         }
         
-        // Fallback: fetch first available research script
+        // Fallback: regex from notes
         if (!Array.isArray(questions) || questions.length === 0) {
-          console.log('[Background] Campaign name lookup failed, falling back to first available script');
+          const bookingNotes = bookingData?.notes || '';
+          const campaignMatch = bookingNotes.match(/Campaign:\s*(.+?)\s*\|/);
+          campaignName = campaignMatch?.[1]?.trim() || null;
+          
+          if (campaignName) {
+            // Try campaign_key first, then name
+            const { data: campaignData } = await supabase
+              .from('research_campaigns')
+              .select('script_id, research_scripts!research_campaigns_script_id_fkey(questions)')
+              .eq('campaign_key', campaignName)
+              .maybeSingle();
+            questions = (campaignData as any)?.research_scripts?.questions || null;
+            
+            if (!questions) {
+              const { data: campaignByName } = await supabase
+                .from('research_campaigns')
+                .select('script_id, research_scripts!research_campaigns_script_id_fkey(questions)')
+                .eq('name', campaignName)
+                .maybeSingle();
+              questions = (campaignByName as any)?.research_scripts?.questions || null;
+            }
+          }
+        }
+        
+        // Final fallback: first available research script
+        if (!Array.isArray(questions) || questions.length === 0) {
+          console.log('[Background] Campaign lookup failed, falling back to first available script');
           const { data: fallbackData } = await supabase
             .from('research_campaigns')
             .select('research_scripts!research_campaigns_script_id_fkey(questions)')
