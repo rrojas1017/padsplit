@@ -10,7 +10,7 @@ import { Progress } from '@/components/ui/progress';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
-import { Sparkles, RefreshCw, Loader2, Database, AlertTriangle, LayoutDashboard, SearchCode, Settings2, ChevronDown } from 'lucide-react';
+import { Sparkles, RefreshCw, Loader2, Database, AlertTriangle, LayoutDashboard, SearchCode, Settings2, ChevronDown, Download } from 'lucide-react';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
 import { useResearchInsightsData, DateRangeOption } from '@/hooks/useResearchInsightsData';
@@ -35,6 +35,7 @@ import { InsightsKPIRow } from '@/components/research-insights/InsightsKPIRow';
 import { ReasonCodeDrillDown } from '@/components/research-insights/ReasonCodeDrillDown';
 
 import { AudienceSurveyDashboard } from '@/components/audience-survey/AudienceSurveyDashboard';
+import { exportFullReport } from '@/utils/researchExport';
 
 type TabValue = 'dashboard' | 'analysis' | 'operations';
 
@@ -234,6 +235,22 @@ export default function ResearchInsights() {
           {isGenerating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
           {isGenerating ? 'Generating...' : 'Generate Report'}
         </Button>
+
+        {reportData && !isAudienceSurvey && (
+          <Button
+            variant="outline"
+            className="gap-2"
+            onClick={async () => {
+              try {
+                const count = await exportFullReport('research_full_report.csv');
+                toast.success(`Exported ${count} records`);
+              } catch { toast.error('Export failed'); }
+            }}
+          >
+            <Download className="w-4 h-4" />
+            Export Full Report
+          </Button>
+        )}
 
         <Button onClick={refresh} variant="outline" size="icon" title="Refresh">
           <RefreshCw className="w-4 h-4" />

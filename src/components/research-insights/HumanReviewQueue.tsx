@@ -2,9 +2,11 @@ import { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { AlertTriangle } from 'lucide-react';
+import { AlertTriangle, Download } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { format } from 'date-fns';
+import { exportHumanReviewQueue } from '@/utils/researchExport';
+import { toast } from 'sonner';
 
 const PAGE_SIZE = 20;
 
@@ -70,6 +72,20 @@ export function HumanReviewQueue() {
           </div>
           Human Review Queue
           <Badge variant="secondary">{items.length}</Badge>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="ml-auto gap-1.5 text-xs"
+            onClick={async () => {
+              try {
+                const count = await exportHumanReviewQueue('human_review_queue.csv');
+                toast.success(`Exported ${count} flagged records`);
+              } catch { toast.error('Export failed'); }
+            }}
+          >
+            <Download className="w-3.5 h-3.5" />
+            Export All
+          </Button>
         </CardTitle>
       </CardHeader>
       <CardContent className="pt-4">
