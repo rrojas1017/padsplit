@@ -1,18 +1,15 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { DollarSign } from 'lucide-react';
+import { DollarSign, AlertCircle, Lightbulb } from 'lucide-react';
 
 interface PaymentFrictionProps {
   data: {
     summary?: string;
     recommendations?: string[];
     issues_identified?: string[];
-    // Legacy fields
     key_friction_points?: any[];
     key_failures?: string[];
     recommendation?: string;
     friction_points?: any[];
-    payment_related_moveouts?: number;
-    payment_related_pct?: number;
   };
 }
 
@@ -33,19 +30,17 @@ export function PaymentFrictionCard({ data }: PaymentFrictionProps) {
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
-        {/* Summary paragraph */}
         {data.summary && (
           <p className="text-sm text-muted-foreground leading-relaxed">{data.summary}</p>
         )}
 
-        {/* Issues identified as bullet list */}
         {issues.length > 0 && (
           <div>
             <p className="text-xs font-semibold text-foreground mb-2 uppercase tracking-wide">Issues Identified</p>
             <ul className="space-y-1.5">
               {issues.map((issue, i) => (
                 <li key={i} className="flex items-start gap-2 text-sm">
-                  <div className="w-1.5 h-1.5 rounded-full bg-blue-500 mt-2 flex-shrink-0" />
+                  <AlertCircle className="w-3.5 h-3.5 text-red-500 mt-0.5 flex-shrink-0" />
                   <span className="text-muted-foreground">{typeof issue === 'string' ? issue : (issue as any).point || JSON.stringify(issue)}</span>
                 </li>
               ))}
@@ -53,13 +48,15 @@ export function PaymentFrictionCard({ data }: PaymentFrictionProps) {
           </div>
         )}
 
-        {/* Recommendations as numbered list */}
         {recommendations.length > 0 && (
           <div>
             <p className="text-xs font-semibold text-foreground mb-2 uppercase tracking-wide">Recommendations</p>
-            <ol className="space-y-1.5 list-decimal list-inside">
+            <ol className="space-y-1.5">
               {recommendations.map((rec, i) => (
-                <li key={i} className="text-sm text-muted-foreground">{rec}</li>
+                <li key={i} className="flex items-start gap-2 text-sm">
+                  <Lightbulb className="w-3.5 h-3.5 text-blue-500 mt-0.5 flex-shrink-0" />
+                  <span className="text-muted-foreground">{rec}</span>
+                </li>
               ))}
             </ol>
           </div>

@@ -1,12 +1,11 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { ArrowRightLeft } from 'lucide-react';
+import { ArrowRightLeft, AlertCircle, Lightbulb } from 'lucide-react';
 
 interface TransferFrictionProps {
   data: {
     summary?: string;
     recommendations?: string[];
     issues_identified?: string[];
-    // Legacy fields
     key_friction_points?: any[];
     key_failures?: string[];
     recommendation?: string;
@@ -41,7 +40,7 @@ export function TransferFrictionCard({ data }: TransferFrictionProps) {
             <ul className="space-y-1.5">
               {issues.map((issue, i) => (
                 <li key={i} className="flex items-start gap-2 text-sm">
-                  <div className="w-1.5 h-1.5 rounded-full bg-violet-500 mt-2 flex-shrink-0" />
+                  <AlertCircle className="w-3.5 h-3.5 text-red-500 mt-0.5 flex-shrink-0" />
                   <span className="text-muted-foreground">{typeof issue === 'string' ? issue : (issue as any).point || JSON.stringify(issue)}</span>
                 </li>
               ))}
@@ -52,9 +51,12 @@ export function TransferFrictionCard({ data }: TransferFrictionProps) {
         {recommendations.length > 0 && (
           <div>
             <p className="text-xs font-semibold text-foreground mb-2 uppercase tracking-wide">Recommendations</p>
-            <ol className="space-y-1.5 list-decimal list-inside">
+            <ol className="space-y-1.5">
               {recommendations.map((rec, i) => (
-                <li key={i} className="text-sm text-muted-foreground">{rec}</li>
+                <li key={i} className="flex items-start gap-2 text-sm">
+                  <Lightbulb className="w-3.5 h-3.5 text-blue-500 mt-0.5 flex-shrink-0" />
+                  <span className="text-muted-foreground">{rec}</span>
+                </li>
               ))}
             </ol>
           </div>
