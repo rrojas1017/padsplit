@@ -107,7 +107,7 @@ export function useExportMembers() {
       if (filter.type === 'human_review') {
         const { data, error: err } = await supabase
           .from('booking_transcriptions')
-          .select('booking_id, research_classification, bookings!inner(member_name, booking_date, contact_phone, contact_email)')
+          .select('booking_id, research_classification, research_extraction, bookings!inner(member_name, booking_date, contact_phone, contact_email)')
           .eq('research_human_review', true)
           .not('research_classification', 'is', null);
         if (err) throw err;
