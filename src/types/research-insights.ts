@@ -484,6 +484,7 @@ function parseNumericish(val: any): number | null {
 
 export interface DerivedKPIs {
   totalCases: number;
+  dataErrorCount: number;
   addressablePct: string;
   topReasonCode: string;
   flaggedForReview: number;
@@ -512,6 +513,7 @@ export function deriveKPIs(data: any | null, stats: ProcessingStats | null): Der
 
   return {
     totalCases,
+    dataErrorCount: 0, // Will be overridden by live count in the component
     addressablePct,
     topReasonCode,
     flaggedForReview: stats?.flagged_for_review ?? 0,

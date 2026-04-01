@@ -10,10 +10,18 @@ interface InsightsKPIRowProps {
 }
 
 export function InsightsKPIRow({ kpis, direction }: InsightsKPIRowProps) {
+  const totalDisplay = kpis.dataErrorCount > 0
+    ? `${(kpis.totalCases - kpis.dataErrorCount).toLocaleString()}`
+    : kpis.totalCases > 0 ? kpis.totalCases.toLocaleString() : 'N/A';
+  const totalSubtext = kpis.dataErrorCount > 0
+    ? `${kpis.dataErrorCount} data errors excluded`
+    : undefined;
+
   const cards = [
     {
       label: 'Total Cases',
-      value: kpis.totalCases > 0 ? kpis.totalCases.toLocaleString() : 'N/A',
+      value: totalDisplay,
+      subtext: totalSubtext,
       icon: BarChart3,
       color: 'text-primary',
       trend: direction ? { dir: direction.totalCases, delta: direction.totalCasesDelta } : null,
@@ -85,6 +93,9 @@ export function InsightsKPIRow({ kpis, direction }: InsightsKPIRowProps) {
                   </span>
                 )}
               </div>
+              {'subtext' in card && card.subtext && (
+                <p className="text-[10px] text-muted-foreground">{card.subtext}</p>
+              )}
             </div>
           </CardContent>
         </Card>

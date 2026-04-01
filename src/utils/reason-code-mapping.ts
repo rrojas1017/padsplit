@@ -7,6 +7,7 @@ export const CLUSTER_COLORS: Record<string, string> = {
   'Communication Breakdown / Support Dissatisfaction': '#805ad5',
   'Policy Confusion / Lack of Flexibility': '#3182ce',
   'External Life Event / Positive Move-On': '#38a169',
+  'Data Error / Invalid Record': '#a0aec0',
   'Other / Unspecified': '#718096',
 };
 
@@ -17,6 +18,7 @@ export const CLUSTER_ORDER = [
   'Communication Breakdown / Support Dissatisfaction',
   'Policy Confusion / Lack of Flexibility',
   'External Life Event / Positive Move-On',
+  'Data Error / Invalid Record',
   'Other / Unspecified',
 ];
 
@@ -52,6 +54,12 @@ export function normalizeAddressability(value: string): 'Addressable' | 'Partial
 
 export function mapToCluster(primaryReasonCode: string): string {
   const code = primaryReasonCode.toLowerCase().replace(/[_\-\/]/g, ' ').trim();
+
+  // Data Error / Invalid Record — check first
+  if (code.includes('data error') || code.includes('invalid') || code.includes('identity theft') ||
+      code.includes('wrong person') || code.includes('never moved') || code.includes('never a member')) {
+    return 'Data Error / Invalid Record';
+  }
 
   if (code.includes('host') || code.includes('property') || code.includes('maintenance') ||
       code.includes('uninhabitable') || code.includes('mold') || code.includes('pest') ||
