@@ -350,7 +350,7 @@ Respond with ONLY a JSON object containing two top-level keys: "extraction" and 
     "confidence_flags": []
   },
   "classification": {
-    "primary_reason_code": "EXACTLY one of: Transfer Denied / Couldn't Transfer | Maintenance Delays | Roommate Conflict | Safety Concern | Noise or Cleanliness Issues | Communication Breakdown / Support Dissatisfaction | Policy Confusion / Lack of Flexibility | Payment Extension Not Offered | Collections – No Flexibility | Pattern of Non-Payment | Job Relocation | Moving in with Family | Buying a Home | Health Issues | Immigration Changes | Marriage | Military Relocation | Fraud / Misrepresentation | Host Negligence / Property Condition | Data Error / Invalid Record | Other",
+    "primary_reason_code": "EXACTLY one of the 7 codes below — 'Other' is NOT valid: Host Negligence / Property Condition | Payment Friction / Financial Hardship | Roommate Conflict / Safety Concern | Communication Breakdown / Support Dissatisfaction | Policy Confusion / Lack of Flexibility | External Life Event / Positive Move-On | Data Error / Invalid Record",
     "primary_reason_detail": "1-2 sentences on why this code was chosen",
     "secondary_reason_codes": [],
     "addressability": "Addressable | Non-addressable | Partially addressable",
@@ -407,16 +407,28 @@ CLASSIFICATION RULES:
 4. FLAG FOR HUMAN REVIEW when: transcript is ambiguous, contradictory, involves legal issues, or uncertain between primary codes.
 5. Base your classification on what the member ACTUALLY said in the transcript. If the extraction shows weak or ambiguous evidence for the primary reason, reduce the preventability score accordingly.
 
-CRITICAL CLASSIFICATION RULES:
-- You MUST classify every record into one of the specific reason codes. "Other" should be used in less than 5% of cases.
-- "Other" is ONLY acceptable when the transcript is completely unintelligible, the member refused to speak, or the call was disconnected before any meaningful conversation.
-- If the member gives a vague reason like "personal reasons" or "just because", look at the FULL transcript for context clues. Often the real reason emerges later in the conversation.
-- If the member mentions MULTIPLE issues, pick the PRIMARY one — the issue they talked about most or seemed most upset about.
-- "Needed my own space" / "wanted independence" / "temporary housing" = External Life Event
+CLASSIFICATION RULES — MANDATORY:
+Classify this record into EXACTLY ONE of these 7 codes. "Other" is NOT a valid option. Every record MUST be assigned to one of these:
+
+1. "Host Negligence / Property Condition" — property issues, maintenance, mold, pests, dirty, uninhabitable, host unresponsive, misrepresentation, renovation issues, overcrowding due to host
+2. "Payment Friction / Financial Hardship" — can't afford, rent increase, rent too high, payment schedules, late fees, collections, billing disputes, pricing concerns, saving money
+3. "Roommate Conflict / Safety Concern" — roommate issues, noise, cleanliness from roommates, harassment, drugs, theft, safety fears, assault, hostile environment from other members
+4. "Communication Breakdown / Support Dissatisfaction" — PadSplit support unresponsive, conflicting info, feeling unheard, process failures, app issues, platform problems
+5. "Policy Confusion / Lack of Flexibility" — transfer rules, guest policies, house rules, expectations vs reality, shared bathroom/kitchen objection, didn't realize it was shared living
+6. "External Life Event / Positive Move-On" — buying home, job relocation, family, graduation, personal reasons, temporary housing, moving out of town, needed own space, incarceration, health issues, military, got arrested, relationship change, found other housing, wanted independence, vague "personal reasons", "just because" with no PadSplit complaint
+7. "Data Error / Invalid Record" — member never moved in, wrong person contacted, identity theft, duplicate record, member denies move-out, call too short for classification. Always set human_review_recommended = true.
+
+EDGE CASE RULES:
+- Vague reasons ("personal", "just because", "needed a change") with NO specific PadSplit complaint = External Life Event
+- "Needed my own space" / "wanted independence" = External Life Event
 - "Rent too high" / "can't afford" / "price increase" = Payment Friction
-- "Didn't like sharing bathroom/kitchen" / "too many roommates" = Policy Confusion (expectations mismatch with shared living model)
-- When in doubt between "Other" and a specific category, always pick the specific category.
-- Use "Data Error / Invalid Record" when: member was never a PadSplit member, wrong person was called, member denies having moved out, identity theft. Set human_review_recommended to true for these.`;
+- "Didn't like sharing bathroom/kitchen" = Policy Confusion
+- "Got arrested" / "going through something" = External Life Event
+- If member gives vague reason but transcript reveals a real issue later, classify based on the ACTUAL issue
+- If multiple issues, pick the one discussed most or that upset the member most
+- If transcript is unintelligible or under 30 words = Data Error
+- NEVER output "Other", "Unspecified", "Unknown", or "General"
+- When in doubt between two specific categories, pick the one with more evidence. NEVER default to "Other".`;
 
 // Legacy default prompts (kept for fallback if separate extraction/classification prompts exist in DB)
 const DEFAULT_EXTRACTION_PROMPT = `You are a qualitative research analyst processing a transcribed move-out interview between a PadSplit agent and a former member. The transcript is from automated speech-to-text — expect false starts, crosstalk, filler words, tangents, and garbled text. Focus on substance.
