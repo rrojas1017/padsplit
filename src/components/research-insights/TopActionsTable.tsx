@@ -124,16 +124,10 @@ function ActionRow({ row, hasOwner, onExportModal }: { row: FlatAction; hasOwner
       });
   }, [open]);
 
-  const handleExport = async (e?: React.MouseEvent) => {
+  const handleExport = (e?: React.MouseEvent) => {
     e?.stopPropagation();
-    setExporting(true);
-    try {
-      const count = await exportByKeywords(keywords, `action_${row.action.substring(0, 30).replace(/\s+/g, '_')}.csv`);
-      toast.success(`Exported ${count} records`);
-    } catch {
-      toast.error('Export failed');
-    } finally {
-      setExporting(false);
+    if (onExportModal) {
+      onExportModal({ type: 'keywords', keywords }, `Action: ${row.action.substring(0, 50)}`, `action_${row.action.substring(0, 30).replace(/\s+/g, '_')}.csv`);
     }
   };
 
