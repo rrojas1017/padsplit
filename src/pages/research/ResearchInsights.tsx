@@ -35,7 +35,8 @@ import { InsightsKPIRow } from '@/components/research-insights/InsightsKPIRow';
 import { ReasonCodeDrillDown } from '@/components/research-insights/ReasonCodeDrillDown';
 
 import { AudienceSurveyDashboard } from '@/components/audience-survey/AudienceSurveyDashboard';
-import { exportFullReport } from '@/utils/researchExport';
+import { ExportMembersModal } from '@/components/research-insights/ExportMembersModal';
+import type { ExportFilter } from '@/hooks/useExportMembers';
 
 type TabValue = 'dashboard' | 'analysis' | 'operations';
 
