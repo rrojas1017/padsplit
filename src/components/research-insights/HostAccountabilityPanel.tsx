@@ -247,6 +247,8 @@ export function HostAccountabilityPanel({ data, maxVisible }: HostAccountability
     return items;
   }, [data]);
 
+  if (!data?.length) return null;
+
   const visible = maxVisible && !showAll ? sorted.slice(0, maxVisible) : sorted;
   const hasMore = maxVisible != null && sorted.length > maxVisible;
 
