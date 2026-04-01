@@ -452,7 +452,7 @@ export default function ResearchInsights() {
                 />
               )}
               {reportData.top_actions && (
-                <TopActionsTable data={reportData.top_actions} onExportModal={isAdmin ? openExportModal : undefined} />
+                <TopActionsTable data={reportData.top_actions} />
               )}
             </TabsContent>
 
