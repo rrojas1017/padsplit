@@ -83,7 +83,24 @@ export function HostAccountabilityPanel({ data, maxVisible }: HostAccountability
             >
               <div className="flex items-start justify-between gap-2">
                 <p className="text-sm font-medium text-foreground">{title}</p>
-                <PriorityBadge priority={item.priority} />
+                <div className="flex items-center gap-1.5 flex-shrink-0">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-6 w-6"
+                    title="Export members with this issue"
+                    onClick={async () => {
+                      try {
+                        const keywords = (title || '').toLowerCase().replace(/[^a-z0-9\s]/g, '').split(/\s+/).filter((w: string) => w.length > 3);
+                        const count = await exportByKeywords(keywords, `host_flag_${(title || 'export').replace(/\s+/g, '_')}.csv`);
+                        toast.success(`Exported ${count} records`);
+                      } catch { toast.error('Export failed'); }
+                    }}
+                  >
+                    <Download className="w-3 h-3" />
+                  </Button>
+                  <PriorityBadge priority={item.priority} />
+                </div>
               </div>
 
               {item.description && (

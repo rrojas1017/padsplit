@@ -236,6 +236,22 @@ export default function ResearchInsights() {
           {isGenerating ? 'Generating...' : 'Generate Report'}
         </Button>
 
+        {reportData && !isAudienceSurvey && (
+          <Button
+            variant="outline"
+            className="gap-2"
+            onClick={async () => {
+              try {
+                const count = await exportFullReport('research_full_report.csv');
+                toast.success(`Exported ${count} records`);
+              } catch { toast.error('Export failed'); }
+            }}
+          >
+            <Download className="w-4 h-4" />
+            Export Full Report
+          </Button>
+        )}
+
         <Button onClick={refresh} variant="outline" size="icon" title="Refresh">
           <RefreshCw className="w-4 h-4" />
         </Button>
