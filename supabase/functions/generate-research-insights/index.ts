@@ -875,6 +875,7 @@ Deno.serve(async (req) => {
     const dateRangeStart = body.dateRangeStart || body.date_range_start || null;
     const dateRangeEnd = body.dateRangeEnd || body.date_range_end || null;
     const analysisPeriod = body.analysisPeriod || body.analysis_period || null;
+    const campaignType = body.campaignType || body.campaign_type || 'move_out_survey';
 
     // Get user ID from JWT
     const authHeader = req.headers.get('Authorization') || '';
@@ -887,7 +888,7 @@ Deno.serve(async (req) => {
       } catch { /* ignore */ }
     }
 
-    // Fetch processed research records
+    // Fetch processed research records filtered by campaign type
     let query = supabase
       .from('bookings')
       .select(`
@@ -897,12 +898,14 @@ Deno.serve(async (req) => {
         booking_transcriptions!inner (
           research_extraction,
           research_classification,
-          research_processing_status
+          research_processing_status,
+          research_campaign_type
         )
       `)
       .eq('record_type', 'research')
       .eq('has_valid_conversation', true)
-      .eq('booking_transcriptions.research_processing_status', 'completed');
+      .eq('booking_transcriptions.research_processing_status', 'completed')
+      .eq('booking_transcriptions.research_campaign_type', campaignType);
 
     if (campaignId) query = query.eq('research_call_id', campaignId);
     if (dateRangeStart) query = query.gte('booking_date', dateRangeStart);
@@ -913,19 +916,19 @@ Deno.serve(async (req) => {
 
     const processedRecords = (records || []).filter((r: any) => {
       const t = Array.isArray(r.booking_transcriptions) ? r.booking_transcriptions[0] : r.booking_transcriptions;
-      return t?.research_classification;
+      return campaignType === 'audience_survey' ? t?.research_extraction : t?.research_classification;
     });
 
     if (processedRecords.length === 0) {
       return new Response(
-        JSON.stringify({ success: false, error: 'No processed research records found for the selected filters' }),
+        JSON.stringify({ success: false, error: `No processed ${campaignType} records found for the selected filters` }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
     const classifications = processedRecords.map((r: any) => {
       const t = Array.isArray(r.booking_transcriptions) ? r.booking_transcriptions[0] : r.booking_transcriptions;
-      return { ...t.research_classification, _booking_id: r.id };
+      return { ...(t.research_classification || {}), _booking_id: r.id };
     });
 
     const extractions = processedRecords.map((r: any) => {
@@ -933,25 +936,32 @@ Deno.serve(async (req) => {
       return t.research_extraction;
     });
 
+    // Select the right aggregation prompt based on campaign type
+    const isAudienceSurvey = campaignType === 'audience_survey';
+
     // Fetch prompt config
     const { data: prompts } = await supabase
       .from('research_prompts')
       .select('prompt_key, prompt_text, temperature, model');
 
-    const aggPrompt = prompts?.find((p: any) => p.prompt_key === 'aggregation');
+    const aggPromptKey = isAudienceSurvey ? 'aggregation_audience' : 'aggregation';
+    const aggPrompt = prompts?.find((p: any) => p.prompt_key === aggPromptKey) || prompts?.find((p: any) => p.prompt_key === 'aggregation');
     const model = aggPrompt?.model || 'google/gemini-2.5-flash';
     const temperature = Number(aggPrompt?.temperature) || 0.4;
-    const systemPrompt = aggPrompt?.prompt_text || DEFAULT_AGGREGATION_PROMPT;
+    const systemPrompt = isAudienceSurvey
+      ? (aggPrompt?.prompt_text || AUDIENCE_SURVEY_AGGREGATION_PROMPT)
+      : (aggPrompt?.prompt_text || DEFAULT_AGGREGATION_PROMPT);
 
     const dateRange = dateRangeStart && dateRangeEnd
       ? `${dateRangeStart} to ${dateRangeEnd}`
       : analysisPeriod || 'All Time';
 
-    // Concurrent invocation guard
+    // Concurrent invocation guard — scope to campaign type
     const { data: existingProcessing } = await supabase
       .from('research_insights')
       .select('id, created_at')
       .eq('status', 'processing')
+      .eq('campaign_type', campaignType)
       .order('created_at', { ascending: false })
       .limit(1)
       .maybeSingle();
@@ -971,21 +981,30 @@ Deno.serve(async (req) => {
       console.log(`[Insights] Marked stale record ${existingProcessing.id} as failed`);
     }
 
-    // Build combined record summaries for chunking
-    const recordSummaries = classifications.map((c: any, i: number) => {
-      const extraction = extractions[i];
-      return {
-        ...c,
-        member_name: extraction?.member_name,
-        length_of_stay: extraction?.length_of_stay,
-        primary_reason_stated: extraction?.primary_reason_stated,
-        issues_count: extraction?.issues_mentioned?.length || 0,
-        blind_spots_count: extraction?.blind_spots?.length || 0,
-        payment_was_factor: extraction?.payment_context?.payment_was_factor,
-        transfer_considered: extraction?.transfer_context?.considered_transfer,
-        host_mentioned: extraction?.host_context?.host_mentioned,
-      };
-    });
+    // Build record summaries for chunking — different shape per campaign type
+    let recordSummaries: any[];
+    if (isAudienceSurvey) {
+      recordSummaries = extractions.map((ext: any, i: number) => ({
+        ...ext,
+        _classification: classifications[i],
+        _booking_id: classifications[i]?._booking_id,
+      }));
+    } else {
+      recordSummaries = classifications.map((c: any, i: number) => {
+        const extraction = extractions[i];
+        return {
+          ...c,
+          member_name: extraction?.member_name,
+          length_of_stay: extraction?.length_of_stay,
+          primary_reason_stated: extraction?.primary_reason_stated,
+          issues_count: extraction?.issues_mentioned?.length || 0,
+          blind_spots_count: extraction?.blind_spots?.length || 0,
+          payment_was_factor: extraction?.payment_context?.payment_was_factor,
+          transfer_considered: extraction?.transfer_context?.considered_transfer,
+          host_mentioned: extraction?.host_context?.host_mentioned,
+        };
+      });
+    }
 
     // Split into chunks
     const CHUNK_SIZE = 30;
@@ -1000,6 +1019,7 @@ Deno.serve(async (req) => {
       .from('research_insights')
       .insert({
         campaign_id: campaignId || null,
+        campaign_type: campaignType,
         data: {
           _meta: {
             chunks,
@@ -1009,6 +1029,7 @@ Deno.serve(async (req) => {
             systemPrompt,
             triggeredByUserId,
             totalRecords: processedRecords.length,
+            campaignType,
           },
           _chunks: [],
           _progress: { totalChunks, completedChunks: 0, totalRecords: processedRecords.length, currentPhase: 'analyzing' },
@@ -1029,7 +1050,7 @@ Deno.serve(async (req) => {
       throw new Error(`Failed to create insight record: ${insertError?.message}`);
     }
 
-    console.log(`[Insights] Created insight ${insight.id}, starting self-chaining for ${processedRecords.length} records in ${totalChunks} chunks`);
+    console.log(`[Insights] Created insight ${insight.id} (${campaignType}), starting self-chaining for ${processedRecords.length} records in ${totalChunks} chunks`);
 
     // Start processing chunk 0 in background
     EdgeRuntime.waitUntil(
@@ -1042,6 +1063,7 @@ Deno.serve(async (req) => {
         insightId: insight.id,
         insight_id: insight.id,
         recordCount: processedRecords.length,
+        campaignType,
         message: 'Insight generation started',
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
