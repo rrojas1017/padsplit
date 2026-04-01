@@ -94,78 +94,7 @@ function ReasonDrillDown({ active, total, onCodeClick, onViewAllMembers, onBack 
     pctTotal: total > 0 ? Math.round((s.count / total) * 100) : 0,
   }));
 
-  const isOtherCluster = active.name === 'Other / Unspecified';
 
-  const handleReclassify = async () => {
-    setShowConfirm(false);
-    setReclassifying(true);
-    setReclassifyProgress(`Re-classifying... 0 / ${active.count} complete`);
-    try {
-      const { data, error } = await supabase.functions.invoke('reclassify-other-records', {
-        body: { offset: 0 },
-      });
-      if (error) throw error;
-      const reclassified = data?.reclassified || 0;
-      const remaining = data?.total_remaining || 0;
-      setReclassifyProgress(null);
-      toast.success(`Re-classification complete. ${reclassified} records were re-categorized, ${remaining} remain as Other.`);
-      // Refresh page data
-      window.location.reload();
-    } catch (err) {
-      console.error('Reclassify error:', err);
-      toast.error('Re-classification failed. Check console for details.');
-    } finally {
-      setReclassifying(false);
-    }
-  };
-
-  return (
-    <div className="space-y-5">
-      <Button variant="ghost" size="sm" className="w-fit gap-1.5 -ml-2" onClick={onBack}>
-        <ArrowLeft className="w-4 h-4" /> Back to overview
-      </Button>
-
-      {/* Reclassify banner for Other cluster */}
-      {isOtherCluster && isAdmin && (
-        <>
-          <Alert className="border-amber-200 bg-amber-50">
-            <AlertTriangle className="w-4 h-4 text-amber-500" />
-            <AlertDescription className="flex items-center justify-between">
-              <span className="text-sm">
-                <strong>{active.count} records</strong> are classified as "Other" which usually means the AI couldn't determine the reason.
-              </span>
-              <Button
-                size="sm"
-                variant="outline"
-                className="gap-1.5 ml-3 flex-shrink-0"
-                onClick={() => setShowConfirm(true)}
-                disabled={reclassifying}
-              >
-                {reclassifying ? (
-                  <><RefreshCw className="w-3.5 h-3.5 animate-spin" /> {reclassifyProgress}</>
-                ) : (
-                  <><RefreshCw className="w-3.5 h-3.5" /> Re-classify with AI</>
-                )}
-              </Button>
-            </AlertDescription>
-          </Alert>
-
-          <AlertDialog open={showConfirm} onOpenChange={setShowConfirm}>
-            <AlertDialogContent>
-              <AlertDialogHeader>
-                <AlertDialogTitle>Re-classify "Other" Records</AlertDialogTitle>
-                <AlertDialogDescription>
-                  This will re-process {active.count} records with a stricter AI classification. Records will be assigned to specific categories. Continue?
-                </AlertDialogDescription>
-              </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogCancel>Cancel</AlertDialogCancel>
-                <AlertDialogAction onClick={handleReclassify}>Continue</AlertDialogAction>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
-        </>
-      )}
 
       <div className="flex items-center gap-3">
         <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: active.color }} />
