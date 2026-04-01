@@ -434,7 +434,7 @@ export function ReasonCodeChart({ data, onCodeClick, onViewAllMembers }: ReasonC
 
   const [reclassifying, setReclassifying] = useState(false);
   const [showReclassifyConfirm, setShowReclassifyConfirm] = useState(false);
-  const [reclassifyPollTimer, setReclassifyPollTimer] = useState<NodeJS.Timeout | null>(null);
+  const [reclassifyPollTimer, setReclassifyPollTimer] = useState<ReturnType<typeof setInterval> | null>(null);
 
   const handleRunReclassification = async () => {
     setShowReclassifyConfirm(false);
