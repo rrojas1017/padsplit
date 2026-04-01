@@ -420,6 +420,12 @@ export function ReasonCodeChart({ data, onCodeClick, onViewAllMembers }: ReasonC
   const [expandedCluster, setExpandedCluster] = useState<string | null>(null);
   const [expandedBucket, setExpandedBucket] = useState<string | null>(null);
 
+  const { isAdmin } = useIsAdmin();
+
+  // "Other" % warning
+  const otherCluster = clusters.find(c => c.name === 'Other / Unspecified');
+  const otherPct = total > 0 && otherCluster ? Math.round((otherCluster.count / total) * 100) : 0;
+
   // Match report descriptions to clusters
   const descriptions: Record<string, string> = {};
   if (Array.isArray(data)) {
