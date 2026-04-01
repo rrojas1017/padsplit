@@ -1,6 +1,6 @@
 import { Card, CardContent } from '@/components/ui/card';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { BarChart3, Target, TrendingUp, AlertTriangle, Home, ArrowUp, ArrowDown, Minus } from 'lucide-react';
+import { BarChart3, Target, TrendingUp, AlertTriangle, Home, ArrowUp, ArrowDown, Minus, HelpCircle } from 'lucide-react';
 import type { DerivedKPIs } from '@/types/research-insights';
 import type { TrendDirection } from '@/hooks/useResearchTrends';
 
@@ -25,12 +25,14 @@ export function InsightsKPIRow({ kpis, direction }: InsightsKPIRowProps) {
       icon: BarChart3,
       color: 'text-primary',
       trend: direction ? { dir: direction.totalCases, delta: direction.totalCasesDelta } : null,
+      definition: 'Total number of move-out survey calls processed, excluding records flagged as data errors.',
     },
     {
       label: 'Addressable %',
       value: kpis.addressablePct !== 'N/A' ? kpis.addressablePct : 'N/A',
       icon: Target,
       color: 'text-emerald-500',
+      definition: 'Percentage of move-outs that PadSplit could have potentially prevented with better processes or intervention.',
     },
     {
       label: 'Top Reason',
@@ -38,18 +40,21 @@ export function InsightsKPIRow({ kpis, direction }: InsightsKPIRowProps) {
       icon: TrendingUp,
       color: 'text-primary',
       truncate: true,
+      definition: 'The most frequently cited reason category for members moving out.',
     },
     {
       label: 'Flagged for Review',
       value: kpis.flaggedForReview.toLocaleString(),
       icon: AlertTriangle,
       color: kpis.flaggedForReview > 0 ? 'text-amber-500' : 'text-emerald-500',
+      definition: 'Records where the AI recommends a human review due to ambiguous or conflicting information.',
     },
     {
       label: 'Host Related',
       value: kpis.hostRelatedPct !== 'N/A' ? kpis.hostRelatedPct : 'N/A',
       icon: Home,
       color: 'text-destructive',
+      definition: 'Percentage of move-outs caused by host negligence, property condition issues, or host misconduct.',
     },
   ];
 
@@ -81,7 +86,19 @@ export function InsightsKPIRow({ kpis, direction }: InsightsKPIRowProps) {
                 </p>
               )}
               <div className="flex items-center gap-1">
-                <p className="text-xs text-muted-foreground">{card.label}</p>
+                <p className="text-xs text-muted-foreground flex items-center gap-1">
+                  {card.label}
+                  <TooltipProvider delayDuration={200}>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <HelpCircle className="w-3 h-3 text-muted-foreground/50 cursor-help hover:text-muted-foreground transition-colors" />
+                      </TooltipTrigger>
+                      <TooltipContent side="bottom" className="max-w-[220px] text-xs">
+                        {card.definition}
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                </p>
                 {'trend' in card && card.trend && (
                   <span className={`inline-flex items-center text-[10px] font-medium ${
                     card.trend.dir === 'up' ? 'text-emerald-500' : card.trend.dir === 'down' ? 'text-destructive' : 'text-muted-foreground'
