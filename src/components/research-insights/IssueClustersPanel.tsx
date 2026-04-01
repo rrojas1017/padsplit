@@ -208,12 +208,15 @@ function ClusterCard({ cluster }: { cluster: IssueCluster }) {
                 size="icon"
                 className="h-7 w-7"
                 title="Export members in this cluster"
-                onClick={async (e) => {
+                onClick={(e) => {
                   e.stopPropagation();
-                  try {
-                    const count = await exportByKeywords(clusterKeywords, `cluster_${cluster.cluster_name.replace(/\s+/g, '_')}.csv`);
-                    toast.success(`Exported ${count} records`);
-                  } catch { toast.error('Export failed'); }
+                  if (onExportModal) {
+                    onExportModal(
+                      { type: 'keywords', keywords: clusterKeywords },
+                      `Cluster: ${cluster.cluster_name}`,
+                      `cluster_${cluster.cluster_name.replace(/\s+/g, '_')}.csv`
+                    );
+                  }
                 }}
               >
                 <Download className="w-3.5 h-3.5" />
