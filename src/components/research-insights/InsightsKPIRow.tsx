@@ -93,6 +93,9 @@ export function InsightsKPIRow({ kpis, direction }: InsightsKPIRowProps) {
                   </span>
                 )}
               </div>
+              {'subtext' in card && card.subtext && (
+                <p className="text-[10px] text-muted-foreground">{card.subtext}</p>
+              )}
             </div>
           </CardContent>
         </Card>
