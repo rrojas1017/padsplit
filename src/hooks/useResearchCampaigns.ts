@@ -142,9 +142,13 @@ export function useResearchCampaigns() {
   };
 
   const updateCampaign = async (id: string, updates: Partial<CampaignInput>) => {
+    const dbUpdates: any = { ...updates };
+    if (updates.name) {
+      dbUpdates.campaign_key = updates.name.trim().replace(/\s+/g, '-');
+    }
     const { error } = await supabase
       .from('research_campaigns')
-      .update(updates)
+      .update(dbUpdates)
       .eq('id', id);
     if (error) {
       toast.error('Failed to update campaign');
