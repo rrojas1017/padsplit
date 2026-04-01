@@ -75,7 +75,7 @@ export function IssueClustersPanel({ data, maxVisible, onExportModal }: IssueClu
       </CardHeader>
       <CardContent className="space-y-3">
         {capped.map((cluster, i) => (
-          <ClusterCard key={i} cluster={cluster} />
+          <ClusterCard key={i} cluster={cluster} onExportModal={onExportModal} />
         ))}
         {hasMore && (
           <Button variant="ghost" size="sm" onClick={() => setShowAll(!showAll)} className="w-full text-xs">
