@@ -1099,10 +1099,11 @@ Deno.serve(async (req) => {
     // Select the right aggregation prompt based on campaign type
     const isAudienceSurvey = campaignType === 'audience_survey';
 
-    // Fetch prompt config
+    // Fetch prompt config filtered by campaign type
     const { data: prompts } = await supabase
       .from('research_prompts')
-      .select('prompt_key, prompt_text, temperature, model');
+      .select('prompt_key, prompt_text, temperature, model')
+      .or(`campaign_type.eq.${campaignType},campaign_type.is.null`);
 
     const aggPromptKey = isAudienceSurvey ? 'aggregation_audience' : 'aggregation';
     const aggPrompt = prompts?.find((p: any) => p.prompt_key === aggPromptKey) || prompts?.find((p: any) => p.prompt_key === 'aggregation');
