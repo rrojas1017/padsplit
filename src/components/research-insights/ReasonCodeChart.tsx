@@ -274,6 +274,8 @@ export function ReasonCodeChart({ data, onCodeClick }: ReasonCodeChartProps) {
           onOpenChange={(open) => { if (!open) setSelectedReason(null); }}
           reasonCode={selectedReason || ''}
           reasonColor={selectedColor}
+          reasonCount={selectedCount}
+          reasonPct={selectedPct}
           bookingIds={selectedBookingIds}
           includedReasonCodes={selectedIncludedCodes}
           categoryDescription={selectedDescription}
