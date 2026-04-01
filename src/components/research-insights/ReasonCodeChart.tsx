@@ -5,15 +5,13 @@ import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
+
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts';
-import { ArrowLeft, ArrowRight, ChevronRight, Users, AlertTriangle, RefreshCw } from 'lucide-react';
+import { ArrowLeft, ArrowRight, ChevronRight, Users, AlertTriangle } from 'lucide-react';
 import { useReasonCodeCounts, ClusterData } from '@/hooks/useReasonCodeCounts';
 import { useAddressabilityBreakdown, AddressabilityBucket } from '@/hooks/useAddressabilityBreakdown';
 import { ADDRESSABILITY_DESCRIPTIONS } from '@/utils/reason-code-mapping';
 import { supabase } from '@/integrations/supabase/client';
-import { useIsAdmin } from '@/hooks/useIsAdmin';
-import { toast } from 'sonner';
 
 interface ReasonCodeChartProps {
   data: any;
@@ -43,18 +41,14 @@ function CenterLabel({ total, label }: { total: number; label?: string }) {
 }
 
 // ── Reason Code Drill-Down ──
-function ReasonDrillDown({ active, total, onCodeClick, onViewAllMembers, onBack, isAdmin }: {
+function ReasonDrillDown({ active, total, onCodeClick, onViewAllMembers, onBack }: {
   active: ClusterData; total: number;
   onCodeClick?: (code: string) => void;
   onViewAllMembers?: (cluster: string) => void;
   onBack: () => void;
-  isAdmin: boolean;
 }) {
   const [memberPreviews, setMemberPreviews] = useState<MemberPreview[]>([]);
   const [membersLoading, setMembersLoading] = useState(false);
-  const [reclassifying, setReclassifying] = useState(false);
-  const [reclassifyProgress, setReclassifyProgress] = useState<string | null>(null);
-  const [showConfirm, setShowConfirm] = useState(false);
 
   useEffect(() => {
     const subReasonNames = active.subReasons
@@ -98,78 +92,11 @@ function ReasonDrillDown({ active, total, onCodeClick, onViewAllMembers, onBack,
     pctTotal: total > 0 ? Math.round((s.count / total) * 100) : 0,
   }));
 
-  const isOtherCluster = active.name === 'Other / Unspecified';
-
-  const handleReclassify = async () => {
-    setShowConfirm(false);
-    setReclassifying(true);
-    setReclassifyProgress(`Re-classifying... 0 / ${active.count} complete`);
-    try {
-      const { data, error } = await supabase.functions.invoke('reclassify-other-records', {
-        body: { offset: 0 },
-      });
-      if (error) throw error;
-      const reclassified = data?.reclassified || 0;
-      const remaining = data?.total_remaining || 0;
-      setReclassifyProgress(null);
-      toast.success(`Re-classification complete. ${reclassified} records were re-categorized, ${remaining} remain as Other.`);
-      // Refresh page data
-      window.location.reload();
-    } catch (err) {
-      console.error('Reclassify error:', err);
-      toast.error('Re-classification failed. Check console for details.');
-    } finally {
-      setReclassifying(false);
-    }
-  };
-
   return (
     <div className="space-y-5">
       <Button variant="ghost" size="sm" className="w-fit gap-1.5 -ml-2" onClick={onBack}>
         <ArrowLeft className="w-4 h-4" /> Back to overview
       </Button>
-
-      {/* Reclassify banner for Other cluster */}
-      {isOtherCluster && isAdmin && (
-        <>
-          <Alert className="border-amber-200 bg-amber-50">
-            <AlertTriangle className="w-4 h-4 text-amber-500" />
-            <AlertDescription className="flex items-center justify-between">
-              <span className="text-sm">
-                <strong>{active.count} records</strong> are classified as "Other" which usually means the AI couldn't determine the reason.
-              </span>
-              <Button
-                size="sm"
-                variant="outline"
-                className="gap-1.5 ml-3 flex-shrink-0"
-                onClick={() => setShowConfirm(true)}
-                disabled={reclassifying}
-              >
-                {reclassifying ? (
-                  <><RefreshCw className="w-3.5 h-3.5 animate-spin" /> {reclassifyProgress}</>
-                ) : (
-                  <><RefreshCw className="w-3.5 h-3.5" /> Re-classify with AI</>
-                )}
-              </Button>
-            </AlertDescription>
-          </Alert>
-
-          <AlertDialog open={showConfirm} onOpenChange={setShowConfirm}>
-            <AlertDialogContent>
-              <AlertDialogHeader>
-                <AlertDialogTitle>Re-classify "Other" Records</AlertDialogTitle>
-                <AlertDialogDescription>
-                  This will re-process {active.count} records with a stricter AI classification. Records will be assigned to specific categories. Continue?
-                </AlertDialogDescription>
-              </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogCancel>Cancel</AlertDialogCancel>
-                <AlertDialogAction onClick={handleReclassify}>Continue</AlertDialogAction>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
-        </>
-      )}
 
       <div className="flex items-center gap-3">
         <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: active.color }} />
@@ -420,65 +347,10 @@ export function ReasonCodeChart({ data, onCodeClick, onViewAllMembers }: ReasonC
   const [expandedCluster, setExpandedCluster] = useState<string | null>(null);
   const [expandedBucket, setExpandedBucket] = useState<string | null>(null);
 
-  const { isAdmin } = useIsAdmin();
 
-  // "Other" % warning + non-standard codes
+  // "Other" % warning
   const otherCluster = clusters.find(c => c.name === 'Other / Unspecified');
   const otherPct = total > 0 && otherCluster ? Math.round((otherCluster.count / total) * 100) : 0;
-
-  // Count all non-standard codes (not just "Other" cluster)
-  const nonStandardCount = clusters.reduce((sum, c) => {
-    if (c.name === 'Other / Unspecified') return sum + c.count;
-    return sum;
-  }, 0);
-
-  const [reclassifying, setReclassifying] = useState(false);
-  const [showReclassifyConfirm, setShowReclassifyConfirm] = useState(false);
-  const [reclassifyPollTimer, setReclassifyPollTimer] = useState<ReturnType<typeof setInterval> | null>(null);
-
-  const handleRunReclassification = async () => {
-    setShowReclassifyConfirm(false);
-    setReclassifying(true);
-    try {
-      const { error } = await supabase.functions.invoke('reclassify-records', {
-        body: {},
-      });
-      if (error) throw error;
-      toast.info('Reclassification started — processing in background');
-
-      // Poll every 10s to check completion
-      const timer = setInterval(async () => {
-        const { data: checkData } = await supabase
-          .from('booking_transcriptions')
-          .select('id', { count: 'exact', head: true })
-          .eq('research_campaign_type', 'move_out_survey')
-          .not('research_classification', 'is', null)
-          .is('research_audit', null)
-          .or('research_classification->>primary_reason_code.ilike.%other%,research_classification->>primary_reason_code.ilike.%unspecified%,research_classification->>primary_reason_code.ilike.%unknown%,research_classification->>primary_reason_code.ilike.%general%');
-
-        const remaining = (checkData as any)?.length ?? 0;
-        if (remaining === 0) {
-          clearInterval(timer);
-          setReclassifying(false);
-          setReclassifyPollTimer(null);
-          toast.success('Reclassification complete — all records updated');
-          window.location.reload();
-        }
-      }, 10000);
-      setReclassifyPollTimer(timer);
-    } catch (err) {
-      console.error('Reclassify error:', err);
-      toast.error('Reclassification failed. Check console for details.');
-      setReclassifying(false);
-    }
-  };
-
-  // Cleanup poll timer
-  useEffect(() => {
-    return () => {
-      if (reclassifyPollTimer) clearInterval(reclassifyPollTimer);
-    };
-  }, [reclassifyPollTimer]);
 
   // Match report descriptions to clusters
   const descriptions: Record<string, string> = {};
@@ -535,7 +407,7 @@ export function ReasonCodeChart({ data, onCodeClick, onViewAllMembers }: ReasonC
             onCodeClick={onCodeClick}
             onViewAllMembers={onViewAllMembers}
             onBack={() => setExpandedCluster(null)}
-            isAdmin={isAdmin}
+            
           />
         </CardContent>
       </Card>
@@ -561,46 +433,12 @@ export function ReasonCodeChart({ data, onCodeClick, onViewAllMembers }: ReasonC
   return (
     <div className="space-y-4">
       {otherPct > 10 && (
-        <>
-          <Alert className="border-amber-200 bg-amber-50">
-            <AlertTriangle className="w-4 h-4 text-amber-500" />
-            <AlertDescription className="flex items-center justify-between">
-              <span className="text-sm">
-                <strong>{otherPct}%</strong> of records could not be classified — classification prompts may need review.
-              </span>
-              {isAdmin && (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="gap-1.5 ml-3 flex-shrink-0"
-                  onClick={() => setShowReclassifyConfirm(true)}
-                  disabled={reclassifying}
-                >
-                  {reclassifying ? (
-                    <><RefreshCw className="w-3.5 h-3.5 animate-spin" /> Processing...</>
-                  ) : (
-                    <><RefreshCw className="w-3.5 h-3.5" /> Run Reclassification</>
-                  )}
-                </Button>
-              )}
-            </AlertDescription>
-          </Alert>
-
-          <AlertDialog open={showReclassifyConfirm} onOpenChange={setShowReclassifyConfirm}>
-            <AlertDialogContent>
-              <AlertDialogHeader>
-                <AlertDialogTitle>Re-classify Records</AlertDialogTitle>
-                <AlertDialogDescription>
-                  This will re-classify ~{nonStandardCount} records using the updated AI prompt. This runs in the background and may take a few minutes. Proceed?
-                </AlertDialogDescription>
-              </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogCancel>Cancel</AlertDialogCancel>
-                <AlertDialogAction onClick={handleRunReclassification}>Proceed</AlertDialogAction>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
-        </>
+        <Alert className="border-amber-200 bg-amber-50">
+          <AlertTriangle className="w-4 h-4 text-amber-500" />
+          <AlertDescription className="text-sm">
+            <strong>{otherPct}%</strong> of records could not be classified — classification prompts may need review.
+          </AlertDescription>
+        </Alert>
       )}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
       {/* Reason Code Distribution */}
