@@ -61,10 +61,12 @@ export function useCoachingData(options: UseCoachingDataOptions = {}) {
               member_name,
               market_city,
               market_state,
-              transcription_status
+              transcription_status,
+              record_type
             )
           `)
           .not('agent_feedback', 'is', null)
+          .neq('bookings.record_type', 'research')
           .order('coaching_audio_generated_at', { ascending: false, nullsFirst: false });
 
         const { data, error } = await query;
