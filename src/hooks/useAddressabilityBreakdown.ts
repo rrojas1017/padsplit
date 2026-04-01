@@ -42,8 +42,8 @@ export function useAddressabilityBreakdown() {
         return;
       }
 
-      // Group by addressability bucket → cluster → scores
-      const bucketMap: Record<string, Record<string, { count: number; scores: number[] }>> = {};
+      // Group by addressability bucket → cluster → sub-reasons & scores
+      const bucketMap: Record<string, Record<string, { count: number; scores: number[]; subs: Record<string, number> }>> = {};
 
       let totalCount = 0;
       for (const row of data) {
@@ -57,10 +57,13 @@ export function useAddressabilityBreakdown() {
         const bucket = normalizeAddressability(addressability);
         const cluster = mapToCluster(reasonCode);
         const score = typeof cls?.preventability_score === 'number' ? cls.preventability_score : null;
+        const caseBrief = (cls?.case_brief && typeof cls.case_brief === 'string') ? cls.case_brief : '';
+        const subKey = extractSubReason(cluster, caseBrief);
 
         if (!bucketMap[bucket]) bucketMap[bucket] = {};
-        if (!bucketMap[bucket][cluster]) bucketMap[bucket][cluster] = { count: 0, scores: [] };
+        if (!bucketMap[bucket][cluster]) bucketMap[bucket][cluster] = { count: 0, scores: [], subs: {} };
         bucketMap[bucket][cluster].count++;
+        bucketMap[bucket][cluster].subs[subKey] = (bucketMap[bucket][cluster].subs[subKey] || 0) + 1;
         if (score != null) bucketMap[bucket][cluster].scores.push(score);
       }
 
@@ -69,12 +72,23 @@ export function useAddressabilityBreakdown() {
         const entries = Object.entries(clusterData).sort((a, b) => b[1].count - a[1].count);
         const bucketCount = entries.reduce((s, [, v]) => s + v.count, 0);
 
-        const reasonBreakdown: ReasonInBucket[] = entries.map(([cluster, v]) => ({
-          cluster,
-          count: v.count,
-          avgScore: v.scores.length > 0 ? Math.round((v.scores.reduce((a, b) => a + b, 0) / v.scores.length) * 10) / 10 : 0,
-          color: CLUSTER_COLORS[cluster] || '#718096',
-        }));
+        const reasonBreakdown: ReasonInBucket[] = entries.map(([cluster, v]) => {
+          const subEntries = Object.entries(v.subs).sort((a, b) => b[1] - a[1]);
+          const mainSubs: SubReasonInBucket[] = [];
+          let otherCount = 0;
+          for (const [subName, count] of subEntries) {
+            if (count < 3) { otherCount += count; } else { mainSubs.push({ name: subName, count }); }
+          }
+          if (otherCount > 0) mainSubs.push({ name: 'Other in this category', count: otherCount });
+
+          return {
+            cluster,
+            count: v.count,
+            avgScore: v.scores.length > 0 ? Math.round((v.scores.reduce((a, b) => a + b, 0) / v.scores.length) * 10) / 10 : 0,
+            color: CLUSTER_COLORS[cluster] || '#718096',
+            subReasons: mainSubs,
+          };
+        });
 
         return {
           name,
