@@ -163,7 +163,7 @@ function ActionRow({ row, hasOwner, onExportModal }: { row: FlatAction; hasOwner
             <span className="text-muted-foreground text-xs line-clamp-1" title={desc}>{desc}</span>
           </td>
           <td className="px-2 py-3 w-10">
-            <Button variant="ghost" size="icon" className="h-6 w-6" disabled={exporting} onClick={handleExport} title="Export affected members">
+            <Button variant="ghost" size="icon" className="h-6 w-6" onClick={handleExport} title="Export affected members">
               <Download className="w-3 h-3" />
             </Button>
           </td>
