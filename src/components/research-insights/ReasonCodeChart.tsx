@@ -24,6 +24,27 @@ export function ReasonCodeChart({ data, onCodeClick }: ReasonCodeChartProps) {
 
   if (!data) return null;
 
+  /** Parse a value that might be a number, a severity string, or a range string like "25-35%" */
+  function parseCount(val: any): number {
+    if (typeof val === 'number' && !isNaN(val)) return val;
+    if (typeof val !== 'string') return 0;
+    const n = parseFloat(val);
+    if (!isNaN(n)) return n;
+    // Severity labels → not useful as counts, return 0 (will be derived from pct)
+    return 0;
+  }
+
+  function parsePct(val: any): number {
+    if (typeof val === 'number' && !isNaN(val)) return val;
+    if (typeof val !== 'string') return 0;
+    const cleaned = val.replace(/%/g, '').trim();
+    // Handle ranges like "25-35" → midpoint
+    const rangeMatch = cleaned.match(/^(\d+(?:\.\d+)?)\s*[-–—]\s*(\d+(?:\.\d+)?)$/);
+    if (rangeMatch) return (parseFloat(rangeMatch[1]) + parseFloat(rangeMatch[2])) / 2;
+    const n = parseFloat(cleaned);
+    return isNaN(n) ? 0 : n;
+  }
+
   let chartData: Array<{ name: string; count: number; pct: number; details?: string; bookingIds?: string[]; includedCodes?: string[] }> = [];
   let totalCases: number | undefined;
   let preventable: number | undefined;
@@ -42,12 +63,24 @@ export function ReasonCodeChart({ data, onCodeClick }: ReasonCodeChartProps) {
   } else if (Array.isArray(data)) {
     chartData = data.map((d: any) => ({
       name: d.code || d.reason_group || d.category || 'Unknown',
-      count: d.count,
-      pct: d.pct ?? d.percentage ?? 0,
+      count: parseCount(d.count),
+      pct: parsePct(d.pct ?? d.percentage ?? 0),
       details: d.details || d.description,
       bookingIds: d.booking_ids,
       includedCodes: d.reason_codes_included,
     }));
+    // If counts are all zero but we have percentages, derive counts from percentages
+    const allCountsZero = chartData.every(d => d.count === 0);
+    if (allCountsZero) {
+      const totalPct = chartData.reduce((s, d) => s + d.pct, 0);
+      // Normalize percentages if they don't sum to ~100
+      const scale = totalPct > 0 ? 100 / totalPct : 1;
+      chartData.forEach(d => {
+        d.pct = d.pct * scale;
+        // Derive a pseudo-count proportional to pct (using 100 as base if no total known)
+        d.count = Math.round(d.pct);
+      });
+    }
   } else {
     totalCases = data.total_cases;
     preventable = data.preventable_churn;
@@ -56,8 +89,8 @@ export function ReasonCodeChart({ data, onCodeClick }: ReasonCodeChartProps) {
     if (data.by_category?.length) {
       chartData = data.by_category.map((d: any) => ({
         name: d.category,
-        count: d.count,
-        pct: d.percentage,
+        count: parseCount(d.count),
+        pct: parsePct(d.percentage),
         details: d.description,
         bookingIds: d.booking_ids,
         includedCodes: d.reason_codes_included,
@@ -65,8 +98,8 @@ export function ReasonCodeChart({ data, onCodeClick }: ReasonCodeChartProps) {
     } else if (data.distribution?.length) {
       chartData = data.distribution.map((d: any) => ({
         name: d.reason_group,
-        count: d.count,
-        pct: d.percentage,
+        count: parseCount(d.count),
+        pct: parsePct(d.percentage),
         details: d.details,
         bookingIds: d.booking_ids,
         includedCodes: d.reason_codes_included,
