@@ -506,12 +506,11 @@ export default function ResearchInsights() {
               {reportData.executive_summary && (
                 <ExecutiveSummary data={reportData.executive_summary as any} />
               )}
-              {reportData.reason_code_distribution && (
-                <ReasonCodeChart
-                  data={reportData.reason_code_distribution}
-                  onCodeClick={(code) => setDrillDownCode(code)}
-                />
-              )}
+              <ReasonCodeChart
+                data={reportData.reason_code_distribution}
+                onCodeClick={(code) => setDrillDownCode(code)}
+                onViewAllMembers={(cluster) => { setTab('members'); }}
+              />
               {reportData.emerging_patterns && (
                 <EmergingPatternsPanel data={reportData.emerging_patterns} maxVisible={5} />
               )}
