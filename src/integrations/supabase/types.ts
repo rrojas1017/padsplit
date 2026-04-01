@@ -2356,6 +2356,7 @@ export type Database = {
           date_range_end: string | null
           date_range_start: string | null
           error_message: string | null
+          executive_brief: Json | null
           generated_at: string
           id: string
           insight_type: string | null
@@ -2373,6 +2374,7 @@ export type Database = {
           date_range_end?: string | null
           date_range_start?: string | null
           error_message?: string | null
+          executive_brief?: Json | null
           generated_at?: string
           id?: string
           insight_type?: string | null
@@ -2390,6 +2392,7 @@ export type Database = {
           date_range_end?: string | null
           date_range_start?: string | null
           error_message?: string | null
+          executive_brief?: Json | null
           generated_at?: string
           id?: string
           insight_type?: string | null
