@@ -2,8 +2,8 @@ import { useMemo, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Home, ChevronDown, ChevronRight } from 'lucide-react';
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
+import { Home } from 'lucide-react';
+import { PriorityBadge } from './PriorityBadge';
 
 interface HostFlag {
   flag?: string;
@@ -16,19 +16,15 @@ interface HostAccountabilityPanelProps {
   maxVisible?: number;
 }
 
-function parseSeverity(sev: string): { label: string; level: number; color: string } {
+function parseSeverity(sev: string): { priority: string; level: number; borderClass: string } {
   const lower = sev.toLowerCase();
   if (lower.includes('p0') || lower.includes('critical'))
-    return { label: sev, level: 0, color: 'bg-destructive/15 text-destructive border-destructive/30' };
+    return { priority: 'P0', level: 0, borderClass: 'border-l-red-500' };
   if (lower.includes('p1') || lower.includes('high'))
-    return { label: sev, level: 1, color: 'bg-amber-500/15 text-amber-600 border-amber-500/30' };
-  return { label: sev, level: 2, color: 'bg-muted text-muted-foreground border-border' };
-}
-
-function severityBorderColor(level: number): string {
-  if (level === 0) return 'hsl(var(--destructive))';
-  if (level === 1) return 'hsl(25, 95%, 53%)';
-  return 'hsl(var(--border))';
+    return { priority: 'P1', level: 1, borderClass: 'border-l-amber-500' };
+  if (lower.includes('p2'))
+    return { priority: 'P2', level: 2, borderClass: 'border-l-blue-500' };
+  return { priority: '', level: 3, borderClass: 'border-l-muted-foreground/30' };
 }
 
 export function HostAccountabilityPanel({ data, maxVisible }: HostAccountabilityPanelProps) {
@@ -60,7 +56,16 @@ export function HostAccountabilityPanel({ data, maxVisible }: HostAccountability
       </CardHeader>
       <CardContent className="space-y-3">
         {visible.map(({ item, sev }, i) => (
-          <FlagRow key={i} item={item} sev={sev} />
+          <div
+            key={i}
+            className={`bg-card border border-border rounded-lg p-4 border-l-4 ${sev.borderClass} space-y-2`}
+          >
+            <div className="flex items-center gap-2">
+              {sev.priority && <PriorityBadge priority={sev.priority} />}
+              <span className="text-xs text-muted-foreground">{item.severity}</span>
+            </div>
+            <p className="text-sm text-foreground leading-relaxed">{item.flag}</p>
+          </div>
         ))}
         {maxVisible && sorted.length > maxVisible && !showAll && (
           <Button variant="ghost" size="sm" onClick={() => setShowAll(true)} className="w-full text-primary">
@@ -69,32 +74,5 @@ export function HostAccountabilityPanel({ data, maxVisible }: HostAccountability
         )}
       </CardContent>
     </Card>
-  );
-}
-
-function FlagRow({ item, sev }: { item: HostFlag; sev: { label: string; level: number; color: string } }) {
-  const [open, setOpen] = useState(false);
-  const flagText = item.flag || '';
-
-  return (
-    <Collapsible open={open} onOpenChange={setOpen}>
-      <div
-        className="border border-border rounded-lg overflow-hidden"
-        style={{ borderLeftWidth: '4px', borderLeftColor: severityBorderColor(sev.level) }}
-      >
-        <CollapsibleTrigger asChild>
-          <div className="flex items-center gap-3 p-4 cursor-pointer hover:bg-muted/30 transition-colors">
-            {open ? <ChevronDown className="w-4 h-4 text-muted-foreground flex-shrink-0" /> : <ChevronRight className="w-4 h-4 text-muted-foreground flex-shrink-0" />}
-            <p className="text-sm text-foreground flex-1">{flagText}</p>
-            {sev.label && <Badge variant="outline" className={`text-xs flex-shrink-0 ${sev.color}`}>{sev.label}</Badge>}
-          </div>
-        </CollapsibleTrigger>
-        <CollapsibleContent>
-          <div className="px-4 pb-4 border-t border-border pt-3">
-            <p className="text-xs text-muted-foreground">This flag has been identified from member transcriptions and requires attention based on the severity level indicated.</p>
-          </div>
-        </CollapsibleContent>
-      </div>
-    </Collapsible>
   );
 }
