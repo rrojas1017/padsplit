@@ -549,6 +549,14 @@ export default function ResearchInsights() {
           reasonColor="hsl(var(--primary))"
         />
       )}
+
+      <ExportMembersModal
+        open={exportModalOpen}
+        onOpenChange={setExportModalOpen}
+        filter={exportFilter}
+        title={exportTitle}
+        defaultFilename={exportFilename}
+      />
     </DashboardLayout>
   );
 }
