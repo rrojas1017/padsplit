@@ -42,8 +42,12 @@ export function useReasonCodeCounts() {
         if (!reasonCode || typeof reasonCode !== 'string') continue;
 
         const cluster = mapToCluster(reasonCode);
+        // Use reason_detail for granular sub-reasons, fall back to primary_reason_code
+        const subKey = (cls?.reason_detail && typeof cls.reason_detail === 'string' && cls.reason_detail.trim())
+          ? cls.reason_detail.trim()
+          : reasonCode;
         if (!clusterMap[cluster]) clusterMap[cluster] = {};
-        clusterMap[cluster][reasonCode] = (clusterMap[cluster][reasonCode] || 0) + 1;
+        clusterMap[cluster][subKey] = (clusterMap[cluster][subKey] || 0) + 1;
       }
 
       const totalCount = data.filter(r => {

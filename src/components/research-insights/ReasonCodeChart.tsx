@@ -67,16 +67,22 @@ function ReasonDrillDown({ active, total, onCodeClick, onViewAllMembers, onBack 
       if (!rows) { setMembersLoading(false); return; }
 
       const matching = rows.filter(r => {
-        const rc = (r.research_classification as any)?.primary_reason_code;
-        return rc && subReasonNames.some(s => s.toLowerCase() === rc.toLowerCase());
+        const cls = r.research_classification as any;
+        const detail = (cls?.reason_detail || '').toLowerCase().trim();
+        const code = (cls?.primary_reason_code || '').toLowerCase().trim();
+        return subReasonNames.some(s => {
+          const sl = s.toLowerCase();
+          return sl === detail || sl === code;
+        });
       });
 
       setMemberPreviews(matching.slice(0, 5).map(r => {
         const b = r.bookings as any;
+        const cls = r.research_classification as any;
         return {
           memberName: b?.member_name || 'Unknown',
           phone: b?.contact_phone || '—',
-          subReason: (r.research_classification as any)?.primary_reason_code || '—',
+          subReason: cls?.reason_detail || cls?.primary_reason_code || '—',
           date: b?.booking_date || '—',
         };
       }));
