@@ -101,6 +101,21 @@ Deno.serve(async (req) => {
       });
     }
 
+    // --- Look up research_campaigns by campaign_key ---
+    let matchedCampaignId: string | null = null;
+    const { data: campaignData } = await adminClient
+      .from('research_campaigns')
+      .select('id, script_id')
+      .eq('campaign_key', campaign)
+      .maybeSingle();
+
+    if (campaignData) {
+      matchedCampaignId = campaignData.id;
+      console.log(`Matched campaign_key "${campaign}" → campaign ${matchedCampaignId}`);
+    } else {
+      console.log(`No research_campaigns match for campaign_key "${campaign}", storing as free-text`);
+    }
+
     // --- Insert booking record (research type) for Reports visibility ---
     const today = new Date().toISOString().split('T')[0];
     const { data: booking, error: bookingError } = await adminClient

@@ -2294,6 +2294,7 @@ export type Database = {
       research_campaigns: {
         Row: {
           assigned_researchers: string[]
+          campaign_key: string
           created_at: string
           created_by: string | null
           end_date: string | null
@@ -2307,6 +2308,7 @@ export type Database = {
         }
         Insert: {
           assigned_researchers?: string[]
+          campaign_key: string
           created_at?: string
           created_by?: string | null
           end_date?: string | null
@@ -2320,6 +2322,7 @@ export type Database = {
         }
         Update: {
           assigned_researchers?: string[]
+          campaign_key?: string
           created_at?: string
           created_by?: string | null
           end_date?: string | null

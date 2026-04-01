@@ -5,6 +5,7 @@ import { toast } from 'sonner';
 export interface ResearchCampaign {
   id: string;
   name: string;
+  campaign_key: string;
   script_id: string;
   script_name?: string;
   status: 'draft' | 'active' | 'paused' | 'completed';
@@ -24,7 +25,7 @@ export interface ResearcherProfile {
   email: string | null;
 }
 
-export type CampaignInput = Omit<ResearchCampaign, 'id' | 'created_at' | 'updated_at' | 'created_by' | 'script_name' | 'completed_calls'>;
+export type CampaignInput = Omit<ResearchCampaign, 'id' | 'created_at' | 'updated_at' | 'created_by' | 'script_name' | 'completed_calls' | 'campaign_key'>;
 
 export function useResearchCampaigns() {
   const [campaigns, setCampaigns] = useState<ResearchCampaign[]>([]);
@@ -75,6 +76,7 @@ export function useResearchCampaigns() {
     const campaignsList = (data || []).map((c: any) => ({
       id: c.id,
       name: c.name,
+      campaign_key: c.campaign_key || c.name?.trim().replace(/\s+/g, '-') || '',
       script_id: c.script_id,
       script_name: c.research_scripts?.name || 'Unknown Script',
       status: c.status as ResearchCampaign['status'],
@@ -119,8 +121,10 @@ export function useResearchCampaigns() {
 
   const createCampaign = async (input: CampaignInput) => {
     const { data: { user } } = await supabase.auth.getUser();
+    const campaignKey = input.name.trim().replace(/\s+/g, '-');
     const { error } = await supabase.from('research_campaigns').insert({
       name: input.name,
+      campaign_key: campaignKey,
       script_id: input.script_id,
       status: input.status,
       target_count: input.target_count,
@@ -138,9 +142,13 @@ export function useResearchCampaigns() {
   };
 
   const updateCampaign = async (id: string, updates: Partial<CampaignInput>) => {
+    const dbUpdates: any = { ...updates };
+    if (updates.name) {
+      dbUpdates.campaign_key = updates.name.trim().replace(/\s+/g, '-');
+    }
     const { error } = await supabase
       .from('research_campaigns')
-      .update(updates)
+      .update(dbUpdates)
       .eq('id', id);
     if (error) {
       toast.error('Failed to update campaign');
