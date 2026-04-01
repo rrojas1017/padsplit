@@ -54,7 +54,8 @@ export function downloadMembersCSV(members: ExportMember[], filename: string) {
 function mapRow(row: any): ExportMember {
   const b = row.bookings as any;
   const cls = row.research_classification as any;
-  const rawName = b?.member_name || 'Unknown';
+  const ext = row.research_extraction as any;
+  const rawName = ext?.member_name || b?.member_name || 'Unknown';
   const memberName = rawName.startsWith('API Submission - ') ? rawName.replace('API Submission - ', '') : rawName;
   return {
     bookingId: row.booking_id || '',
@@ -96,7 +97,7 @@ export function useExportMembers() {
         if (!filter.bookingIds.length) { setMembers([]); return; }
         const { data, error: err } = await supabase
           .from('booking_transcriptions')
-          .select('booking_id, research_classification, bookings!inner(member_name, booking_date, contact_phone, contact_email)')
+          .select('booking_id, research_classification, research_extraction, bookings!inner(member_name, booking_date, contact_phone, contact_email)')
           .in('booking_id', filter.bookingIds);
         if (err) throw err;
         setMembers((data || []).map(mapRow));
@@ -106,7 +107,7 @@ export function useExportMembers() {
       if (filter.type === 'human_review') {
         const { data, error: err } = await supabase
           .from('booking_transcriptions')
-          .select('booking_id, research_classification, bookings!inner(member_name, booking_date, contact_phone, contact_email)')
+          .select('booking_id, research_classification, research_extraction, bookings!inner(member_name, booking_date, contact_phone, contact_email)')
           .eq('research_human_review', true)
           .not('research_classification', 'is', null);
         if (err) throw err;
@@ -117,7 +118,7 @@ export function useExportMembers() {
       // For keywords, reason_code, and full_report we fetch all completed records and filter
       const { data, error: err } = await supabase
         .from('booking_transcriptions')
-        .select('booking_id, research_classification, bookings!inner(member_name, booking_date, contact_phone, contact_email, record_type, has_valid_conversation)')
+        .select('booking_id, research_classification, research_extraction, bookings!inner(member_name, booking_date, contact_phone, contact_email, record_type, has_valid_conversation)')
         .eq('research_processing_status', 'completed')
         .not('research_classification', 'is', null);
       if (err) throw err;

@@ -49,7 +49,8 @@ function downloadCSV(filename: string, rows: ExportRecord[]) {
 function mapRow(row: any): ExportRecord {
   const b = row.bookings as any;
   const cls = row.research_classification as any;
-  const rawName = b?.member_name || 'Unknown';
+  const ext = row.research_extraction as any;
+  const rawName = ext?.member_name || b?.member_name || 'Unknown';
   const memberName = rawName.startsWith('API Submission - ') ? rawName.replace('API Submission - ', '') : rawName;
   return {
     memberName,
@@ -70,7 +71,7 @@ export async function exportByBookingIds(bookingIds: string[], filename: string)
   if (!bookingIds.length) return;
   const { data, error } = await supabase
     .from('booking_transcriptions')
-    .select('booking_id, research_classification, bookings!inner(member_name, booking_date, contact_phone, contact_email)')
+    .select('booking_id, research_classification, research_extraction, bookings!inner(member_name, booking_date, contact_phone, contact_email)')
     .in('booking_id', bookingIds);
   if (error) throw error;
   downloadCSV(filename, (data || []).map(mapRow));
@@ -81,7 +82,7 @@ export async function exportByBookingIds(bookingIds: string[], filename: string)
 export async function exportByKeywords(keywords: string[], filename: string) {
   const { data, error } = await supabase
     .from('booking_transcriptions')
-    .select('booking_id, research_classification, bookings!inner(member_name, booking_date, contact_phone, contact_email, record_type, has_valid_conversation)')
+    .select('booking_id, research_classification, research_extraction, bookings!inner(member_name, booking_date, contact_phone, contact_email, record_type, has_valid_conversation)')
     .eq('research_processing_status', 'completed')
     .not('research_classification', 'is', null);
   if (error) throw error;
@@ -107,7 +108,7 @@ export async function exportByKeywords(keywords: string[], filename: string) {
 export async function exportHumanReviewQueue(filename: string) {
   const { data, error } = await supabase
     .from('booking_transcriptions')
-    .select('booking_id, research_classification, bookings!inner(member_name, booking_date, contact_phone, contact_email)')
+    .select('booking_id, research_classification, research_extraction, bookings!inner(member_name, booking_date, contact_phone, contact_email)')
     .eq('research_human_review', true)
     .not('research_classification', 'is', null);
   if (error) throw error;
@@ -119,7 +120,7 @@ export async function exportHumanReviewQueue(filename: string) {
 export async function exportFullReport(filename: string) {
   const { data, error } = await supabase
     .from('booking_transcriptions')
-    .select('booking_id, research_classification, bookings!inner(member_name, booking_date, contact_phone, contact_email, record_type, has_valid_conversation)')
+    .select('booking_id, research_classification, research_extraction, bookings!inner(member_name, booking_date, contact_phone, contact_email, record_type, has_valid_conversation)')
     .eq('research_processing_status', 'completed')
     .not('research_classification', 'is', null);
   if (error) throw error;
