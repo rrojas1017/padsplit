@@ -85,64 +85,52 @@ Deno.serve(async (req) => {
     const supabase = createClient(supabaseUrl, serviceKey);
 
     const body = await req.json().catch(() => ({}));
-    const offset = body.offset || 0;
     const dryRun = body.dry_run || false;
 
-    // Fetch batch of "Other" records that haven't been reclassified yet
-    const { data: records, error: fetchError } = await supabase
+    // Query "Other" records directly at the DB level, excluding already-reclassified ones
+    const otherQuery = supabase
       .from('booking_transcriptions')
       .select('id, call_transcription, research_extraction, research_classification')
       .eq('research_campaign_type', 'move_out_survey')
       .not('research_classification', 'is', null)
       .is('research_audit', null)
-      .order('created_at', { ascending: false })
-      .range(offset, offset + BATCH_SIZE - 1);
-
-    if (fetchError) throw fetchError;
-
-    // Filter to "Other" records client-side (PostgREST JSONB filtering can be tricky)
-    const otherRecords = (records || []).filter((r: any) => {
-      const code = (r.research_classification as any)?.primary_reason_code || '';
-      return code === 'Other' || code.toLowerCase().includes('other') || code.toLowerCase().includes('unspecified');
-    });
+      .or('research_classification->>primary_reason_code.eq.Other,research_classification->>primary_reason_code.ilike.%other%,research_classification->>primary_reason_code.ilike.%unspecified%');
 
     if (dryRun) {
-      // Count total "Other" records
-      const { data: allRecords } = await supabase
-        .from('booking_transcriptions')
-        .select('id, research_classification')
-        .eq('research_campaign_type', 'move_out_survey')
-        .not('research_classification', 'is', null)
-        .is('research_audit', null);
-
-      const totalOther = (allRecords || []).filter((r: any) => {
-        const code = (r.research_classification as any)?.primary_reason_code || '';
-        return code === 'Other' || code.toLowerCase().includes('other') || code.toLowerCase().includes('unspecified');
-      }).length;
-
-      return new Response(JSON.stringify({ total_other: totalOther }), {
+      const { data: allOther, error } = await otherQuery;
+      if (error) throw error;
+      return new Response(JSON.stringify({ total_other: allOther?.length || 0 }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
-    // Also fetch total count for progress
-    const { data: allOtherRecords } = await supabase
+    // Fetch one batch
+    const { data: records, error: fetchError } = await otherQuery
+      .limit(BATCH_SIZE);
+
+    if (fetchError) throw fetchError;
+
+    const totalQuery = await supabase
       .from('booking_transcriptions')
-      .select('id, research_classification')
+      .select('id')
       .eq('research_campaign_type', 'move_out_survey')
       .not('research_classification', 'is', null)
-      .is('research_audit', null);
+      .is('research_audit', null)
+      .or('research_classification->>primary_reason_code.eq.Other,research_classification->>primary_reason_code.ilike.%other%,research_classification->>primary_reason_code.ilike.%unspecified%');
 
-    const totalOther = (allOtherRecords || []).filter((r: any) => {
-      const code = (r.research_classification as any)?.primary_reason_code || '';
-      return code === 'Other' || code.toLowerCase().includes('other') || code.toLowerCase().includes('unspecified');
-    }).length;
+    const totalOther = totalQuery.data?.length || 0;
+
+    if (!records || records.length === 0) {
+      return new Response(JSON.stringify({
+        batch_size: 0, reclassified: 0, errors: 0, total_remaining: 0, chained: false, results: [],
+      }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
 
     let reclassified = 0;
     let errors = 0;
     const results: any[] = [];
 
-    for (const record of otherRecords) {
+    for (const record of records) {
       try {
         const transcript = record.call_transcription || '(No transcript available)';
         const extraction = JSON.stringify(record.research_extraction || {}, null, 2);
@@ -163,10 +151,10 @@ Deno.serve(async (req) => {
           continue;
         }
 
+        const oldCode = (record.research_classification as any)?.primary_reason_code || 'Other';
         const newCode = parsed.primary_reason_code;
         const isDataError = newCode === 'Data Error / Invalid Record';
 
-        // Build updated classification
         const updatedClassification = {
           ...(record.research_classification as any),
           primary_reason_code: newCode,
@@ -175,7 +163,7 @@ Deno.serve(async (req) => {
 
         const auditData = {
           type: 'ai_reclassification',
-          original_code: 'Other',
+          original_code: oldCode,
           new_code: newCode,
           reasoning: parsed.reclassification_reasoning,
           confidence: parsed.confidence,
@@ -201,15 +189,9 @@ Deno.serve(async (req) => {
           errors++;
         } else {
           reclassified++;
-          results.push({
-            id: record.id,
-            old_code: 'Other',
-            new_code: newCode,
-            confidence: parsed.confidence,
-          });
+          results.push({ id: record.id, old_code: oldCode, new_code: newCode, confidence: parsed.confidence });
         }
 
-        // Log cost
         await supabase.from('api_costs').insert({
           service_provider: 'lovable_ai',
           service_type: 'reclassification',
@@ -222,7 +204,6 @@ Deno.serve(async (req) => {
           metadata: { record_id: record.id, model: 'google/gemini-2.5-flash' },
         });
 
-        // Small delay between records
         await new Promise(r => setTimeout(r, 500));
       } catch (err) {
         console.error(`[Reclassify] Error processing ${record.id}:`, err);
@@ -230,21 +211,19 @@ Deno.serve(async (req) => {
       }
     }
 
-    // Self-chain if there are more records
+    // Self-chain if more remain
     const remainingOther = totalOther - reclassified;
     let chained = false;
 
-    if (otherRecords.length === BATCH_SIZE && remainingOther > 0) {
-      // Trigger next batch
+    if (records.length === BATCH_SIZE && remainingOther > 0) {
       try {
-        const functionUrl = `${supabaseUrl}/functions/v1/reclassify-other-records`;
-        await fetch(functionUrl, {
+        await fetch(`${supabaseUrl}/functions/v1/reclassify-other-records`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
             'Authorization': `Bearer ${serviceKey}`,
           },
-          body: JSON.stringify({ offset: offset + BATCH_SIZE }),
+          body: JSON.stringify({}),
         });
         chained = true;
       } catch (chainErr) {
@@ -253,22 +232,13 @@ Deno.serve(async (req) => {
     }
 
     return new Response(JSON.stringify({
-      batch_offset: offset,
-      batch_size: otherRecords.length,
-      reclassified,
-      errors,
-      total_remaining: remainingOther,
-      chained,
-      results,
-    }), {
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    });
+      batch_size: records.length, reclassified, errors, total_remaining: remainingOther, chained, results,
+    }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
   } catch (err) {
     console.error('[Reclassify] Fatal error:', err);
     return new Response(JSON.stringify({ error: (err as Error).message }), {
-      status: 500,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   }
 });
