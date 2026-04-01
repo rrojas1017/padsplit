@@ -86,7 +86,19 @@ export function InsightsKPIRow({ kpis, direction }: InsightsKPIRowProps) {
                 </p>
               )}
               <div className="flex items-center gap-1">
-                <p className="text-xs text-muted-foreground">{card.label}</p>
+                <p className="text-xs text-muted-foreground flex items-center gap-1">
+                  {card.label}
+                  <TooltipProvider delayDuration={200}>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <HelpCircle className="w-3 h-3 text-muted-foreground/50 cursor-help hover:text-muted-foreground transition-colors" />
+                      </TooltipTrigger>
+                      <TooltipContent side="bottom" className="max-w-[220px] text-xs">
+                        {card.definition}
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                </p>
                 {'trend' in card && card.trend && (
                   <span className={`inline-flex items-center text-[10px] font-medium ${
                     card.trend.dir === 'up' ? 'text-emerald-500' : card.trend.dir === 'down' ? 'text-destructive' : 'text-muted-foreground'
