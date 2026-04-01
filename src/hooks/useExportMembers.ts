@@ -97,7 +97,7 @@ export function useExportMembers() {
         if (!filter.bookingIds.length) { setMembers([]); return; }
         const { data, error: err } = await supabase
           .from('booking_transcriptions')
-          .select('booking_id, research_classification, bookings!inner(member_name, booking_date, contact_phone, contact_email)')
+          .select('booking_id, research_classification, research_extraction, bookings!inner(member_name, booking_date, contact_phone, contact_email)')
           .in('booking_id', filter.bookingIds);
         if (err) throw err;
         setMembers((data || []).map(mapRow));
