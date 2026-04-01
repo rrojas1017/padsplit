@@ -25,7 +25,7 @@ export interface ResearcherProfile {
   email: string | null;
 }
 
-export type CampaignInput = Omit<ResearchCampaign, 'id' | 'created_at' | 'updated_at' | 'created_by' | 'script_name' | 'completed_calls'>;
+export type CampaignInput = Omit<ResearchCampaign, 'id' | 'created_at' | 'updated_at' | 'created_by' | 'script_name' | 'completed_calls' | 'campaign_key'>;
 
 export function useResearchCampaigns() {
   const [campaigns, setCampaigns] = useState<ResearchCampaign[]>([]);
