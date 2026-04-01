@@ -167,6 +167,92 @@ AGGREGATION RULES:
 7. QUICK WINS — for every major recommendation, identify a small fast action.
 8. BOOKING IDS — each record has a "_booking_id" field. Include the array of booking IDs in "reason_code_distribution" and "issue_clusters" so the UI can trace back to individual records. Also include "reason_codes_included" listing the granular primary_reason_code values grouped into each category.`;
 
+// ── Audience Survey Aggregation Prompt ──
+
+const AUDIENCE_SURVEY_AGGREGATION_PROMPT = `You are a marketing strategist for PadSplit. You are reviewing a batch of audience survey responses to identify social media patterns, ad awareness levels, content preferences, and marketing recommendations.
+
+You will receive an array of audience survey extraction+classification JSONs. Your job is to aggregate across all responses to find patterns and actionable marketing insights.
+
+Respond with ONLY the JSON object below. No preamble, no markdown, no explanation.
+
+{
+  "executive_summary": {
+    "total_responses": 0,
+    "date_range": "range or 'not specified'",
+    "headline": "Single sentence capturing the most important marketing finding.",
+    "key_findings": ["finding 1", "finding 2", "finding 3"],
+    "top_platform": "Most used platform",
+    "padsplit_ad_awareness_pct": 0.0,
+    "video_testimonial_interest_pct": 0.0
+  },
+  "platform_breakdown": [
+    { "platform": "TikTok", "count": 0, "pct": 0.0, "is_primary_for": 0 }
+  ],
+  "ad_awareness": {
+    "seen_standout_ads_pct": 0.0,
+    "seen_padsplit_ads_pct": 0.0,
+    "top_standout_companies": [{ "company": "name", "count": 0 }],
+    "where_seen_padsplit": [{ "platform": "name", "count": 0 }],
+    "where_expected_padsplit": [{ "platform": "name", "count": 0 }]
+  },
+  "content_preferences": {
+    "stop_scrolling_triggers": [{ "trigger": "description", "count": 0 }],
+    "click_motivations": [{ "motivation": "description", "count": 0 }],
+    "detail_preferences": [{ "detail": "price | location | photos | reviews | move-in process", "count": 0, "pct": 0.0 }],
+    "content_type_preferences": [{ "type": "short_video | testimonial | carousel | static_image", "count": 0, "pct": 0.0 }]
+  },
+  "first_impressions": {
+    "discovery_channels": [{ "channel": "how they heard", "count": 0 }],
+    "impression_distribution": { "positive": 0, "neutral": 0, "negative": 0, "mixed": 0 },
+    "top_concerns": [{ "concern": "description", "count": 0 }],
+    "top_interest_drivers": [{ "driver": "description", "count": 0 }],
+    "confusion_points": [{ "point": "description", "count": 0 }]
+  },
+  "audience_segments": [
+    {
+      "segment": "social_media_heavy | ad_responsive | word_of_mouth | price_driven | research_heavy | passive_browser",
+      "count": 0,
+      "pct": 0.0,
+      "key_traits": ["trait 1", "trait 2"],
+      "best_channel": "recommended platform",
+      "content_strategy": "1-2 sentences"
+    }
+  ],
+  "influencer_insights": {
+    "follows_influencers_pct": 0.0,
+    "notable_influencers": ["name if frequently mentioned"]
+  },
+  "video_testimonial": {
+    "interested_count": 0,
+    "interested_pct": 0.0,
+    "not_interested_count": 0
+  },
+  "recommendations": [
+    {
+      "rank": 1,
+      "recommendation": "Specific marketing action",
+      "rationale": "Why this matters",
+      "priority": "P0 | P1 | P2",
+      "channel": "Which platform/channel",
+      "expected_impact": "Estimated outcome",
+      "effort": "low | medium | high"
+    }
+  ],
+  "cohort_breakdown": [
+    { "cohort": "active_member | approved_not_booked | application_started | account_created", "count": 0, "pct": 0.0 }
+  ]
+}
+
+AGGREGATION RULES:
+1. COUNT EVERYTHING — aggregate exact counts and percentages for all multiple-choice responses.
+2. RANK by frequency — most popular platforms, most common preferences, etc.
+3. SEGMENT ANALYSIS — identify distinct audience segments and their marketing implications.
+4. ACTIONABLE RECOMMENDATIONS — every recommendation should be specific enough for a marketing team to execute.
+5. CHANNEL MAPPING — connect insights to specific marketing channels and content strategies.
+6. QUOTES — include memorable or insightful quotes from respondents.
+7. CROSS-REFERENCE — look for patterns between platform usage and ad preferences.`;
+
+
 // Normalize a single chunk result to enforce canonical shape.
 // AI output is untrusted — any field may be missing, wrong type, or string instead of object.
 function normalizeChunkResult(raw: any): any {

@@ -107,7 +107,169 @@ async function parseJsonWithRetry(
   }
 }
 
-// ── Default merged prompt (combines extraction + classification in one call) ──
+// ── Campaign type detection ──
+
+// Known script IDs mapped to campaign types
+const SCRIPT_CAMPAIGN_MAP: Record<string, string> = {};
+// We populate this dynamically from the DB
+
+async function detectCampaignType(supabase: any, bookingId: string): Promise<string> {
+  try {
+    // 1. Check if the booking has a research_call_id linking to a research_call with a campaign
+    const { data: booking } = await supabase
+      .from('bookings')
+      .select('research_call_id')
+      .eq('id', bookingId)
+      .maybeSingle();
+
+    if (booking?.research_call_id) {
+      // Look up the research_call to find campaign_id
+      const { data: researchCall } = await supabase
+        .from('research_calls')
+        .select('campaign_id')
+        .eq('id', booking.research_call_id)
+        .maybeSingle();
+
+      if (researchCall?.campaign_id) {
+        // Look up the campaign to find its script, then the script's campaign_type
+        const { data: campaign } = await supabase
+          .from('research_campaigns')
+          .select('script_id')
+          .eq('id', researchCall.campaign_id)
+          .maybeSingle();
+
+        if (campaign?.script_id) {
+          const { data: script } = await supabase
+            .from('research_scripts')
+            .select('campaign_type')
+            .eq('id', campaign.script_id)
+            .maybeSingle();
+
+          if (script?.campaign_type) {
+            const type = mapCampaignType(script.campaign_type);
+            console.log(`[CampaignDetect] Detected via script: ${type} for booking ${bookingId}`);
+            return type;
+          }
+        }
+      }
+    }
+
+    // 2. Fallback: check transcript for audience survey keywords
+    const { data: transcription } = await supabase
+      .from('booking_transcriptions')
+      .select('call_transcription')
+      .eq('booking_id', bookingId)
+      .maybeSingle();
+
+    if (transcription?.call_transcription) {
+      const text = transcription.call_transcription.toLowerCase();
+      const audienceKeywords = ['social media', 'tiktok', 'instagram', 'influencer', 'ad awareness', 'padsplit ad', 'video testimonial', 'recording a video'];
+      const matchCount = audienceKeywords.filter(kw => text.includes(kw)).length;
+      if (matchCount >= 3) {
+        console.log(`[CampaignDetect] Detected via keywords (${matchCount} matches): audience_survey for booking ${bookingId}`);
+        return 'audience_survey';
+      }
+    }
+
+    // 3. Default
+    console.log(`[CampaignDetect] Defaulting to move_out_survey for booking ${bookingId}`);
+    return 'move_out_survey';
+  } catch (error) {
+    console.error(`[CampaignDetect] Error detecting campaign type for ${bookingId}:`, error);
+    return 'move_out_survey';
+  }
+}
+
+function mapCampaignType(scriptCampaignType: string): string {
+  switch (scriptCampaignType) {
+    case 'audience_survey': return 'audience_survey';
+    case 'satisfaction': return 'move_out_survey';
+    default: return 'move_out_survey';
+  }
+}
+
+// ── Audience Survey Extraction Prompt ──
+
+const AUDIENCE_SURVEY_PROMPT = `You are a market research analyst at PadSplit. You are processing a transcribed audience survey call between a PadSplit agent and a current or prospective member. The transcript is from automated speech-to-text — expect false starts, crosstalk, filler words, tangents, and garbled text. Focus on substance.
+
+This is a QUANTITATIVE audience survey about social media habits, ad awareness, and content preferences. Extract structured data from the responses.
+
+Respond with ONLY a JSON object containing two top-level keys: "extraction" and "classification". No preamble, no markdown, no explanation.
+
+{
+  "extraction": {
+    "member_name": "string or null",
+    "member_id": "string or null",
+    "agent_name": "string or null",
+    "phone_number": "string or null",
+    "member_cohort": "account_created | application_started | approved_not_booked | active_member | unknown",
+    "social_media_platforms": {
+      "platforms_used": ["list of platforms mentioned: TikTok, Instagram, Facebook, YouTube, X/Twitter, LinkedIn, Snapchat, Facebook Groups, Other"],
+      "primary_platform": "the one they use most or mentioned first",
+      "uses_facebook_groups_for_housing": true
+    },
+    "influencer_following": {
+      "follows_influencers": true,
+      "influencers_mentioned": ["names if provided"]
+    },
+    "ad_awareness": {
+      "noticed_standout_ads": true,
+      "standout_ad_companies": ["company names mentioned"],
+      "what_they_liked_about_ads": "description if provided",
+      "has_seen_padsplit_ads": true,
+      "where_seen_padsplit_ads": ["platforms/locations where they saw PadSplit ads"],
+      "expected_padsplit_ad_platforms": ["where they'd expect to see PadSplit ads"]
+    },
+    "ad_engagement": {
+      "what_makes_them_stop_scrolling": ["types of content/elements"],
+      "what_makes_them_click_ad": ["motivations/elements"],
+      "ad_detail_preferences": ["price | location | photos | reviews | move-in process | other"],
+      "preferred_content_types": ["short_video | long_video | carousel | static_image | testimonial | other"]
+    },
+    "first_impressions": {
+      "how_heard_about_padsplit": "source or channel",
+      "first_impression": "positive | neutral | negative | mixed",
+      "first_impression_details": "what they thought",
+      "initial_concerns": ["list of concerns"],
+      "interest_drivers": ["what made them interested"],
+      "confusing_aspects": ["what was confusing about PadSplit"]
+    },
+    "video_testimonial": {
+      "interested_in_recording": true,
+      "response_details": "any additional context"
+    },
+    "key_quotes": ["direct quotes from the transcript"],
+    "agent_observations": {
+      "questions_covered_estimate": "0",
+      "engagement_level": "high | medium | low",
+      "notable_behavior": "any notable observations"
+    },
+    "confidence_flags": []
+  },
+  "classification": {
+    "primary_segment": "social_media_heavy | ad_responsive | word_of_mouth | price_driven | research_heavy | passive_browser",
+    "segment_rationale": "1-2 sentences",
+    "ad_receptivity_score": 7,
+    "platform_diversity_score": 5,
+    "brand_awareness_level": "high | medium | low | none",
+    "content_preference_profile": "video_first | image_first | text_first | mixed",
+    "acquisition_channel_strength": "strong | moderate | weak",
+    "referral_potential": "high | medium | low",
+    "key_marketing_insight": "1-2 sentences about what this response tells us about our marketing",
+    "human_review_recommended": false,
+    "human_review_reason": null
+  }
+}
+
+EXTRACTION RULES:
+- If information is not in the transcript, use null or empty arrays. NEVER fabricate.
+- For multiple-choice questions, extract ALL options the member selected.
+- For quotes, use EXACT words from the transcript.
+- Focus on capturing quantitative selections (which platforms, which content types) over narrative.
+- When the member gives vague answers, use confidence_flags to note uncertainty.
+- The member_cohort should be inferred from context if the agent mentions it.`;
+
+// ── Default merged prompt (Move-Out Survey - combines extraction + classification in one call) ──
 
 const DEFAULT_MERGED_PROMPT = `You are a qualitative research analyst and housing operations classifier at PadSplit. You are processing a transcribed move-out interview between a PadSplit agent and a former member. The transcript is from automated speech-to-text — expect false starts, crosstalk, filler words, tangents, and garbled text. Focus on substance.
 
@@ -443,39 +605,30 @@ Deno.serve(async (req) => {
       console.log(`[Research] Record ${bookingId} stuck in processing since ${updatedAt.toISOString()}, resetting and retrying`);
     }
 
+    // ── Detect campaign type ──
+    const campaignType = await detectCampaignType(supabase, bookingId);
+    console.log(`[Research] Campaign type for ${bookingId}: ${campaignType}`);
+
     // Mark as processing
     await supabase
       .from('booking_transcriptions')
       .update({ research_processing_status: 'processing' })
       .eq('booking_id', bookingId);
 
-    // Fetch custom prompts from research_prompts table
-    const { data: prompts } = await supabase
-      .from('research_prompts')
-      .select('prompt_key, prompt_text, temperature, model');
-
-    const mergedPromptRow = prompts?.find((p: any) => p.prompt_key === 'merged');
-    const extractionPromptRow = prompts?.find((p: any) => p.prompt_key === 'extraction');
-    const classificationPromptRow = prompts?.find((p: any) => p.prompt_key === 'classification');
-
-    // Decide processing mode: merged (new) or legacy two-step
-    const useMerged = !!mergedPromptRow || (!extractionPromptRow && !classificationPromptRow);
-
     let extraction: any;
     let classification: any;
 
-    if (useMerged) {
-      // ── MERGED SINGLE-CALL MODE ──
-      const systemPrompt = mergedPromptRow?.prompt_text || DEFAULT_MERGED_PROMPT;
-      const model = mergedPromptRow?.model || 'google/gemini-2.5-flash';
-      const temperature = Number(mergedPromptRow?.temperature) || 0.2;
+    if (campaignType === 'audience_survey') {
+      // ── AUDIENCE SURVEY MODE ──
+      const model = 'google/gemini-2.5-flash';
+      const temperature = 0.2;
 
-      console.log(`[Research] Running MERGED prompt (${model}) for ${bookingId}`);
+      console.log(`[Research] Running AUDIENCE SURVEY prompt for ${bookingId}`);
       const result = await callLovableAI(
         lovableApiKey,
         model,
         temperature,
-        systemPrompt,
+        AUDIENCE_SURVEY_PROMPT,
         `Here is the transcript to analyze:\n\n${transcription.call_transcription}`
       );
 
@@ -484,83 +637,135 @@ Deno.serve(async (req) => {
         lovableApiKey,
         model,
         temperature,
-        systemPrompt,
+        AUDIENCE_SURVEY_PROMPT,
         `Here is the transcript to analyze:\n\n${transcription.call_transcription}`
       );
 
       extraction = parsed.extraction || parsed;
-      classification = parsed.classification;
+      classification = parsed.classification || { human_review_recommended: false };
 
-      // If classification is missing, mark for human review
-      if (!classification) {
-        console.warn(`[Research] Merged output missing 'classification' key for ${bookingId}, marking for human review`);
-        classification = { human_review_recommended: true, human_review_reason: 'Merged prompt did not return classification' };
-      }
+      console.log(`[Research] Audience survey complete. Segment: ${classification.primary_segment}, Platforms: ${extraction.social_media_platforms?.platforms_used?.length || 0}`);
 
-      console.log(`[Research] Merged prompt complete. Primary code: ${classification.primary_reason_code}, Issues: ${extraction.issues_mentioned?.length || 0}`);
-
-      // Log single cost entry
       await logApiCost(supabase, {
         service_provider: 'lovable_ai',
-        service_type: 'research_merged',
+        service_type: 'research_audience_survey',
         edge_function: 'process-research-record',
         booking_id: bookingId,
         input_tokens: result.inputTokens,
         output_tokens: result.outputTokens,
-        metadata: { model, prompt: 'merged' },
+        metadata: { model, prompt: 'audience_survey', campaign_type: campaignType },
         is_internal: false,
       });
 
     } else {
-      // ── LEGACY TWO-STEP MODE (for users who customized separate prompts) ──
-      const extractionSystemPrompt = extractionPromptRow?.prompt_text || DEFAULT_EXTRACTION_PROMPT;
-      const extractionModel = extractionPromptRow?.model || 'google/gemini-2.5-flash';
-      const extractionTemp = Number(extractionPromptRow?.temperature) || 0.2;
+      // ── MOVE-OUT SURVEY MODE (existing logic) ──
 
-      const classificationSystemPrompt = classificationPromptRow?.prompt_text || DEFAULT_CLASSIFICATION_PROMPT;
-      const classificationModel = classificationPromptRow?.model || 'google/gemini-2.5-pro';
-      const classificationTemp = Number(classificationPromptRow?.temperature) || 0.2;
+      // Fetch custom prompts from research_prompts table
+      const { data: prompts } = await supabase
+        .from('research_prompts')
+        .select('prompt_key, prompt_text, temperature, model');
 
-      // Prompt A: Extraction
-      console.log(`[Research] Running Prompt A (extraction, legacy) for ${bookingId}`);
-      const extractionResult = await callLovableAI(
-        lovableApiKey, extractionModel, extractionTemp, extractionSystemPrompt,
-        `Here is the transcript to analyze:\n\n${transcription.call_transcription}`
-      );
+      const mergedPromptRow = prompts?.find((p: any) => p.prompt_key === 'merged');
+      const extractionPromptRow = prompts?.find((p: any) => p.prompt_key === 'extraction');
+      const classificationPromptRow = prompts?.find((p: any) => p.prompt_key === 'classification');
 
-      extraction = await parseJsonWithRetry(
-        extractionResult.content, lovableApiKey, extractionModel, extractionTemp,
-        extractionSystemPrompt, `Here is the transcript to analyze:\n\n${transcription.call_transcription}`
-      );
+      // Decide processing mode: merged (new) or legacy two-step
+      const useMerged = !!mergedPromptRow || (!extractionPromptRow && !classificationPromptRow);
 
-      await logApiCost(supabase, {
-        service_provider: 'lovable_ai', service_type: 'research_extraction',
-        edge_function: 'process-research-record', booking_id: bookingId,
-        input_tokens: extractionResult.inputTokens, output_tokens: extractionResult.outputTokens,
-        metadata: { model: extractionModel, prompt: 'A' }, is_internal: false,
-      });
+      if (useMerged) {
+        // ── MERGED SINGLE-CALL MODE ──
+        const systemPrompt = mergedPromptRow?.prompt_text || DEFAULT_MERGED_PROMPT;
+        const model = mergedPromptRow?.model || 'google/gemini-2.5-flash';
+        const temperature = Number(mergedPromptRow?.temperature) || 0.2;
 
-      // Prompt B: Classification
-      console.log(`[Research] Running Prompt B (classification, legacy) for ${bookingId}`);
-      const classificationResult = await callLovableAI(
-        lovableApiKey, classificationModel, classificationTemp, classificationSystemPrompt,
-        `Here is the structured extraction to classify:\n\n${JSON.stringify(extraction, null, 2)}`
-      );
+        console.log(`[Research] Running MERGED prompt (${model}) for ${bookingId}`);
+        const result = await callLovableAI(
+          lovableApiKey,
+          model,
+          temperature,
+          systemPrompt,
+          `Here is the transcript to analyze:\n\n${transcription.call_transcription}`
+        );
 
-      classification = await parseJsonWithRetry(
-        classificationResult.content, lovableApiKey, classificationModel, classificationTemp,
-        classificationSystemPrompt, `Here is the structured extraction to classify:\n\n${JSON.stringify(extraction, null, 2)}`
-      );
+        const parsed = await parseJsonWithRetry(
+          result.content,
+          lovableApiKey,
+          model,
+          temperature,
+          systemPrompt,
+          `Here is the transcript to analyze:\n\n${transcription.call_transcription}`
+        );
 
-      await logApiCost(supabase, {
-        service_provider: 'lovable_ai', service_type: 'research_classification',
-        edge_function: 'process-research-record', booking_id: bookingId,
-        input_tokens: classificationResult.inputTokens, output_tokens: classificationResult.outputTokens,
-        metadata: { model: classificationModel, prompt: 'B' }, is_internal: false,
-      });
+        extraction = parsed.extraction || parsed;
+        classification = parsed.classification;
+
+        if (!classification) {
+          console.warn(`[Research] Merged output missing 'classification' key for ${bookingId}, marking for human review`);
+          classification = { human_review_recommended: true, human_review_reason: 'Merged prompt did not return classification' };
+        }
+
+        console.log(`[Research] Merged prompt complete. Primary code: ${classification.primary_reason_code}, Issues: ${extraction.issues_mentioned?.length || 0}`);
+
+        await logApiCost(supabase, {
+          service_provider: 'lovable_ai',
+          service_type: 'research_merged',
+          edge_function: 'process-research-record',
+          booking_id: bookingId,
+          input_tokens: result.inputTokens,
+          output_tokens: result.outputTokens,
+          metadata: { model, prompt: 'merged', campaign_type: campaignType },
+          is_internal: false,
+        });
+
+      } else {
+        // ── LEGACY TWO-STEP MODE ──
+        const extractionSystemPrompt = extractionPromptRow?.prompt_text || DEFAULT_EXTRACTION_PROMPT;
+        const extractionModel = extractionPromptRow?.model || 'google/gemini-2.5-flash';
+        const extractionTemp = Number(extractionPromptRow?.temperature) || 0.2;
+
+        const classificationSystemPrompt = classificationPromptRow?.prompt_text || DEFAULT_CLASSIFICATION_PROMPT;
+        const classificationModel = classificationPromptRow?.model || 'google/gemini-2.5-pro';
+        const classificationTemp = Number(classificationPromptRow?.temperature) || 0.2;
+
+        console.log(`[Research] Running Prompt A (extraction, legacy) for ${bookingId}`);
+        const extractionResult = await callLovableAI(
+          lovableApiKey, extractionModel, extractionTemp, extractionSystemPrompt,
+          `Here is the transcript to analyze:\n\n${transcription.call_transcription}`
+        );
+
+        extraction = await parseJsonWithRetry(
+          extractionResult.content, lovableApiKey, extractionModel, extractionTemp,
+          extractionSystemPrompt, `Here is the transcript to analyze:\n\n${transcription.call_transcription}`
+        );
+
+        await logApiCost(supabase, {
+          service_provider: 'lovable_ai', service_type: 'research_extraction',
+          edge_function: 'process-research-record', booking_id: bookingId,
+          input_tokens: extractionResult.inputTokens, output_tokens: extractionResult.outputTokens,
+          metadata: { model: extractionModel, prompt: 'A', campaign_type: campaignType }, is_internal: false,
+        });
+
+        console.log(`[Research] Running Prompt B (classification, legacy) for ${bookingId}`);
+        const classificationResult = await callLovableAI(
+          lovableApiKey, classificationModel, classificationTemp, classificationSystemPrompt,
+          `Here is the structured extraction to classify:\n\n${JSON.stringify(extraction, null, 2)}`
+        );
+
+        classification = await parseJsonWithRetry(
+          classificationResult.content, lovableApiKey, classificationModel, classificationTemp,
+          classificationSystemPrompt, `Here is the structured extraction to classify:\n\n${JSON.stringify(extraction, null, 2)}`
+        );
+
+        await logApiCost(supabase, {
+          service_provider: 'lovable_ai', service_type: 'research_classification',
+          edge_function: 'process-research-record', booking_id: bookingId,
+          input_tokens: classificationResult.inputTokens, output_tokens: classificationResult.outputTokens,
+          metadata: { model: classificationModel, prompt: 'B', campaign_type: campaignType }, is_internal: false,
+        });
+      }
     }
 
-    // Store results (same columns regardless of mode)
+    // Store results with campaign type
     const { error: updateError } = await supabase
       .from('booking_transcriptions')
       .update({
@@ -569,6 +774,7 @@ Deno.serve(async (req) => {
         research_processed_at: new Date().toISOString(),
         research_processing_status: 'completed',
         research_human_review: classification.human_review_recommended === true,
+        research_campaign_type: campaignType,
       })
       .eq('booking_id', bookingId);
 
@@ -576,13 +782,15 @@ Deno.serve(async (req) => {
       throw new Error(`Failed to store results: ${updateError.message}`);
     }
 
-    console.log(`[Research] Successfully processed booking ${bookingId}. Human review: ${classification.human_review_recommended}`);
+    console.log(`[Research] Successfully processed booking ${bookingId} (${campaignType}). Human review: ${classification.human_review_recommended}`);
 
     return new Response(
       JSON.stringify({
         success: true,
         bookingId,
+        campaignType,
         primaryReasonCode: classification.primary_reason_code,
+        primarySegment: classification.primary_segment,
         preventabilityScore: classification.preventability_score,
         humanReviewRecommended: classification.human_review_recommended,
       }),
