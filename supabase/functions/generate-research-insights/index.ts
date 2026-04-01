@@ -410,6 +410,160 @@ function createEmptyChunkResult(): any {
   };
 }
 
+// ── Audience Survey normalization ──
+
+function normalizeAudienceChunkResult(raw: any): any {
+  if (!raw || typeof raw !== 'object') return createEmptyAudienceChunkResult();
+  let result: any;
+  try { result = JSON.parse(JSON.stringify(raw)); } catch { result = { ...raw }; }
+
+  // executive_summary
+  if (!result.executive_summary || typeof result.executive_summary !== 'object') {
+    result.executive_summary = { headline: typeof result.executive_summary === 'string' ? result.executive_summary : 'Analysis complete', total_responses: 0, key_findings: [] };
+  }
+  if (!Array.isArray(result.executive_summary.key_findings)) result.executive_summary.key_findings = [];
+
+  // Arrays
+  for (const key of ['platform_breakdown', 'audience_segments', 'recommendations', 'cohort_breakdown']) {
+    if (!Array.isArray(result[key])) result[key] = [];
+  }
+
+  // Objects
+  if (!result.ad_awareness || typeof result.ad_awareness !== 'object') result.ad_awareness = {};
+  if (!result.content_preferences || typeof result.content_preferences !== 'object') result.content_preferences = {};
+  if (!result.first_impressions || typeof result.first_impressions !== 'object') result.first_impressions = {};
+  if (!result.influencer_insights || typeof result.influencer_insights !== 'object') result.influencer_insights = {};
+  if (!result.video_testimonial || typeof result.video_testimonial !== 'object') result.video_testimonial = {};
+
+  // Ensure sub-arrays exist
+  for (const key of ['top_standout_companies', 'where_seen_padsplit', 'where_expected_padsplit']) {
+    if (!Array.isArray(result.ad_awareness[key])) result.ad_awareness[key] = [];
+  }
+  for (const key of ['stop_scrolling_triggers', 'click_motivations', 'detail_preferences', 'content_type_preferences']) {
+    if (!Array.isArray(result.content_preferences[key])) result.content_preferences[key] = [];
+  }
+  for (const key of ['discovery_channels', 'top_concerns', 'top_interest_drivers', 'confusion_points']) {
+    if (!Array.isArray(result.first_impressions[key])) result.first_impressions[key] = [];
+  }
+  if (!result.first_impressions.impression_distribution || typeof result.first_impressions.impression_distribution !== 'object') {
+    result.first_impressions.impression_distribution = { positive: 0, neutral: 0, negative: 0, mixed: 0 };
+  }
+  if (!Array.isArray(result.influencer_insights.notable_influencers)) result.influencer_insights.notable_influencers = [];
+
+  return result;
+}
+
+function createEmptyAudienceChunkResult(): any {
+  return {
+    executive_summary: { headline: 'No data', total_responses: 0, key_findings: [] },
+    platform_breakdown: [],
+    ad_awareness: { seen_standout_ads_pct: 0, seen_padsplit_ads_pct: 0, top_standout_companies: [], where_seen_padsplit: [], where_expected_padsplit: [] },
+    content_preferences: { stop_scrolling_triggers: [], click_motivations: [], detail_preferences: [], content_type_preferences: [] },
+    first_impressions: { discovery_channels: [], impression_distribution: { positive: 0, neutral: 0, negative: 0, mixed: 0 }, top_concerns: [], top_interest_drivers: [], confusion_points: [] },
+    audience_segments: [],
+    influencer_insights: { follows_influencers_pct: 0, notable_influencers: [] },
+    video_testimonial: { interested_count: 0, interested_pct: 0, not_interested_count: 0 },
+    recommendations: [],
+    cohort_breakdown: [],
+  };
+}
+
+// ── Audience Survey programmatic merge ──
+
+function programmaticMergeAudience(chunkResults: any[]): any {
+  const normalized = chunkResults.map(c => normalizeAudienceChunkResult(c));
+  if (normalized.length === 0) return createEmptyAudienceChunkResult();
+  if (normalized.length === 1) return normalized[0];
+
+  const base = JSON.parse(JSON.stringify(normalized[0]));
+
+  // Merge executive_summary
+  const summaries = normalized.map(c => c.executive_summary).filter((e: any) => e && typeof e === 'object');
+  base.executive_summary.total_responses = summaries.reduce((s: number, e: any) => s + (e.total_responses || 0), 0);
+  base.executive_summary.key_findings = [...new Set(summaries.flatMap((e: any) => e.key_findings || []))].slice(0, 5);
+
+  // Merge counted arrays by merging on a key field
+  const mergeCountedArray = (key: string, nameField: string): any[] => {
+    const all = normalized.flatMap(c => Array.isArray(c[key]) ? c[key] : []);
+    const map = new Map<string, any>();
+    for (const item of all) {
+      const name = item[nameField] || 'Unknown';
+      const existing = map.get(name);
+      if (existing) {
+        existing.count = (existing.count || 0) + (item.count || 0);
+      } else {
+        map.set(name, { ...item });
+      }
+    }
+    const merged = Array.from(map.values());
+    const total = merged.reduce((s, i) => s + (i.count || 0), 0);
+    for (const item of merged) { item.pct = total > 0 ? (item.count / total * 100) : 0; }
+    return merged.sort((a, b) => (b.count || 0) - (a.count || 0));
+  };
+
+  base.platform_breakdown = mergeCountedArray('platform_breakdown', 'platform');
+  base.cohort_breakdown = mergeCountedArray('cohort_breakdown', 'cohort');
+
+  // Merge nested counted arrays
+  const mergeNestedCounted = (parentKey: string, childKey: string, nameField: string): any[] => {
+    const all = normalized.flatMap(c => c[parentKey] && Array.isArray(c[parentKey][childKey]) ? c[parentKey][childKey] : []);
+    const map = new Map<string, any>();
+    for (const item of all) {
+      const name = item[nameField] || 'Unknown';
+      const existing = map.get(name);
+      if (existing) { existing.count = (existing.count || 0) + (item.count || 0); }
+      else { map.set(name, { ...item }); }
+    }
+    return Array.from(map.values()).sort((a, b) => (b.count || 0) - (a.count || 0));
+  };
+
+  // ad_awareness
+  base.ad_awareness.top_standout_companies = mergeNestedCounted('ad_awareness', 'top_standout_companies', 'company');
+  base.ad_awareness.where_seen_padsplit = mergeNestedCounted('ad_awareness', 'where_seen_padsplit', 'platform');
+  base.ad_awareness.where_expected_padsplit = mergeNestedCounted('ad_awareness', 'where_expected_padsplit', 'platform');
+  const adPcts = normalized.map(c => c.ad_awareness).filter(a => a);
+  base.ad_awareness.seen_standout_ads_pct = adPcts.reduce((s: number, a: any) => s + (a.seen_standout_ads_pct || 0), 0) / (adPcts.length || 1);
+  base.ad_awareness.seen_padsplit_ads_pct = adPcts.reduce((s: number, a: any) => s + (a.seen_padsplit_ads_pct || 0), 0) / (adPcts.length || 1);
+
+  // content_preferences
+  base.content_preferences.stop_scrolling_triggers = mergeNestedCounted('content_preferences', 'stop_scrolling_triggers', 'trigger');
+  base.content_preferences.click_motivations = mergeNestedCounted('content_preferences', 'click_motivations', 'motivation');
+  base.content_preferences.detail_preferences = mergeNestedCounted('content_preferences', 'detail_preferences', 'detail');
+  base.content_preferences.content_type_preferences = mergeNestedCounted('content_preferences', 'content_type_preferences', 'type');
+
+  // first_impressions
+  base.first_impressions.discovery_channels = mergeNestedCounted('first_impressions', 'discovery_channels', 'channel');
+  base.first_impressions.top_concerns = mergeNestedCounted('first_impressions', 'top_concerns', 'concern');
+  base.first_impressions.top_interest_drivers = mergeNestedCounted('first_impressions', 'top_interest_drivers', 'driver');
+  base.first_impressions.confusion_points = mergeNestedCounted('first_impressions', 'confusion_points', 'point');
+  // impression_distribution: sum
+  const dists = normalized.map(c => c.first_impressions?.impression_distribution).filter(d => d);
+  base.first_impressions.impression_distribution = {
+    positive: dists.reduce((s: number, d: any) => s + (d.positive || 0), 0),
+    neutral: dists.reduce((s: number, d: any) => s + (d.neutral || 0), 0),
+    negative: dists.reduce((s: number, d: any) => s + (d.negative || 0), 0),
+    mixed: dists.reduce((s: number, d: any) => s + (d.mixed || 0), 0),
+  };
+
+  // influencer_insights
+  base.influencer_insights.notable_influencers = [...new Set(normalized.flatMap(c => c.influencer_insights?.notable_influencers || []))];
+  const infPcts = normalized.map(c => c.influencer_insights?.follows_influencers_pct).filter((v: any) => typeof v === 'number');
+  base.influencer_insights.follows_influencers_pct = infPcts.length > 0 ? infPcts.reduce((a: number, b: number) => a + b, 0) / infPcts.length : 0;
+
+  // video_testimonial: sum
+  const vids = normalized.map(c => c.video_testimonial).filter(v => v);
+  base.video_testimonial.interested_count = vids.reduce((s: number, v: any) => s + (v.interested_count || 0), 0);
+  base.video_testimonial.not_interested_count = vids.reduce((s: number, v: any) => s + (v.not_interested_count || 0), 0);
+  const totalVid = base.video_testimonial.interested_count + base.video_testimonial.not_interested_count;
+  base.video_testimonial.interested_pct = totalVid > 0 ? (base.video_testimonial.interested_count / totalVid * 100) : 0;
+
+  // audience_segments & recommendations: concat and deduplicate by name
+  base.audience_segments = normalized.flatMap(c => c.audience_segments || []);
+  base.recommendations = normalized.flatMap(c => c.recommendations || []).slice(0, 10);
+
+  return base;
+}
+
 // Programmatic merge fallback: combines normalized chunk results
 function programmaticMerge(chunkResults: any[]): any {
   // Normalize all chunks first
