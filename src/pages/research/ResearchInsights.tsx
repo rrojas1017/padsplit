@@ -472,15 +472,15 @@ export default function ResearchInsights() {
             {/* TAB 3: Operations */}
             <TabsContent value="operations" className="space-y-6 mt-6">
               {reportData.host_accountability_flags && (
-                <HostAccountabilityPanel data={reportData.host_accountability_flags} maxVisible={8} onExportModal={isAdmin ? openExportModal : undefined} />
+                <HostAccountabilityPanel data={reportData.host_accountability_flags} maxVisible={8} />
               )}
               {(reportData.payment_friction_analysis || reportData.transfer_friction_analysis) && (
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                   {reportData.payment_friction_analysis && (
-                    <PaymentFrictionCard data={reportData.payment_friction_analysis} onExportModal={isAdmin ? openExportModal : undefined} />
+                    <PaymentFrictionCard data={reportData.payment_friction_analysis} />
                   )}
                   {reportData.transfer_friction_analysis && (
-                    <TransferFrictionCard data={reportData.transfer_friction_analysis} onExportModal={isAdmin ? openExportModal : undefined} />
+                    <TransferFrictionCard data={reportData.transfer_friction_analysis} />
                   )}
                 </div>
               )}
