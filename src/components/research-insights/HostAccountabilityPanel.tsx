@@ -120,16 +120,11 @@ function FlagRow({ item, rawItem, onExportModal }: { item: HostFlag; rawItem: an
       });
   }, [open]);
 
-  const handleExport = async () => {
-    setExporting(true);
-    try {
-      const keywords = getKeywords(title);
-      const c = await exportByKeywords(keywords, `host_flag_${title.replace(/\s+/g, '_').substring(0, 30)}.csv`);
-      toast.success(`Exported ${c} records`);
-    } catch {
-      toast.error('Export failed');
-    } finally {
-      setExporting(false);
+  const handleExport = (e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    const keywords = getKeywords(title);
+    if (onExportModal) {
+      onExportModal({ type: 'keywords', keywords }, `Host Flag: ${title}`, `host_flag_${title.replace(/\s+/g, '_').substring(0, 30)}.csv`);
     }
   };
 
