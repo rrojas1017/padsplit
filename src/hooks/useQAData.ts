@@ -79,19 +79,21 @@ export function useQAData(options: UseQADataOptions = {}) {
             id,
             booking_id,
             qa_scores,
-            bookings!inner (
+              bookings!inner (
               id,
               member_name,
               booking_date,
               agent_id,
               market_city,
               market_state,
+              record_type,
               agents!inner (
                 id,
                 name
               )
             )
-          `);
+          `)
+          .neq('bookings.record_type', 'research');
 
         if (!includeUnscored) {
           query = query.not('qa_scores', 'is', null);
