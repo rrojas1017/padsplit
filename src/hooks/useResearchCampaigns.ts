@@ -121,8 +121,10 @@ export function useResearchCampaigns() {
 
   const createCampaign = async (input: CampaignInput) => {
     const { data: { user } } = await supabase.auth.getUser();
+    const campaignKey = input.name.trim().replace(/\s+/g, '-');
     const { error } = await supabase.from('research_campaigns').insert({
       name: input.name,
+      campaign_key: campaignKey,
       script_id: input.script_id,
       status: input.status,
       target_count: input.target_count,
