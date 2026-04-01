@@ -435,46 +435,12 @@ export function ReasonCodeChart({ data, onCodeClick, onViewAllMembers }: ReasonC
   return (
     <div className="space-y-4">
       {otherPct > 10 && (
-        <>
-          <Alert className="border-amber-200 bg-amber-50">
-            <AlertTriangle className="w-4 h-4 text-amber-500" />
-            <AlertDescription className="flex items-center justify-between">
-              <span className="text-sm">
-                <strong>{otherPct}%</strong> of records could not be classified — classification prompts may need review.
-              </span>
-              {isAdmin && (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="gap-1.5 ml-3 flex-shrink-0"
-                  onClick={() => setShowReclassifyConfirm(true)}
-                  disabled={reclassifying}
-                >
-                  {reclassifying ? (
-                    <><RefreshCw className="w-3.5 h-3.5 animate-spin" /> Processing...</>
-                  ) : (
-                    <><RefreshCw className="w-3.5 h-3.5" /> Run Reclassification</>
-                  )}
-                </Button>
-              )}
-            </AlertDescription>
-          </Alert>
-
-          <AlertDialog open={showReclassifyConfirm} onOpenChange={setShowReclassifyConfirm}>
-            <AlertDialogContent>
-              <AlertDialogHeader>
-                <AlertDialogTitle>Re-classify Records</AlertDialogTitle>
-                <AlertDialogDescription>
-                  This will re-classify ~{nonStandardCount} records using the updated AI prompt. This runs in the background and may take a few minutes. Proceed?
-                </AlertDialogDescription>
-              </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogCancel>Cancel</AlertDialogCancel>
-                <AlertDialogAction onClick={handleRunReclassification}>Proceed</AlertDialogAction>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
-        </>
+        <Alert className="border-amber-200 bg-amber-50">
+          <AlertTriangle className="w-4 h-4 text-amber-500" />
+          <AlertDescription className="text-sm">
+            <strong>{otherPct}%</strong> of records could not be classified — classification prompts may need review.
+          </AlertDescription>
+        </Alert>
       )}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
       {/* Reason Code Distribution */}
