@@ -19,6 +19,8 @@ export function ReasonCodeChart({ data, onCodeClick }: ReasonCodeChartProps) {
   const [selectedBookingIds, setSelectedBookingIds] = useState<string[] | undefined>();
   const [selectedIncludedCodes, setSelectedIncludedCodes] = useState<string[] | undefined>();
   const [selectedDescription, setSelectedDescription] = useState<string | undefined>();
+  const [selectedCount, setSelectedCount] = useState<number | undefined>();
+  const [selectedPct, setSelectedPct] = useState<number | undefined>();
   const [showAll, setShowAll] = useState(false);
   const [showDetails, setShowDetails] = useState(false);
 
@@ -138,6 +140,7 @@ export function ReasonCodeChart({ data, onCodeClick }: ReasonCodeChartProps) {
     'hsl(262, 83%, 58%)',
   ];
 
+
   const handleReasonClick = (item: typeof displayData[0], colorIndex: number) => {
     if (onCodeClick) {
       onCodeClick(item.name);
@@ -148,6 +151,8 @@ export function ReasonCodeChart({ data, onCodeClick }: ReasonCodeChartProps) {
     setSelectedBookingIds(item.bookingIds);
     setSelectedIncludedCodes(item.includedCodes);
     setSelectedDescription(item.details);
+    setSelectedCount(item.count);
+    setSelectedPct(item.pct);
   };
 
   return (
@@ -269,6 +274,8 @@ export function ReasonCodeChart({ data, onCodeClick }: ReasonCodeChartProps) {
           onOpenChange={(open) => { if (!open) setSelectedReason(null); }}
           reasonCode={selectedReason || ''}
           reasonColor={selectedColor}
+          reasonCount={selectedCount}
+          reasonPct={selectedPct}
           bookingIds={selectedBookingIds}
           includedReasonCodes={selectedIncludedCodes}
           categoryDescription={selectedDescription}
