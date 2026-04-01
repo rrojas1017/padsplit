@@ -249,7 +249,7 @@ export interface AudienceSurveySummary {
   total_responses: number;
   date_range?: string;
   headline: string;
-  key_findings: string[];
+  key_findings: string[] | string;
   top_platform?: string;
   padsplit_ad_awareness_pct?: number;
   video_testimonial_interest_pct?: number;
