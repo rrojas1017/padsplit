@@ -481,6 +481,7 @@ export function ReasonCodeChart({ data, onCodeClick, onViewAllMembers }: ReasonC
             onCodeClick={onCodeClick}
             onViewAllMembers={onViewAllMembers}
             onBack={() => setExpandedCluster(null)}
+            isAdmin={isAdmin}
           />
         </CardContent>
       </Card>
