@@ -20,6 +20,36 @@ export const CLUSTER_ORDER = [
   'Other / Unspecified',
 ];
 
+export const ADDRESSABILITY_COLORS: Record<string, string> = {
+  'Addressable': '#e53e3e',
+  'Partially Addressable': '#dd6b20',
+  'Not Addressable': '#38a169',
+};
+
+export const ADDRESSABILITY_ORDER = ['Addressable', 'Partially Addressable', 'Not Addressable'];
+
+export const ADDRESSABILITY_DESCRIPTIONS: Record<string, string> = {
+  'Addressable': 'PadSplit could have prevented these move-outs with better processes or intervention',
+  'Partially Addressable': 'Some opportunity to intervene — improved experience could have helped',
+  'Not Addressable': 'Life events and positive moves — nothing PadSplit could have done differently',
+};
+
+export function normalizeAddressability(value: string): 'Addressable' | 'Partially Addressable' | 'Not Addressable' {
+  if (!value) return 'Not Addressable';
+  const v = value.toLowerCase().replace(/[_\-]/g, ' ').trim();
+
+  if (v === 'addressable' || v === 'highly addressable' || v === 'high' ||
+      v === 'true' || v.startsWith('addressable')) {
+    return 'Addressable';
+  }
+
+  if (v.includes('partial')) {
+    return 'Partially Addressable';
+  }
+
+  return 'Not Addressable';
+}
+
 export function mapToCluster(primaryReasonCode: string): string {
   const code = primaryReasonCode.toLowerCase().replace(/[_\-\/]/g, ' ').trim();
 
