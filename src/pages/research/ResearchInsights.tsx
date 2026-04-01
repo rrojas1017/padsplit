@@ -252,12 +252,11 @@ export default function ResearchInsights() {
           <Button
             variant="outline"
             className="gap-2"
-            onClick={async () => {
-              try {
-                const count = await exportFullReport('research_full_report.csv');
-                toast.success(`Exported ${count} records`);
-              } catch { toast.error('Export failed'); }
-            }}
+            onClick={() => openExportModal(
+              { type: 'full_report' },
+              'Export Full Report',
+              'research_full_report.csv'
+            )}
           >
             <Download className="w-4 h-4" />
             Export Full Report
