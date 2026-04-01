@@ -470,7 +470,7 @@ export default function ResearchInsights() {
               {(reportData.payment_friction_analysis || reportData.transfer_friction_analysis) && (
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                   {reportData.payment_friction_analysis && (
-                    <PaymentFrictionCard data={reportData.payment_friction_analysis} />
+                    <PaymentFrictionCard data={reportData.payment_friction_analysis} onExportModal={openExportModal} />
                   )}
                   {reportData.transfer_friction_analysis && (
                     <TransferFrictionCard data={reportData.transfer_friction_analysis} />
