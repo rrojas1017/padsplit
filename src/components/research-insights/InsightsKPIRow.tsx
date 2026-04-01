@@ -25,12 +25,14 @@ export function InsightsKPIRow({ kpis, direction }: InsightsKPIRowProps) {
       icon: BarChart3,
       color: 'text-primary',
       trend: direction ? { dir: direction.totalCases, delta: direction.totalCasesDelta } : null,
+      definition: 'Total number of move-out survey calls processed, excluding records flagged as data errors.',
     },
     {
       label: 'Addressable %',
       value: kpis.addressablePct !== 'N/A' ? kpis.addressablePct : 'N/A',
       icon: Target,
       color: 'text-emerald-500',
+      definition: 'Percentage of move-outs that PadSplit could have potentially prevented with better processes or intervention.',
     },
     {
       label: 'Top Reason',
@@ -38,18 +40,21 @@ export function InsightsKPIRow({ kpis, direction }: InsightsKPIRowProps) {
       icon: TrendingUp,
       color: 'text-primary',
       truncate: true,
+      definition: 'The most frequently cited reason category for members moving out.',
     },
     {
       label: 'Flagged for Review',
       value: kpis.flaggedForReview.toLocaleString(),
       icon: AlertTriangle,
       color: kpis.flaggedForReview > 0 ? 'text-amber-500' : 'text-emerald-500',
+      definition: 'Records where the AI recommends a human review due to ambiguous or conflicting information.',
     },
     {
       label: 'Host Related',
       value: kpis.hostRelatedPct !== 'N/A' ? kpis.hostRelatedPct : 'N/A',
       icon: Home,
       color: 'text-destructive',
+      definition: 'Percentage of move-outs caused by host negligence, property condition issues, or host misconduct.',
     },
   ];
 
