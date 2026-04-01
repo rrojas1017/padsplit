@@ -141,6 +141,19 @@ export default function CampaignManager() {
                         <FileText className="w-3 h-3 text-muted-foreground shrink-0" />
                         <span className="text-xs text-muted-foreground truncate">{c.script_name}</span>
                       </div>
+                      <div className="flex items-center gap-1 mt-0.5">
+                        <span className="font-mono text-[10px] text-muted-foreground">ID: {c.id.slice(0, 8)}…</span>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            navigator.clipboard.writeText(c.id);
+                            toast.success('Campaign ID copied');
+                          }}
+                          className="text-muted-foreground hover:text-foreground transition-colors"
+                        >
+                          <Copy className="w-2.5 h-2.5" />
+                        </button>
+                      </div>
                     </div>
                     <Badge className={`shrink-0 text-xs ${STATUS_COLORS[c.status] || ''}`}>
                       {c.status}
