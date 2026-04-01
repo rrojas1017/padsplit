@@ -130,7 +130,8 @@ Deno.serve(async (req) => {
       .from('booking_transcriptions')
       .select('id, research_classification')
       .eq('research_campaign_type', 'move_out_survey')
-      .not('research_classification', 'is', null);
+      .not('research_classification', 'is', null)
+      .is('research_audit', null);
 
     const totalOther = (allOtherRecords || []).filter((r: any) => {
       const code = (r.research_classification as any)?.primary_reason_code || '';
