@@ -54,7 +54,7 @@ interface MemberPreview {
   reasonCode: string;
 }
 
-export function IssueClustersPanel({ data, maxVisible }: IssueClustersProps) {
+export function IssueClustersPanel({ data, maxVisible, onExportModal }: IssueClustersProps) {
   const [showAll, setShowAll] = useState(false);
 
   if (!data?.length) return null;
