@@ -103,6 +103,7 @@ function ReasonDrillDown({ active, total, onCodeClick, onViewAllMembers, onBack 
   }));
 
   return (
+    <>
     <div className="space-y-5">
       <Button variant="ghost" size="sm" className="w-fit gap-1.5 -ml-2" onClick={onBack}>
         <ArrowLeft className="w-4 h-4" /> Back to overview
@@ -176,15 +177,23 @@ function ReasonDrillDown({ active, total, onCodeClick, onViewAllMembers, onBack 
                   <TableHead>Phone</TableHead>
                   <TableHead>Sub-Reason</TableHead>
                   <TableHead>Date</TableHead>
+                  <TableHead className="w-16"></TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {memberPreviews.map((m, i) => (
-                  <TableRow key={i}>
+                  <TableRow
+                    key={i}
+                    className="cursor-pointer hover:bg-muted/50 transition-colors"
+                    onClick={() => setDetailId(m.transcriptionId)}
+                  >
                     <TableCell className="font-medium">{m.memberName}</TableCell>
                     <TableCell className="text-muted-foreground">{m.phone}</TableCell>
                     <TableCell className="text-sm">{m.subReason}</TableCell>
                     <TableCell className="text-muted-foreground text-sm">{m.date}</TableCell>
+                    <TableCell>
+                      <Eye className="w-3.5 h-3.5 text-muted-foreground" />
+                    </TableCell>
                   </TableRow>
                 ))}
               </TableBody>
@@ -200,6 +209,13 @@ function ReasonDrillDown({ active, total, onCodeClick, onViewAllMembers, onBack 
         )}
       </div>
     </div>
+
+    <MemberDetailPanel
+      open={!!detailId}
+      onOpenChange={(o) => { if (!o) setDetailId(null); }}
+      transcriptionId={detailId}
+    />
+    </>
   );
 }
 
