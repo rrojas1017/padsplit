@@ -854,11 +854,14 @@ async function processOneChunk(
       triggered_by_user_id: triggeredByUserId || undefined, is_internal: false,
     });
 
+    const isAudience = meta.campaignType === 'audience_survey';
+    const normalizeChunk = isAudience ? normalizeAudienceChunkResult : normalizeChunkResult;
+
     const newChunkResults = [...existingChunkResults];
     if (parsed) {
-      const normalized = normalizeChunkResult(parsed);
+      const normalized = normalizeChunk(parsed);
       newChunkResults.push(normalized);
-      console.log(`[Chain] Chunk ${chunkIndex + 1} normalized and stored`);
+      console.log(`[Chain] Chunk ${chunkIndex + 1} normalized (${isAudience ? 'audience' : 'move-out'}) and stored`);
     }
 
     const isLastChunk = chunkIndex >= totalChunks - 1;
