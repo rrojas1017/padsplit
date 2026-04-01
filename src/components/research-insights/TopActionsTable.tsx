@@ -5,10 +5,9 @@ import { Button } from '@/components/ui/button';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Target, ChevronDown, ChevronRight, Users, Download } from 'lucide-react';
 import { PriorityBadge } from './PriorityBadge';
-import { exportByKeywords } from '@/utils/researchExport';
 import { supabase } from '@/integrations/supabase/client';
-import { toast } from 'sonner';
 import type { TopAction } from '@/types/research-insights';
+import type { ExportFilter } from '@/hooks/useExportMembers';
 
 interface TopActionsTableProps {
   data: TopAction[] | Record<string, TopAction[]>;
