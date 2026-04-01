@@ -51,6 +51,7 @@ function ReasonDrillDown({ active, total, onCodeClick, onViewAllMembers, onBack 
 }) {
   const [memberPreviews, setMemberPreviews] = useState<MemberPreview[]>([]);
   const [membersLoading, setMembersLoading] = useState(false);
+  const [detailId, setDetailId] = useState<string | null>(null);
 
   useEffect(() => {
     const subReasonNames = active.subReasons
