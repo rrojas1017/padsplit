@@ -8,11 +8,13 @@ import { PlatformBreakdownChart } from './PlatformBreakdownChart';
 import { AdAwarenessPanel } from './AdAwarenessPanel';
 import { AdPreferencesPanel } from './AdPreferencesPanel';
 import { FirstImpressionsPanel } from './FirstImpressionsPanel';
+import { RankedItemsTable } from './RankedItemsTable';
 import { AudienceSegmentsPanel } from './AudienceSegmentsPanel';
 import { AudienceRecommendationsPanel } from './RecommendationsPanel';
 import { useSearchParams } from 'react-router-dom';
+import { Users } from 'lucide-react';
 
-type TabValue = 'overview' | 'engagement' | 'strategy';
+type TabValue = 'media' | 'engagement' | 'strategy';
 
 interface Props {
   data: AudienceSurveyInsightData;
@@ -20,26 +22,67 @@ interface Props {
 
 export function AudienceSurveyDashboard({ data }: Props) {
   const [searchParams, setSearchParams] = useSearchParams();
-  const currentTab = (searchParams.get('tab') as TabValue) || 'overview';
+  const currentTab = (searchParams.get('tab') as TabValue) || 'media';
   const setTab = (tab: string) => setSearchParams({ tab }, { replace: true });
+
+  const attentionTriggers = data.content_preferences?.stop_scrolling_triggers?.map(t => ({
+    item: t.trigger, count: t.count, percentage: 0,
+  })) ?? [];
+  const clickMotivators = data.content_preferences?.click_motivations?.map(m => ({
+    item: m.motivation, count: m.count, percentage: 0,
+  })) ?? [];
+
+  // Compute percentages relative to max
+  const maxTrigger = Math.max(...attentionTriggers.map(t => t.count), 1);
+  attentionTriggers.forEach(t => { t.percentage = Math.round((t.count / maxTrigger) * 100); });
+  const maxMotivator = Math.max(...clickMotivators.map(m => m.count), 1);
+  clickMotivators.forEach(m => { m.percentage = Math.round((m.count / maxMotivator) * 100); });
 
   return (
     <div className="space-y-6">
+      {data.executive_summary && (
+        <AudienceSurveyExecutiveSummary data={data.executive_summary} />
+      )}
+
       <AudienceSurveyKPIRow data={data} />
 
       <Tabs value={currentTab} onValueChange={setTab}>
         <TabsList className="grid w-full grid-cols-3">
-          <TabsTrigger value="overview">Overview</TabsTrigger>
-          <TabsTrigger value="engagement">Engagement</TabsTrigger>
-          <TabsTrigger value="strategy">Strategy</TabsTrigger>
+          <TabsTrigger value="media">Media &amp; Platforms</TabsTrigger>
+          <TabsTrigger value="engagement">Ad Engagement</TabsTrigger>
+          <TabsTrigger value="strategy">Strategy &amp; Segments</TabsTrigger>
         </TabsList>
 
-        <TabsContent value="overview" className="space-y-6 mt-6">
-          {data.executive_summary && (
-            <AudienceSurveyExecutiveSummary data={data.executive_summary} />
-          )}
+        <TabsContent value="media" className="space-y-6 mt-6">
           {data.platform_breakdown && (
             <PlatformBreakdownChart data={data.platform_breakdown} />
+          )}
+          {data.influencer_insights && (
+            <Card className="shadow-sm">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-base flex items-center gap-2">
+                  <Users className="w-4 h-4 text-primary" />
+                  Influencer Insights
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <div className="flex items-center gap-4">
+                  <div className="text-2xl font-bold text-foreground">
+                    {data.influencer_insights.follows_influencers_pct != null
+                      ? `${Math.round(data.influencer_insights.follows_influencers_pct)}%`
+                      : '—'}
+                  </div>
+                  <p className="text-sm text-muted-foreground">follow influencers or content creators</p>
+                </div>
+                {data.influencer_insights.notable_influencers && data.influencer_insights.notable_influencers.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5">
+                    {data.influencer_insights.notable_influencers.map((name, i) => (
+                      <Badge key={i} variant="secondary" className="text-xs">{name}</Badge>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
           )}
           {data.ad_awareness && (
             <AdAwarenessPanel data={data.ad_awareness} />
@@ -47,11 +90,31 @@ export function AudienceSurveyDashboard({ data }: Props) {
         </TabsContent>
 
         <TabsContent value="engagement" className="space-y-6 mt-6">
-          {data.content_preferences && (
-            <AdPreferencesPanel data={data.content_preferences} />
+          {(attentionTriggers.length > 0 || clickMotivators.length > 0) && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {attentionTriggers.length > 0 && (
+                <RankedItemsTable
+                  title="Attention Triggers"
+                  subtitle="What makes members stop scrolling"
+                  items={attentionTriggers}
+                  barColor="hsl(var(--primary))"
+                />
+              )}
+              {clickMotivators.length > 0 && (
+                <RankedItemsTable
+                  title="Click Motivators"
+                  subtitle="What drives members to click"
+                  items={clickMotivators}
+                  barColor="hsl(var(--accent-foreground))"
+                />
+              )}
+            </div>
           )}
           {data.first_impressions && (
             <FirstImpressionsPanel data={data.first_impressions} />
+          )}
+          {data.content_preferences && (
+            <AdPreferencesPanel data={data.content_preferences} />
           )}
         </TabsContent>
 
