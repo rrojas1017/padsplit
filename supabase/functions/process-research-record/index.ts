@@ -350,7 +350,7 @@ Respond with ONLY a JSON object containing two top-level keys: "extraction" and 
     "confidence_flags": []
   },
   "classification": {
-    "primary_reason_code": "EXACTLY one of: Transfer Denied / Couldn't Transfer | Maintenance Delays | Roommate Conflict | Safety Concern | Noise or Cleanliness Issues | Communication Breakdown / Support Dissatisfaction | Policy Confusion / Lack of Flexibility | Payment Extension Not Offered | Collections – No Flexibility | Pattern of Non-Payment | Job Relocation | Moving in with Family | Buying a Home | Health Issues | Immigration Changes | Marriage | Military Relocation | Fraud / Misrepresentation | Host Negligence / Property Condition | Data Error / Invalid Record | Other",
+    "primary_reason_code": "EXACTLY one of the 7 codes below — 'Other' is NOT valid: Host Negligence / Property Condition | Payment Friction / Financial Hardship | Roommate Conflict / Safety Concern | Communication Breakdown / Support Dissatisfaction | Policy Confusion / Lack of Flexibility | External Life Event / Positive Move-On | Data Error / Invalid Record",
     "primary_reason_detail": "1-2 sentences on why this code was chosen",
     "secondary_reason_codes": [],
     "addressability": "Addressable | Non-addressable | Partially addressable",
