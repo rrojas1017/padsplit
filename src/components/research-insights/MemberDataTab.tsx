@@ -271,7 +271,11 @@ export function MemberDataTab({ isAdmin }: { isAdmin: boolean }) {
               </TableHeader>
               <TableBody>
                 {pageData.map(r => (
-                  <TableRow key={r.id} className={selected.has(r.id) ? 'bg-primary/5' : ''}>
+                  <TableRow
+                    key={r.id}
+                    className={`cursor-pointer hover:bg-muted/50 transition-colors ${selected.has(r.id) ? 'bg-primary/5' : ''}`}
+                    onClick={() => setDetailId(r.id)}
+                  >
                     <TableCell onClick={e => e.stopPropagation()}>
                       <Checkbox checked={selected.has(r.id)} onCheckedChange={() => toggleOne(r.id)} />
                     </TableCell>

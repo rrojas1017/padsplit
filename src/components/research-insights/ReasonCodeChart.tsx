@@ -342,6 +342,7 @@ function AddressabilityDrillDown({ bucket, total, onViewAllMembers, onBack }: {
                   <TableHead>Phone</TableHead>
                   <TableHead>Reason</TableHead>
                   <TableHead>Date</TableHead>
+                  <TableHead className="w-16"></TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
