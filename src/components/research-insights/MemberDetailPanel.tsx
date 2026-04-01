@@ -255,12 +255,25 @@ export function MemberDetailPanel({ open, onOpenChange, transcriptionId, onAudit
                 {/* Intervention Opportunities */}
                 {cls.intervention_opportunities?.length > 0 && (
                   <Section title="Intervention Opportunities">
-                    {cls.intervention_opportunities.map((item: string, i: number) => (
-                      <div key={i} className="flex items-start gap-2 mb-1">
-                        <Lightbulb className="w-3.5 h-3.5 text-blue-500 mt-0.5 flex-shrink-0" />
-                        <span className="text-sm text-muted-foreground">{item}</span>
-                      </div>
-                    ))}
+                    {cls.intervention_opportunities.map((item: any, i: number) => {
+                      const text = typeof item === 'string' ? item : item?.action || item?.moment || JSON.stringify(item);
+                      const dept = typeof item === 'object' && item?.department_responsible ? item.department_responsible : null;
+                      const retention = typeof item === 'object' && item?.likelihood_of_retention ? item.likelihood_of_retention : null;
+                      return (
+                        <div key={i} className="flex items-start gap-2 mb-2">
+                          <Lightbulb className="w-3.5 h-3.5 text-blue-500 mt-0.5 flex-shrink-0" />
+                          <div>
+                            <span className="text-sm text-muted-foreground">{text}</span>
+                            {(dept || retention) && (
+                              <div className="flex gap-2 mt-0.5">
+                                {dept && <Badge variant="outline" className="text-[10px]">{dept}</Badge>}
+                                {retention && <span className="text-[10px] text-muted-foreground">Retention: {retention}</span>}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
                   </Section>
                 )}
 
