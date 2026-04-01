@@ -21,6 +21,7 @@ interface ReasonCodeChartProps {
 }
 
 interface MemberPreview {
+  transcriptionId: string;
   memberName: string;
   phone: string;
   subReason: string;
