@@ -5,13 +5,13 @@ import { Button } from '@/components/ui/button';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Target, ChevronDown, ChevronRight, Users, Download } from 'lucide-react';
 import { PriorityBadge } from './PriorityBadge';
-import { exportByKeywords } from '@/utils/researchExport';
 import { supabase } from '@/integrations/supabase/client';
-import { toast } from 'sonner';
 import type { TopAction } from '@/types/research-insights';
+import type { ExportFilter } from '@/hooks/useExportMembers';
 
 interface TopActionsTableProps {
   data: TopAction[] | Record<string, TopAction[]>;
+  onExportModal?: (filter: ExportFilter, title: string, filename: string) => void;
 }
 
 interface FlatAction extends TopAction {
@@ -78,11 +78,10 @@ interface AffectedMember {
   quote: string;
 }
 
-function ActionRow({ row, hasOwner }: { row: FlatAction; hasOwner: boolean }) {
+function ActionRow({ row, hasOwner, onExportModal }: { row: FlatAction; hasOwner: boolean; onExportModal?: (filter: ExportFilter, title: string, filename: string) => void }) {
   const [open, setOpen] = useState(false);
   const [members, setMembers] = useState<AffectedMember[]>([]);
   const [loadingMembers, setLoadingMembers] = useState(false);
-  const [exporting, setExporting] = useState(false);
 
   const desc = row.impact || (row as any).description || (row as any).rationale || '';
   const owner = row.owner || (row as any).ownership;
@@ -125,16 +124,10 @@ function ActionRow({ row, hasOwner }: { row: FlatAction; hasOwner: boolean }) {
       });
   }, [open]);
 
-  const handleExport = async (e?: React.MouseEvent) => {
+  const handleExport = (e?: React.MouseEvent) => {
     e?.stopPropagation();
-    setExporting(true);
-    try {
-      const count = await exportByKeywords(keywords, `action_${row.action.substring(0, 30).replace(/\s+/g, '_')}.csv`);
-      toast.success(`Exported ${count} records`);
-    } catch {
-      toast.error('Export failed');
-    } finally {
-      setExporting(false);
+    if (onExportModal) {
+      onExportModal({ type: 'keywords', keywords }, `Action: ${row.action.substring(0, 50)}`, `action_${row.action.substring(0, 30).replace(/\s+/g, '_')}.csv`);
     }
   };
 
@@ -170,7 +163,7 @@ function ActionRow({ row, hasOwner }: { row: FlatAction; hasOwner: boolean }) {
             <span className="text-muted-foreground text-xs line-clamp-1" title={desc}>{desc}</span>
           </td>
           <td className="px-2 py-3 w-10">
-            <Button variant="ghost" size="icon" className="h-6 w-6" disabled={exporting} onClick={handleExport} title="Export affected members">
+            <Button variant="ghost" size="icon" className="h-6 w-6" onClick={handleExport} title="Export affected members">
               <Download className="w-3 h-3" />
             </Button>
           </td>
@@ -207,7 +200,7 @@ function ActionRow({ row, hasOwner }: { row: FlatAction; hasOwner: boolean }) {
                     Affected Members {loadingMembers ? '…' : `(${members.length})`}
                   </p>
                   {members.length > 0 && (
-                    <Button variant="ghost" size="sm" className="h-6 text-xs text-primary" disabled={exporting} onClick={handleExport}>
+                    <Button variant="ghost" size="sm" className="h-6 text-xs text-primary" onClick={handleExport}>
                       <Download className="w-3 h-3 mr-1" />Export all
                     </Button>
                   )}
@@ -250,7 +243,7 @@ function ActionRow({ row, hasOwner }: { row: FlatAction; hasOwner: boolean }) {
   );
 }
 
-export function TopActionsTable({ data }: TopActionsTableProps) {
+export function TopActionsTable({ data, onExportModal }: TopActionsTableProps) {
   const rows = flattenActions(data);
   if (!rows.length) return (
     <Card className="shadow-sm">
@@ -289,7 +282,7 @@ export function TopActionsTable({ data }: TopActionsTableProps) {
             </thead>
             <tbody>
               {rows.map((row, i) => (
-                <ActionRow key={i} row={row} hasOwner={hasOwner} />
+                <ActionRow key={i} row={row} hasOwner={hasOwner} onExportModal={onExportModal} />
               ))}
             </tbody>
           </table>

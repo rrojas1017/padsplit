@@ -9,6 +9,7 @@ import { exportByKeywords } from '@/utils/researchExport';
 import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
 import { ReasonCodeDrillDown } from './ReasonCodeDrillDown';
+import type { ExportFilter } from '@/hooks/useExportMembers';
 
 interface IssueCluster {
   cluster_name: string;
@@ -33,6 +34,7 @@ interface IssueCluster {
 interface IssueClustersProps {
   data: IssueCluster[];
   maxVisible?: number;
+  onExportModal?: (filter: ExportFilter, title: string, filename: string) => void;
 }
 
 function getPriorityBorderColor(priority?: string): string {
@@ -52,7 +54,7 @@ interface MemberPreview {
   reasonCode: string;
 }
 
-export function IssueClustersPanel({ data, maxVisible }: IssueClustersProps) {
+export function IssueClustersPanel({ data, maxVisible, onExportModal }: IssueClustersProps) {
   const [showAll, setShowAll] = useState(false);
 
   if (!data?.length) return null;
@@ -73,7 +75,7 @@ export function IssueClustersPanel({ data, maxVisible }: IssueClustersProps) {
       </CardHeader>
       <CardContent className="space-y-3">
         {capped.map((cluster, i) => (
-          <ClusterCard key={i} cluster={cluster} />
+          <ClusterCard key={i} cluster={cluster} onExportModal={onExportModal} />
         ))}
         {hasMore && (
           <Button variant="ghost" size="sm" onClick={() => setShowAll(!showAll)} className="w-full text-xs">
@@ -85,7 +87,7 @@ export function IssueClustersPanel({ data, maxVisible }: IssueClustersProps) {
   );
 }
 
-function ClusterCard({ cluster }: { cluster: IssueCluster }) {
+function ClusterCard({ cluster, onExportModal }: { cluster: IssueCluster; onExportModal?: (filter: ExportFilter, title: string, filename: string) => void }) {
   const [open, setOpen] = useState(false);
   const [members, setMembers] = useState<MemberPreview[]>([]);
   const [membersLoading, setMembersLoading] = useState(false);
@@ -206,12 +208,15 @@ function ClusterCard({ cluster }: { cluster: IssueCluster }) {
                 size="icon"
                 className="h-7 w-7"
                 title="Export members in this cluster"
-                onClick={async (e) => {
+                onClick={(e) => {
                   e.stopPropagation();
-                  try {
-                    const count = await exportByKeywords(clusterKeywords, `cluster_${cluster.cluster_name.replace(/\s+/g, '_')}.csv`);
-                    toast.success(`Exported ${count} records`);
-                  } catch { toast.error('Export failed'); }
+                  if (onExportModal) {
+                    onExportModal(
+                      { type: 'keywords', keywords: clusterKeywords },
+                      `Cluster: ${cluster.cluster_name}`,
+                      `cluster_${cluster.cluster_name.replace(/\s+/g, '_')}.csv`
+                    );
+                  }
                 }}
               >
                 <Download className="w-3.5 h-3.5" />

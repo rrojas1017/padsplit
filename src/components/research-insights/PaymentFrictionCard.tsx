@@ -1,10 +1,7 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { DollarSign, Download } from 'lucide-react';
-import { exportByKeywords } from '@/utils/researchExport';
-import { toast } from 'sonner';
-import { useState } from 'react';
+import type { ExportFilter } from '@/hooks/useExportMembers';
 
 interface FrictionPoint {
   point: string;
@@ -30,6 +27,7 @@ interface PaymentFrictionProps {
     friction_points?: any[];
     stats?: Record<string, any>;
   };
+  onExportModal?: (filter: ExportFilter, title: string, filename: string) => void;
 }
 
 function parseFrictionFromText(summary: string): FrictionPoint[] {
@@ -97,8 +95,7 @@ function FrictionBar({ point, maxCount }: { point: FrictionPoint; maxCount: numb
   );
 }
 
-export function PaymentFrictionCard({ data }: PaymentFrictionProps) {
-  const [exporting, setExporting] = useState(false);
+export function PaymentFrictionCard({ data, onExportModal }: PaymentFrictionProps) {
   if (!data) return null;
 
   let points: FrictionPoint[] = [];
@@ -120,16 +117,10 @@ export function PaymentFrictionCard({ data }: PaymentFrictionProps) {
   const affected = data.payment_related_moveouts ?? (data.stats as any)?.payment_related_moveouts;
   const affectedPct = data.payment_related_pct ?? (data.stats as any)?.payment_related_pct;
 
-  const handleExport = async () => {
-    setExporting(true);
-    try {
-      const keywords = ['payment', 'flexirent', 'flexipay', 'flex pay', 'late fee', 'balance', 'rent'];
-      const count = await exportByKeywords(keywords, 'payment-friction-members.csv');
-      toast.success(`Exported ${count} payment friction records`);
-    } catch (e) {
-      toast.error('Export failed');
-    } finally {
-      setExporting(false);
+  const handleExport = () => {
+    const keywords = ['payment', 'flexirent', 'flexipay', 'flex pay', 'late fee', 'balance', 'rent'];
+    if (onExportModal) {
+      onExportModal({ type: 'keywords', keywords }, 'Payment Friction — Affected Members', 'payment-friction-members.csv');
     }
   };
 
@@ -143,7 +134,7 @@ export function PaymentFrictionCard({ data }: PaymentFrictionProps) {
             </div>
             Payment Friction Analysis
           </CardTitle>
-          <Button variant="ghost" size="sm" onClick={handleExport} disabled={exporting}>
+          <Button variant="ghost" size="sm" onClick={handleExport}>
             <Download className="w-4 h-4 mr-1" />
             Export
           </Button>

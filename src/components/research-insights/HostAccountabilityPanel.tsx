@@ -4,9 +4,8 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Home, Download, ChevronDown, ChevronRight, Users } from 'lucide-react';
-import { exportByKeywords } from '@/utils/researchExport';
 import { supabase } from '@/integrations/supabase/client';
-import { toast } from 'sonner';
+import type { ExportFilter } from '@/hooks/useExportMembers';
 
 interface HostFlag {
   flag?: string;
@@ -34,6 +33,7 @@ interface AffectedMember {
 interface HostAccountabilityPanelProps {
   data: HostFlag[];
   maxVisible?: number;
+  onExportModal?: (filter: ExportFilter, title: string, filename: string) => void;
 }
 
 function inferSeverity(text: string): 'critical' | 'high' | 'medium' {
@@ -71,11 +71,10 @@ function getKeywords(title: string): string[] {
   return (title || '').toLowerCase().replace(/[^a-z0-9\s]/g, '').split(/\s+/).filter(w => w.length > 3);
 }
 
-function FlagRow({ item, rawItem }: { item: HostFlag; rawItem: any }) {
+function FlagRow({ item, rawItem, onExportModal }: { item: HostFlag; rawItem: any; onExportModal?: (filter: ExportFilter, title: string, filename: string) => void }) {
   const [open, setOpen] = useState(false);
   const [members, setMembers] = useState<AffectedMember[]>([]);
   const [loadingMembers, setLoadingMembers] = useState(false);
-  const [exporting, setExporting] = useState(false);
 
   const title = item.flag || item.issue_pattern || '';
   const rawText = typeof rawItem === 'string' ? rawItem : title;
@@ -121,16 +120,11 @@ function FlagRow({ item, rawItem }: { item: HostFlag; rawItem: any }) {
       });
   }, [open]);
 
-  const handleExport = async () => {
-    setExporting(true);
-    try {
-      const keywords = getKeywords(title);
-      const c = await exportByKeywords(keywords, `host_flag_${title.replace(/\s+/g, '_').substring(0, 30)}.csv`);
-      toast.success(`Exported ${c} records`);
-    } catch {
-      toast.error('Export failed');
-    } finally {
-      setExporting(false);
+  const handleExport = (e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    const keywords = getKeywords(title);
+    if (onExportModal) {
+      onExportModal({ type: 'keywords', keywords }, `Host Flag: ${title}`, `host_flag_${title.replace(/\s+/g, '_').substring(0, 30)}.csv`);
     }
   };
 
@@ -156,8 +150,7 @@ function FlagRow({ item, rawItem }: { item: HostFlag; rawItem: any }) {
               <Badge variant="outline" className={colors.badge}>{colors.badgeText}</Badge>
               <Button
                 variant="ghost" size="icon" className="h-6 w-6"
-                disabled={exporting}
-                onClick={(e) => { e.stopPropagation(); handleExport(); }}
+                onClick={(e) => { e.stopPropagation(); handleExport(e); }}
                 title="Export members"
               >
                 <Download className="w-3 h-3" />
@@ -232,7 +225,7 @@ function FlagRow({ item, rawItem }: { item: HostFlag; rawItem: any }) {
   );
 }
 
-export function HostAccountabilityPanel({ data, maxVisible }: HostAccountabilityPanelProps) {
+export function HostAccountabilityPanel({ data, maxVisible, onExportModal }: HostAccountabilityPanelProps) {
   const [showAll, setShowAll] = useState(false);
 
   const sorted = useMemo(() => {
@@ -265,7 +258,7 @@ export function HostAccountabilityPanel({ data, maxVisible }: HostAccountability
       </CardHeader>
       <CardContent className="space-y-3">
         {visible.map(({ rawItem, item }, i) => (
-          <FlagRow key={i} item={item} rawItem={rawItem} />
+          <FlagRow key={i} item={item} rawItem={rawItem} onExportModal={onExportModal} />
         ))}
         {hasMore && !showAll && (
           <Button variant="ghost" size="sm" onClick={() => setShowAll(true)} className="w-full text-primary">

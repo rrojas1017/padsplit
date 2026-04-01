@@ -1,9 +1,7 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { ArrowRightLeft, Download } from 'lucide-react';
-import { exportByKeywords } from '@/utils/researchExport';
-import { toast } from 'sonner';
-import { useState } from 'react';
+import type { ExportFilter } from '@/hooks/useExportMembers';
 
 interface FrictionPoint {
   point: string;
@@ -32,6 +30,7 @@ interface TransferFrictionProps {
     friction_points?: any[];
     stats?: Record<string, any>;
   };
+  onExportModal?: (filter: ExportFilter, title: string, filename: string) => void;
 }
 
 function parseFrictionFromText(summary: string): FrictionPoint[] {
@@ -99,8 +98,7 @@ function FrictionBar({ point, maxCount }: { point: FrictionPoint; maxCount: numb
   );
 }
 
-export function TransferFrictionCard({ data }: TransferFrictionProps) {
-  const [exporting, setExporting] = useState(false);
+export function TransferFrictionCard({ data, onExportModal }: TransferFrictionProps) {
   if (!data) return null;
 
   let points: FrictionPoint[] = [];
@@ -122,16 +120,10 @@ export function TransferFrictionCard({ data }: TransferFrictionProps) {
   const considered = data.considered_transfer ?? (data.stats as any)?.considered_transfer;
   const consideredPct = data.considered_transfer_pct ?? (data.stats as any)?.considered_transfer_pct;
 
-  const handleExport = async () => {
-    setExporting(true);
-    try {
-      const keywords = ['transfer', 'relocat', 'move to another', 'different unit', 'different property', 'switch'];
-      const count = await exportByKeywords(keywords, 'transfer-friction-members.csv');
-      toast.success(`Exported ${count} transfer friction records`);
-    } catch (e) {
-      toast.error('Export failed');
-    } finally {
-      setExporting(false);
+  const handleExport = () => {
+    const keywords = ['transfer', 'relocat', 'move to another', 'different unit', 'different property', 'switch'];
+    if (onExportModal) {
+      onExportModal({ type: 'keywords', keywords }, 'Transfer Friction — Affected Members', 'transfer-friction-members.csv');
     }
   };
 
@@ -145,7 +137,7 @@ export function TransferFrictionCard({ data }: TransferFrictionProps) {
             </div>
             Transfer Friction Analysis
           </CardTitle>
-          <Button variant="ghost" size="sm" onClick={handleExport} disabled={exporting}>
+          <Button variant="ghost" size="sm" onClick={handleExport}>
             <Download className="w-4 h-4 mr-1" />
             Export
           </Button>

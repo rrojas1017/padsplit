@@ -35,7 +35,8 @@ import { InsightsKPIRow } from '@/components/research-insights/InsightsKPIRow';
 import { ReasonCodeDrillDown } from '@/components/research-insights/ReasonCodeDrillDown';
 
 import { AudienceSurveyDashboard } from '@/components/audience-survey/AudienceSurveyDashboard';
-import { exportFullReport } from '@/utils/researchExport';
+import { ExportMembersModal } from '@/components/research-insights/ExportMembersModal';
+import type { ExportFilter } from '@/hooks/useExportMembers';
 
 type TabValue = 'dashboard' | 'analysis' | 'operations';
 
@@ -55,6 +56,17 @@ export default function ResearchInsights() {
   const [drillDownCode, setDrillDownCode] = useState<string | null>(null);
   const [reviewOpen, setReviewOpen] = useState(false);
   const [recordsOpen, setRecordsOpen] = useState(false);
+  const [exportModalOpen, setExportModalOpen] = useState(false);
+  const [exportFilter, setExportFilter] = useState<ExportFilter>({ type: 'full_report' });
+  const [exportTitle, setExportTitle] = useState('Export Members');
+  const [exportFilename, setExportFilename] = useState('export.csv');
+
+  const openExportModal = useCallback((filter: ExportFilter, title: string, filename: string) => {
+    setExportFilter(filter);
+    setExportTitle(title);
+    setExportFilename(filename);
+    setExportModalOpen(true);
+  }, []);
 
   const {
     reports,
@@ -240,12 +252,11 @@ export default function ResearchInsights() {
           <Button
             variant="outline"
             className="gap-2"
-            onClick={async () => {
-              try {
-                const count = await exportFullReport('research_full_report.csv');
-                toast.success(`Exported ${count} records`);
-              } catch { toast.error('Export failed'); }
-            }}
+            onClick={() => openExportModal(
+              { type: 'full_report' },
+              'Export Full Report',
+              'research_full_report.csv'
+            )}
           >
             <Download className="w-4 h-4" />
             Export Full Report
@@ -430,7 +441,7 @@ export default function ResearchInsights() {
                 <ExecutiveSummary data={reportData.executive_summary as any} />
               )}
               {reportData.top_actions && (
-                <TopActionsTable data={reportData.top_actions} />
+                <TopActionsTable data={reportData.top_actions} onExportModal={openExportModal} />
               )}
             </TabsContent>
 
@@ -442,7 +453,7 @@ export default function ResearchInsights() {
                 />
               )}
               {reportData.issue_clusters && (
-                <IssueClustersPanel data={reportData.issue_clusters as any} maxVisible={5} />
+                <IssueClustersPanel data={reportData.issue_clusters as any} maxVisible={5} onExportModal={openExportModal} />
               )}
               {reportData.emerging_patterns && (
                 <EmergingPatternsPanel data={reportData.emerging_patterns} maxVisible={5} />
@@ -454,15 +465,15 @@ export default function ResearchInsights() {
 
             <TabsContent value="operations" className="space-y-6 mt-6">
               {reportData.host_accountability_flags && (
-                <HostAccountabilityPanel data={reportData.host_accountability_flags} maxVisible={8} />
+                <HostAccountabilityPanel data={reportData.host_accountability_flags} maxVisible={8} onExportModal={openExportModal} />
               )}
               {(reportData.payment_friction_analysis || reportData.transfer_friction_analysis) && (
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                   {reportData.payment_friction_analysis && (
-                    <PaymentFrictionCard data={reportData.payment_friction_analysis} />
+                    <PaymentFrictionCard data={reportData.payment_friction_analysis} onExportModal={openExportModal} />
                   )}
                   {reportData.transfer_friction_analysis && (
-                    <TransferFrictionCard data={reportData.transfer_friction_analysis} />
+                    <TransferFrictionCard data={reportData.transfer_friction_analysis} onExportModal={openExportModal} />
                   )}
                 </div>
               )}
@@ -488,7 +499,7 @@ export default function ResearchInsights() {
                 </div>
               </CollapsibleTrigger>
               <CollapsibleContent className="mt-3">
-                <HumanReviewQueue />
+                <HumanReviewQueue onExportModal={openExportModal} />
               </CollapsibleContent>
             </Collapsible>
 
@@ -538,6 +549,14 @@ export default function ResearchInsights() {
           reasonColor="hsl(var(--primary))"
         />
       )}
+
+      <ExportMembersModal
+        open={exportModalOpen}
+        onOpenChange={setExportModalOpen}
+        filter={exportFilter}
+        title={exportTitle}
+        defaultFilename={exportFilename}
+      />
     </DashboardLayout>
   );
 }
