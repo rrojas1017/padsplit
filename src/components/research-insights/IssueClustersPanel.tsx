@@ -1,9 +1,11 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
-import { ChevronDown, Lightbulb } from 'lucide-react';
+import { ChevronDown, Lightbulb, Download } from 'lucide-react';
 import { useState } from 'react';
 import { PriorityBadge } from './PriorityBadge';
+import { exportByKeywords } from '@/utils/researchExport';
+import { toast } from 'sonner';
 
 interface IssueCluster {
   cluster_name: string;
