@@ -441,7 +441,7 @@ export default function ResearchInsights() {
                 <ExecutiveSummary data={reportData.executive_summary as any} />
               )}
               {reportData.top_actions && (
-                <TopActionsTable data={reportData.top_actions} />
+                <TopActionsTable data={reportData.top_actions} onExportModal={openExportModal} />
               )}
             </TabsContent>
 
