@@ -19,6 +19,8 @@ export function ReasonCodeChart({ data, onCodeClick }: ReasonCodeChartProps) {
   const [selectedBookingIds, setSelectedBookingIds] = useState<string[] | undefined>();
   const [selectedIncludedCodes, setSelectedIncludedCodes] = useState<string[] | undefined>();
   const [selectedDescription, setSelectedDescription] = useState<string | undefined>();
+  const [selectedCount, setSelectedCount] = useState<number | undefined>();
+  const [selectedPct, setSelectedPct] = useState<number | undefined>();
   const [showAll, setShowAll] = useState(false);
   const [showDetails, setShowDetails] = useState(false);
 
