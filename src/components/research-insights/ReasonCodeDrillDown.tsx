@@ -7,11 +7,13 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { Download, Search, Quote, Volume2, ExternalLink } from 'lucide-react';
+import { Download, Search, Quote, Eye } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { format } from 'date-fns';
+import { MemberDetailPanel } from './MemberDetailPanel';
 
 interface DrillDownRecord {
+  transcriptionId: string;
   bookingId: string;
   memberName: string;
   phone: string | null;
@@ -19,7 +21,6 @@ interface DrillDownRecord {
   preventabilityScore: number | null;
   keyQuote: string | null;
   primaryReasonCode: string;
-  recordingUrl: string | null;
 }
 
 interface ReasonCodeDrillDownProps {
@@ -99,6 +100,7 @@ export function ReasonCodeDrillDown({
   const [isLoading, setIsLoading] = useState(false);
   const [search, setSearch] = useState('');
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [detailId, setDetailId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!open || !reasonCode) return;
@@ -114,7 +116,7 @@ export function ReasonCodeDrillDown({
       if (bookingIds?.length) {
         const { data, error } = await supabase
           .from('booking_transcriptions')
-          .select('booking_id, research_classification, bookings!inner(id, member_name, booking_date, kixie_link, contact_phone)')
+          .select('id, booking_id, research_classification, bookings!inner(id, member_name, booking_date, contact_phone)')
           .in('booking_id', bookingIds);
         if (!error && data?.length) {
           setRecords(mapRecords(data));
@@ -125,7 +127,7 @@ export function ReasonCodeDrillDown({
 
       const { data, error } = await supabase
         .from('booking_transcriptions')
-        .select('booking_id, research_classification, bookings!inner(id, member_name, booking_date, record_type, has_valid_conversation, kixie_link, contact_phone)')
+        .select('id, booking_id, research_classification, bookings!inner(id, member_name, booking_date, record_type, has_valid_conversation, contact_phone)')
         .eq('research_processing_status', 'completed')
         .not('research_classification', 'is', null);
       if (error) throw error;
@@ -148,6 +150,7 @@ export function ReasonCodeDrillDown({
       const b = row.bookings as any;
       const cls = row.research_classification as any;
       return {
+        transcriptionId: row.id,
         bookingId: row.booking_id,
         memberName: b?.member_name || 'Unknown',
         phone: b?.contact_phone || null,
@@ -155,7 +158,6 @@ export function ReasonCodeDrillDown({
         preventabilityScore: cls?.preventability_score ?? cls?.preventability ?? null,
         keyQuote: cls?.key_quote || cls?.supporting_quote || null,
         primaryReasonCode: cls?.primary_reason_code || cls?.reason_code || '',
-        recordingUrl: b?.kixie_link || null,
       };
     }).sort((a, b) => (b.bookingDate > a.bookingDate ? 1 : -1));
   }
@@ -215,120 +217,133 @@ export function ReasonCodeDrillDown({
     : reasonCode;
 
   return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent side="right" className="w-full sm:max-w-2xl lg:max-w-3xl overflow-y-auto p-0">
-        <div className="sticky top-0 z-10 bg-card border-b border-border px-6 py-4 space-y-3">
-          <SheetHeader className="space-y-1">
-            <SheetTitle className="flex items-center gap-2 text-base">
-              <div className="w-3 h-3 rounded-sm flex-shrink-0" style={{ background: reasonColor }} />
-              {headerText}
-            </SheetTitle>
-            <SheetDescription>
-              {isLoading ? 'Loading records...' : `${filtered.length} member${filtered.length !== 1 ? 's' : ''} found`}
-            </SheetDescription>
-          </SheetHeader>
+    <>
+      <Sheet open={open} onOpenChange={onOpenChange}>
+        <SheetContent side="right" className="w-full sm:max-w-2xl lg:max-w-3xl overflow-y-auto p-0">
+          <div className="sticky top-0 z-10 bg-card border-b border-border px-6 py-4 space-y-3">
+            <SheetHeader className="space-y-1">
+              <SheetTitle className="flex items-center gap-2 text-base">
+                <div className="w-3 h-3 rounded-sm flex-shrink-0" style={{ background: reasonColor }} />
+                {headerText}
+              </SheetTitle>
+              <SheetDescription>
+                {isLoading ? 'Loading records...' : `${filtered.length} member${filtered.length !== 1 ? 's' : ''} found`}
+              </SheetDescription>
+            </SheetHeader>
 
-          <div className="flex items-center gap-2">
-            <div className="relative flex-1">
-              <Search className="absolute left-2.5 top-2.5 w-4 h-4 text-muted-foreground" />
-              <Input
-                placeholder="Search members, phone, quotes..."
-                value={search}
-                onChange={e => setSearch(e.target.value)}
-                className="pl-9 h-9 text-sm"
-              />
-            </div>
-            {selected.size > 0 && (
-              <Button size="sm" variant="outline" className="gap-1.5 text-xs" onClick={() => exportCSV(filtered.filter(r => selected.has(r.bookingId)))}>
+            <div className="flex items-center gap-2">
+              <div className="relative flex-1">
+                <Search className="absolute left-2.5 top-2.5 w-4 h-4 text-muted-foreground" />
+                <Input
+                  placeholder="Search members, phone, quotes..."
+                  value={search}
+                  onChange={e => setSearch(e.target.value)}
+                  className="pl-9 h-9 text-sm"
+                />
+              </div>
+              {selected.size > 0 && (
+                <Button size="sm" variant="outline" className="gap-1.5 text-xs" onClick={() => exportCSV(filtered.filter(r => selected.has(r.bookingId)))}>
+                  <Download className="w-3.5 h-3.5" />
+                  Export {selected.size}
+                </Button>
+              )}
+              <Button size="sm" variant="outline" className="gap-1.5 text-xs" onClick={() => exportCSV()}>
                 <Download className="w-3.5 h-3.5" />
-                Export {selected.size}
+                Export All
               </Button>
-            )}
-            <Button size="sm" variant="outline" className="gap-1.5 text-xs" onClick={() => exportCSV()}>
-              <Download className="w-3.5 h-3.5" />
-              Export All
-            </Button>
-          </div>
-        </div>
-
-        <div className="px-2">
-          {isLoading ? (
-            <div className="space-y-2 p-4">
-              {[...Array(5)].map((_, i) => <Skeleton key={i} className="h-12 w-full" />)}
             </div>
-          ) : filtered.length === 0 ? (
-            <p className="text-sm text-muted-foreground text-center py-12">No matching records found.</p>
-          ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="w-10">
-                    <Checkbox checked={allSelected} onCheckedChange={toggleAll} aria-label="Select all" />
-                  </TableHead>
-                  <TableHead className="text-xs">Member</TableHead>
-                  <TableHead className="text-xs">Phone</TableHead>
-                  <TableHead className="text-xs w-24 text-center">Preventability</TableHead>
-                  <TableHead className="text-xs">Key Quote</TableHead>
-                  <TableHead className="text-xs w-28">Date</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filtered.map(rec => (
-                  <TableRow key={rec.bookingId} className="group">
-                    <TableCell>
-                      <Checkbox
-                        checked={selected.has(rec.bookingId)}
-                        onCheckedChange={() => toggleOne(rec.bookingId)}
-                        aria-label={`Select ${rec.memberName}`}
-                      />
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-sm font-medium text-foreground">{rec.memberName}</span>
-                        {rec.recordingUrl && (
-                          <Volume2 className="w-3 h-3 text-primary flex-shrink-0" />
-                        )}
-                      </div>
-                    </TableCell>
-                    <TableCell className="text-sm text-muted-foreground">{rec.phone || '—'}</TableCell>
-                    <TableCell className="text-center">
-                      {rec.preventabilityScore != null ? (
-                        <span className={`inline-flex items-center justify-center w-8 h-6 rounded text-xs font-bold ${prevScoreColor(rec.preventabilityScore)} ${prevScoreBg(rec.preventabilityScore)}`}>
-                          {rec.preventabilityScore}
-                        </span>
-                      ) : (
-                        <span className="text-xs text-muted-foreground">—</span>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      {rec.keyQuote ? (
-                        <TooltipProvider>
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <p className="text-xs text-muted-foreground italic line-clamp-2 max-w-[200px] cursor-help">
-                                <Quote className="w-3 h-3 inline mr-0.5 -mt-0.5" />
-                                {rec.keyQuote}
-                              </p>
-                            </TooltipTrigger>
-                            <TooltipContent side="left" className="max-w-sm">
-                              <p className="text-xs italic">"{rec.keyQuote}"</p>
-                            </TooltipContent>
-                          </Tooltip>
-                        </TooltipProvider>
-                      ) : (
-                        <span className="text-xs text-muted-foreground">—</span>
-                      )}
-                    </TableCell>
-                    <TableCell className="text-xs text-muted-foreground">
-                      {rec.bookingDate ? format(new Date(rec.bookingDate), 'MMM d, yyyy') : '—'}
-                    </TableCell>
+          </div>
+
+          <div className="px-2">
+            {isLoading ? (
+              <div className="space-y-2 p-4">
+                {[...Array(5)].map((_, i) => <Skeleton key={i} className="h-12 w-full" />)}
+              </div>
+            ) : filtered.length === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-12">No matching records found.</p>
+            ) : (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="w-10">
+                      <Checkbox checked={allSelected} onCheckedChange={toggleAll} aria-label="Select all" />
+                    </TableHead>
+                    <TableHead className="text-xs">Member</TableHead>
+                    <TableHead className="text-xs">Phone</TableHead>
+                    <TableHead className="text-xs w-24 text-center">Preventability</TableHead>
+                    <TableHead className="text-xs">Key Quote</TableHead>
+                    <TableHead className="text-xs w-28">Date</TableHead>
+                    <TableHead className="text-xs w-16"></TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          )}
-        </div>
-      </SheetContent>
-    </Sheet>
+                </TableHeader>
+                <TableBody>
+                  {filtered.map(rec => (
+                    <TableRow
+                      key={rec.bookingId}
+                      className="cursor-pointer hover:bg-muted/50 transition-colors"
+                      onClick={() => setDetailId(rec.transcriptionId)}
+                    >
+                      <TableCell onClick={e => e.stopPropagation()}>
+                        <Checkbox
+                          checked={selected.has(rec.bookingId)}
+                          onCheckedChange={() => toggleOne(rec.bookingId)}
+                          aria-label={`Select ${rec.memberName}`}
+                        />
+                      </TableCell>
+                      <TableCell>
+                        <span className="text-sm font-medium text-foreground">{rec.memberName}</span>
+                      </TableCell>
+                      <TableCell className="text-sm text-muted-foreground">{rec.phone || '—'}</TableCell>
+                      <TableCell className="text-center">
+                        {rec.preventabilityScore != null ? (
+                          <span className={`inline-flex items-center justify-center w-8 h-6 rounded text-xs font-bold ${prevScoreColor(rec.preventabilityScore)} ${prevScoreBg(rec.preventabilityScore)}`}>
+                            {rec.preventabilityScore}
+                          </span>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">—</span>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        {rec.keyQuote ? (
+                          <TooltipProvider>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <p className="text-xs text-muted-foreground italic line-clamp-2 max-w-[200px] cursor-help">
+                                  <Quote className="w-3 h-3 inline mr-0.5 -mt-0.5" />
+                                  {rec.keyQuote}
+                                </p>
+                              </TooltipTrigger>
+                              <TooltipContent side="left" className="max-w-sm">
+                                <p className="text-xs italic">"{rec.keyQuote}"</p>
+                              </TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">—</span>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-xs text-muted-foreground">
+                        {rec.bookingDate ? format(new Date(rec.bookingDate), 'MMM d, yyyy') : '—'}
+                      </TableCell>
+                      <TableCell>
+                        <Button variant="ghost" size="sm" className="h-7 text-xs gap-1" onClick={(e) => { e.stopPropagation(); setDetailId(rec.transcriptionId); }}>
+                          <Eye className="w-3.5 h-3.5" /> View
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            )}
+          </div>
+        </SheetContent>
+      </Sheet>
+
+      <MemberDetailPanel
+        open={!!detailId}
+        onOpenChange={(o) => { if (!o) setDetailId(null); }}
+        transcriptionId={detailId}
+      />
+    </>
   );
 }

@@ -7,11 +7,12 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts';
-import { ArrowLeft, ArrowRight, ChevronRight, Users, AlertTriangle } from 'lucide-react';
+import { ArrowLeft, ArrowRight, ChevronRight, Users, AlertTriangle, Eye } from 'lucide-react';
 import { useReasonCodeCounts, ClusterData } from '@/hooks/useReasonCodeCounts';
 import { useAddressabilityBreakdown, AddressabilityBucket } from '@/hooks/useAddressabilityBreakdown';
 import { ADDRESSABILITY_DESCRIPTIONS } from '@/utils/reason-code-mapping';
 import { supabase } from '@/integrations/supabase/client';
+import { MemberDetailPanel } from './MemberDetailPanel';
 
 interface ReasonCodeChartProps {
   data: any;
@@ -20,6 +21,7 @@ interface ReasonCodeChartProps {
 }
 
 interface MemberPreview {
+  transcriptionId: string;
   memberName: string;
   phone: string;
   subReason: string;
@@ -49,6 +51,7 @@ function ReasonDrillDown({ active, total, onCodeClick, onViewAllMembers, onBack 
 }) {
   const [memberPreviews, setMemberPreviews] = useState<MemberPreview[]>([]);
   const [membersLoading, setMembersLoading] = useState(false);
+  const [detailId, setDetailId] = useState<string | null>(null);
 
   useEffect(() => {
     const subReasonNames = active.subReasons
@@ -59,7 +62,7 @@ function ReasonDrillDown({ active, total, onCodeClick, onViewAllMembers, onBack 
       setMembersLoading(true);
       const { data: rows } = await supabase
         .from('booking_transcriptions')
-        .select('research_classification, booking_id, bookings!inner(member_name, contact_phone, booking_date)')
+        .select('id, research_classification, booking_id, bookings!inner(member_name, contact_phone, booking_date)')
         .not('research_classification', 'is', null)
         .eq('research_campaign_type', 'move_out_survey')
         .limit(200);
@@ -80,6 +83,7 @@ function ReasonDrillDown({ active, total, onCodeClick, onViewAllMembers, onBack 
         const b = r.bookings as any;
         const cls = r.research_classification as any;
         return {
+          transcriptionId: r.id,
           memberName: b?.member_name || 'Unknown',
           phone: b?.contact_phone || '—',
           subReason: cls?.reason_detail || cls?.primary_reason_code || '—',
@@ -99,6 +103,7 @@ function ReasonDrillDown({ active, total, onCodeClick, onViewAllMembers, onBack 
   }));
 
   return (
+    <>
     <div className="space-y-5">
       <Button variant="ghost" size="sm" className="w-fit gap-1.5 -ml-2" onClick={onBack}>
         <ArrowLeft className="w-4 h-4" /> Back to overview
@@ -172,15 +177,23 @@ function ReasonDrillDown({ active, total, onCodeClick, onViewAllMembers, onBack 
                   <TableHead>Phone</TableHead>
                   <TableHead>Sub-Reason</TableHead>
                   <TableHead>Date</TableHead>
+                  <TableHead className="w-16"></TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {memberPreviews.map((m, i) => (
-                  <TableRow key={i}>
+                  <TableRow
+                    key={i}
+                    className="cursor-pointer hover:bg-muted/50 transition-colors"
+                    onClick={() => setDetailId(m.transcriptionId)}
+                  >
                     <TableCell className="font-medium">{m.memberName}</TableCell>
                     <TableCell className="text-muted-foreground">{m.phone}</TableCell>
                     <TableCell className="text-sm">{m.subReason}</TableCell>
                     <TableCell className="text-muted-foreground text-sm">{m.date}</TableCell>
+                    <TableCell>
+                      <Eye className="w-3.5 h-3.5 text-muted-foreground" />
+                    </TableCell>
                   </TableRow>
                 ))}
               </TableBody>
@@ -196,6 +209,13 @@ function ReasonDrillDown({ active, total, onCodeClick, onViewAllMembers, onBack 
         )}
       </div>
     </div>
+
+    <MemberDetailPanel
+      open={!!detailId}
+      onOpenChange={(o) => { if (!o) setDetailId(null); }}
+      transcriptionId={detailId}
+    />
+    </>
   );
 }
 
@@ -207,13 +227,14 @@ function AddressabilityDrillDown({ bucket, total, onViewAllMembers, onBack }: {
 }) {
   const [memberPreviews, setMemberPreviews] = useState<MemberPreview[]>([]);
   const [membersLoading, setMembersLoading] = useState(false);
+  const [detailId, setDetailId] = useState<string | null>(null);
 
   useEffect(() => {
     async function fetchMembers() {
       setMembersLoading(true);
       const { data: rows } = await supabase
         .from('booking_transcriptions')
-        .select('research_classification, booking_id, bookings!inner(member_name, contact_phone, booking_date)')
+        .select('id, research_classification, booking_id, bookings!inner(member_name, contact_phone, booking_date)')
         .not('research_classification', 'is', null)
         .eq('research_campaign_type', 'move_out_survey')
         .limit(200);
@@ -229,6 +250,7 @@ function AddressabilityDrillDown({ bucket, total, onViewAllMembers, onBack }: {
       setMemberPreviews(matching.slice(0, 5).map(r => {
         const b = r.bookings as any;
         return {
+          transcriptionId: r.id,
           memberName: b?.member_name || 'Unknown',
           phone: b?.contact_phone || '—',
           subReason: (r.research_classification as any)?.primary_reason_code || '—',
@@ -247,6 +269,7 @@ function AddressabilityDrillDown({ bucket, total, onViewAllMembers, onBack }: {
   }));
 
   return (
+    <>
     <div className="space-y-5">
       <Button variant="ghost" size="sm" className="w-fit gap-1.5 -ml-2" onClick={onBack}>
         <ArrowLeft className="w-4 h-4" /> Back to overview
@@ -319,15 +342,23 @@ function AddressabilityDrillDown({ bucket, total, onViewAllMembers, onBack }: {
                   <TableHead>Phone</TableHead>
                   <TableHead>Reason</TableHead>
                   <TableHead>Date</TableHead>
+                  <TableHead className="w-16"></TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {memberPreviews.map((m, i) => (
-                  <TableRow key={i}>
+                  <TableRow
+                    key={i}
+                    className="cursor-pointer hover:bg-muted/50 transition-colors"
+                    onClick={() => setDetailId(m.transcriptionId)}
+                  >
                     <TableCell className="font-medium">{m.memberName}</TableCell>
                     <TableCell className="text-muted-foreground">{m.phone}</TableCell>
                     <TableCell className="text-sm">{m.subReason}</TableCell>
                     <TableCell className="text-muted-foreground text-sm">{m.date}</TableCell>
+                    <TableCell>
+                      <Eye className="w-3.5 h-3.5 text-muted-foreground" />
+                    </TableCell>
                   </TableRow>
                 ))}
               </TableBody>
@@ -343,6 +374,13 @@ function AddressabilityDrillDown({ bucket, total, onViewAllMembers, onBack }: {
         )}
       </div>
     </div>
+
+    <MemberDetailPanel
+      open={!!detailId}
+      onOpenChange={(o) => { if (!o) setDetailId(null); }}
+      transcriptionId={detailId}
+    />
+    </>
   );
 }
 
