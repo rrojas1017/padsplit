@@ -33,6 +33,7 @@ interface AffectedMember {
 interface HostAccountabilityPanelProps {
   data: HostFlag[];
   maxVisible?: number;
+  onExportModal?: (filter: ExportFilter, title: string, filename: string) => void;
 }
 
 function inferSeverity(text: string): 'critical' | 'high' | 'medium' {
