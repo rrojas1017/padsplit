@@ -167,6 +167,92 @@ AGGREGATION RULES:
 7. QUICK WINS — for every major recommendation, identify a small fast action.
 8. BOOKING IDS — each record has a "_booking_id" field. Include the array of booking IDs in "reason_code_distribution" and "issue_clusters" so the UI can trace back to individual records. Also include "reason_codes_included" listing the granular primary_reason_code values grouped into each category.`;
 
+// ── Audience Survey Aggregation Prompt ──
+
+const AUDIENCE_SURVEY_AGGREGATION_PROMPT = `You are a marketing strategist for PadSplit. You are reviewing a batch of audience survey responses to identify social media patterns, ad awareness levels, content preferences, and marketing recommendations.
+
+You will receive an array of audience survey extraction+classification JSONs. Your job is to aggregate across all responses to find patterns and actionable marketing insights.
+
+Respond with ONLY the JSON object below. No preamble, no markdown, no explanation.
+
+{
+  "executive_summary": {
+    "total_responses": 0,
+    "date_range": "range or 'not specified'",
+    "headline": "Single sentence capturing the most important marketing finding.",
+    "key_findings": ["finding 1", "finding 2", "finding 3"],
+    "top_platform": "Most used platform",
+    "padsplit_ad_awareness_pct": 0.0,
+    "video_testimonial_interest_pct": 0.0
+  },
+  "platform_breakdown": [
+    { "platform": "TikTok", "count": 0, "pct": 0.0, "is_primary_for": 0 }
+  ],
+  "ad_awareness": {
+    "seen_standout_ads_pct": 0.0,
+    "seen_padsplit_ads_pct": 0.0,
+    "top_standout_companies": [{ "company": "name", "count": 0 }],
+    "where_seen_padsplit": [{ "platform": "name", "count": 0 }],
+    "where_expected_padsplit": [{ "platform": "name", "count": 0 }]
+  },
+  "content_preferences": {
+    "stop_scrolling_triggers": [{ "trigger": "description", "count": 0 }],
+    "click_motivations": [{ "motivation": "description", "count": 0 }],
+    "detail_preferences": [{ "detail": "price | location | photos | reviews | move-in process", "count": 0, "pct": 0.0 }],
+    "content_type_preferences": [{ "type": "short_video | testimonial | carousel | static_image", "count": 0, "pct": 0.0 }]
+  },
+  "first_impressions": {
+    "discovery_channels": [{ "channel": "how they heard", "count": 0 }],
+    "impression_distribution": { "positive": 0, "neutral": 0, "negative": 0, "mixed": 0 },
+    "top_concerns": [{ "concern": "description", "count": 0 }],
+    "top_interest_drivers": [{ "driver": "description", "count": 0 }],
+    "confusion_points": [{ "point": "description", "count": 0 }]
+  },
+  "audience_segments": [
+    {
+      "segment": "social_media_heavy | ad_responsive | word_of_mouth | price_driven | research_heavy | passive_browser",
+      "count": 0,
+      "pct": 0.0,
+      "key_traits": ["trait 1", "trait 2"],
+      "best_channel": "recommended platform",
+      "content_strategy": "1-2 sentences"
+    }
+  ],
+  "influencer_insights": {
+    "follows_influencers_pct": 0.0,
+    "notable_influencers": ["name if frequently mentioned"]
+  },
+  "video_testimonial": {
+    "interested_count": 0,
+    "interested_pct": 0.0,
+    "not_interested_count": 0
+  },
+  "recommendations": [
+    {
+      "rank": 1,
+      "recommendation": "Specific marketing action",
+      "rationale": "Why this matters",
+      "priority": "P0 | P1 | P2",
+      "channel": "Which platform/channel",
+      "expected_impact": "Estimated outcome",
+      "effort": "low | medium | high"
+    }
+  ],
+  "cohort_breakdown": [
+    { "cohort": "active_member | approved_not_booked | application_started | account_created", "count": 0, "pct": 0.0 }
+  ]
+}
+
+AGGREGATION RULES:
+1. COUNT EVERYTHING — aggregate exact counts and percentages for all multiple-choice responses.
+2. RANK by frequency — most popular platforms, most common preferences, etc.
+3. SEGMENT ANALYSIS — identify distinct audience segments and their marketing implications.
+4. ACTIONABLE RECOMMENDATIONS — every recommendation should be specific enough for a marketing team to execute.
+5. CHANNEL MAPPING — connect insights to specific marketing channels and content strategies.
+6. QUOTES — include memorable or insightful quotes from respondents.
+7. CROSS-REFERENCE — look for patterns between platform usage and ad preferences.`;
+
+
 // Normalize a single chunk result to enforce canonical shape.
 // AI output is untrusted — any field may be missing, wrong type, or string instead of object.
 function normalizeChunkResult(raw: any): any {
@@ -553,7 +639,9 @@ async function processOneChunk(
     }).eq('id', insightId);
 
     // Process this chunk
-    const userMsg = `Date range: ${dateRange}\nBatch ${chunkIndex + 1} of ${totalChunks}\n\nHere are ${chunk.length} classified move-out records:\n\n${JSON.stringify(chunk)}`;
+    const isMoveOut = meta.campaignType !== 'audience_survey';
+    const batchLabel = isMoveOut ? 'classified move-out records' : 'audience survey responses';
+    const userMsg = `Date range: ${dateRange}\nBatch ${chunkIndex + 1} of ${totalChunks}\n\nHere are ${chunk.length} ${batchLabel}:\n\n${JSON.stringify(chunk)}`;
     
     const chunkTimeout = new Promise<never>((_, reject) =>
       setTimeout(() => reject(new Error(`Chunk ${chunkIndex + 1} timed out after 60s`)), 60000)
@@ -789,6 +877,7 @@ Deno.serve(async (req) => {
     const dateRangeStart = body.dateRangeStart || body.date_range_start || null;
     const dateRangeEnd = body.dateRangeEnd || body.date_range_end || null;
     const analysisPeriod = body.analysisPeriod || body.analysis_period || null;
+    const campaignType = body.campaignType || body.campaign_type || 'move_out_survey';
 
     // Get user ID from JWT
     const authHeader = req.headers.get('Authorization') || '';
@@ -801,7 +890,7 @@ Deno.serve(async (req) => {
       } catch { /* ignore */ }
     }
 
-    // Fetch processed research records
+    // Fetch processed research records filtered by campaign type
     let query = supabase
       .from('bookings')
       .select(`
@@ -811,12 +900,14 @@ Deno.serve(async (req) => {
         booking_transcriptions!inner (
           research_extraction,
           research_classification,
-          research_processing_status
+          research_processing_status,
+          research_campaign_type
         )
       `)
       .eq('record_type', 'research')
       .eq('has_valid_conversation', true)
-      .eq('booking_transcriptions.research_processing_status', 'completed');
+      .eq('booking_transcriptions.research_processing_status', 'completed')
+      .eq('booking_transcriptions.research_campaign_type', campaignType);
 
     if (campaignId) query = query.eq('research_call_id', campaignId);
     if (dateRangeStart) query = query.gte('booking_date', dateRangeStart);
@@ -827,19 +918,19 @@ Deno.serve(async (req) => {
 
     const processedRecords = (records || []).filter((r: any) => {
       const t = Array.isArray(r.booking_transcriptions) ? r.booking_transcriptions[0] : r.booking_transcriptions;
-      return t?.research_classification;
+      return campaignType === 'audience_survey' ? t?.research_extraction : t?.research_classification;
     });
 
     if (processedRecords.length === 0) {
       return new Response(
-        JSON.stringify({ success: false, error: 'No processed research records found for the selected filters' }),
+        JSON.stringify({ success: false, error: `No processed ${campaignType} records found for the selected filters` }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
     const classifications = processedRecords.map((r: any) => {
       const t = Array.isArray(r.booking_transcriptions) ? r.booking_transcriptions[0] : r.booking_transcriptions;
-      return { ...t.research_classification, _booking_id: r.id };
+      return { ...(t.research_classification || {}), _booking_id: r.id };
     });
 
     const extractions = processedRecords.map((r: any) => {
@@ -847,25 +938,32 @@ Deno.serve(async (req) => {
       return t.research_extraction;
     });
 
+    // Select the right aggregation prompt based on campaign type
+    const isAudienceSurvey = campaignType === 'audience_survey';
+
     // Fetch prompt config
     const { data: prompts } = await supabase
       .from('research_prompts')
       .select('prompt_key, prompt_text, temperature, model');
 
-    const aggPrompt = prompts?.find((p: any) => p.prompt_key === 'aggregation');
+    const aggPromptKey = isAudienceSurvey ? 'aggregation_audience' : 'aggregation';
+    const aggPrompt = prompts?.find((p: any) => p.prompt_key === aggPromptKey) || prompts?.find((p: any) => p.prompt_key === 'aggregation');
     const model = aggPrompt?.model || 'google/gemini-2.5-flash';
     const temperature = Number(aggPrompt?.temperature) || 0.4;
-    const systemPrompt = aggPrompt?.prompt_text || DEFAULT_AGGREGATION_PROMPT;
+    const systemPrompt = isAudienceSurvey
+      ? (aggPrompt?.prompt_text || AUDIENCE_SURVEY_AGGREGATION_PROMPT)
+      : (aggPrompt?.prompt_text || DEFAULT_AGGREGATION_PROMPT);
 
     const dateRange = dateRangeStart && dateRangeEnd
       ? `${dateRangeStart} to ${dateRangeEnd}`
       : analysisPeriod || 'All Time';
 
-    // Concurrent invocation guard
+    // Concurrent invocation guard — scope to campaign type
     const { data: existingProcessing } = await supabase
       .from('research_insights')
       .select('id, created_at')
       .eq('status', 'processing')
+      .eq('campaign_type', campaignType)
       .order('created_at', { ascending: false })
       .limit(1)
       .maybeSingle();
@@ -885,21 +983,30 @@ Deno.serve(async (req) => {
       console.log(`[Insights] Marked stale record ${existingProcessing.id} as failed`);
     }
 
-    // Build combined record summaries for chunking
-    const recordSummaries = classifications.map((c: any, i: number) => {
-      const extraction = extractions[i];
-      return {
-        ...c,
-        member_name: extraction?.member_name,
-        length_of_stay: extraction?.length_of_stay,
-        primary_reason_stated: extraction?.primary_reason_stated,
-        issues_count: extraction?.issues_mentioned?.length || 0,
-        blind_spots_count: extraction?.blind_spots?.length || 0,
-        payment_was_factor: extraction?.payment_context?.payment_was_factor,
-        transfer_considered: extraction?.transfer_context?.considered_transfer,
-        host_mentioned: extraction?.host_context?.host_mentioned,
-      };
-    });
+    // Build record summaries for chunking — different shape per campaign type
+    let recordSummaries: any[];
+    if (isAudienceSurvey) {
+      recordSummaries = extractions.map((ext: any, i: number) => ({
+        ...ext,
+        _classification: classifications[i],
+        _booking_id: classifications[i]?._booking_id,
+      }));
+    } else {
+      recordSummaries = classifications.map((c: any, i: number) => {
+        const extraction = extractions[i];
+        return {
+          ...c,
+          member_name: extraction?.member_name,
+          length_of_stay: extraction?.length_of_stay,
+          primary_reason_stated: extraction?.primary_reason_stated,
+          issues_count: extraction?.issues_mentioned?.length || 0,
+          blind_spots_count: extraction?.blind_spots?.length || 0,
+          payment_was_factor: extraction?.payment_context?.payment_was_factor,
+          transfer_considered: extraction?.transfer_context?.considered_transfer,
+          host_mentioned: extraction?.host_context?.host_mentioned,
+        };
+      });
+    }
 
     // Split into chunks
     const CHUNK_SIZE = 30;
@@ -914,6 +1021,7 @@ Deno.serve(async (req) => {
       .from('research_insights')
       .insert({
         campaign_id: campaignId || null,
+        campaign_type: campaignType,
         data: {
           _meta: {
             chunks,
@@ -923,6 +1031,7 @@ Deno.serve(async (req) => {
             systemPrompt,
             triggeredByUserId,
             totalRecords: processedRecords.length,
+            campaignType,
           },
           _chunks: [],
           _progress: { totalChunks, completedChunks: 0, totalRecords: processedRecords.length, currentPhase: 'analyzing' },
@@ -943,7 +1052,7 @@ Deno.serve(async (req) => {
       throw new Error(`Failed to create insight record: ${insertError?.message}`);
     }
 
-    console.log(`[Insights] Created insight ${insight.id}, starting self-chaining for ${processedRecords.length} records in ${totalChunks} chunks`);
+    console.log(`[Insights] Created insight ${insight.id} (${campaignType}), starting self-chaining for ${processedRecords.length} records in ${totalChunks} chunks`);
 
     // Start processing chunk 0 in background
     EdgeRuntime.waitUntil(
@@ -956,6 +1065,7 @@ Deno.serve(async (req) => {
         insightId: insight.id,
         insight_id: insight.id,
         recordCount: processedRecords.length,
+        campaignType,
         message: 'Insight generation started',
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }

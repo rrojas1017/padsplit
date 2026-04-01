@@ -493,6 +493,7 @@ export type Database = {
           qa_coaching_audio_url: string | null
           qa_coaching_quiz_passed_at: string | null
           qa_scores: Json | null
+          research_campaign_type: string | null
           research_classification: Json | null
           research_extraction: Json | null
           research_human_review: boolean | null
@@ -524,6 +525,7 @@ export type Database = {
           qa_coaching_audio_url?: string | null
           qa_coaching_quiz_passed_at?: string | null
           qa_scores?: Json | null
+          research_campaign_type?: string | null
           research_classification?: Json | null
           research_extraction?: Json | null
           research_human_review?: boolean | null
@@ -555,6 +557,7 @@ export type Database = {
           qa_coaching_audio_url?: string | null
           qa_coaching_quiz_passed_at?: string | null
           qa_scores?: Json | null
+          research_campaign_type?: string | null
           research_classification?: Json | null
           research_extraction?: Json | null
           research_human_review?: boolean | null
@@ -2343,6 +2346,7 @@ export type Database = {
           analysis_period: string | null
           caller_type: string | null
           campaign_id: string | null
+          campaign_type: string | null
           created_at: string
           created_by: string | null
           data: Json
@@ -2359,6 +2363,7 @@ export type Database = {
           analysis_period?: string | null
           caller_type?: string | null
           campaign_id?: string | null
+          campaign_type?: string | null
           created_at?: string
           created_by?: string | null
           data?: Json
@@ -2375,6 +2380,7 @@ export type Database = {
           analysis_period?: string | null
           caller_type?: string | null
           campaign_id?: string | null
+          campaign_type?: string | null
           created_at?: string
           created_by?: string | null
           data?: Json

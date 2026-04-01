@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
+import type { CampaignType } from '@/types/research-insights';
 
 export interface ResearchInsightReport {
   id: string;
@@ -10,6 +11,7 @@ export interface ResearchInsightReport {
   date_range_start: string | null;
   date_range_end: string | null;
   campaign_id: string | null;
+  campaign_type: string | null;
   created_at: string;
   error_message: string | null;
   data: any;
@@ -24,7 +26,7 @@ export interface ProcessingStats {
 
 export type DateRangeOption = 'thisWeek' | 'lastMonth' | 'thisMonth' | 'last3months' | 'allTime';
 
-export function useResearchInsightsData() {
+export function useResearchInsightsData(campaignType: CampaignType = 'move_out_survey') {
   const [reports, setReports] = useState<ResearchInsightReport[]>([]);
   const [selectedReport, setSelectedReport] = useState<ResearchInsightReport | null>(null);
   const [processingStats, setProcessingStats] = useState<ProcessingStats>({
@@ -44,17 +46,19 @@ export function useResearchInsightsData() {
         .eq('bookings.record_type', 'research')
         .eq('bookings.has_valid_conversation', true);
 
-      // Count processed records
+      // Count processed records for this campaign type
       const { count: processedCount } = await supabase
         .from('booking_transcriptions')
         .select('id', { count: 'exact', head: true })
-        .not('research_extraction', 'is', null);
+        .not('research_extraction', 'is', null)
+        .eq('research_campaign_type', campaignType);
 
-      // Count human review records
+      // Count human review records for this campaign type
       const { count: reviewCount } = await supabase
         .from('booking_transcriptions')
         .select('id', { count: 'exact', head: true })
-        .eq('research_human_review', true);
+        .eq('research_human_review', true)
+        .eq('research_campaign_type', campaignType);
 
       setProcessingStats({
         totalResearchRecords: totalCount || 0,
@@ -65,20 +69,20 @@ export function useResearchInsightsData() {
     } catch (error) {
       console.error('Error fetching processing stats:', error);
     }
-  }, []);
+  }, [campaignType]);
 
   const fetchReports = useCallback(async () => {
     try {
       const { data, error } = await supabase
         .from('research_insights')
-        .select('id, status, total_records_analyzed, analysis_period, date_range_start, date_range_end, campaign_id, created_at, error_message')
+        .select('id, status, total_records_analyzed, analysis_period, date_range_start, date_range_end, campaign_id, campaign_type, created_at, error_message')
+        .eq('campaign_type', campaignType)
         .order('created_at', { ascending: false })
         .limit(20);
 
       if (error) throw error;
       setReports((data || []) as ResearchInsightReport[]);
 
-      // Prefer the latest completed report; only show failed/processing if no completed exists
       const firstCompleted = (data || []).find(r => r.status === 'completed');
       if (firstCompleted) {
         await fetchReportDetail(firstCompleted.id);
@@ -93,7 +97,7 @@ export function useResearchInsightsData() {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [campaignType]);
 
   const fetchReportDetail = async (reportId: string) => {
     setIsLoadingDetail(true);
@@ -128,11 +132,11 @@ export function useResearchInsightsData() {
           date_range_start: params.dateRangeStart || null,
           date_range_end: params.dateRangeEnd || null,
           analysis_period: params.analysisPeriod || 'allTime',
+          campaign_type: campaignType,
         }
       });
 
       if (error) {
-        // supabase-js puts the response body in context for FunctionsHttpError
         const ctx = (error as any)?.context;
         let body: any = null;
         try {
@@ -140,7 +144,7 @@ export function useResearchInsightsData() {
           else if (ctx?.text) { const t = await ctx.text(); body = JSON.parse(t); }
         } catch {}
         
-        if (body?.error?.includes?.('No processed research records')) {
+        if (body?.error?.includes?.('No processed')) {
           toast.error('No processed records yet. Click "Process All" to run AI extraction on research transcripts first.');
           return null;
         }
@@ -150,7 +154,6 @@ export function useResearchInsightsData() {
       return data?.insight_id || data?.insightId;
     } catch (error: any) {
       console.error('Error generating report:', error);
-      // Try to extract message from FunctionsHttpError
       let msg = 'Failed to start research insights generation';
       try {
         const ctx = error?.context;
@@ -173,12 +176,10 @@ export function useResearchInsightsData() {
       if (error) throw error;
       toast.info('Processing all records automatically...');
       
-      // Start polling stats every 10 seconds until all records are processed
       const pollInterval = setInterval(async () => {
         await fetchProcessingStats();
       }, 10000);
 
-      // Store interval ID so we can clear it later
       (window as any).__researchBackfillPoll = pollInterval;
 
       return data;
