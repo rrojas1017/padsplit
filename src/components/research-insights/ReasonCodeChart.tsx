@@ -83,6 +83,7 @@ function ReasonDrillDown({ active, total, onCodeClick, onViewAllMembers, onBack 
         const b = r.bookings as any;
         const cls = r.research_classification as any;
         return {
+          transcriptionId: r.id,
           memberName: b?.member_name || 'Unknown',
           phone: b?.contact_phone || '—',
           subReason: cls?.reason_detail || cls?.primary_reason_code || '—',
