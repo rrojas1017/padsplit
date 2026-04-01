@@ -150,8 +150,7 @@ function FlagRow({ item, rawItem, onExportModal }: { item: HostFlag; rawItem: an
               <Badge variant="outline" className={colors.badge}>{colors.badgeText}</Badge>
               <Button
                 variant="ghost" size="icon" className="h-6 w-6"
-                disabled={exporting}
-                onClick={(e) => { e.stopPropagation(); handleExport(); }}
+                onClick={(e) => { e.stopPropagation(); handleExport(e); }}
                 title="Export members"
               >
                 <Download className="w-3 h-3" />
