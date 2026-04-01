@@ -1,6 +1,6 @@
 import { Card, CardContent } from '@/components/ui/card';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { BarChart3, Target, TrendingUp, AlertTriangle, Home, ArrowUp, ArrowDown, Minus } from 'lucide-react';
+import { BarChart3, Target, TrendingUp, AlertTriangle, Home, ArrowUp, ArrowDown, Minus, HelpCircle } from 'lucide-react';
 import type { DerivedKPIs } from '@/types/research-insights';
 import type { TrendDirection } from '@/hooks/useResearchTrends';
 
