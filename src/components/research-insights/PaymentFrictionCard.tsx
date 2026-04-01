@@ -1,12 +1,20 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { DollarSign } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { DollarSign, Download } from 'lucide-react';
+import { exportByKeywords } from '@/utils/researchExport';
+import { toast } from 'sonner';
+import { useState } from 'react';
 
 interface FrictionPoint {
   point: string;
   description?: string;
   quote?: string;
   impact?: string;
+  count?: number;
+  percentage?: number;
+  cases?: number;
+  frequency?: number;
 }
 
 interface PaymentFrictionProps {
@@ -19,83 +27,159 @@ interface PaymentFrictionProps {
     payment_related_pct?: number;
     saveable_with_extension?: number;
     saveable_pct?: number;
+    friction_points?: any[];
+    stats?: Record<string, any>;
   };
 }
 
-function getImpactBorderColor(impact?: string): string {
-  if (!impact) return 'hsl(var(--border))';
-  const l = impact.toLowerCase();
-  if (l === 'critical') return 'hsl(var(--destructive))';
-  if (l === 'high') return 'hsl(45, 93%, 47%)';
-  return 'hsl(var(--border))';
+function parseFrictionFromText(summary: string): FrictionPoint[] {
+  if (!summary) return [];
+  const lines = summary.split(/\n/).filter(Boolean);
+  const items: FrictionPoint[] = [];
+  for (const line of lines) {
+    const numbered = line.match(/^\s*\d+[\.\)]\s*\**(.+?)\**\s*[-–—:]\s*(.+)/i);
+    if (numbered) {
+      const countMatch = numbered[2].match(/(\d+)\s*(cases?|members?|respondents?)/i);
+      items.push({
+        point: numbered[1].trim().replace(/\*+/g, ''),
+        description: numbered[2].trim().replace(/\*+/g, ''),
+        count: countMatch ? parseInt(countMatch[1]) : undefined,
+      });
+      continue;
+    }
+    const bullet = line.match(/^\s*[-•*]\s*\**(.+?)\**\s*[-–—:]\s*(.+)/i);
+    if (bullet) {
+      const countMatch = bullet[2].match(/(\d+)\s*(cases?|members?|respondents?)/i);
+      items.push({
+        point: bullet[1].trim().replace(/\*+/g, ''),
+        description: bullet[2].trim().replace(/\*+/g, ''),
+        count: countMatch ? parseInt(countMatch[1]) : undefined,
+      });
+      continue;
+    }
+    const bold = line.match(/\*\*(.+?)\*\*[:\s]*(.+)/);
+    if (bold) {
+      const countMatch = bold[2].match(/(\d+)\s*(cases?|members?|respondents?)/i);
+      items.push({
+        point: bold[1].trim(),
+        description: bold[2].trim(),
+        count: countMatch ? parseInt(countMatch[1]) : undefined,
+      });
+    }
+  }
+  return items;
 }
 
-function ImpactBadge({ impact }: { impact?: string }) {
-  if (!impact) return null;
-  const l = impact.toLowerCase();
-  if (l === 'critical') return <Badge variant="destructive">Critical</Badge>;
-  if (l === 'high') return <Badge className="bg-amber-500/15 text-amber-600 border-amber-500/30">High</Badge>;
-  return <Badge variant="outline">{impact}</Badge>;
+function getCount(fp: FrictionPoint): number {
+  return fp.count ?? fp.cases ?? fp.frequency ?? 0;
+}
+
+function FrictionBar({ point, maxCount }: { point: FrictionPoint; maxCount: number }) {
+  const count = getCount(point);
+  const pct = maxCount > 0 ? (count / maxCount) * 100 : 0;
+  return (
+    <div className="space-y-1">
+      <div className="flex items-center justify-between text-sm">
+        <span className="font-medium text-foreground truncate mr-2">{point.point}</span>
+        <span className="text-muted-foreground whitespace-nowrap text-xs">
+          {count > 0 ? `${count} cases` : point.description || ''}
+        </span>
+      </div>
+      {count > 0 && (
+        <div className="h-2 rounded-full bg-muted overflow-hidden">
+          <div
+            className="h-full rounded-full bg-blue-500 transition-all duration-500"
+            style={{ width: `${Math.max(pct, 4)}%` }}
+          />
+        </div>
+      )}
+    </div>
+  );
 }
 
 export function PaymentFrictionCard({ data }: PaymentFrictionProps) {
+  const [exporting, setExporting] = useState(false);
   if (!data) return null;
+
+  let points: FrictionPoint[] = [];
+  if (data.key_friction_points?.length) {
+    points = data.key_friction_points;
+  } else if ((data as any).friction_points?.length) {
+    points = (data as any).friction_points.map((fp: any) =>
+      typeof fp === 'string' ? { point: fp } : fp
+    );
+  } else if (data.key_failures?.length) {
+    points = data.key_failures.map(f => ({ point: f }));
+  } else if (data.summary) {
+    points = parseFrictionFromText(data.summary);
+  }
+
+  points.sort((a, b) => getCount(b) - getCount(a));
+  const maxCount = points.length > 0 ? Math.max(...points.map(getCount)) : 0;
+
+  const affected = data.payment_related_moveouts ?? (data.stats as any)?.payment_related_moveouts;
+  const affectedPct = data.payment_related_pct ?? (data.stats as any)?.payment_related_pct;
+
+  const handleExport = async () => {
+    setExporting(true);
+    try {
+      const keywords = ['payment', 'flexirent', 'flexipay', 'flex pay', 'late fee', 'balance', 'rent'];
+      const count = await exportByKeywords(keywords, 'payment-friction-members.csv');
+      toast.success(`Exported ${count} payment friction records`);
+    } catch (e) {
+      toast.error('Export failed');
+    } finally {
+      setExporting(false);
+    }
+  };
 
   return (
     <Card className="shadow-sm">
       <CardHeader className="pb-3">
-        <CardTitle className="text-base flex items-center gap-2">
-          <div className="w-7 h-7 rounded-full bg-blue-500/10 flex items-center justify-center">
-            <DollarSign className="w-4 h-4 text-blue-500" />
-          </div>
-          Payment Friction Analysis
-        </CardTitle>
+        <div className="flex items-center justify-between">
+          <CardTitle className="text-base flex items-center gap-2">
+            <div className="w-7 h-7 rounded-full bg-blue-500/10 flex items-center justify-center">
+              <DollarSign className="w-4 h-4 text-blue-500" />
+            </div>
+            Payment Friction Analysis
+          </CardTitle>
+          <Button variant="ghost" size="sm" onClick={handleExport} disabled={exporting}>
+            <Download className="w-4 h-4 mr-1" />
+            Export
+          </Button>
+        </div>
       </CardHeader>
       <CardContent className="space-y-4">
-        {data.summary && (
-          <p className="text-sm text-muted-foreground leading-relaxed">{data.summary}</p>
+        {affected != null && (
+          <div className="flex items-center gap-4">
+            <div className="text-center p-3 rounded-xl bg-gradient-to-br from-muted/30 to-muted/60 border border-border flex-1">
+              <p className="text-2xl font-bold text-foreground">{affected}</p>
+              <p className="text-xs text-muted-foreground">
+                Members affected{affectedPct != null ? ` (${typeof affectedPct === 'number' ? affectedPct.toFixed(0) : affectedPct}%)` : ''}
+              </p>
+            </div>
+            {data.saveable_with_extension != null && (
+              <div className="text-center p-3 rounded-xl bg-gradient-to-br from-emerald-500/5 to-emerald-500/15 border border-emerald-500/20 flex-1">
+                <p className="text-2xl font-bold text-emerald-600">{data.saveable_with_extension}</p>
+                <p className="text-xs text-muted-foreground">
+                  Saveable{data.saveable_pct != null ? ` (${data.saveable_pct.toFixed(0)}%)` : ''}
+                </p>
+              </div>
+            )}
+          </div>
         )}
 
-        {data.key_friction_points?.length ? (
+        {points.length > 0 && (
           <div className="space-y-3">
-            {data.key_friction_points.map((fp, i) => (
-              <div
-                key={i}
-                className="border border-border rounded-lg p-3 space-y-2"
-                style={{ borderLeftWidth: '4px', borderLeftColor: getImpactBorderColor(fp.impact) }}
-              >
-                <div className="flex items-start justify-between gap-2">
-                  <p className="text-sm font-medium text-foreground">{fp.point}</p>
-                  <ImpactBadge impact={fp.impact} />
-                </div>
-                {fp.description && <p className="text-xs text-muted-foreground">{fp.description}</p>}
-                {fp.quote && (
-                  <blockquote className="border-l-2 border-accent pl-3 italic text-xs text-muted-foreground">"{fp.quote}"</blockquote>
-                )}
-              </div>
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Friction Points</p>
+            {points.map((fp, i) => (
+              <FrictionBar key={i} point={fp} maxCount={maxCount} />
             ))}
           </div>
-        ) : data.key_failures?.length ? (
-          <ul className="space-y-1.5">
-            {data.key_failures.map((f, i) => (
-              <li key={i} className="text-sm text-muted-foreground flex items-start gap-1.5">
-                <span className="text-destructive mt-1">•</span>{f}
-              </li>
-            ))}
-          </ul>
-        ) : null}
+        )}
 
-        {data.payment_related_moveouts != null && (
-          <div className="grid grid-cols-2 gap-3">
-            <div className="text-center p-3 rounded-xl bg-gradient-to-br from-muted/30 to-muted/60 border border-border">
-              <p className="text-lg font-bold text-foreground">{data.payment_related_moveouts}</p>
-              <p className="text-xs text-muted-foreground">Payment-related ({data.payment_related_pct?.toFixed(0)}%)</p>
-            </div>
-            <div className="text-center p-3 rounded-xl bg-gradient-to-br from-emerald-500/5 to-emerald-500/15 border border-emerald-500/20">
-              <p className="text-lg font-bold text-emerald-600">{data.saveable_with_extension}</p>
-              <p className="text-xs text-muted-foreground">Saveable ({data.saveable_pct?.toFixed(0)}%)</p>
-            </div>
-          </div>
+        {!points.length && data.summary && (
+          <p className="text-sm text-muted-foreground leading-relaxed">{data.summary}</p>
         )}
 
         {data.recommendation && (
