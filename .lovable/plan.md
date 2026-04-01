@@ -1,38 +1,37 @@
 
 
-# Fix Reclassify-Other-Records — Query Bug
+# Add Sub-Category Clustering Within Reason Code Drill-Downs
 
 ## Problem
-The `reclassify-other-records` edge function has a pagination bug. It fetches ALL records with `.range(offset, offset + BATCH_SIZE - 1)`, then filters for "Other" client-side. Since most records aren't "Other", the filtered batch is empty → 0 records reclassified. The function returns `batch_size: 0, reclassified: 0` despite 125 "Other" records existing.
+After reclassification, every record's `primary_reason_code` is one of the 7 clean cluster names (e.g. "Host Negligence / Property Condition"). So when you drill down, the sub-reason pie chart shows a single 100% slice — no granularity.
 
-## Fix
+The actual granular data exists in `reason_detail` (e.g. "mold and pest infestation", "host unresponsive to repairs", "rent increase too high"). We need to group by `reason_detail` instead.
 
-### 1. `supabase/functions/reclassify-other-records/index.ts`
-Replace the broken pagination approach with a direct JSONB filter query:
+## Changes
 
-- Use `.eq('research_classification->>primary_reason_code', 'Other')` to let PostgREST filter at the database level
-- Also fetch records with codes containing "other" or "unspecified" in a second pass
-- Remove the offset-based pagination — instead just `.limit(BATCH_SIZE)` since processed records get `research_audit` set (which excludes them via `.is('research_audit', null)`)
-- Self-chaining still works: each batch processes 10, stamps `research_audit`, then the next batch picks up the next 10 unprocessed "Other" records
+### 1. `src/hooks/useReasonCodeCounts.ts` — Group by `reason_detail`
+- After mapping each record to its cluster via `primary_reason_code`, use `reason_detail` (falling back to `primary_reason_code`) as the sub-reason key
+- This populates `subReasons` with granular entries like "mold issues", "pest infestation", "host unresponsive"
+- Keep the existing logic that groups sub-reasons with < 3 records into "Other in this category"
 
-Key query change:
+### 2. `src/components/research-insights/ReasonCodeChart.tsx` — Fix member preview matching
+- In `ReasonDrillDown`, the member preview filter currently matches on `primary_reason_code` against sub-reason names. Since sub-reasons are now `reason_detail` values, update the matching to compare against `reason_detail` instead
+- Update the member preview "Sub-Reason" column to show `reason_detail` rather than `primary_reason_code`
+
+## Technical Detail
+The classification JSON stored in `research_classification` has this structure:
+```json
+{
+  "primary_reason_code": "Host Negligence / Property Condition",
+  "reason_detail": "mold and pest infestation",
+  ...
+}
 ```
-// Before (broken): fetch all, filter client-side
-.range(offset, offset + BATCH_SIZE - 1)
-
-// After (fixed): filter at DB level, limit batch
-.or('research_classification->>primary_reason_code.eq.Other,research_classification->>primary_reason_code.ilike.%other%,research_classification->>primary_reason_code.ilike.%unspecified%')
-.is('research_audit', null)
-.limit(BATCH_SIZE)
-```
-
-Remove the `offset` parameter entirely — it's not needed since `research_audit IS NULL` naturally excludes already-processed records.
-
-### 2. UI button behavior stays the same
-The reclassify banner and button in `ReasonCodeChart.tsx` already work correctly — they just weren't producing results because the backend was broken. No UI changes needed.
+Currently `useReasonCodeCounts` groups by `primary_reason_code` → 1 sub-reason per cluster. Switching to `reason_detail` gives meaningful sub-categories.
 
 ## Files
 | File | Action |
 |------|--------|
-| `supabase/functions/reclassify-other-records/index.ts` | Fix query to filter "Other" at DB level |
+| `src/hooks/useReasonCodeCounts.ts` | Use `reason_detail` for sub-reason grouping |
+| `src/components/research-insights/ReasonCodeChart.tsx` | Fix member preview to match on `reason_detail` |
 
