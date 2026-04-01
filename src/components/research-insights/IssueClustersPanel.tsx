@@ -10,8 +10,6 @@ import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
 import { ReasonCodeDrillDown } from './ReasonCodeDrillDown';
 import type { ExportFilter } from '@/hooks/useExportMembers';
-import { supabase } from '@/integrations/supabase/client';
-import { ReasonCodeDrillDown } from './ReasonCodeDrillDown';
 
 interface IssueCluster {
   cluster_name: string;
