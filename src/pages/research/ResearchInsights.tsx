@@ -10,7 +10,7 @@ import { Progress } from '@/components/ui/progress';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
-import { Sparkles, RefreshCw, Loader2, Database, AlertTriangle, LayoutDashboard, SearchCode, Settings2, ChevronDown } from 'lucide-react';
+import { Sparkles, RefreshCw, Loader2, Database, AlertTriangle, LayoutDashboard, SearchCode, Settings2, ChevronDown, Download } from 'lucide-react';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
 import { useResearchInsightsData, DateRangeOption } from '@/hooks/useResearchInsightsData';
