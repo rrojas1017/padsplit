@@ -54,12 +54,31 @@ export function MemberDataTab({ isAdmin }: { isAdmin: boolean }) {
   const fetchRecords = useCallback(async () => {
     setIsLoading(true);
     try {
-      const { data, error } = await supabase
+      // Try join first, fall back to standalone query if FK isn't resolved
+      let data: any[] | null = null;
+      let error: any = null;
+
+      const joinResult = await supabase
         .from('booking_transcriptions')
-        .select('id, booking_id, research_extraction, research_classification, research_human_review, research_audit, research_campaign_type, created_at, bookings!inner(member_name, contact_phone)')
+        .select('id, booking_id, research_extraction, research_classification, research_human_review, research_audit, research_campaign_type, created_at, bookings(member_name, contact_phone)')
         .not('research_extraction', 'is', null)
         .eq('research_campaign_type', 'move_out_survey')
         .order('created_at', { ascending: false });
+
+      if (joinResult.error || !joinResult.data || joinResult.data.length === 0) {
+        // Fallback: query without join
+        const fallback = await supabase
+          .from('booking_transcriptions')
+          .select('id, booking_id, research_extraction, research_classification, research_human_review, research_audit, research_campaign_type, created_at')
+          .not('research_extraction', 'is', null)
+          .eq('research_campaign_type', 'move_out_survey')
+          .order('created_at', { ascending: false });
+        data = fallback.data;
+        error = fallback.error;
+      } else {
+        data = joinResult.data;
+        error = joinResult.error;
+      }
 
       if (error) throw error;
 
