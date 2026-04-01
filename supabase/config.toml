@@ -156,3 +156,6 @@ verify_jwt = true
 [functions.backfill-conversation-validation]
 verify_jwt = false
 
+[functions.generate-executive-brief]
+verify_jwt = true
+
