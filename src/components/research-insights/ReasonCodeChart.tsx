@@ -639,5 +639,6 @@ export function ReasonCodeChart({ data, onCodeClick, onViewAllMembers }: ReasonC
         </Card>
       )}
     </div>
+    </div>
   );
 }
