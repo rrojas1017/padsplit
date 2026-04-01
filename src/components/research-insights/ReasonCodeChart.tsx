@@ -12,8 +12,6 @@ import { useReasonCodeCounts, ClusterData } from '@/hooks/useReasonCodeCounts';
 import { useAddressabilityBreakdown, AddressabilityBucket } from '@/hooks/useAddressabilityBreakdown';
 import { ADDRESSABILITY_DESCRIPTIONS } from '@/utils/reason-code-mapping';
 import { supabase } from '@/integrations/supabase/client';
-import { useIsAdmin } from '@/hooks/useIsAdmin';
-import { toast } from 'sonner';
 
 interface ReasonCodeChartProps {
   data: any;
