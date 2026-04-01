@@ -67,9 +67,13 @@ export function useQACoachingData(options: UseQACoachingDataOptions = {}) {
               member_name,
               market_city,
               market_state,
+              record_type,
               agents!inner(id, name, user_id)
             )
           `);
+
+        // Exclude research records - coaching is only for booking/non-booking calls
+        query = query.neq('bookings.record_type', 'research');
 
         // Filter by QA scores presence
         if (!includeUnscored) {
