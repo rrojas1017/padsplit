@@ -258,7 +258,7 @@ export function HostAccountabilityPanel({ data, maxVisible, onExportModal }: Hos
       </CardHeader>
       <CardContent className="space-y-3">
         {visible.map(({ rawItem, item }, i) => (
-          <FlagRow key={i} item={item} rawItem={rawItem} />
+          <FlagRow key={i} item={item} rawItem={rawItem} onExportModal={onExportModal} />
         ))}
         {hasMore && !showAll && (
           <Button variant="ghost" size="sm" onClick={() => setShowAll(true)} className="w-full text-primary">
