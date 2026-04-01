@@ -200,7 +200,7 @@ function ActionRow({ row, hasOwner, onExportModal }: { row: FlatAction; hasOwner
                     Affected Members {loadingMembers ? '…' : `(${members.length})`}
                   </p>
                   {members.length > 0 && (
-                    <Button variant="ghost" size="sm" className="h-6 text-xs text-primary" disabled={exporting} onClick={handleExport}>
+                    <Button variant="ghost" size="sm" className="h-6 text-xs text-primary" onClick={handleExport}>
                       <Download className="w-3 h-3 mr-1" />Export all
                     </Button>
                   )}
