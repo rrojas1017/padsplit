@@ -118,7 +118,7 @@ export function useExportMembers() {
       // For keywords, reason_code, and full_report we fetch all completed records and filter
       const { data, error: err } = await supabase
         .from('booking_transcriptions')
-        .select('booking_id, research_classification, bookings!inner(member_name, booking_date, contact_phone, contact_email, record_type, has_valid_conversation)')
+        .select('booking_id, research_classification, research_extraction, bookings!inner(member_name, booking_date, contact_phone, contact_email, record_type, has_valid_conversation)')
         .eq('research_processing_status', 'completed')
         .not('research_classification', 'is', null);
       if (err) throw err;
