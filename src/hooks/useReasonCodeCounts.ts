@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
-import { mapToCluster, CLUSTER_COLORS, CLUSTER_ORDER } from '@/utils/reason-code-mapping';
+import { mapToCluster, extractSubReason, CLUSTER_COLORS, CLUSTER_ORDER } from '@/utils/reason-code-mapping';
 
 export interface SubReason {
   name: string;
