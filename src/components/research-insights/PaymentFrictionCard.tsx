@@ -1,10 +1,7 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { DollarSign, Download } from 'lucide-react';
-import { exportByKeywords } from '@/utils/researchExport';
-import { toast } from 'sonner';
-import { useState } from 'react';
+import type { ExportFilter } from '@/hooks/useExportMembers';
 
 interface FrictionPoint {
   point: string;
