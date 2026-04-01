@@ -473,7 +473,7 @@ export default function ResearchInsights() {
                     <PaymentFrictionCard data={reportData.payment_friction_analysis} onExportModal={openExportModal} />
                   )}
                   {reportData.transfer_friction_analysis && (
-                    <TransferFrictionCard data={reportData.transfer_friction_analysis} />
+                    <TransferFrictionCard data={reportData.transfer_friction_analysis} onExportModal={openExportModal} />
                   )}
                 </div>
               )}
