@@ -510,7 +510,7 @@ export function ReasonCodeChart({ data, onCodeClick, onViewAllMembers }: ReasonC
         <Alert className="border-amber-200 bg-amber-50">
           <AlertTriangle className="w-4 h-4 text-amber-500" />
           <AlertDescription className="text-sm">
-            <strong>{otherPct}%</strong> of records are classified as "Other" — consider running AI re-classification or reviewing the classification prompts.
+            <strong>{otherPct}%</strong> of records could not be classified — classification prompts may need review.
           </AlertDescription>
         </Alert>
       )}
