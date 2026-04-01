@@ -82,7 +82,7 @@ export async function exportByBookingIds(bookingIds: string[], filename: string)
 export async function exportByKeywords(keywords: string[], filename: string) {
   const { data, error } = await supabase
     .from('booking_transcriptions')
-    .select('booking_id, research_classification, bookings!inner(member_name, booking_date, contact_phone, contact_email, record_type, has_valid_conversation)')
+    .select('booking_id, research_classification, research_extraction, bookings!inner(member_name, booking_date, contact_phone, contact_email, record_type, has_valid_conversation)')
     .eq('research_processing_status', 'completed')
     .not('research_classification', 'is', null);
   if (error) throw error;
