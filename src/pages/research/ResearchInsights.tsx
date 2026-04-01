@@ -183,8 +183,8 @@ export default function ResearchInsights() {
   const kpis = !isAudienceSurvey ? deriveKPIs(reportData, mappedStats) : null;
 
   const subtitle = isAudienceSurvey
-    ? 'AI-processed findings from audience survey research'
-    : 'AI-processed findings from move-out research';
+    ? 'Marketing research insights from audience survey campaigns'
+    : 'Member churn analysis from move-out survey campaigns';
 
   return (
     <DashboardLayout title="Research Insights" subtitle={subtitle}>
@@ -196,8 +196,12 @@ export default function ResearchInsights() {
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="move_out_survey">Move-Out Research</SelectItem>
-            <SelectItem value="audience_survey">Audience Survey</SelectItem>
+            <SelectItem value="move_out_survey">
+              <span className="flex items-center gap-2">Move-Out Research <Badge variant="outline" className="text-[10px] px-1.5 py-0 font-normal">Qualitative</Badge></span>
+            </SelectItem>
+            <SelectItem value="audience_survey">
+              <span className="flex items-center gap-2">Audience Survey <Badge variant="outline" className="text-[10px] px-1.5 py-0 font-normal">Quantitative</Badge></span>
+            </SelectItem>
           </SelectContent>
         </Select>
 
