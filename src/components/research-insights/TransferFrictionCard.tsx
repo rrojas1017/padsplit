@@ -1,9 +1,7 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { ArrowRightLeft, Download } from 'lucide-react';
-import { exportByKeywords } from '@/utils/researchExport';
-import { toast } from 'sonner';
-import { useState } from 'react';
+import type { ExportFilter } from '@/hooks/useExportMembers';
 
 interface FrictionPoint {
   point: string;
