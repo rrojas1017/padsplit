@@ -350,7 +350,7 @@ Respond with ONLY a JSON object containing two top-level keys: "extraction" and 
     "confidence_flags": []
   },
   "classification": {
-    "primary_reason_code": "EXACTLY one of: Transfer Denied / Couldn't Transfer | Maintenance Delays | Roommate Conflict | Safety Concern | Noise or Cleanliness Issues | Communication Breakdown / Support Dissatisfaction | Policy Confusion / Lack of Flexibility | Payment Extension Not Offered | Collections – No Flexibility | Pattern of Non-Payment | Job Relocation | Moving in with Family | Buying a Home | Health Issues | Immigration Changes | Marriage | Military Relocation | Fraud / Misrepresentation | Host Negligence / Property Condition | Other",
+    "primary_reason_code": "EXACTLY one of: Transfer Denied / Couldn't Transfer | Maintenance Delays | Roommate Conflict | Safety Concern | Noise or Cleanliness Issues | Communication Breakdown / Support Dissatisfaction | Policy Confusion / Lack of Flexibility | Payment Extension Not Offered | Collections – No Flexibility | Pattern of Non-Payment | Job Relocation | Moving in with Family | Buying a Home | Health Issues | Immigration Changes | Marriage | Military Relocation | Fraud / Misrepresentation | Host Negligence / Property Condition | Data Error / Invalid Record | Other",
     "primary_reason_detail": "1-2 sentences on why this code was chosen",
     "secondary_reason_codes": [],
     "addressability": "Addressable | Non-addressable | Partially addressable",
@@ -405,7 +405,18 @@ CLASSIFICATION RULES:
 2. PREVENTABILITY SCORING: 9-10: Clear signals, tools to intervene, failed to act. 7-8: Possible with proactive changes. 5-6: Partially preventable. 3-4: Mostly external. 1-2: Fully external.
 3. REGRETTABILITY: High = engaged member we should have kept. Low = departure was inevitable or acceptable.
 4. FLAG FOR HUMAN REVIEW when: transcript is ambiguous, contradictory, involves legal issues, or uncertain between primary codes.
-5. Base your classification on what the member ACTUALLY said in the transcript. If the extraction shows weak or ambiguous evidence for the primary reason, reduce the preventability score accordingly.`;
+5. Base your classification on what the member ACTUALLY said in the transcript. If the extraction shows weak or ambiguous evidence for the primary reason, reduce the preventability score accordingly.
+
+CRITICAL CLASSIFICATION RULES:
+- You MUST classify every record into one of the specific reason codes. "Other" should be used in less than 5% of cases.
+- "Other" is ONLY acceptable when the transcript is completely unintelligible, the member refused to speak, or the call was disconnected before any meaningful conversation.
+- If the member gives a vague reason like "personal reasons" or "just because", look at the FULL transcript for context clues. Often the real reason emerges later in the conversation.
+- If the member mentions MULTIPLE issues, pick the PRIMARY one — the issue they talked about most or seemed most upset about.
+- "Needed my own space" / "wanted independence" / "temporary housing" = External Life Event
+- "Rent too high" / "can't afford" / "price increase" = Payment Friction
+- "Didn't like sharing bathroom/kitchen" / "too many roommates" = Policy Confusion (expectations mismatch with shared living model)
+- When in doubt between "Other" and a specific category, always pick the specific category.
+- Use "Data Error / Invalid Record" when: member was never a PadSplit member, wrong person was called, member denies having moved out, identity theft. Set human_review_recommended to true for these.`;
 
 // Legacy default prompts (kept for fallback if separate extraction/classification prompts exist in DB)
 const DEFAULT_EXTRACTION_PROMPT = `You are a qualitative research analyst processing a transcribed move-out interview between a PadSplit agent and a former member. The transcript is from automated speech-to-text — expect false starts, crosstalk, filler words, tangents, and garbled text. Focus on substance.
