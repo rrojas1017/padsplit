@@ -26,7 +26,7 @@ export function AudienceSurveyExecutiveSummary({ data }: Props) {
         </Badge>
       </div>
 
-      {data.key_findings && (typeof data.key_findings === 'string' ? data.key_findings.length > 0 : data.key_findings.length > 0) && (
+      {data.key_findings && (Array.isArray(data.key_findings) ? data.key_findings : [data.key_findings]).length > 0 && (
         <div className="mt-5 space-y-2">
           <p className="text-sm font-semibold text-white/80 uppercase tracking-wide">Key Findings</p>
           <ul className="space-y-1.5">
