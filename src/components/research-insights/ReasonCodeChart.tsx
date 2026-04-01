@@ -218,7 +218,7 @@ function AddressabilityDrillDown({ bucket, total, onViewAllMembers, onBack }: {
       setMembersLoading(true);
       const { data: rows } = await supabase
         .from('booking_transcriptions')
-        .select('research_classification, booking_id, bookings!inner(member_name, contact_phone, booking_date)')
+        .select('id, research_classification, booking_id, bookings!inner(member_name, contact_phone, booking_date)')
         .not('research_classification', 'is', null)
         .eq('research_campaign_type', 'move_out_survey')
         .limit(200);
