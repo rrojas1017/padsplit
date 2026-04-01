@@ -243,7 +243,7 @@ function ActionRow({ row, hasOwner, onExportModal }: { row: FlatAction; hasOwner
   );
 }
 
-export function TopActionsTable({ data }: TopActionsTableProps) {
+export function TopActionsTable({ data, onExportModal }: TopActionsTableProps) {
   const rows = flattenActions(data);
   if (!rows.length) return (
     <Card className="shadow-sm">
