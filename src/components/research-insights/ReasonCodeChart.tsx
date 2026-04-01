@@ -61,10 +61,11 @@ function getClusterHue(color: string): number {
 
 // ── Custom Treemap Content ──
 const CustomTreemapContent = (props: any) => {
-  const { x, y, width, height, name, size, fill, onClick } = props;
-  if (width < 30 || height < 25) return null;
+  const { x, y, width, height, name, size, fill, root } = props;
+  if (!name || !width || !height || width < 30 || height < 25) return null;
+  const displayName = String(name || '');
   return (
-    <g onClick={() => onClick?.(name)} className="cursor-pointer">
+    <g className="cursor-pointer">
       <rect
         x={x} y={y} width={width} height={height}
         fill={fill}
@@ -75,7 +76,7 @@ const CustomTreemapContent = (props: any) => {
       />
       {width > 70 && height > 40 && (
         <text x={x + width / 2} y={y + height / 2 - 8} textAnchor="middle" fill="#fff" fontSize={11} fontWeight={600}>
-          {name.length > 22 ? name.substring(0, 20) + '…' : name}
+          {displayName.length > 22 ? displayName.substring(0, 20) + '…' : displayName}
         </text>
       )}
       {height > 25 && (
