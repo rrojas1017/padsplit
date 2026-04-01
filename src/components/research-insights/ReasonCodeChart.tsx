@@ -55,8 +55,6 @@ function ReasonDrillDown({ active, total, onCodeClick, onViewAllMembers, onBack,
   const [reclassifying, setReclassifying] = useState(false);
   const [reclassifyProgress, setReclassifyProgress] = useState<string | null>(null);
   const [showConfirm, setShowConfirm] = useState(false);
-  const [memberPreviews, setMemberPreviews] = useState<MemberPreview[]>([]);
-  const [membersLoading, setMembersLoading] = useState(false);
 
   useEffect(() => {
     const subReasonNames = active.subReasons
