@@ -5,8 +5,7 @@ import { Button } from '@/components/ui/button';
 import { AlertTriangle, Download } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { format } from 'date-fns';
-import { exportHumanReviewQueue } from '@/utils/researchExport';
-import { toast } from 'sonner';
+import type { ExportFilter } from '@/hooks/useExportMembers';
 
 const PAGE_SIZE = 20;
 
