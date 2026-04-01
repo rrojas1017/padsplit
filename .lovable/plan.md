@@ -1,10 +1,14 @@
 
 
-## Remove Alternative Endpoints Section from API Docs
+## Create Campaign Detection Utility
 
-### Change
-Remove the "Alternative Endpoints" card (lines 56-64) from `src/pages/ApiDocs.tsx` that shows the legacy `api.padsplit.tools/functions/v1` URL.
+### New file: `src/utils/campaign-detection.ts`
 
-### File: `src/pages/ApiDocs.tsx`
-Delete the entire `<div className="mt-4 rounded-xl ...">` block containing "Alternative Endpoints" and the Legacy URL entry.
+Exports:
+- **`CampaignType`** — type alias: `'move_out_survey' | 'audience_survey' | 'unknown'`
+- **`detectCampaignType(opts)`** — waterfall detection: script_id → campaign_type → audience → transcript keywords → `'unknown'`
+- **`getCampaignLabel(type)`** — returns `"Move-Out Research"` / `"Audience Survey"` / `"Unknown"`
+- **`isQualitativeCampaign(type)`** — `true` for `move_out_survey`, `false` otherwise
+
+Single file, no dependencies, pure functions.
 
