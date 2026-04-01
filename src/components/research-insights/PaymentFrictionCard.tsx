@@ -134,7 +134,7 @@ export function PaymentFrictionCard({ data, onExportModal }: PaymentFrictionProp
             </div>
             Payment Friction Analysis
           </CardTitle>
-          <Button variant="ghost" size="sm" onClick={handleExport} disabled={exporting}>
+          <Button variant="ghost" size="sm" onClick={handleExport}>
             <Download className="w-4 h-4 mr-1" />
             Export
           </Button>
