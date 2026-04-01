@@ -34,45 +34,48 @@ export function FirstImpressionsPanel({ data }: Props) {
               ))}
             </div>
             <div className="h-3 flex rounded-full overflow-hidden mt-3">
-              <div className="bg-green-500" style={{ width: `${(impressionDist.positive / total) * 100}%` }} />
-              <div className="bg-yellow-500" style={{ width: `${(impressionDist.neutral / total) * 100}%` }} />
-              <div className="bg-red-500" style={{ width: `${(impressionDist.negative / total) * 100}%` }} />
-              <div className="bg-blue-500" style={{ width: `${(impressionDist.mixed / total) * 100}%` }} />
+              <div className="bg-green-500 transition-all" style={{ width: `${(impressionDist.positive / total) * 100}%` }} />
+              <div className="bg-yellow-500 transition-all" style={{ width: `${(impressionDist.neutral / total) * 100}%` }} />
+              <div className="bg-red-500 transition-all" style={{ width: `${(impressionDist.negative / total) * 100}%` }} />
+              <div className="bg-blue-500 transition-all" style={{ width: `${(impressionDist.mixed / total) * 100}%` }} />
             </div>
           </CardContent>
         </Card>
       )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <Card className="shadow-sm">
+        <Card className="shadow-sm border-l-4 border-l-red-500">
           <CardHeader className="pb-2">
-            <CardTitle className="text-base">Top Concerns</CardTitle>
+            <CardTitle className="text-base">Initial Concerns</CardTitle>
           </CardHeader>
           <CardContent>
             <RankedItemsTable
               items={(data.top_concerns || []).map(i => ({ label: i.concern, count: i.count }))}
+              barColor="bg-red-500"
             />
           </CardContent>
         </Card>
 
-        <Card className="shadow-sm">
+        <Card className="shadow-sm border-l-4 border-l-green-500">
           <CardHeader className="pb-2">
             <CardTitle className="text-base">Interest Drivers</CardTitle>
           </CardHeader>
           <CardContent>
             <RankedItemsTable
               items={(data.top_interest_drivers || []).map(i => ({ label: i.driver, count: i.count }))}
+              barColor="bg-green-500"
             />
           </CardContent>
         </Card>
 
-        <Card className="shadow-sm">
+        <Card className="shadow-sm border-l-4 border-l-amber-500">
           <CardHeader className="pb-2">
             <CardTitle className="text-base">Confusion Points</CardTitle>
           </CardHeader>
           <CardContent>
             <RankedItemsTable
               items={(data.confusion_points || []).map(i => ({ label: i.point, count: i.count }))}
+              barColor="bg-amber-500"
             />
           </CardContent>
         </Card>

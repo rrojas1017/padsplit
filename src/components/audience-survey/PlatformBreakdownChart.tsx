@@ -3,14 +3,17 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContaine
 import type { PlatformItem } from '@/types/research-insights';
 
 const PLATFORM_COLORS: Record<string, string> = {
-  TikTok: 'hsl(var(--chart-1))',
-  Instagram: 'hsl(var(--chart-2))',
-  Facebook: 'hsl(var(--chart-3))',
-  YouTube: 'hsl(var(--chart-4))',
-  'X/Twitter': 'hsl(var(--chart-5))',
-  LinkedIn: 'hsl(var(--chart-1))',
-  Snapchat: 'hsl(var(--chart-2))',
-  'Facebook Groups': 'hsl(var(--chart-3))',
+  TikTok: '#00f2ea',
+  Instagram: '#E1306C',
+  Facebook: '#1877F2',
+  YouTube: '#FF0000',
+  'X/Twitter': '#1DA1F2',
+  Twitter: '#1DA1F2',
+  LinkedIn: '#0A66C2',
+  Snapchat: '#FFFC00',
+  'Facebook Groups': '#1877F2',
+  Pinterest: '#E60023',
+  Reddit: '#FF4500',
 };
 
 interface Props {
@@ -30,20 +33,28 @@ export function PlatformBreakdownChart({ data }: Props) {
       <CardContent>
         <div className="h-[300px]">
           <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={sorted} layout="vertical" margin={{ left: 100, right: 20 }}>
-              <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
-              <XAxis type="number" className="text-xs" />
-              <YAxis dataKey="platform" type="category" className="text-xs" width={90} />
+            <BarChart data={sorted} layout="vertical" margin={{ left: 110, right: 30, top: 5, bottom: 5 }}>
+              <CartesianGrid strokeDasharray="3 3" className="stroke-border" horizontal={false} />
+              <XAxis type="number" className="text-xs" tickFormatter={(v) => `${v}`} />
+              <YAxis dataKey="platform" type="category" className="text-xs" width={100} tick={{ fontSize: 12 }} />
               <Tooltip
-                formatter={(value: number, name: string, entry: any) => [
-                  `${value} (${Math.round(entry.payload.pct || 0)}%)`,
-                  'Responses'
+                formatter={(value: number, _name: string, entry: any) => [
+                  `${value} responses (${Math.round(entry.payload.pct || 0)}%)`,
+                  'Usage'
                 ]}
-                contentStyle={{ background: 'hsl(var(--card))', border: '1px solid hsl(var(--border))' }}
+                contentStyle={{
+                  background: 'hsl(var(--card))',
+                  border: '1px solid hsl(var(--border))',
+                  borderRadius: '8px',
+                  fontSize: '12px',
+                }}
               />
-              <Bar dataKey="count" radius={[0, 4, 4, 0]}>
+              <Bar dataKey="count" radius={[0, 6, 6, 0]} barSize={24}>
                 {sorted.map((entry) => (
-                  <Cell key={entry.platform} fill={PLATFORM_COLORS[entry.platform] || 'hsl(var(--primary))'} />
+                  <Cell
+                    key={entry.platform}
+                    fill={PLATFORM_COLORS[entry.platform] || 'hsl(var(--primary))'}
+                  />
                 ))}
               </Bar>
             </BarChart>
