@@ -225,7 +225,7 @@ function FlagRow({ item, rawItem, onExportModal }: { item: HostFlag; rawItem: an
   );
 }
 
-export function HostAccountabilityPanel({ data, maxVisible }: HostAccountabilityPanelProps) {
+export function HostAccountabilityPanel({ data, maxVisible, onExportModal }: HostAccountabilityPanelProps) {
   const [showAll, setShowAll] = useState(false);
 
   const sorted = useMemo(() => {
