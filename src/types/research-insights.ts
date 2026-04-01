@@ -222,6 +222,123 @@ export interface CohortItem {
   pct: number;
 }
 
+// ── Audience Survey Extraction (per-record) ──
+
+export interface AudienceSurveyExtraction {
+  type: 'audience_survey';
+  social_media_platforms: string[];
+  follows_influencers: boolean;
+  influencer_names: string[];
+  noticed_standout_ads: boolean;
+  standout_ad_details: string;
+  padsplit_ad_awareness: 'yes_liked' | 'yes_didnt_like' | 'yes_dont_remember' | 'no';
+  expected_ad_platforms: string[];
+  ad_attention_triggers: string[];
+  padsplit_click_motivators: string[];
+  initial_concerns: string[];
+  initial_interest_drivers: string[];
+  confusion_points: string[];
+  ad_detail_preference: 'more_detail' | 'short_simple' | 'depends_on_platform' | 'not_sure';
+  content_preferences: string[];
+  video_testimonial_interest: boolean | null;
+}
+
+// ── Audience Survey Classification (per-record) ──
+
+export interface AudienceSurveyClassification {
+  type: 'audience_survey';
+  primary_platform_segment: string;
+  ad_receptivity: 'high' | 'medium' | 'low';
+  brand_awareness_level: 'aware_positive' | 'aware_neutral' | 'aware_negative' | 'unaware';
+  content_affinity: string;
+  conversion_barrier: string;
+}
+
+// ── Audience Survey Insights Report (aggregated) ──
+
+export interface RankedItem {
+  item: string;
+  count: number;
+  percentage: number;
+}
+
+export interface AudienceSurveyInsightsReport {
+  type: 'audience_survey';
+  executive_summary: {
+    headline: string;
+    key_findings: string[];
+    top_recommendation: string;
+  };
+  kpis: {
+    total_responses: number;
+    padsplit_ad_awareness_rate: number;
+    top_platform: string;
+    top_click_motivator: string;
+    video_testimonial_interest_rate: number;
+  };
+  social_media_breakdown: Array<{ platform: string; count: number; percentage: number }>;
+  influencer_insights: {
+    percentage_following: number;
+    notable_influencers: string[];
+  };
+  ad_awareness: {
+    noticed_other_ads_rate: number;
+    padsplit_ad_breakdown: {
+      yes_liked: number;
+      yes_didnt_like: number;
+      yes_dont_remember: number;
+      no: number;
+    };
+    expected_ad_platforms: Array<{ platform: string; count: number; percentage: number }>;
+  };
+  ad_engagement: {
+    attention_triggers: RankedItem[];
+    click_motivators: RankedItem[];
+  };
+  first_impressions: {
+    initial_concerns: RankedItem[];
+    interest_drivers: RankedItem[];
+    confusion_points: RankedItem[];
+  };
+  ad_preferences: {
+    detail_preference: {
+      more_detail: number;
+      short_simple: number;
+      depends_on_platform: number;
+      not_sure: number;
+    };
+    content_type_preferences: RankedItem[];
+  };
+  segments: Array<{
+    name: string;
+    size: number;
+    percentage: number;
+    description: string;
+    preferred_platforms: string[];
+    preferred_content: string[];
+    key_motivator: string;
+  }>;
+  recommendations: Array<{
+    recommendation: string;
+    priority: 'high' | 'medium' | 'low';
+    category: 'creative' | 'targeting' | 'messaging' | 'channel';
+    rationale: string;
+  }>;
+}
+
+// ── Move-Out Insights Report alias (existing ResearchInsightData) ──
+
+export type MoveOutInsightsReport = ResearchInsightData;
+
+// ── Unified Report Wrapper ──
+
+export interface ResearchInsightsReport {
+  campaign_type: CampaignType;
+  generated_at: string;
+  total_records: number;
+  report: MoveOutInsightsReport | AudienceSurveyInsightsReport;
+}
+
 // ── Generation Progress (internal) ──
 
 export interface InsightProgress {
