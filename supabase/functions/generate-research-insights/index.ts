@@ -639,7 +639,9 @@ async function processOneChunk(
     }).eq('id', insightId);
 
     // Process this chunk
-    const userMsg = `Date range: ${dateRange}\nBatch ${chunkIndex + 1} of ${totalChunks}\n\nHere are ${chunk.length} classified move-out records:\n\n${JSON.stringify(chunk)}`;
+    const isMoveOut = meta.campaignType !== 'audience_survey';
+    const batchLabel = isMoveOut ? 'classified move-out records' : 'audience survey responses';
+    const userMsg = `Date range: ${dateRange}\nBatch ${chunkIndex + 1} of ${totalChunks}\n\nHere are ${chunk.length} ${batchLabel}:\n\n${JSON.stringify(chunk)}`;
     
     const chunkTimeout = new Promise<never>((_, reject) =>
       setTimeout(() => reject(new Error(`Chunk ${chunkIndex + 1} timed out after 60s`)), 60000)
