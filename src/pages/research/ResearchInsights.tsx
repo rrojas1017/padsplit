@@ -16,8 +16,8 @@ import { format } from 'date-fns';
 import { useResearchInsightsData, DateRangeOption } from '@/hooks/useResearchInsightsData';
 import { useResearchInsightsPolling } from '@/hooks/useResearchInsightsPolling';
 import { useResearchCampaigns } from '@/hooks/useResearchCampaigns';
-import { deriveKPIs } from '@/types/research-insights';
-import type { ResearchInsightData } from '@/types/research-insights';
+import { deriveKPIs, isAudienceSurveyData } from '@/types/research-insights';
+import type { ResearchInsightData, AudienceSurveyInsightData, CampaignType } from '@/types/research-insights';
 
 import { ExecutiveSummary } from '@/components/research-insights/ExecutiveSummary';
 import { ReasonCodeChart } from '@/components/research-insights/ReasonCodeChart';
@@ -34,13 +34,18 @@ import { ProcessedRecordsList } from '@/components/research-insights/ProcessedRe
 import { InsightsKPIRow } from '@/components/research-insights/InsightsKPIRow';
 import { ReasonCodeDrillDown } from '@/components/research-insights/ReasonCodeDrillDown';
 
+import { AudienceSurveyDashboard } from '@/components/audience-survey/AudienceSurveyDashboard';
+
 type TabValue = 'dashboard' | 'analysis' | 'operations';
 
 export default function ResearchInsights() {
   const [searchParams, setSearchParams] = useSearchParams();
   const currentTab = (searchParams.get('tab') as TabValue) || 'dashboard';
-  const setTab = (tab: string) => setSearchParams({ tab }, { replace: true });
+  const setTab = (tab: string) => setSearchParams({ tab, campaign: campaignType }, { replace: true });
 
+  const [campaignType, setCampaignType] = useState<CampaignType>(
+    (searchParams.get('campaign') as CampaignType) || 'move_out_survey'
+  );
   const [dateRange, setDateRange] = useState<DateRangeOption>('allTime');
   const [campaignId, setCampaignId] = useState<string>('all');
   const [isGenerating, setIsGenerating] = useState(false);
@@ -61,7 +66,7 @@ export default function ResearchInsights() {
     triggerBackfill,
     refresh,
     fetchProcessingStats,
-  } = useResearchInsightsData();
+  } = useResearchInsightsData(campaignType);
 
   const { campaigns } = useResearchCampaigns();
 
@@ -98,6 +103,11 @@ export default function ResearchInsights() {
     };
     init();
   }, [checkExistingAnalysis]);
+
+  const handleCampaignTypeChange = (value: string) => {
+    setCampaignType(value as CampaignType);
+    setSearchParams({ tab: currentTab, campaign: value }, { replace: true });
+  };
 
   const handleGenerate = async () => {
     setIsGenerating(true);
@@ -159,13 +169,10 @@ export default function ResearchInsights() {
     }
   };
 
-  const reportData = selectedReport?.data as ResearchInsightData | null;
-  // Debug: log report data shape for KPI troubleshooting
-  if (reportData) {
-    console.log('[ResearchInsights] reportData keys:', Object.keys(reportData));
-    console.log('[ResearchInsights] executive_summary:', reportData.executive_summary);
-    console.log('[ResearchInsights] first reason_code:', reportData.reason_code_distribution?.[0]);
-  }
+  const reportData = selectedReport?.data as any;
+  const isAudienceSurvey = campaignType === 'audience_survey';
+
+  // Move-out specific KPIs
   const mappedStats: import('@/types/research-insights').ProcessingStats = {
     total_research_records: processingStats.totalResearchRecords,
     processed_records: processingStats.processedRecords,
@@ -173,12 +180,27 @@ export default function ResearchInsights() {
     pending_records: processingStats.pendingRecords,
     failed_records: 0,
   };
-  const kpis = deriveKPIs(reportData, mappedStats);
+  const kpis = !isAudienceSurvey ? deriveKPIs(reportData, mappedStats) : null;
+
+  const subtitle = isAudienceSurvey
+    ? 'AI-processed findings from audience survey research'
+    : 'AI-processed findings from move-out research';
 
   return (
-    <DashboardLayout title="Research Insights" subtitle="AI-processed findings from move-out research">
+    <DashboardLayout title="Research Insights" subtitle={subtitle}>
       {/* Controls Bar */}
       <div className="flex flex-wrap items-center gap-3 mb-8 p-4 rounded-xl bg-card/80 backdrop-blur border border-border shadow-sm">
+        {/* Campaign Type Switcher */}
+        <Select value={campaignType} onValueChange={handleCampaignTypeChange}>
+          <SelectTrigger className="w-[220px]">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="move_out_survey">Move-Out Research</SelectItem>
+            <SelectItem value="audience_survey">Audience Survey</SelectItem>
+          </SelectContent>
+        </Select>
+
         <Select value={campaignId} onValueChange={setCampaignId}>
           <SelectTrigger className="w-[200px]">
             <SelectValue placeholder="All Campaigns" />
@@ -344,23 +366,28 @@ export default function ResearchInsights() {
             <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center mx-auto mb-4">
               <Sparkles className="w-8 h-8 text-primary" />
             </div>
-            <h3 className="text-lg font-semibold text-foreground mb-2">No Research Insights Yet</h3>
+            <h3 className="text-lg font-semibold text-foreground mb-2">
+              No {isAudienceSurvey ? 'Audience Survey' : 'Research'} Insights Yet
+            </h3>
             <p className="text-sm text-muted-foreground mb-4 max-w-md mx-auto">
               {processingStats.totalResearchRecords > 0
-                ? `${processingStats.totalResearchRecords} research records found. Click "Generate Report" to process and analyze all records automatically.`
+                ? `${processingStats.processedRecords} processed records found. Click "Generate Report" to analyze them.`
                 : 'No research records found yet. Log survey calls to start building insights.'}
             </p>
           </CardContent>
         </Card>
       )}
 
-      {/* Report content */}
-      {!isLoading && reportData && (selectedReport?.status === 'completed' || isGenerating) && (
-        <div className="space-y-6">
-          {/* KPI Row */}
-          <InsightsKPIRow kpis={kpis} />
+      {/* Report content — AUDIENCE SURVEY */}
+      {!isLoading && reportData && isAudienceSurvey && (selectedReport?.status === 'completed' || isGenerating) && (
+        <AudienceSurveyDashboard data={reportData as AudienceSurveyInsightData} />
+      )}
 
-          {/* Tabbed Layout */}
+      {/* Report content — MOVE-OUT SURVEY */}
+      {!isLoading && reportData && !isAudienceSurvey && (selectedReport?.status === 'completed' || isGenerating) && (
+        <div className="space-y-6">
+          {kpis && <InsightsKPIRow kpis={kpis} />}
+
           <Tabs value={currentTab} onValueChange={setTab}>
             <TabsList className="grid w-full grid-cols-3">
               <TabsTrigger value="dashboard" className="gap-2">
@@ -481,13 +508,15 @@ export default function ResearchInsights() {
         </div>
       )}
 
-      {/* Drill-down modal for reason codes */}
-      <ReasonCodeDrillDown
-        open={!!drillDownCode}
-        onOpenChange={(open) => { if (!open) setDrillDownCode(null); }}
-        reasonCode={drillDownCode || ''}
-        reasonColor="hsl(var(--primary))"
-      />
+      {/* Drill-down modal for reason codes (move-out only) */}
+      {!isAudienceSurvey && (
+        <ReasonCodeDrillDown
+          open={!!drillDownCode}
+          onOpenChange={(open) => { if (!open) setDrillDownCode(null); }}
+          reasonCode={drillDownCode || ''}
+          reasonColor="hsl(var(--primary))"
+        />
+      )}
     </DashboardLayout>
   );
 }
