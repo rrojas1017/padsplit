@@ -94,7 +94,11 @@ function ReasonDrillDown({ active, total, onCodeClick, onViewAllMembers, onBack 
     pctTotal: total > 0 ? Math.round((s.count / total) * 100) : 0,
   }));
 
-
+  return (
+    <div className="space-y-5">
+      <Button variant="ghost" size="sm" className="w-fit gap-1.5 -ml-2" onClick={onBack}>
+        <ArrowLeft className="w-4 h-4" /> Back to overview
+      </Button>
 
       <div className="flex items-center gap-3">
         <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: active.color }} />
