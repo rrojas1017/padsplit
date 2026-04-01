@@ -95,8 +95,7 @@ function FrictionBar({ point, maxCount }: { point: FrictionPoint; maxCount: numb
   );
 }
 
-export function PaymentFrictionCard({ data }: PaymentFrictionProps) {
-  const [exporting, setExporting] = useState(false);
+export function PaymentFrictionCard({ data, onExportModal }: PaymentFrictionProps) {
   if (!data) return null;
 
   let points: FrictionPoint[] = [];
@@ -118,16 +117,10 @@ export function PaymentFrictionCard({ data }: PaymentFrictionProps) {
   const affected = data.payment_related_moveouts ?? (data.stats as any)?.payment_related_moveouts;
   const affectedPct = data.payment_related_pct ?? (data.stats as any)?.payment_related_pct;
 
-  const handleExport = async () => {
-    setExporting(true);
-    try {
-      const keywords = ['payment', 'flexirent', 'flexipay', 'flex pay', 'late fee', 'balance', 'rent'];
-      const count = await exportByKeywords(keywords, 'payment-friction-members.csv');
-      toast.success(`Exported ${count} payment friction records`);
-    } catch (e) {
-      toast.error('Export failed');
-    } finally {
-      setExporting(false);
+  const handleExport = () => {
+    const keywords = ['payment', 'flexirent', 'flexipay', 'flex pay', 'late fee', 'balance', 'rent'];
+    if (onExportModal) {
+      onExportModal({ type: 'keywords', keywords }, 'Payment Friction — Affected Members', 'payment-friction-members.csv');
     }
   };
 
