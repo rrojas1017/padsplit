@@ -49,8 +49,10 @@ function downloadCSV(filename: string, rows: ExportRecord[]) {
 function mapRow(row: any): ExportRecord {
   const b = row.bookings as any;
   const cls = row.research_classification as any;
+  const rawName = b?.member_name || 'Unknown';
+  const memberName = rawName.startsWith('API Submission - ') ? rawName.replace('API Submission - ', '') : rawName;
   return {
-    memberName: b?.member_name || 'Unknown',
+    memberName,
     phone: b?.contact_phone || '',
     email: b?.contact_email || '',
     bookingId: row.booking_id || '',
