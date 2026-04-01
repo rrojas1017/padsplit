@@ -78,11 +78,10 @@ export function HumanReviewQueue({ onExportModal }: HumanReviewQueueProps = {}) 
             variant="ghost"
             size="sm"
             className="ml-auto gap-1.5 text-xs"
-            onClick={async () => {
-              try {
-                const count = await exportHumanReviewQueue('human_review_queue.csv');
-                toast.success(`Exported ${count} flagged records`);
-              } catch { toast.error('Export failed'); }
+            onClick={() => {
+              if (onExportModal) {
+                onExportModal({ type: 'human_review' }, 'Human Review Queue', 'human_review_queue.csv');
+              }
             }}
           >
             <Download className="w-3.5 h-3.5" />
