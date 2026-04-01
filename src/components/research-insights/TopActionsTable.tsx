@@ -78,11 +78,10 @@ interface AffectedMember {
   quote: string;
 }
 
-function ActionRow({ row, hasOwner }: { row: FlatAction; hasOwner: boolean }) {
+function ActionRow({ row, hasOwner, onExportModal }: { row: FlatAction; hasOwner: boolean; onExportModal?: (filter: ExportFilter, title: string, filename: string) => void }) {
   const [open, setOpen] = useState(false);
   const [members, setMembers] = useState<AffectedMember[]>([]);
   const [loadingMembers, setLoadingMembers] = useState(false);
-  const [exporting, setExporting] = useState(false);
 
   const desc = row.impact || (row as any).description || (row as any).rationale || '';
   const owner = row.owner || (row as any).ownership;
