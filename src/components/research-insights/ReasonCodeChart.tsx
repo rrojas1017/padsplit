@@ -316,11 +316,14 @@ function ReasonDrillDown({ active, total, onCodeClick, onViewAllMembers, onBack 
             data={treemapData}
             dataKey="size"
             aspectRatio={4 / 3}
-            content={<CustomTreemapContent onClick={(name: string) => {
-              setTreemapFilter(treemapFilter === name ? null : name);
-              setSelectedSubReasons(new Set());
-              setPage(0);
-            }} />}
+            content={<CustomTreemapContent />}
+            onClick={(node: any) => {
+              if (node?.name) {
+                setTreemapFilter(treemapFilter === node.name ? null : node.name);
+                setSelectedSubReasons(new Set());
+                setPage(0);
+              }
+            }}
           >
             <Tooltip
               formatter={(value: number, name: string) => [
