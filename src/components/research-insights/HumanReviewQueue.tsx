@@ -17,8 +17,11 @@ interface ReviewItem {
   reason_code: string;
   review_reason: string;
 }
+interface HumanReviewQueueProps {
+  onExportModal?: (filter: ExportFilter, title: string, filename: string) => void;
+}
 
-export function HumanReviewQueue() {
+export function HumanReviewQueue({ onExportModal }: HumanReviewQueueProps = {}) {
   const [items, setItems] = useState<ReviewItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
