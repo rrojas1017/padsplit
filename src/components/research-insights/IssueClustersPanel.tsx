@@ -36,6 +36,7 @@ interface IssueCluster {
 interface IssueClustersProps {
   data: IssueCluster[];
   maxVisible?: number;
+  onExportModal?: (filter: ExportFilter, title: string, filename: string) => void;
 }
 
 function getPriorityBorderColor(priority?: string): string {
