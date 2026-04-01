@@ -1,0 +1,1 @@
+ALTER TABLE public.research_insights ADD COLUMN IF NOT EXISTS executive_brief jsonb DEFAULT NULL;
