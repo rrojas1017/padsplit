@@ -282,7 +282,7 @@ export function TopActionsTable({ data, onExportModal }: TopActionsTableProps) {
             </thead>
             <tbody>
               {rows.map((row, i) => (
-                <ActionRow key={i} row={row} hasOwner={hasOwner} />
+                <ActionRow key={i} row={row} hasOwner={hasOwner} onExportModal={onExportModal} />
               ))}
             </tbody>
           </table>
