@@ -137,7 +137,7 @@ export function TransferFrictionCard({ data, onExportModal }: TransferFrictionPr
             </div>
             Transfer Friction Analysis
           </CardTitle>
-          <Button variant="ghost" size="sm" onClick={handleExport} disabled={exporting}>
+          <Button variant="ghost" size="sm" onClick={handleExport}>
             <Download className="w-4 h-4 mr-1" />
             Export
           </Button>
