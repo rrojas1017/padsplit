@@ -98,8 +98,7 @@ function FrictionBar({ point, maxCount }: { point: FrictionPoint; maxCount: numb
   );
 }
 
-export function TransferFrictionCard({ data }: TransferFrictionProps) {
-  const [exporting, setExporting] = useState(false);
+export function TransferFrictionCard({ data, onExportModal }: TransferFrictionProps) {
   if (!data) return null;
 
   let points: FrictionPoint[] = [];
@@ -121,16 +120,10 @@ export function TransferFrictionCard({ data }: TransferFrictionProps) {
   const considered = data.considered_transfer ?? (data.stats as any)?.considered_transfer;
   const consideredPct = data.considered_transfer_pct ?? (data.stats as any)?.considered_transfer_pct;
 
-  const handleExport = async () => {
-    setExporting(true);
-    try {
-      const keywords = ['transfer', 'relocat', 'move to another', 'different unit', 'different property', 'switch'];
-      const count = await exportByKeywords(keywords, 'transfer-friction-members.csv');
-      toast.success(`Exported ${count} transfer friction records`);
-    } catch (e) {
-      toast.error('Export failed');
-    } finally {
-      setExporting(false);
+  const handleExport = () => {
+    const keywords = ['transfer', 'relocat', 'move to another', 'different unit', 'different property', 'switch'];
+    if (onExportModal) {
+      onExportModal({ type: 'keywords', keywords }, 'Transfer Friction — Affected Members', 'transfer-friction-members.csv');
     }
   };
 
