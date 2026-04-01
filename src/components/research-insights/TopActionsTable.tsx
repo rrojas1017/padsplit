@@ -11,6 +11,7 @@ import type { ExportFilter } from '@/hooks/useExportMembers';
 
 interface TopActionsTableProps {
   data: TopAction[] | Record<string, TopAction[]>;
+  onExportModal?: (filter: ExportFilter, title: string, filename: string) => void;
 }
 
 interface FlatAction extends TopAction {
