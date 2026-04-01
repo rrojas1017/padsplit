@@ -109,7 +109,7 @@ export function ReasonCodeChart({ data, onCodeClick }: ReasonCodeChartProps) {
 
   if (!chartData.length) return null;
 
-  const sorted = [...chartData].sort((a, b) => b.count - a.count);
+  const sorted = [...chartData].sort((a, b) => (b.pct || b.count) - (a.pct || a.count));
   const totalItems = sorted.length;
 
   // Cap visible items
