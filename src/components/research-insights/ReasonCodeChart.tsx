@@ -329,11 +329,18 @@ function AddressabilityDrillDown({ bucket, total, onViewAllMembers, onBack }: {
               </TableHeader>
               <TableBody>
                 {memberPreviews.map((m, i) => (
-                  <TableRow key={i}>
+                  <TableRow
+                    key={i}
+                    className="cursor-pointer hover:bg-muted/50 transition-colors"
+                    onClick={() => setDetailId(m.transcriptionId)}
+                  >
                     <TableCell className="font-medium">{m.memberName}</TableCell>
                     <TableCell className="text-muted-foreground">{m.phone}</TableCell>
                     <TableCell className="text-sm">{m.subReason}</TableCell>
                     <TableCell className="text-muted-foreground text-sm">{m.date}</TableCell>
+                    <TableCell>
+                      <Eye className="w-3.5 h-3.5 text-muted-foreground" />
+                    </TableCell>
                   </TableRow>
                 ))}
               </TableBody>
@@ -349,6 +356,13 @@ function AddressabilityDrillDown({ bucket, total, onViewAllMembers, onBack }: {
         )}
       </div>
     </div>
+
+    <MemberDetailPanel
+      open={!!detailId}
+      onOpenChange={(o) => { if (!o) setDetailId(null); }}
+      transcriptionId={detailId}
+    />
+    </>
   );
 }
 
