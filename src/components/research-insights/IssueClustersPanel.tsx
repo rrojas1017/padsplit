@@ -87,7 +87,7 @@ export function IssueClustersPanel({ data, maxVisible, onExportModal }: IssueClu
   );
 }
 
-function ClusterCard({ cluster }: { cluster: IssueCluster }) {
+function ClusterCard({ cluster, onExportModal }: { cluster: IssueCluster; onExportModal?: (filter: ExportFilter, title: string, filename: string) => void }) {
   const [open, setOpen] = useState(false);
   const [members, setMembers] = useState<MemberPreview[]>([]);
   const [membersLoading, setMembersLoading] = useState(false);
