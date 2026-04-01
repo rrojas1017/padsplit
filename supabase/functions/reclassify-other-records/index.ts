@@ -88,12 +88,13 @@ Deno.serve(async (req) => {
     const offset = body.offset || 0;
     const dryRun = body.dry_run || false;
 
-    // Fetch batch of "Other" records
+    // Fetch batch of "Other" records that haven't been reclassified yet
     const { data: records, error: fetchError } = await supabase
       .from('booking_transcriptions')
       .select('id, call_transcription, research_extraction, research_classification')
       .eq('research_campaign_type', 'move_out_survey')
       .not('research_classification', 'is', null)
+      .is('research_audit', null)
       .order('created_at', { ascending: false })
       .range(offset, offset + BATCH_SIZE - 1);
 
