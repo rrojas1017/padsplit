@@ -1,7 +1,6 @@
 // src/types/research-insights.ts
 // Shared TypeScript interfaces for the research insights JSONB report shape.
-// Replaces all inline `any` types across the 14 components.
-// Derived from the actual data written by generate-research-insights edge function.
+// Supports both Move-Out Survey and Audience Survey campaign types.
 
 // ── Report envelope (row from research_insights table) ──
 
@@ -10,15 +9,16 @@ export interface ResearchInsightRow {
   created_at: string;
   updated_at: string;
   status: 'pending' | 'processing' | 'completed' | 'failed';
-  data: ResearchInsightData;
+  data: ResearchInsightData | AudienceSurveyInsightData;
   total_records_analyzed: number;
   campaign_id?: string;
   campaign_name?: string;
+  campaign_type?: string;
   generated_by?: string;
   error_message?: string;
 }
 
-// ── The JSONB blob inside data column ──
+// ── Move-Out Survey Data (existing) ──
 
 export interface ResearchInsightData {
   executive_summary: ExecutiveSummary;
@@ -34,8 +34,6 @@ export interface ResearchInsightData {
   _progress?: InsightProgress;
 }
 
-// ── Executive Summary ──
-
 export interface ExecutiveSummary {
   headline: string;
   key_findings: string[];
@@ -45,8 +43,6 @@ export interface ExecutiveSummary {
   top_reason?: string;
   avg_preventability?: number;
 }
-
-// ── Reason Code Distribution ──
 
 export interface ReasonCodeItem {
   code: string;
@@ -61,8 +57,6 @@ export interface ReasonCodeItem {
   example_quotes?: string[];
 }
 
-// ── Issue Clusters ──
-
 export interface IssueCluster {
   name: string;
   codes: string[];
@@ -76,8 +70,6 @@ export interface IssueCluster {
   quotes?: string[];
 }
 
-// ── Top Actions ──
-
 export interface TopAction {
   rank?: number;
   action: string;
@@ -88,8 +80,6 @@ export interface TopAction {
   cases?: number;
   timeline?: string;
 }
-
-// ── Friction Analysis (shared shape for payment + transfer) ──
 
 export interface FrictionPoint {
   point: string;
@@ -107,16 +97,12 @@ export interface FrictionAnalysis {
   resolution_rate?: number;
 }
 
-// ── Blind Spots ──
-
 export interface BlindSpot {
   title: string;
   description: string;
   severity?: 'Critical' | 'High' | 'Medium' | 'Low';
   recommendation?: string;
 }
-
-// ── Host Accountability ──
 
 export interface HostAccountabilityFlag {
   issue: string;
@@ -127,8 +113,6 @@ export interface HostAccountabilityFlag {
   recommendation?: string;
 }
 
-// ── Agent Performance ──
-
 export interface AgentPerformanceSummary {
   strengths: string[];
   weaknesses: string[];
@@ -137,8 +121,6 @@ export interface AgentPerformanceSummary {
   common_gaps?: string[];
 }
 
-// ── Emerging Patterns ──
-
 export interface EmergingPattern {
   pattern: string;
   status: 'act' | 'investigate' | 'monitor' | 'watch';
@@ -146,6 +128,98 @@ export interface EmergingPattern {
   frequency?: number;
   trend?: 'increasing' | 'stable' | 'decreasing';
   first_seen?: string;
+}
+
+// ── Audience Survey Data (new) ──
+
+export interface AudienceSurveyInsightData {
+  executive_summary: AudienceSurveySummary;
+  platform_breakdown: PlatformItem[];
+  ad_awareness: AdAwarenessData;
+  content_preferences: ContentPreferencesData;
+  first_impressions: FirstImpressionsData;
+  audience_segments: AudienceSegment[];
+  influencer_insights: InfluencerInsights;
+  video_testimonial: VideoTestimonialData;
+  recommendations: AudienceRecommendation[];
+  cohort_breakdown: CohortItem[];
+  _progress?: InsightProgress;
+}
+
+export interface AudienceSurveySummary {
+  total_responses: number;
+  date_range?: string;
+  headline: string;
+  key_findings: string[];
+  top_platform?: string;
+  padsplit_ad_awareness_pct?: number;
+  video_testimonial_interest_pct?: number;
+}
+
+export interface PlatformItem {
+  platform: string;
+  count: number;
+  pct: number;
+  is_primary_for?: number;
+}
+
+export interface AdAwarenessData {
+  seen_standout_ads_pct?: number;
+  seen_padsplit_ads_pct?: number;
+  top_standout_companies?: Array<{ company: string; count: number }>;
+  where_seen_padsplit?: Array<{ platform: string; count: number }>;
+  where_expected_padsplit?: Array<{ platform: string; count: number }>;
+}
+
+export interface ContentPreferencesData {
+  stop_scrolling_triggers?: Array<{ trigger: string; count: number }>;
+  click_motivations?: Array<{ motivation: string; count: number }>;
+  detail_preferences?: Array<{ detail: string; count: number; pct?: number }>;
+  content_type_preferences?: Array<{ type: string; count: number; pct?: number }>;
+}
+
+export interface FirstImpressionsData {
+  discovery_channels?: Array<{ channel: string; count: number }>;
+  impression_distribution?: { positive: number; neutral: number; negative: number; mixed: number };
+  top_concerns?: Array<{ concern: string; count: number }>;
+  top_interest_drivers?: Array<{ driver: string; count: number }>;
+  confusion_points?: Array<{ point: string; count: number }>;
+}
+
+export interface AudienceSegment {
+  segment: string;
+  count: number;
+  pct: number;
+  key_traits?: string[];
+  best_channel?: string;
+  content_strategy?: string;
+}
+
+export interface InfluencerInsights {
+  follows_influencers_pct?: number;
+  notable_influencers?: string[];
+}
+
+export interface VideoTestimonialData {
+  interested_count?: number;
+  interested_pct?: number;
+  not_interested_count?: number;
+}
+
+export interface AudienceRecommendation {
+  rank?: number;
+  recommendation: string;
+  rationale?: string;
+  priority?: 'P0' | 'P1' | 'P2';
+  channel?: string;
+  expected_impact?: string;
+  effort?: 'low' | 'medium' | 'high';
+}
+
+export interface CohortItem {
+  cohort: string;
+  count: number;
+  pct: number;
 }
 
 // ── Generation Progress (internal) ──
@@ -167,7 +241,15 @@ export interface ProcessingStats {
   failed_records: number;
 }
 
-// ── KPI derivation helper ──
+// ── Campaign type helpers ──
+
+export type CampaignType = 'move_out_survey' | 'audience_survey';
+
+export function isAudienceSurveyData(data: any): data is AudienceSurveyInsightData {
+  return data && (data.platform_breakdown || data.ad_awareness || data.audience_segments);
+}
+
+// ── KPI derivation helper (Move-Out) ──
 
 export function deriveKPIs(data: ResearchInsightData | null, stats: ProcessingStats | null) {
   if (!data) {
@@ -189,13 +271,11 @@ export function deriveKPIs(data: ResearchInsightData | null, stats: ProcessingSt
     }
   ).length;
 
-  // Try multiple field name variants for preventable percent
   const preventableRaw = es?.preventable_percent ?? es?.addressable_pct ?? es?.preventable_pct ?? es?.preventability_percent;
   const preventablePercent = preventableRaw != null
     ? Math.round(Number(preventableRaw))
     : (reasons.length > 0 ? Math.round((addressableCount / reasons.length) * 100) : 0);
 
-  // Try multiple field name variants for avg preventability
   const avgPrevRaw = es?.avg_preventability ?? es?.avg_preventability_score ?? es?.average_preventability;
   const avgPreventability = avgPrevRaw != null
     ? Number(avgPrevRaw)
@@ -203,7 +283,6 @@ export function deriveKPIs(data: ResearchInsightData | null, stats: ProcessingSt
         ? reasons.reduce((sum, r) => sum + ((r as any).preventability ?? (r as any).preventability_score ?? 0), 0) / reasons.length
         : 0);
 
-  // Try multiple field name variants for total cases
   const totalCasesRaw = es?.total_cases_analyzed ?? es?.total_cases ?? es?.cases_analyzed;
 
   return {
