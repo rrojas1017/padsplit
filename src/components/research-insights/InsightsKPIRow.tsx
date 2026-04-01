@@ -61,7 +61,7 @@ export function InsightsKPIRow({ kpis, direction }: InsightsKPIRowProps) {
                 <TooltipProvider>
                   <Tooltip>
                     <TooltipTrigger asChild>
-                      <p className={`text-lg font-bold ${card.color} truncate max-w-[140px]`}>
+                      <p className={`text-sm font-bold ${card.color} line-clamp-2 leading-tight`}>
                         {card.value}
                       </p>
                     </TooltipTrigger>
