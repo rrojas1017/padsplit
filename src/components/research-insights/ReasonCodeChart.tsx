@@ -253,6 +253,7 @@ function AddressabilityDrillDown({ bucket, total, onViewAllMembers, onBack }: {
   }));
 
   return (
+    <>
     <div className="space-y-5">
       <Button variant="ghost" size="sm" className="w-fit gap-1.5 -ml-2" onClick={onBack}>
         <ArrowLeft className="w-4 h-4" /> Back to overview
