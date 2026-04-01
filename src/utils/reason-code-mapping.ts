@@ -52,6 +52,57 @@ export function normalizeAddressability(value: string): 'Addressable' | 'Partial
   return 'Not Addressable';
 }
 
+const SUB_REASON_MAPS: Record<string, [string, string[]][]> = {
+  'Host Negligence / Property Condition': [
+    ['Mold / Pest Infestation', ['mold', 'pest', 'roach', 'mice', 'rat', 'bug', 'bedbug', 'bed bug', 'rodent', 'insect']],
+    ['Maintenance / Repairs Ignored', ['broken', 'repair', 'maintenance', 'fix', 'leak', 'plumbing', 'hvac', 'air condition', 'heat', 'water']],
+    ['Unsanitary / Dirty Conditions', ['dirty', 'filthy', 'clean', 'unsanitary', 'trash', 'garbage', 'smell', 'odor']],
+    ['Host Unresponsive', ['host unresponsive', "host didn't", "host won't", 'host never', 'host refused', "couldn't reach host", 'no response from host', 'landlord']],
+    ['Overcrowding / Illegal Conversion', ['overcrowd', 'too many', 'converted', 'illegal', 'capacity']],
+    ['Eviction by Host', ['notice to vacate', 'kicked out', 'asked to leave', 'evict', 'told to leave']],
+    ['Misrepresentation', ['misrepresent', 'not as advertised', 'false', 'misleading', 'different from', 'not what']],
+  ],
+  'Payment Friction / Financial Hardship': [
+    ['Rent Too High / Increase', ['rent increase', 'too high', 'too expensive', 'rent went up', 'afford', 'price', 'cost', '$1']],
+    ['Late Fees / Collections', ['late fee', 'collection', 'penalty', 'sent to collections']],
+    ['Billing / Payment Issues', ['billing', 'charged', 'overcharge', 'payment issue', 'refund', 'double charge', 'autopay']],
+  ],
+  'Roommate Conflict / Safety Concern': [
+    ['Noise / Cleanliness', ['noise', 'loud', 'dirty roommate', 'messy', 'clean up', 'dishes']],
+    ['Harassment / Theft / Drugs', ['harass', 'theft', 'stole', 'drug', 'smoking', 'alcohol', 'substance']],
+    ['Safety Fears', ['safety', 'unsafe', 'scared', 'threatened', 'assault', 'weapon', 'violent', 'fight']],
+  ],
+  'Communication Breakdown / Support Dissatisfaction': [
+    ['Poor Customer Support', ['support', 'customer service', 'help desk', 'ticket', 'no help']],
+    ['Platform / App Issues', ['app', 'platform', 'website', 'technology', 'glitch', 'bug', 'login']],
+    ['Lack of Communication', ['no communication', 'never heard', 'no response', 'ignored', 'didn\'t respond']],
+  ],
+  'Policy Confusion / Lack of Flexibility': [
+    ['House Rules Disputes', ['house rule', 'guest', 'visitor', 'curfew', 'quiet hours']],
+    ['Lease / Policy Unclear', ['policy', 'lease', 'contract', 'terms', 'rules', 'flexibility']],
+  ],
+  'External Life Event / Positive Move-On': [
+    ['Buying a Home', ['buying', 'purchased', 'own place', 'own apartment', 'homeowner', 'closing']],
+    ['Job Relocation', ['relocat', 'new job', 'job transfer', 'moving for work', 'employment', 'work opportunity']],
+    ['Family / Personal', ['family', 'personal', 'relationship', 'married', 'baby', 'spouse', 'partner', 'child']],
+    ['Found Better Housing', ['found somewhere', 'better place', 'facebook marketplace', 'cheaper', 'better option', 'own space', 'needed space']],
+  ],
+  'Data Error / Invalid Record': [
+    ['Wrong Person / Never Moved', ['wrong person', 'never moved', 'identity', 'not me', 'never lived']],
+    ['Invalid / Incomplete Data', ['invalid', 'incomplete', 'no data', 'blank', 'test']],
+  ],
+};
+
+export function extractSubReason(cluster: string, caseBrief: string): string {
+  const map = SUB_REASON_MAPS[cluster];
+  if (!map || !caseBrief) return cluster;
+  const brief = caseBrief.toLowerCase();
+  for (const [label, keywords] of map) {
+    if (keywords.some(kw => brief.includes(kw))) return label;
+  }
+  return 'Other ' + cluster.split(' / ')[0];
+}
+
 export function mapToCluster(primaryReasonCode: string): string {
   const code = primaryReasonCode.toLowerCase().replace(/[_\-\/]/g, ' ').trim();
 
