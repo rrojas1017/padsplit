@@ -43,18 +43,14 @@ function CenterLabel({ total, label }: { total: number; label?: string }) {
 }
 
 // ── Reason Code Drill-Down ──
-function ReasonDrillDown({ active, total, onCodeClick, onViewAllMembers, onBack, isAdmin }: {
+function ReasonDrillDown({ active, total, onCodeClick, onViewAllMembers, onBack }: {
   active: ClusterData; total: number;
   onCodeClick?: (code: string) => void;
   onViewAllMembers?: (cluster: string) => void;
   onBack: () => void;
-  isAdmin: boolean;
 }) {
   const [memberPreviews, setMemberPreviews] = useState<MemberPreview[]>([]);
   const [membersLoading, setMembersLoading] = useState(false);
-  const [reclassifying, setReclassifying] = useState(false);
-  const [reclassifyProgress, setReclassifyProgress] = useState<string | null>(null);
-  const [showConfirm, setShowConfirm] = useState(false);
 
   useEffect(() => {
     const subReasonNames = active.subReasons
