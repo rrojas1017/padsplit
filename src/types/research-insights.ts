@@ -18,7 +18,7 @@ export interface ResearchInsightRow {
   error_message?: string;
 }
 
-// ── Move-Out Survey Data (existing) ──
+// ── Move-Out Survey Data (matches ACTUAL JSONB structure) ──
 
 export interface ResearchInsightData {
   executive_summary: ExecutiveSummary;
@@ -34,100 +34,199 @@ export interface ResearchInsightData {
   _progress?: InsightProgress;
 }
 
+// ACTUAL shape from the AI-generated JSONB:
+// executive_summary.headline = long paragraph string
+// executive_summary.total_cases = number
+// executive_summary.key_findings = string (paragraph, NOT array)
+// executive_summary.addressable_pct = string like "60-70%"
+// executive_summary.high_regret_pct = string
+// executive_summary.host_related_pct = string
+// executive_summary.payment_related_pct = string
+// executive_summary.life_event_pct = string
+// executive_summary.roommate_related_pct = string
+
 export interface ExecutiveSummary {
-  headline: string;
-  key_findings: string[];
-  recommendations: string[];
+  headline?: string;
+  total_cases?: number;
+  key_findings?: string | string[];
+  addressable_pct?: string | number;
+  high_regret_pct?: string | number;
+  host_related_pct?: string | number;
+  payment_related_pct?: string | number;
+  life_event_pct?: string | number;
+  roommate_related_pct?: string | number;
+  // Legacy fields for backwards compat
+  title?: string;
+  key_finding?: string;
+  period?: string;
+  date_range?: string;
+  recommendation_summary?: string;
+  urgent_recommendation?: string;
+  top_recommendation?: string;
+  urgent_quote?: string;
+  quantified_impact?: string;
   total_cases_analyzed?: number;
   preventable_percent?: number;
   top_reason?: string;
   avg_preventability?: number;
+  avg_preventability_score?: number;
+  preventable_pct?: string | number;
 }
 
+// ACTUAL shape:
+// reason_code_distribution[].reason_group = string
+// reason_code_distribution[].count = string ("High", "Medium-High", "Medium", "Low")
+// reason_code_distribution[].percentage = string ("25-35%", "10-15%")
+// reason_code_distribution[].description = string
 export interface ReasonCodeItem {
-  code: string;
-  count: number;
-  percentage: number;
-  severity?: 'Critical' | 'High' | 'Medium' | 'Low';
+  reason_group?: string;
+  code?: string;
+  category?: string;
+  count: number | string;
+  percentage: number | string;
   description?: string;
-  addressability?: 'Addressable' | 'Partially addressable' | 'Not addressable';
+  severity?: 'Critical' | 'High' | 'Medium' | 'Low';
+  addressability?: string;
   preventability?: number;
-  regrettability?: 'High' | 'Medium' | 'Low';
+  regrettability?: string;
   sub_codes?: string[];
   example_quotes?: string[];
+  booking_ids?: string[];
+  reason_codes_included?: string[];
 }
 
+// ACTUAL shape:
+// issue_clusters[].cluster_name = string (e.g. "P0: Host Misconduct...")
+// issue_clusters[].description = string
+// issue_clusters[].key_quotes = string[]
+// issue_clusters[].recommended_action = string
 export interface IssueCluster {
-  name: string;
-  codes: string[];
-  severity: 'Critical' | 'High' | 'Medium' | 'Low';
-  priority: 'P0' | 'P1' | 'P2' | 'P3';
-  root_cause: string;
-  action: string;
+  cluster_name?: string;
+  name?: string;
+  description?: string;
+  key_quotes?: string[];
+  recommended_action?: string | string[];
+  // Legacy
+  codes?: string[];
+  severity?: string;
+  priority?: string;
+  root_cause?: string;
+  action?: string;
   owner?: string;
-  effort?: 'Low' | 'Medium' | 'High';
+  effort?: string;
   case_count?: number;
   quotes?: string[];
+  supporting_quotes?: string[];
+  representative_quotes?: string[];
+  systemic_root_cause?: string;
+  cluster_description?: string;
+  frequency?: number;
+  preventable_pct?: number;
+  addressable_pct?: number;
+  booking_ids?: string[];
+  reason_codes_included?: string[];
+  recommended_actions?: string[];
 }
 
+// ACTUAL shape:
+// top_actions[].action = string (long text starting with priority)
+// top_actions[].priority = string ("P0", "P1", "P2")
+// top_actions[].quick_win = boolean
 export interface TopAction {
-  rank?: number;
   action: string;
-  impact: string;
-  priority: 'P0' | 'P1' | 'Quick Win';
+  priority: string;
+  quick_win?: boolean;
+  // Legacy fields (may not exist)
+  rank?: number;
+  impact?: string;
   owner?: string;
-  effort?: 'Low' | 'Medium' | 'High';
+  effort?: string;
   cases?: number;
   timeline?: string;
 }
 
 export interface FrictionPoint {
   point: string;
-  severity: 'Critical' | 'High' | 'Medium' | 'Low';
+  severity?: string;
   frequency?: number;
   description?: string;
   impact?: string;
 }
 
+// ACTUAL shape:
+// payment_friction_analysis.summary = string
+// payment_friction_analysis.recommendations = string[]
+// payment_friction_analysis.issues_identified = string[]
 export interface FrictionAnalysis {
-  friction_points: FrictionPoint[];
-  stats?: Record<string, string | number>;
   summary?: string;
-  retention_rate?: number;
-  resolution_rate?: number;
+  recommendations?: string[];
+  issues_identified?: string[];
+  // Legacy
+  friction_points?: FrictionPoint[];
+  key_friction_points?: FrictionPoint[];
+  key_failures?: string[];
+  recommendation?: string;
+  stats?: Record<string, any>;
 }
 
 export interface BlindSpot {
-  title: string;
-  description: string;
-  severity?: 'Critical' | 'High' | 'Medium' | 'Low';
+  blind_spot?: string;
+  title?: string;
+  description?: string;
+  severity?: string;
   recommendation?: string;
 }
 
+// ACTUAL shape:
+// host_accountability_flags[].flag = string
+// host_accountability_flags[].severity = string (e.g. "P0 - Critical, immediate action required.")
 export interface HostAccountabilityFlag {
-  issue: string;
-  priority: 'P0' | 'P1' | 'P2' | 'P3';
+  flag?: string;
+  severity?: string;
+  // Legacy
+  issue?: string;
+  priority?: string;
   description?: string;
   frequency?: number;
   host_type?: string;
   recommendation?: string;
+  issue_pattern?: string;
+  member_count?: number;
+  cases?: number;
+  quotes?: string[];
+  quote?: string;
+  recommended_enforcement?: string;
+  systemic_fix?: string;
 }
 
+// ACTUAL shape:
+// agent_performance_summary.strengths = string[]
+// agent_performance_summary.areas_for_improvement = string[]
+// agent_performance_summary.recommendations = string[]
 export interface AgentPerformanceSummary {
-  strengths: string[];
-  weaknesses: string[];
+  strengths?: string[];
+  areas_for_improvement?: string[];
+  recommendations?: string[];
+  // Legacy
+  weaknesses?: string[];
   coaching_opportunities?: string[];
   top_performers?: string[];
   common_gaps?: string[];
 }
 
+// ACTUAL shape:
+// emerging_patterns[].pattern = string
+// emerging_patterns[].description = string
 export interface EmergingPattern {
   pattern: string;
-  status: 'act' | 'investigate' | 'monitor' | 'watch';
   description?: string;
+  status?: string;
   frequency?: number;
-  trend?: 'increasing' | 'stable' | 'decreasing';
+  trend?: string;
   first_seen?: string;
+  evidence?: string;
+  quote?: string;
+  watch_or_act?: string;
 }
 
 // ── Audience Survey Data (new) ──
@@ -383,61 +482,39 @@ function parseNumericish(val: any): number | null {
   return isNaN(n) ? null : n;
 }
 
-export function deriveKPIs(data: ResearchInsightData | null, stats: ProcessingStats | null) {
-  if (!data) {
-    return {
-      totalCases: stats?.processed_records ?? 0,
-      preventablePercent: 0,
-      topReasonCode: '—',
-      flaggedForReview: stats?.flagged_for_review ?? 0,
-      avgPreventability: 0,
-    };
-  }
+export interface DerivedKPIs {
+  totalCases: number;
+  addressablePct: string;
+  topReasonCode: string;
+  flaggedForReview: number;
+  hostRelatedPct: string;
+}
 
-  const es = data.executive_summary as Record<string, any> | undefined;
-  const reasons = data.reason_code_distribution || [];
-  const addressableCount = reasons.filter(
-    (r) => {
-      const a = (r as any).addressability;
-      return a === 'Addressable' || a === 'Partially addressable' || a === 'addressable' || a === 'partially_addressable';
-    }
-  ).length;
+export function deriveKPIs(data: any | null, stats: ProcessingStats | null): DerivedKPIs {
+  const es = data?.executive_summary as Record<string, any> | undefined;
+  const reasons = data?.reason_code_distribution || [];
 
-  // Preventable % — try multiple field names, handle string ranges like "60-70%"
-  const preventableRaw = parseNumericish(
-    es?.preventable_percent ?? es?.addressable_pct ?? es?.preventable_pct ?? es?.preventability_percent
-  );
-  const preventablePercent = preventableRaw != null
-    ? Math.round(preventableRaw)
-    : (reasons.length > 0 ? Math.round((addressableCount / reasons.length) * 100) : 0);
+  // Total cases — prefer executive_summary.total_cases
+  const totalCasesRaw = parseNumericish(es?.total_cases ?? es?.total_cases_analyzed ?? es?.cases_analyzed);
+  const totalCases = totalCasesRaw != null ? Math.round(totalCasesRaw) : (stats?.processed_records ?? 0);
 
-  // Avg preventability — handle string values and missing fields
-  const avgPrevRaw = parseNumericish(
-    es?.avg_preventability ?? es?.avg_preventability_score ?? es?.average_preventability
-  );
-  const avgPreventability = avgPrevRaw != null
-    ? avgPrevRaw
-    : (reasons.length > 0
-        ? reasons.reduce((sum, r) => {
-            const v = parseNumericish((r as any).preventability ?? (r as any).preventability_score ?? (r as any).avg_preventability);
-            return sum + (v ?? 0);
-          }, 0) / reasons.length
-        : 0);
+  // Addressable % — display as-is since it's a string like "60-70%"
+  const addressablePct = es?.addressable_pct?.toString() || es?.preventable_pct?.toString() || es?.preventable_percent?.toString() || 'N/A';
 
-  const totalCasesRaw = parseNumericish(es?.total_cases_analyzed ?? es?.total_cases ?? es?.cases_analyzed);
+  // Top reason — first item from reason_code_distribution
+  const firstReason = reasons[0];
+  const topReasonCode = firstReason
+    ? (firstReason.reason_group || firstReason.code || firstReason.category || firstReason.reason_code || 'N/A')
+    : (es?.top_reason || 'N/A');
 
-  // Top reason — try code, reason_group, category, reason_code
-  const topReason = reasons[0]
-    ? ((reasons[0] as any).code || (reasons[0] as any).reason_group || (reasons[0] as any).category || (reasons[0] as any).reason_code)
-    : null;
+  // Host related % — display as-is
+  const hostRelatedPct = es?.host_related_pct?.toString() || 'N/A';
 
   return {
-    totalCases: totalCasesRaw != null
-      ? Math.round(totalCasesRaw)
-      : (stats?.processed_records ?? reasons.reduce((sum, r) => sum + (parseNumericish(r.count) ?? 0), 0)),
-    preventablePercent,
-    topReasonCode: topReason ?? es?.top_reason ?? '—',
+    totalCases,
+    addressablePct,
+    topReasonCode,
     flaggedForReview: stats?.flagged_for_review ?? 0,
-    avgPreventability,
+    hostRelatedPct,
   };
 }

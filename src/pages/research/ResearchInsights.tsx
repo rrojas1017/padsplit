@@ -452,14 +452,14 @@ export default function ResearchInsights() {
                 />
               )}
               {reportData.top_actions && (
-                <TopActionsTable data={reportData.top_actions} onExportModal={isAdmin ? openExportModal : undefined} />
+                <TopActionsTable data={reportData.top_actions} />
               )}
             </TabsContent>
 
             {/* TAB 2: Issues & Root Causes */}
             <TabsContent value="issues" className="space-y-6 mt-6">
               {reportData.issue_clusters && (
-                <IssueClustersPanel data={reportData.issue_clusters as any} maxVisible={5} onExportModal={isAdmin ? openExportModal : undefined} />
+                <IssueClustersPanel data={reportData.issue_clusters as any} maxVisible={5} />
               )}
               {reportData.emerging_patterns && (
                 <EmergingPatternsPanel data={reportData.emerging_patterns} maxVisible={5} />
@@ -472,15 +472,15 @@ export default function ResearchInsights() {
             {/* TAB 3: Operations */}
             <TabsContent value="operations" className="space-y-6 mt-6">
               {reportData.host_accountability_flags && (
-                <HostAccountabilityPanel data={reportData.host_accountability_flags} maxVisible={8} onExportModal={isAdmin ? openExportModal : undefined} />
+                <HostAccountabilityPanel data={reportData.host_accountability_flags} maxVisible={8} />
               )}
               {(reportData.payment_friction_analysis || reportData.transfer_friction_analysis) && (
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                   {reportData.payment_friction_analysis && (
-                    <PaymentFrictionCard data={reportData.payment_friction_analysis} onExportModal={isAdmin ? openExportModal : undefined} />
+                    <PaymentFrictionCard data={reportData.payment_friction_analysis} />
                   )}
                   {reportData.transfer_friction_analysis && (
-                    <TransferFrictionCard data={reportData.transfer_friction_analysis} onExportModal={isAdmin ? openExportModal : undefined} />
+                    <TransferFrictionCard data={reportData.transfer_friction_analysis} />
                   )}
                 </div>
               )}

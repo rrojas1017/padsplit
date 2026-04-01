@@ -1,33 +1,21 @@
 import { Card, CardContent } from '@/components/ui/card';
-import { BarChart3, Target, TrendingUp, AlertTriangle, Users } from 'lucide-react';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { BarChart3, Target, TrendingUp, AlertTriangle, Home } from 'lucide-react';
+import type { DerivedKPIs } from '@/types/research-insights';
 
-interface KPIValues {
-  totalCases: number;
-  preventablePercent: number;
-  topReasonCode: string;
-  flaggedForReview: number;
-  avgPreventability: number;
-}
-
-function kpiColor(value: number, redThreshold: number, amberThreshold: number) {
-  if (value >= redThreshold) return 'text-destructive';
-  if (value >= amberThreshold) return 'text-amber-500';
-  return 'text-emerald-500';
-}
-
-export function InsightsKPIRow({ kpis }: { kpis: KPIValues }) {
+export function InsightsKPIRow({ kpis }: { kpis: DerivedKPIs }) {
   const cards = [
     {
       label: 'Total Cases',
-      value: kpis.totalCases > 0 ? kpis.totalCases.toLocaleString() : '—',
+      value: kpis.totalCases > 0 ? kpis.totalCases.toLocaleString() : 'N/A',
       icon: BarChart3,
       color: 'text-primary',
     },
     {
-      label: 'Preventable %',
-      value: kpis.preventablePercent > 0 ? `${kpis.preventablePercent.toFixed(0)}%` : '—',
+      label: 'Addressable %',
+      value: kpis.addressablePct !== 'N/A' ? kpis.addressablePct : 'N/A',
       icon: Target,
-      color: kpis.preventablePercent > 0 ? kpiColor(kpis.preventablePercent, 50, 30) : 'text-muted-foreground',
+      color: 'text-emerald-500',
     },
     {
       label: 'Top Reason',
@@ -43,10 +31,10 @@ export function InsightsKPIRow({ kpis }: { kpis: KPIValues }) {
       color: kpis.flaggedForReview > 0 ? 'text-amber-500' : 'text-emerald-500',
     },
     {
-      label: 'Avg Preventability',
-      value: kpis.avgPreventability > 0 ? kpis.avgPreventability.toFixed(1) : '—',
-      icon: Users,
-      color: kpiColor(kpis.avgPreventability, 7, 4),
+      label: 'Host Related',
+      value: kpis.hostRelatedPct !== 'N/A' ? kpis.hostRelatedPct : 'N/A',
+      icon: Home,
+      color: 'text-destructive',
     },
   ];
 
@@ -55,13 +43,28 @@ export function InsightsKPIRow({ kpis }: { kpis: KPIValues }) {
       {cards.map((card) => (
         <Card key={card.label} className="shadow-sm">
           <CardContent className="p-4 flex items-center gap-3">
-            <div className={`w-9 h-9 rounded-full bg-muted flex items-center justify-center flex-shrink-0`}>
+            <div className="w-9 h-9 rounded-full bg-muted flex items-center justify-center flex-shrink-0">
               <card.icon className={`w-4 h-4 ${card.color}`} />
             </div>
             <div className="min-w-0">
-              <p className={`text-lg font-bold ${card.color} ${card.truncate ? 'truncate' : ''}`}>
-                {card.value}
-              </p>
+              {card.truncate ? (
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <p className={`text-lg font-bold ${card.color} truncate max-w-[140px]`}>
+                        {card.value}
+                      </p>
+                    </TooltipTrigger>
+                    <TooltipContent side="bottom" className="max-w-xs">
+                      <p className="text-sm">{card.value}</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              ) : (
+                <p className={`text-lg font-bold ${card.color}`}>
+                  {card.value}
+                </p>
+              )}
               <p className="text-xs text-muted-foreground">{card.label}</p>
             </div>
           </CardContent>
