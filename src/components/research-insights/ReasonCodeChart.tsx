@@ -138,6 +138,9 @@ export function ReasonCodeChart({ data, onCodeClick }: ReasonCodeChartProps) {
     'hsl(262, 83%, 58%)',
   ];
 
+  const [selectedCount, setSelectedCount] = useState<number | undefined>();
+  const [selectedPct, setSelectedPct] = useState<number | undefined>();
+
   const handleReasonClick = (item: typeof displayData[0], colorIndex: number) => {
     if (onCodeClick) {
       onCodeClick(item.name);
@@ -148,6 +151,8 @@ export function ReasonCodeChart({ data, onCodeClick }: ReasonCodeChartProps) {
     setSelectedBookingIds(item.bookingIds);
     setSelectedIncludedCodes(item.includedCodes);
     setSelectedDescription(item.details);
+    setSelectedCount(item.count);
+    setSelectedPct(item.pct);
   };
 
   return (
