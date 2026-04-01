@@ -234,6 +234,7 @@ function AddressabilityDrillDown({ bucket, total, onViewAllMembers, onBack }: {
       setMemberPreviews(matching.slice(0, 5).map(r => {
         const b = r.bookings as any;
         return {
+          transcriptionId: r.id,
           memberName: b?.member_name || 'Unknown',
           phone: b?.contact_phone || '—',
           subReason: (r.research_classification as any)?.primary_reason_code || '—',
