@@ -54,9 +54,11 @@ export function downloadMembersCSV(members: ExportMember[], filename: string) {
 function mapRow(row: any): ExportMember {
   const b = row.bookings as any;
   const cls = row.research_classification as any;
+  const rawName = b?.member_name || 'Unknown';
+  const memberName = rawName.startsWith('API Submission - ') ? rawName.replace('API Submission - ', '') : rawName;
   return {
     bookingId: row.booking_id || '',
-    memberName: b?.member_name || 'Unknown',
+    memberName,
     phone: b?.contact_phone || '',
     email: b?.contact_email || '',
     primaryReasonCode: cls?.primary_reason_code || cls?.reason_code || '',
