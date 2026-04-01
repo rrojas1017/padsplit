@@ -26,10 +26,10 @@ export function AudienceSurveyDashboard({ data }: Props) {
   const setTab = (tab: string) => setSearchParams({ tab }, { replace: true });
 
   const attentionTriggers = data.content_preferences?.stop_scrolling_triggers?.map(t => ({
-    item: t.trigger, count: t.count, percentage: 0,
+    label: t.trigger, count: t.count, percentage: 0,
   })) ?? [];
   const clickMotivators = data.content_preferences?.click_motivations?.map(m => ({
-    item: m.motivation, count: m.count, percentage: 0,
+    label: m.motivation, count: m.count, percentage: 0,
   })) ?? [];
 
   // Compute percentages relative to max
