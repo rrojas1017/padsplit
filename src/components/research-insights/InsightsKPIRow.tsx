@@ -16,10 +16,7 @@ export function InsightsKPIRow({ kpis, direction }: InsightsKPIRowProps) {
       value: kpis.totalCases > 0 ? kpis.totalCases.toLocaleString() : 'N/A',
       icon: BarChart3,
       color: 'text-primary',
-      trend: direction ? {
-        dir: direction.totalCases,
-        delta: direction.totalCasesDelta,
-      } : null,
+      trend: direction ? { dir: direction.totalCases, delta: direction.totalCasesDelta } : null,
     },
     {
       label: 'Addressable %',
@@ -61,7 +58,7 @@ export function InsightsKPIRow({ kpis, direction }: InsightsKPIRowProps) {
                 <TooltipProvider>
                   <Tooltip>
                     <TooltipTrigger asChild>
-                      <p className={`text-sm font-bold ${card.color} line-clamp-2 leading-tight`}>
+                      <p className={`text-sm font-bold ${card.color} truncate max-w-[140px] leading-tight`}>
                         {card.value}
                       </p>
                     </TooltipTrigger>
