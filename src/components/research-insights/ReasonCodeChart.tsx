@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -228,6 +228,7 @@ function AddressabilityDrillDown({ bucket, total, onViewAllMembers, onBack }: {
   const [memberPreviews, setMemberPreviews] = useState<MemberPreview[]>([]);
   const [membersLoading, setMembersLoading] = useState(false);
   const [detailId, setDetailId] = useState<string | null>(null);
+  const [expandedCluster, setExpandedCluster] = useState<string | null>(null);
 
   useEffect(() => {
     async function fetchMembers() {
@@ -307,19 +308,37 @@ function AddressabilityDrillDown({ bucket, total, onViewAllMembers, onBack }: {
             </TableHeader>
             <TableBody>
               {bucket.reasonBreakdown.map((r, i) => (
-                <TableRow key={i}>
-                  <TableCell className="flex items-center gap-2">
-                    <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: r.color }} />
-                    <span className="text-sm">{r.cluster}</span>
-                  </TableCell>
-                  <TableCell className="text-right font-medium">{r.count}</TableCell>
-                  <TableCell className="text-right text-muted-foreground">
-                    {bucket.count > 0 ? Math.round((r.count / bucket.count) * 100) : 0}%
-                  </TableCell>
-                  <TableCell className="text-right text-muted-foreground">
-                    {r.avgScore > 0 ? `${r.avgScore} / 10` : '—'}
-                  </TableCell>
-                </TableRow>
+                <React.Fragment key={i}>
+                  <TableRow
+                    className="cursor-pointer hover:bg-muted/50 transition-colors"
+                    onClick={() => setExpandedCluster(expandedCluster === r.cluster ? null : r.cluster)}
+                  >
+                    <TableCell className="flex items-center gap-2">
+                      <ChevronRight className={`w-3.5 h-3.5 text-muted-foreground transition-transform ${expandedCluster === r.cluster ? 'rotate-90' : ''}`} />
+                      <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: r.color }} />
+                      <span className="text-sm font-medium">{r.cluster}</span>
+                    </TableCell>
+                    <TableCell className="text-right font-medium">{r.count}</TableCell>
+                    <TableCell className="text-right text-muted-foreground">
+                      {bucket.count > 0 ? Math.round((r.count / bucket.count) * 100) : 0}%
+                    </TableCell>
+                    <TableCell className="text-right text-muted-foreground">
+                      {r.avgScore > 0 ? `${r.avgScore} / 10` : '—'}
+                    </TableCell>
+                  </TableRow>
+                  {expandedCluster === r.cluster && r.subReasons && r.subReasons.length > 0 && (
+                    r.subReasons.map((sub, si) => (
+                      <TableRow key={`sub-${si}`} className="bg-muted/30">
+                        <TableCell className="pl-12 text-sm text-muted-foreground">{sub.name}</TableCell>
+                        <TableCell className="text-right text-sm">{sub.count}</TableCell>
+                        <TableCell className="text-right text-sm text-muted-foreground">
+                          {r.count > 0 ? Math.round((sub.count / r.count) * 100) : 0}%
+                        </TableCell>
+                        <TableCell></TableCell>
+                      </TableRow>
+                    ))
+                  )}
+                </React.Fragment>
               ))}
             </TableBody>
           </Table>
