@@ -126,6 +126,30 @@ export default function ResearchInsights() {
     return () => clearInterval(interval);
   }, [isGenerating, generationStartTime]);
 
+  // Auto-trigger reclassification of "Other" records (once per 24h, silent)
+  useEffect(() => {
+    const runOnce = async () => {
+      const lastRun = localStorage.getItem('reclassify_last_triggered');
+      const now = Date.now();
+      if (lastRun && now - parseInt(lastRun) < 86400000) return;
+
+      const { count } = await supabase
+        .from('booking_transcriptions')
+        .select('id', { count: 'exact', head: true })
+        .eq('research_campaign_type', 'move_out_survey')
+        .not('research_classification', 'is', null)
+        .is('research_audit', null)
+        .or('research_classification->>primary_reason_code.ilike.%other%,research_classification->>primary_reason_code.ilike.%unspecified%,research_classification->>primary_reason_code.ilike.%unknown%,research_classification->>primary_reason_code.ilike.%general%');
+
+      if (count && count > 0) {
+        await supabase.functions.invoke('reclassify-records');
+        localStorage.setItem('reclassify_last_triggered', now.toString());
+        console.log(`Reclassification triggered for ${count} records`);
+      }
+    };
+    runOnce();
+  }, []);
+
   useEffect(() => {
     const init = async () => {
       const existingId = await checkExistingAnalysis();
