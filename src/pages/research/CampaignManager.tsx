@@ -8,7 +8,8 @@ import { Progress } from '@/components/ui/progress';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
-import { Plus, Search, Pencil, Trash2, Users, Target, CalendarRange, FileText } from 'lucide-react';
+import { Plus, Search, Pencil, Trash2, Users, Target, CalendarRange, FileText, Copy } from 'lucide-react';
+import { toast } from 'sonner';
 import { useResearchCampaigns, type ResearchCampaign, type CampaignInput } from '@/hooks/useResearchCampaigns';
 import { useResearchScripts } from '@/hooks/useResearchScripts';
 import { ResearchCampaignDialog } from '@/components/research/ResearchCampaignDialog';
@@ -139,6 +140,19 @@ export default function CampaignManager() {
                       <div className="flex items-center gap-1.5 mt-1">
                         <FileText className="w-3 h-3 text-muted-foreground shrink-0" />
                         <span className="text-xs text-muted-foreground truncate">{c.script_name}</span>
+                      </div>
+                      <div className="flex items-center gap-1 mt-0.5">
+                        <span className="font-mono text-[10px] text-muted-foreground">ID: {c.id.slice(0, 8)}…</span>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            navigator.clipboard.writeText(c.id);
+                            toast.success('Campaign ID copied');
+                          }}
+                          className="text-muted-foreground hover:text-foreground transition-colors"
+                        >
+                          <Copy className="w-2.5 h-2.5" />
+                        </button>
                       </div>
                     </div>
                     <Badge className={`shrink-0 text-xs ${STATUS_COLORS[c.status] || ''}`}>
