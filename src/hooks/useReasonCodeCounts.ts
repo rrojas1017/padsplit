@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
-import { mapToCluster, CLUSTER_COLORS, CLUSTER_ORDER } from '@/utils/reason-code-mapping';
+import { mapToCluster, extractSubReason, CLUSTER_COLORS, CLUSTER_ORDER } from '@/utils/reason-code-mapping';
 
 export interface SubReason {
   name: string;
@@ -42,10 +42,8 @@ export function useReasonCodeCounts() {
         if (!reasonCode || typeof reasonCode !== 'string') continue;
 
         const cluster = mapToCluster(reasonCode);
-        // Use reason_detail for granular sub-reasons, fall back to primary_reason_code
-        const subKey = (cls?.reason_detail && typeof cls.reason_detail === 'string' && cls.reason_detail.trim())
-          ? cls.reason_detail.trim()
-          : reasonCode;
+        const caseBrief = (cls?.case_brief && typeof cls.case_brief === 'string') ? cls.case_brief : '';
+        const subKey = extractSubReason(cluster, caseBrief);
         if (!clusterMap[cluster]) clusterMap[cluster] = {};
         clusterMap[cluster][subKey] = (clusterMap[cluster][subKey] || 0) + 1;
       }
