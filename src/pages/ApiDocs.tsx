@@ -50,8 +50,18 @@ export default function ApiDocs() {
 
         <div className="mt-8">
           <h3 className="text-xs font-bold uppercase tracking-[0.15em] text-muted-foreground mb-3">Base URL</h3>
-          <CodeBlock title="Base URL">{`https://api.padsplit.tools/functions/v1`}</CodeBlock>
+          <CodeBlock title="Primary">{`https://padsplit.tools/api`}</CodeBlock>
           <p className="text-xs text-muted-foreground mt-2">All endpoint paths are relative to this base URL.</p>
+
+          <div className="mt-4 rounded-xl border border-border bg-card p-4">
+            <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground mb-2">Alternative Endpoints</p>
+            <div className="space-y-1.5">
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground bg-muted px-1.5 py-0.5 rounded">Legacy</span>
+                <code className="text-xs font-mono text-muted-foreground">https://api.padsplit.tools/functions/v1</code>
+              </div>
+            </div>
+          </div>
         </div>
 
         <div className="mt-6 grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -123,7 +133,7 @@ X-Client-Secret: sk_your_client_secret_here`}</CodeBlock>
           {/* Example Request */}
           <h3 className="text-xs font-bold uppercase tracking-[0.15em] text-muted-foreground mt-8 mb-3">Example Request</h3>
           <CodeBlock language="bash">{`curl -X POST \\
-  https://api.padsplit.tools/functions/v1/submit-conversation-audio \\
+  https://padsplit.tools/api/submit-conversation-audio \\
   -H "Content-Type: application/json" \\
   -H "X-Client-ID: app_your_client_id" \\
   -H "X-Client-Secret: sk_your_secret" \\
