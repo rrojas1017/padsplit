@@ -108,6 +108,11 @@ export function ResearchCampaignDialog({ open, onOpenChange, campaign, scripts, 
           <div className="space-y-2">
             <Label>Campaign Name *</Label>
             <Input value={name} onChange={e => setName(e.target.value)} placeholder="e.g., January NPS Check" />
+            {name.trim() && (
+              <p className="text-[11px] text-muted-foreground font-mono">
+                API campaign key: <span className="text-foreground">{name.trim().replace(/\s+/g, '-')}</span>
+              </p>
+            )}
           </div>
 
           {/* Script selector */}
