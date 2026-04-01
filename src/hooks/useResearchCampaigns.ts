@@ -5,6 +5,7 @@ import { toast } from 'sonner';
 export interface ResearchCampaign {
   id: string;
   name: string;
+  campaign_key: string;
   script_id: string;
   script_name?: string;
   status: 'draft' | 'active' | 'paused' | 'completed';
