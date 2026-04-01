@@ -4,9 +4,8 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Home, Download, ChevronDown, ChevronRight, Users } from 'lucide-react';
-import { exportByKeywords } from '@/utils/researchExport';
 import { supabase } from '@/integrations/supabase/client';
-import { toast } from 'sonner';
+import type { ExportFilter } from '@/hooks/useExportMembers';
 
 interface HostFlag {
   flag?: string;
