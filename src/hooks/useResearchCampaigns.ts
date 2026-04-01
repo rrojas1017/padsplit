@@ -76,6 +76,7 @@ export function useResearchCampaigns() {
     const campaignsList = (data || []).map((c: any) => ({
       id: c.id,
       name: c.name,
+      campaign_key: c.campaign_key || c.name?.trim().replace(/\s+/g, '-') || '',
       script_id: c.script_id,
       script_name: c.research_scripts?.name || 'Unknown Script',
       status: c.status as ResearchCampaign['status'],
