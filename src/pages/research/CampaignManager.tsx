@@ -142,12 +142,12 @@ export default function CampaignManager() {
                         <span className="text-xs text-muted-foreground truncate">{c.script_name}</span>
                       </div>
                       <div className="flex items-center gap-1 mt-0.5">
-                        <span className="font-mono text-[10px] text-muted-foreground">ID: {c.id.slice(0, 8)}…</span>
+                        <span className="font-mono text-[10px] text-muted-foreground" title={c.id}>campaign_id: {c.id}</span>
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
                             navigator.clipboard.writeText(c.id);
-                            toast.success('Campaign ID copied');
+                            toast.success('campaign_id copied to clipboard');
                           }}
                           className="text-muted-foreground hover:text-foreground transition-colors"
                         >
