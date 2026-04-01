@@ -1,0 +1,1 @@
+ALTER TABLE public.booking_transcriptions ADD COLUMN IF NOT EXISTS research_audit JSONB DEFAULT NULL;

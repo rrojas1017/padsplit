@@ -493,6 +493,7 @@ export type Database = {
           qa_coaching_audio_url: string | null
           qa_coaching_quiz_passed_at: string | null
           qa_scores: Json | null
+          research_audit: Json | null
           research_campaign_type: string | null
           research_classification: Json | null
           research_extraction: Json | null
@@ -525,6 +526,7 @@ export type Database = {
           qa_coaching_audio_url?: string | null
           qa_coaching_quiz_passed_at?: string | null
           qa_scores?: Json | null
+          research_audit?: Json | null
           research_campaign_type?: string | null
           research_classification?: Json | null
           research_extraction?: Json | null
@@ -557,6 +559,7 @@ export type Database = {
           qa_coaching_audio_url?: string | null
           qa_coaching_quiz_passed_at?: string | null
           qa_scores?: Json | null
+          research_audit?: Json | null
           research_campaign_type?: string | null
           research_classification?: Json | null
           research_extraction?: Json | null
