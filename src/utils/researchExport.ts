@@ -71,7 +71,7 @@ export async function exportByBookingIds(bookingIds: string[], filename: string)
   if (!bookingIds.length) return;
   const { data, error } = await supabase
     .from('booking_transcriptions')
-    .select('booking_id, research_classification, bookings!inner(member_name, booking_date, contact_phone, contact_email)')
+    .select('booking_id, research_classification, research_extraction, bookings!inner(member_name, booking_date, contact_phone, contact_email)')
     .in('booking_id', bookingIds);
   if (error) throw error;
   downloadCSV(filename, (data || []).map(mapRow));
