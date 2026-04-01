@@ -93,20 +93,26 @@ export function AudienceSurveyDashboard({ data }: Props) {
           {(attentionTriggers.length > 0 || clickMotivators.length > 0) && (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               {attentionTriggers.length > 0 && (
-                <RankedItemsTable
-                  title="Attention Triggers"
-                  subtitle="What makes members stop scrolling"
-                  items={attentionTriggers}
-                  barColor="hsl(var(--primary))"
-                />
+                <Card className="shadow-sm">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-base">Attention Triggers</CardTitle>
+                    <p className="text-xs text-muted-foreground">What makes members stop scrolling</p>
+                  </CardHeader>
+                  <CardContent>
+                    <RankedItemsTable items={attentionTriggers} barColor="hsl(var(--primary))" />
+                  </CardContent>
+                </Card>
               )}
               {clickMotivators.length > 0 && (
-                <RankedItemsTable
-                  title="Click Motivators"
-                  subtitle="What drives members to click"
-                  items={clickMotivators}
-                  barColor="hsl(var(--accent-foreground))"
-                />
+                <Card className="shadow-sm">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-base">Click Motivators</CardTitle>
+                    <p className="text-xs text-muted-foreground">What drives members to click</p>
+                  </CardHeader>
+                  <CardContent>
+                    <RankedItemsTable items={clickMotivators} barColor="hsl(var(--accent-foreground))" />
+                  </CardContent>
+                </Card>
               )}
             </div>
           )}
