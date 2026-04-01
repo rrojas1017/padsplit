@@ -1,12 +1,18 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
-import { mapToCluster, normalizeAddressability, ADDRESSABILITY_COLORS, ADDRESSABILITY_ORDER, CLUSTER_COLORS } from '@/utils/reason-code-mapping';
+import { mapToCluster, extractSubReason, normalizeAddressability, ADDRESSABILITY_COLORS, ADDRESSABILITY_ORDER, CLUSTER_COLORS } from '@/utils/reason-code-mapping';
+
+export interface SubReasonInBucket {
+  name: string;
+  count: number;
+}
 
 export interface ReasonInBucket {
   cluster: string;
   count: number;
   avgScore: number;
   color: string;
+  subReasons: SubReasonInBucket[];
 }
 
 export interface AddressabilityBucket {
