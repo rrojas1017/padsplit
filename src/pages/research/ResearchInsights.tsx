@@ -459,7 +459,7 @@ export default function ResearchInsights() {
             {/* TAB 2: Issues & Root Causes */}
             <TabsContent value="issues" className="space-y-6 mt-6">
               {reportData.issue_clusters && (
-                <IssueClustersPanel data={reportData.issue_clusters as any} maxVisible={5} onExportModal={isAdmin ? openExportModal : undefined} />
+                <IssueClustersPanel data={reportData.issue_clusters as any} maxVisible={5} />
               )}
               {reportData.emerging_patterns && (
                 <EmergingPatternsPanel data={reportData.emerging_patterns} maxVisible={5} />
