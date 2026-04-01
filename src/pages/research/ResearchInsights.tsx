@@ -183,8 +183,8 @@ export default function ResearchInsights() {
   const kpis = !isAudienceSurvey ? deriveKPIs(reportData, mappedStats) : null;
 
   const subtitle = isAudienceSurvey
-    ? 'AI-processed findings from audience survey research'
-    : 'AI-processed findings from move-out research';
+    ? 'Marketing research insights from audience survey campaigns'
+    : 'Member churn analysis from move-out survey campaigns';
 
   return (
     <DashboardLayout title="Research Insights" subtitle={subtitle}>
