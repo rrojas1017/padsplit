@@ -620,15 +620,24 @@ Deno.serve(async (req) => {
 
     if (campaignType === 'audience_survey') {
       // ── AUDIENCE SURVEY MODE ──
-      const model = 'google/gemini-2.5-flash';
-      const temperature = 0.2;
 
-      console.log(`[Research] Running AUDIENCE SURVEY prompt for ${bookingId}`);
+      // Check for custom audience survey prompt in research_prompts table
+      const { data: audiencePrompts } = await supabase
+        .from('research_prompts')
+        .select('prompt_key, prompt_text, temperature, model')
+        .eq('campaign_type', 'audience_survey');
+
+      const customAudiencePrompt = audiencePrompts?.find((p: any) => p.prompt_key === 'merged' || p.prompt_key === 'audience_survey');
+      const systemPrompt = customAudiencePrompt?.prompt_text || AUDIENCE_SURVEY_PROMPT;
+      const model = customAudiencePrompt?.model || 'google/gemini-2.5-flash';
+      const temperature = Number(customAudiencePrompt?.temperature) || 0.2;
+
+      console.log(`[Research] Running AUDIENCE SURVEY prompt (${model}${customAudiencePrompt ? ', custom' : ', default'}) for ${bookingId}`);
       const result = await callLovableAI(
         lovableApiKey,
         model,
         temperature,
-        AUDIENCE_SURVEY_PROMPT,
+        systemPrompt,
         `Here is the transcript to analyze:\n\n${transcription.call_transcription}`
       );
 
@@ -637,7 +646,7 @@ Deno.serve(async (req) => {
         lovableApiKey,
         model,
         temperature,
-        AUDIENCE_SURVEY_PROMPT,
+        systemPrompt,
         `Here is the transcript to analyze:\n\n${transcription.call_transcription}`
       );
 
@@ -653,17 +662,18 @@ Deno.serve(async (req) => {
         booking_id: bookingId,
         input_tokens: result.inputTokens,
         output_tokens: result.outputTokens,
-        metadata: { model, prompt: 'audience_survey', campaign_type: campaignType },
+        metadata: { model, prompt: customAudiencePrompt ? 'custom_audience' : 'audience_survey', campaign_type: campaignType },
         is_internal: false,
       });
 
     } else {
       // ── MOVE-OUT SURVEY MODE (existing logic) ──
 
-      // Fetch custom prompts from research_prompts table
+      // Fetch custom prompts from research_prompts table, filtered by campaign_type
       const { data: prompts } = await supabase
         .from('research_prompts')
-        .select('prompt_key, prompt_text, temperature, model');
+        .select('prompt_key, prompt_text, temperature, model')
+        .or('campaign_type.eq.move_out_survey,campaign_type.is.null');
 
       const mergedPromptRow = prompts?.find((p: any) => p.prompt_key === 'merged');
       const extractionPromptRow = prompts?.find((p: any) => p.prompt_key === 'extraction');
