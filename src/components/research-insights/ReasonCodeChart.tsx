@@ -349,65 +349,10 @@ export function ReasonCodeChart({ data, onCodeClick, onViewAllMembers }: ReasonC
   const [expandedCluster, setExpandedCluster] = useState<string | null>(null);
   const [expandedBucket, setExpandedBucket] = useState<string | null>(null);
 
-  const { isAdmin } = useIsAdmin();
 
-  // "Other" % warning + non-standard codes
+  // "Other" % warning
   const otherCluster = clusters.find(c => c.name === 'Other / Unspecified');
   const otherPct = total > 0 && otherCluster ? Math.round((otherCluster.count / total) * 100) : 0;
-
-  // Count all non-standard codes (not just "Other" cluster)
-  const nonStandardCount = clusters.reduce((sum, c) => {
-    if (c.name === 'Other / Unspecified') return sum + c.count;
-    return sum;
-  }, 0);
-
-  const [reclassifying, setReclassifying] = useState(false);
-  const [showReclassifyConfirm, setShowReclassifyConfirm] = useState(false);
-  const [reclassifyPollTimer, setReclassifyPollTimer] = useState<ReturnType<typeof setInterval> | null>(null);
-
-  const handleRunReclassification = async () => {
-    setShowReclassifyConfirm(false);
-    setReclassifying(true);
-    try {
-      const { error } = await supabase.functions.invoke('reclassify-records', {
-        body: {},
-      });
-      if (error) throw error;
-      toast.info('Reclassification started — processing in background');
-
-      // Poll every 10s to check completion
-      const timer = setInterval(async () => {
-        const { data: checkData } = await supabase
-          .from('booking_transcriptions')
-          .select('id', { count: 'exact', head: true })
-          .eq('research_campaign_type', 'move_out_survey')
-          .not('research_classification', 'is', null)
-          .is('research_audit', null)
-          .or('research_classification->>primary_reason_code.ilike.%other%,research_classification->>primary_reason_code.ilike.%unspecified%,research_classification->>primary_reason_code.ilike.%unknown%,research_classification->>primary_reason_code.ilike.%general%');
-
-        const remaining = (checkData as any)?.length ?? 0;
-        if (remaining === 0) {
-          clearInterval(timer);
-          setReclassifying(false);
-          setReclassifyPollTimer(null);
-          toast.success('Reclassification complete — all records updated');
-          window.location.reload();
-        }
-      }, 10000);
-      setReclassifyPollTimer(timer);
-    } catch (err) {
-      console.error('Reclassify error:', err);
-      toast.error('Reclassification failed. Check console for details.');
-      setReclassifying(false);
-    }
-  };
-
-  // Cleanup poll timer
-  useEffect(() => {
-    return () => {
-      if (reclassifyPollTimer) clearInterval(reclassifyPollTimer);
-    };
-  }, [reclassifyPollTimer]);
 
   // Match report descriptions to clusters
   const descriptions: Record<string, string> = {};
