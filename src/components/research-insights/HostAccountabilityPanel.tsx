@@ -71,11 +71,10 @@ function getKeywords(title: string): string[] {
   return (title || '').toLowerCase().replace(/[^a-z0-9\s]/g, '').split(/\s+/).filter(w => w.length > 3);
 }
 
-function FlagRow({ item, rawItem }: { item: HostFlag; rawItem: any }) {
+function FlagRow({ item, rawItem, onExportModal }: { item: HostFlag; rawItem: any; onExportModal?: (filter: ExportFilter, title: string, filename: string) => void }) {
   const [open, setOpen] = useState(false);
   const [members, setMembers] = useState<AffectedMember[]>([]);
   const [loadingMembers, setLoadingMembers] = useState(false);
-  const [exporting, setExporting] = useState(false);
 
   const title = item.flag || item.issue_pattern || '';
   const rawText = typeof rawItem === 'string' ? rawItem : title;
