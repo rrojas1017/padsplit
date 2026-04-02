@@ -5,7 +5,7 @@ import { useAgents } from '@/contexts/AgentsContext';
 import { useBookings } from '@/contexts/BookingsContext';
 import { useReportsData, ReportsFilters, ReportsPagination, ReportsSorting, SortColumn, SortDirection } from '@/hooks/useReportsData';
 import { Button } from '@/components/ui/button';
-import { Download, Search, PlusCircle, Pencil, ChevronDown, Building2, User, MessageSquare, Tag, CheckCircle, RotateCcw, ArrowUp, ArrowDown, ArrowUpDown, X, ExternalLink, Phone, UserCircle, Headphones, FileText, Loader2, MoreHorizontal, Clock, CalendarX, XCircle, Ban, AlertTriangle, Package, FlaskConical, ShieldAlert, DollarSign, Timer } from 'lucide-react';
+import { Download, Search, PlusCircle, Pencil, ChevronDown, Building2, User, MessageSquare, Tag, CheckCircle, RotateCcw, ArrowUp, ArrowDown, ArrowUpDown, X, ExternalLink, Phone, UserCircle, Headphones, FileText, Loader2, MoreHorizontal, Clock, CalendarX, XCircle, Ban, AlertTriangle, Package, FlaskConical, ShieldAlert, DollarSign, Timer, Video } from 'lucide-react';
 import { ContactProfileHoverCard } from '@/components/reports/ContactProfileHoverCard';
 import { FollowUpPriorityBadge } from '@/components/reports/FollowUpPriorityBadge';
 import { calculateFollowUpPriority } from '@/utils/followUpPriority';
@@ -303,6 +303,7 @@ export default function Reports() {
         'Contact Email',
         'Duration',
         'Progress',
+        'Video Interest',
         'Agent',
         'Market City',
         'Market State',
@@ -317,6 +318,7 @@ export default function Reports() {
         booking.contactEmail ? (shouldMask ? maskEmail(booking.contactEmail) : booking.contactEmail) : '',
         formatDuration(booking.callDurationSeconds),
         booking.questionsTotal ? `${booking.questionsAnswered || 0}/${booking.questionsTotal}` : '',
+        booking.researchCampaignType === 'audience_survey' ? (booking.videoTestimonialInterest === true ? 'Yes' : booking.videoTestimonialInterest === false ? 'No' : '') : '',
         getAgentName(agents, booking.agentId),
         booking.marketCity || '',
         booking.marketState || '',
@@ -959,6 +961,9 @@ export default function Reports() {
                     <th className="text-left py-3 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Email</th>
                     <th className="text-left py-3 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Duration</th>
                     <th className="text-left py-3 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Progress</th>
+                    <th className="text-left py-3 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                      <div className="flex items-center gap-1"><Video className="h-3.5 w-3.5" />Video</div>
+                    </th>
                     <th className="text-left py-3 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Agent</th>
                     <SortableHeader column="market" label="Market" />
                     <th className="text-left py-3 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Transcription</th>
@@ -1147,6 +1152,20 @@ export default function Reports() {
                         </div>
                       ) : (
                         <span className="text-muted-foreground text-xs">—</span>
+                      )}
+                    </td>
+                    {/* Video Testimonial Interest */}
+                    <td className="py-3 px-4 text-sm text-center">
+                      {booking.researchCampaignType === 'audience_survey' ? (
+                        booking.videoTestimonialInterest === true ? (
+                          <CheckCircle className="h-4 w-4 text-green-500 mx-auto" />
+                        ) : booking.videoTestimonialInterest === false ? (
+                          <XCircle className="h-4 w-4 text-red-400 mx-auto" />
+                        ) : (
+                          <span className="text-muted-foreground">—</span>
+                        )
+                      ) : (
+                        <span className="text-muted-foreground">—</span>
                       )}
                     </td>
                     {/* Agent */}
