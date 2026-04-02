@@ -662,7 +662,44 @@ export default function Reports() {
           </DropdownMenuContent>
         </DropdownMenu>
 
-        {/* Status Filter — bookings only */}
+        {/* Campaign Type Filter — research only */}
+        {isResearch && (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant={campaignTypeFilter !== 'all' ? 'default' : 'outline'} className="gap-2">
+                <FlaskConical className="w-4 h-4" />
+                {campaignTypeFilter === 'all' ? 'All Campaigns' : campaignTypeFilter === 'move_out_survey' ? 'Move-Out Survey' : 'Audience Survey'}
+                <ChevronDown className="w-4 h-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="w-56">
+              <DropdownMenuItem
+                onClick={() => setCampaignTypeFilter('all')}
+                className={campaignTypeFilter === 'all' ? 'bg-accent/20' : ''}
+              >
+                All Campaigns
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={() => setCampaignTypeFilter('move_out_survey')}
+                className={campaignTypeFilter === 'move_out_survey' ? 'bg-accent/20' : ''}
+              >
+                <span className="flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-purple-500"></span>
+                  Move-Out Survey
+                </span>
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={() => setCampaignTypeFilter('audience_survey')}
+                className={campaignTypeFilter === 'audience_survey' ? 'bg-accent/20' : ''}
+              >
+                <span className="flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-blue-500"></span>
+                  Audience Survey
+                </span>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
         {!isResearch && (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
