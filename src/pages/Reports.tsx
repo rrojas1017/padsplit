@@ -142,6 +142,7 @@ export default function Reports() {
   const [rebookingFilter, setRebookingFilter] = useState<'all' | 'new' | 'rebooking'>('all');
   const [conversationFilter, setConversationFilter] = useState<'all' | 'valid' | 'no_conversation'>('all');
   const [issueFilter, setIssueFilter] = useState<string[]>([]);
+  const [campaignTypeFilter, setCampaignTypeFilter] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
 
   // Sorting (primary only for server-side)
@@ -164,6 +165,7 @@ export default function Reports() {
     setRebookingFilter('all');
     setConversationFilter('all');
     setImportBatchFilter('all');
+    setCampaignTypeFilter('all');
     setCurrentPage(1);
   };
 
@@ -181,8 +183,9 @@ export default function Reports() {
     rebookingFilter,
     conversationFilter,
     issueFilter,
+    campaignTypeFilter,
     searchQuery,
-  }), [recordDateRange, moveInDateRange, importBatchFilter, recordTypeFilter, siteFilter, statusFilter, typeFilter, methodFilter, agentFilter, rebookingFilter, conversationFilter, issueFilter, searchQuery]);
+  }), [recordDateRange, moveInDateRange, importBatchFilter, recordTypeFilter, siteFilter, statusFilter, typeFilter, methodFilter, agentFilter, rebookingFilter, conversationFilter, issueFilter, campaignTypeFilter, searchQuery]);
 
   const pagination: ReportsPagination = useMemo(() => ({
     page: currentPage,
@@ -228,7 +231,7 @@ export default function Reports() {
     siteFilter !== 'all' || statusFilter !== 'all' || 
     typeFilter !== 'all' || methodFilter !== 'all' || 
     agentFilter !== 'all' || rebookingFilter !== 'all' || 
-    conversationFilter !== 'all' || issueFilter.length > 0 || searchQuery !== '';
+    conversationFilter !== 'all' || issueFilter.length > 0 || campaignTypeFilter !== 'all' || searchQuery !== '';
 
   const handleSort = (column: SortColumn) => {
     if (sortColumn === column) {
@@ -243,7 +246,7 @@ export default function Reports() {
   // Reset to page 1 when filters change  
   useEffect(() => {
     setCurrentPage(1);
-  }, [recordDateRange, moveInDateRange, importBatchFilter, recordTypeFilter, siteFilter, statusFilter, typeFilter, methodFilter, agentFilter, searchQuery, rebookingFilter, conversationFilter, issueFilter]);
+  }, [recordDateRange, moveInDateRange, importBatchFilter, recordTypeFilter, siteFilter, statusFilter, typeFilter, methodFilter, agentFilter, searchQuery, rebookingFilter, conversationFilter, issueFilter, campaignTypeFilter]);
 
   // Fetch sites from Supabase
   useEffect(() => {
@@ -294,6 +297,7 @@ export default function Reports() {
     if (isResearch) {
       const headers = [
         'Call Date',
+        'Campaign',
         'Contact Phone',
         'Contact Name',
         'Contact Email',
@@ -307,6 +311,7 @@ export default function Reports() {
       ];
       const rows = records.map(booking => [
         format(booking.bookingDate, 'yyyy-MM-dd'),
+        booking.researchCampaignType === 'audience_survey' ? 'Audience Survey' : 'Move-Out Survey',
         booking.contactPhone ? (shouldMask ? maskPhone(booking.contactPhone) : booking.contactPhone) : '',
         booking.memberName?.startsWith('API Submission') ? '' : booking.memberName,
         booking.contactEmail ? (shouldMask ? maskEmail(booking.contactEmail) : booking.contactEmail) : '',
@@ -435,7 +440,7 @@ export default function Reports() {
     <>
       {Array.from({ length: 10 }).map((_, i) => (
         <tr key={i} className="border-b border-border">
-          {Array.from({ length: isResearch ? 11 : 15 }).map((_, j) => (
+          {Array.from({ length: isResearch ? 12 : 15 }).map((_, j) => (
             <td key={j} className="py-3 px-4"><Skeleton className="h-4 w-24" /></td>
           ))}
         </tr>
@@ -659,7 +664,44 @@ export default function Reports() {
           </DropdownMenuContent>
         </DropdownMenu>
 
-        {/* Status Filter — bookings only */}
+        {/* Campaign Type Filter — research only */}
+        {isResearch && (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant={campaignTypeFilter !== 'all' ? 'default' : 'outline'} className="gap-2">
+                <FlaskConical className="w-4 h-4" />
+                {campaignTypeFilter === 'all' ? 'All Campaigns' : campaignTypeFilter === 'move_out_survey' ? 'Move-Out Survey' : 'Audience Survey'}
+                <ChevronDown className="w-4 h-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="w-56">
+              <DropdownMenuItem
+                onClick={() => setCampaignTypeFilter('all')}
+                className={campaignTypeFilter === 'all' ? 'bg-accent/20' : ''}
+              >
+                All Campaigns
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={() => setCampaignTypeFilter('move_out_survey')}
+                className={campaignTypeFilter === 'move_out_survey' ? 'bg-accent/20' : ''}
+              >
+                <span className="flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-purple-500"></span>
+                  Move-Out Survey
+                </span>
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={() => setCampaignTypeFilter('audience_survey')}
+                className={campaignTypeFilter === 'audience_survey' ? 'bg-accent/20' : ''}
+              >
+                <span className="flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-blue-500"></span>
+                  Audience Survey
+                </span>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
         {!isResearch && (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -911,6 +953,7 @@ export default function Reports() {
                 {isResearch ? (
                   <>
                     <SortableHeader column="bookingDate" label="Call Date" />
+                    <th className="text-left py-3 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Campaign</th>
                     <th className="text-left py-3 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Contact</th>
                     <SortableHeader column="memberName" label="Name" />
                     <th className="text-left py-3 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Email</th>
@@ -948,7 +991,7 @@ export default function Reports() {
                 <TableSkeleton />
               ) : records.length === 0 ? (
                 <tr>
-                  <td colSpan={isResearch ? 11 : 15} className="py-8 text-center text-muted-foreground">
+                  <td colSpan={isResearch ? 12 : 15} className="py-8 text-center text-muted-foreground">
                     No records found matching your filters
                   </td>
                 </tr>
@@ -991,6 +1034,31 @@ export default function Reports() {
                           );
                         })()}
                       </div>
+                    </td>
+                    {/* Campaign */}
+                    <td className="py-3 px-4 text-sm">
+                      {booking.researchCampaignType === 'audience_survey' ? (
+                        <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium bg-blue-500/15 text-blue-600 dark:text-blue-400">
+                          <span className="w-1.5 h-1.5 rounded-full bg-blue-500"></span>
+                          Audience
+                          {(booking.questionsAnswered || 0) < 3 && (
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <AlertTriangle className="h-3 w-3 text-amber-500 cursor-help" />
+                              </TooltipTrigger>
+                              <TooltipContent side="right">
+                                <p className="text-xs font-medium">Thin Data</p>
+                                <p className="text-xs text-muted-foreground">Only {booking.questionsAnswered || 0} questions answered</p>
+                              </TooltipContent>
+                            </Tooltip>
+                          )}
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium bg-purple-500/15 text-purple-600 dark:text-purple-400">
+                          <span className="w-1.5 h-1.5 rounded-full bg-purple-500"></span>
+                          Move-Out
+                        </span>
+                      )}
                     </td>
                     {/* Contact (phone-first) */}
                     <td className="py-3 px-4 text-sm text-foreground">
