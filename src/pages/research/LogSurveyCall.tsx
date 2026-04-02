@@ -437,6 +437,8 @@ export default function LogSurveyCall() {
       call_duration_seconds: callDurationMinutes ? Math.round(parseFloat(callDurationMinutes) * 60) : undefined,
       transfer_notes: callOutcome === 'transferred' ? transferNotes : undefined,
       responses: Object.keys(responses).length > 0 ? responses : undefined,
+      probe_notes: Object.keys(probeNotes).length > 0 ? probeNotes : undefined,
+      agent_notes: Object.keys(agentNotes).length > 0 ? agentNotes : undefined,
       researcher_notes: researcherNotes.trim() || undefined,
       researcher_name: agentName,
       language: surveyLanguage,
