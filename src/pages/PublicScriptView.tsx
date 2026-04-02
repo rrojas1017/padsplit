@@ -107,6 +107,8 @@ export default function PublicScriptView() {
   const [phase, setPhase] = useState<Phase>('start');
   const [questionIndex, setQuestionIndex] = useState(0);
   const [responses, setResponses] = useState<Record<number, unknown>>({});
+  const [probeNotes, setProbeNotes] = useState<Record<string, Record<number, string>>>({});
+  const [agentNotes, setAgentNotes] = useState<Record<string, string>>({});
   const [endedEarly, setEndedEarly] = useState(false);
   const [earlyDisposition, setEarlyDisposition] = useState('');
   const [selectedEndDisposition, setSelectedEndDisposition] = useState('caller_hung_up');
