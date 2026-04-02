@@ -944,6 +944,8 @@ export default function LogSurveyCall() {
                               probes={currentQ.branch.yes_probes}
                               label="YES follow-ups"
                               variant="branch-yes"
+                              probeNotes={probeNotes[`${currentQ.id}_yes`]}
+                              onProbeNoteChange={(idx, note) => setProbeNote(currentQ.id, idx, note)}
                             />
                           )
                           : currentQ.branch?.no_probes && (
@@ -951,11 +953,26 @@ export default function LogSurveyCall() {
                               probes={currentQ.branch.no_probes}
                               label="NO follow-ups"
                               variant="branch-no"
+                              probeNotes={probeNotes[`${currentQ.id}_no`]}
+                              onProbeNoteChange={(idx, note) => setProbeNote(currentQ.id, idx, note)}
                             />
                           )
                         }
                       </div>
                     )}
+
+                    {/* Agent notes for this question */}
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide flex items-center gap-1.5">
+                        📝 Agent Notes
+                      </label>
+                      <Textarea
+                        placeholder="Capture additional context, verbatim quotes, or observations..."
+                        className="min-h-[60px] text-sm bg-background"
+                        value={agentNotes[String(currentQ.id)] || ''}
+                        onChange={(e) => setAgentNote(currentQ.id, e.target.value)}
+                      />
+                    </div>
 
                     {/* Required hint for yes_no */}
                     {currentQ.type === 'yes_no' && responses[String(currentQ.id)] === undefined && pendingBranchAnswer === null && (
