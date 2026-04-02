@@ -16,6 +16,7 @@ import { useAddressabilityBreakdown, AddressabilityBucket } from '@/hooks/useAdd
 import { ADDRESSABILITY_DESCRIPTIONS, CLUSTER_COLORS } from '@/utils/reason-code-mapping';
 import { supabase } from '@/integrations/supabase/client';
 import { MemberDetailPanel } from './MemberDetailPanel';
+import { ReasonCodeDrillDown } from './ReasonCodeDrillDown';
 import { useIsAdmin } from '@/hooks/useIsAdmin';
 import {
   DrillDownMember, exportForSurvey, exportCallList,
