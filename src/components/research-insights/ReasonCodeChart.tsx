@@ -381,6 +381,15 @@ function ReasonDrillDown({ active, total, onCodeClick, onViewAllMembers, onBack 
             <Tooltip content={<CustomTreemapTooltip />} />
           </Treemap>
         </ResponsiveContainer>
+        {/* Legend */}
+        <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2 px-1">
+          {subData.map((s, i) => (
+            <div key={i} className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: TREEMAP_COLORS[i % TREEMAP_COLORS.length] }} />
+              <span>{s.name} ({s.value})</span>
+            </div>
+          ))}
+        </div>
       </div>
 
       {/* Sub-reason breakdown table */}
