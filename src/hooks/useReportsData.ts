@@ -32,6 +32,7 @@ export interface ReportsFilters {
   rebookingFilter: 'all' | 'new' | 'rebooking';
   conversationFilter: 'all' | 'valid' | 'no_conversation'; // Conversation validity filter
   issueFilter: string[]; // Pain point issue filter
+  campaignTypeFilter: string; // 'all' | 'move_out_survey' | 'audience_survey'
   searchQuery: string;
 }
 
