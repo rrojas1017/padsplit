@@ -496,9 +496,10 @@ export default function ResearchInsights() {
         </Card>
       )}
 
-      {/* Report content — AUDIENCE SURVEY */}
-      {!isLoading && reportData && isAudienceSurvey && (selectedReport?.status === 'completed' || isGenerating) && (
-        <AudienceSurveyDashboard data={reportData as AudienceSurveyInsightData} />
+      {/* Report content — AUDIENCE SURVEY (live aggregation from raw data) */}
+      {!isLoading && isAudienceSurvey && (
+        <AudienceSurveyInsightsDashboard />
+      )}
       )}
 
       {/* Report content — MOVE-OUT SURVEY */}
