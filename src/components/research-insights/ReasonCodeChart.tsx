@@ -257,12 +257,13 @@ function ReasonDrillDown({ active, total, onCodeClick, onViewAllMembers, onBack 
     pctTotal: total > 0 ? Math.round((s.count / total) * 100) : 0,
   }));
 
-  // Treemap data with HSL colors
-  const baseHue = getClusterHue(active.color);
+  // Treemap data with distinct colors
   const treemapData = subData.map((s, i) => ({
     name: s.name,
     size: s.value,
-    fill: `hsl(${baseHue}, 70%, ${40 + (i * 6) % 30}%)`,
+    percentCluster: s.pctCluster,
+    percentTotal: s.pctTotal,
+    fill: TREEMAP_COLORS[i % TREEMAP_COLORS.length],
   }));
 
   // Filtered members based on selection/treemap click
