@@ -38,6 +38,7 @@ import { ReasonCodeDrillDown } from '@/components/research-insights/ReasonCodeDr
 import { MemberDataTab } from '@/components/research-insights/MemberDataTab';
 
 import { AudienceSurveyDashboard } from '@/components/audience-survey/AudienceSurveyDashboard';
+import { AudienceSurveyInsightsDashboard } from '@/components/audience-survey/AudienceSurveyInsightsDashboard';
 import { ExportMembersModal } from '@/components/research-insights/ExportMembersModal';
 import { exportFullReport } from '@/utils/export-report';
 import type { ExportFilter } from '@/hooks/useExportMembers';
