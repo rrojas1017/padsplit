@@ -363,7 +363,15 @@ function ReasonDrillDown({ active, total, onCodeClick, onViewAllMembers, onBack 
           </TableHeader>
           <TableBody>
             {subData.map((s, i) => (
-              <TableRow key={i} className="hover:bg-muted/50">
+              <TableRow
+                key={i}
+                className={`cursor-pointer hover:bg-muted/50 transition-colors ${treemapFilter === s.name ? 'bg-muted/70 ring-1 ring-primary/30' : ''}`}
+                onClick={() => {
+                  setTreemapFilter(treemapFilter === s.name ? null : s.name);
+                  setSelectedSubReasons(new Set());
+                  setPage(0);
+                }}
+              >
                 <TableCell onClick={e => e.stopPropagation()}>
                   <Checkbox
                     checked={selectedSubReasons.has(s.name)}
@@ -372,7 +380,8 @@ function ReasonDrillDown({ active, total, onCodeClick, onViewAllMembers, onBack 
                 </TableCell>
                 <TableCell className="flex items-center gap-2">
                   <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: `hsl(${baseHue}, 70%, ${40 + (i * 6) % 30}%)` }} />
-                  <span className="text-sm">{s.name}</span>
+                  <span className="text-sm font-medium">{s.name}</span>
+                  <ChevronRight className={`w-3.5 h-3.5 text-muted-foreground transition-transform ${treemapFilter === s.name ? 'rotate-90' : ''}`} />
                 </TableCell>
                 <TableCell className="text-right font-medium">{s.value}</TableCell>
                 <TableCell className="text-right text-muted-foreground">{s.pctCluster}%</TableCell>
