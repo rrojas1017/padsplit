@@ -303,6 +303,7 @@ export default function Reports() {
         'Contact Email',
         'Duration',
         'Progress',
+        'Video Interest',
         'Agent',
         'Market City',
         'Market State',
