@@ -10,6 +10,7 @@ import { Slider } from '@/components/ui/slider';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { ArrowLeft, ArrowRight, ThumbsUp, ThumbsDown, MessageSquare, XCircle, CheckCircle, Play, RotateCcw, PhoneOff } from 'lucide-react';
+import { ProbingFollowUps } from '@/components/research/ProbingFollowUps';
 import padsplitLogo from '@/assets/padsplit-logo.jpeg';
 import { useScriptTranslation, type SurveyLanguage } from '@/hooks/useScriptTranslation';
 import {
