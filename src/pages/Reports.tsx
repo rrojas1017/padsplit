@@ -989,7 +989,7 @@ export default function Reports() {
                 <TableSkeleton />
               ) : records.length === 0 ? (
                 <tr>
-                  <td colSpan={isResearch ? 11 : 15} className="py-8 text-center text-muted-foreground">
+                  <td colSpan={isResearch ? 12 : 15} className="py-8 text-center text-muted-foreground">
                     No records found matching your filters
                   </td>
                 </tr>
