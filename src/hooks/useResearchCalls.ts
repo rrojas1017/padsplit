@@ -81,6 +81,8 @@ export interface CallSubmission {
   transfer_notes?: string;
   researcher_name?: string;
   responses?: Record<string, unknown>;
+  probe_notes?: Record<string, Record<number, string>>;
+  agent_notes?: Record<string, string>;
   researcher_notes?: string;
   language?: string;
 }
