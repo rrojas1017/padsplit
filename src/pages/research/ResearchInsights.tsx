@@ -330,8 +330,8 @@ export default function ResearchInsights() {
             </div>
           )}
 
-          {/* Generate report — show only if no reports exist */}
-          {!selectedReport && !isGenerating && (
+          {/* Generate report — show only if no reports exist (move-out only) */}
+          {!selectedReport && !isGenerating && !isAudienceSurvey && (
             <Button onClick={handleGenerate} disabled={isGenerating} className="gap-2">
               <Sparkles className="w-4 h-4" />
               Generate Report
