@@ -419,7 +419,7 @@ function ReasonDrillDown({ active, total, onCodeClick, onViewAllMembers, onBack 
                   />
                 </TableCell>
                 <TableCell className="flex items-center gap-2">
-                  <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: `hsl(${baseHue}, 70%, ${40 + (i * 6) % 30}%)` }} />
+                  <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: TREEMAP_COLORS[i % TREEMAP_COLORS.length] }} />
                   <span className="text-sm font-medium">{s.name}</span>
                   <ChevronRight className="w-3.5 h-3.5 text-muted-foreground" />
                 </TableCell>
