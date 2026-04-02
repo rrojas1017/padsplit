@@ -378,13 +378,7 @@ function ReasonDrillDown({ active, total, onCodeClick, onViewAllMembers, onBack 
               }
             }}
           >
-            <Tooltip
-              formatter={(value: number, name: string) => [
-                `${value} members (${active.count > 0 ? Math.round((value / active.count) * 100) : 0}% of cluster)`,
-                name,
-              ]}
-              contentStyle={{ background: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', borderRadius: '8px', fontSize: 12 }}
-            />
+            <Tooltip content={<CustomTreemapTooltip />} />
           </Treemap>
         </ResponsiveContainer>
       </div>
