@@ -441,12 +441,14 @@ export default function PublicScriptView() {
 
               {/* Probing follow-ups */}
               {currentQ.probes && currentQ.probes.length > 0 && (
-                <div className="bg-muted/40 rounded-lg p-3 space-y-1 border">
-                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">▾ Probing follow-ups</p>
-                  {currentQ.probes.map((probe, i) => (
-                    <p key={i} className="text-sm text-muted-foreground pl-2">• {probe}</p>
-                  ))}
-                </div>
+                <ProbingFollowUps
+                  probes={currentQ.probes}
+                  probeNotes={probeNotes[String(questionIndex)]}
+                  onProbeNoteChange={(idx, note) => setProbeNotes(prev => ({
+                    ...prev,
+                    [String(questionIndex)]: { ...(prev[String(questionIndex)] || {}), [idx]: note }
+                  }))}
+                />
               )}
 
               {/* Response input */}
@@ -470,22 +472,30 @@ export default function PublicScriptView() {
 
                 {/* Branch probes revealed after yes/no selection */}
                 {currentQ.type === 'yes_no' && yesNoResponse && currentQ.branch && (
-                  <div className="border-l-4 border-primary/40 pl-4 space-y-1.5 mt-1">
+                  <div className="space-y-2 mt-1">
                     {yesNoResponse === 'yes' && currentQ.branch.yes_probes && currentQ.branch.yes_probes.length > 0 && (
-                      <>
-                        <p className="text-xs font-semibold text-green-700 dark:text-green-400 uppercase tracking-wide">✓ If YES — follow up with:</p>
-                        {currentQ.branch.yes_probes.map((p, i) => (
-                          <p key={i} className="text-sm text-muted-foreground">• {p}</p>
-                        ))}
-                      </>
+                      <ProbingFollowUps
+                        probes={currentQ.branch.yes_probes}
+                        label="YES follow-ups"
+                        variant="branch-yes"
+                        probeNotes={probeNotes[`${questionIndex}_yes`]}
+                        onProbeNoteChange={(idx, note) => setProbeNotes(prev => ({
+                          ...prev,
+                          [`${questionIndex}_yes`]: { ...(prev[`${questionIndex}_yes`] || {}), [idx]: note }
+                        }))}
+                      />
                     )}
                     {yesNoResponse === 'no' && currentQ.branch.no_probes && currentQ.branch.no_probes.length > 0 && (
-                      <>
-                        <p className="text-xs font-semibold text-rose-700 dark:text-rose-400 uppercase tracking-wide">✗ If NO — follow up with:</p>
-                        {currentQ.branch.no_probes.map((p, i) => (
-                          <p key={i} className="text-sm text-muted-foreground">• {p}</p>
-                        ))}
-                      </>
+                      <ProbingFollowUps
+                        probes={currentQ.branch.no_probes}
+                        label="NO follow-ups"
+                        variant="branch-no"
+                        probeNotes={probeNotes[`${questionIndex}_no`]}
+                        onProbeNoteChange={(idx, note) => setProbeNotes(prev => ({
+                          ...prev,
+                          [`${questionIndex}_no`]: { ...(prev[`${questionIndex}_no`] || {}), [idx]: note }
+                        }))}
+                      />
                     )}
                   </div>
                 )}
