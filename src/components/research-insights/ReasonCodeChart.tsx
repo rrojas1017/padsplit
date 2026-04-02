@@ -404,7 +404,7 @@ function ReasonDrillDown({ active, total, onCodeClick, onViewAllMembers, onBack 
       <div className="border-t pt-4">
         <h4 className="text-sm font-medium mb-3 flex items-center gap-2">
           <Users className="w-4 h-4 text-muted-foreground" />
-          {treemapFilter || selectedSubReasons.size > 0
+          {selectedSubReasons.size > 0
             ? `Members (${filteredMembers.length})`
             : `Member Preview (${allMembers.length})`}
         </h4>
