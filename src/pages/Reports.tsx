@@ -142,6 +142,7 @@ export default function Reports() {
   const [rebookingFilter, setRebookingFilter] = useState<'all' | 'new' | 'rebooking'>('all');
   const [conversationFilter, setConversationFilter] = useState<'all' | 'valid' | 'no_conversation'>('all');
   const [issueFilter, setIssueFilter] = useState<string[]>([]);
+  const [campaignTypeFilter, setCampaignTypeFilter] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
 
   // Sorting (primary only for server-side)
