@@ -183,8 +183,9 @@ export default function Reports() {
     rebookingFilter,
     conversationFilter,
     issueFilter,
+    campaignTypeFilter,
     searchQuery,
-  }), [recordDateRange, moveInDateRange, importBatchFilter, recordTypeFilter, siteFilter, statusFilter, typeFilter, methodFilter, agentFilter, rebookingFilter, conversationFilter, issueFilter, searchQuery]);
+  }), [recordDateRange, moveInDateRange, importBatchFilter, recordTypeFilter, siteFilter, statusFilter, typeFilter, methodFilter, agentFilter, rebookingFilter, conversationFilter, issueFilter, campaignTypeFilter, searchQuery]);
 
   const pagination: ReportsPagination = useMemo(() => ({
     page: currentPage,
