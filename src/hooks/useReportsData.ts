@@ -202,7 +202,8 @@ export function useReportsData(
             coaching_audio_url,
             coaching_audio_generated_at,
             survey_progress,
-            research_campaign_type
+            research_campaign_type,
+            research_extraction
           )
         `, { count: 'exact' });
 
