@@ -5,7 +5,7 @@ import { useAgents } from '@/contexts/AgentsContext';
 import { useBookings } from '@/contexts/BookingsContext';
 import { useReportsData, ReportsFilters, ReportsPagination, ReportsSorting, SortColumn, SortDirection } from '@/hooks/useReportsData';
 import { Button } from '@/components/ui/button';
-import { Download, Search, PlusCircle, Pencil, ChevronDown, Building2, User, MessageSquare, Tag, CheckCircle, RotateCcw, ArrowUp, ArrowDown, ArrowUpDown, X, ExternalLink, Phone, UserCircle, Headphones, FileText, Loader2, MoreHorizontal, Clock, CalendarX, XCircle, Ban, AlertTriangle, Package, FlaskConical, ShieldAlert, DollarSign, Timer } from 'lucide-react';
+import { Download, Search, PlusCircle, Pencil, ChevronDown, Building2, User, MessageSquare, Tag, CheckCircle, RotateCcw, ArrowUp, ArrowDown, ArrowUpDown, X, ExternalLink, Phone, UserCircle, Headphones, FileText, Loader2, MoreHorizontal, Clock, CalendarX, XCircle, Ban, AlertTriangle, Package, FlaskConical, ShieldAlert, DollarSign, Timer, Video } from 'lucide-react';
 import { ContactProfileHoverCard } from '@/components/reports/ContactProfileHoverCard';
 import { FollowUpPriorityBadge } from '@/components/reports/FollowUpPriorityBadge';
 import { calculateFollowUpPriority } from '@/utils/followUpPriority';
