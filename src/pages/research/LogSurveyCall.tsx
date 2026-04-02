@@ -152,6 +152,19 @@ export default function LogSurveyCall() {
   const [transferNotes, setTransferNotes] = useState('');
   const [researcherNotes, setResearcherNotes] = useState('');
   const [responses, setResponses] = useState<Record<string, unknown>>({});
+  const [probeNotes, setProbeNotes] = useState<Record<string, Record<number, string>>>({});
+  const [agentNotes, setAgentNotes] = useState<Record<string, string>>({});
+
+  const setProbeNote = (qId: number, probeIndex: number, note: string) => {
+    setProbeNotes(prev => ({
+      ...prev,
+      [String(qId)]: { ...(prev[String(qId)] || {}), [probeIndex]: note }
+    }));
+  };
+
+  const setAgentNote = (qId: number, note: string) => {
+    setAgentNotes(prev => ({ ...prev, [String(qId)]: note }));
+  };
 
   // End Call dialog
   const [endCallDialogOpen, setEndCallDialogOpen] = useState(false);
