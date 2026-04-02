@@ -459,6 +459,8 @@ export default function LogSurveyCall() {
     setTransferNotes('');
     setResearcherNotes('');
     setResponses({});
+    setProbeNotes({});
+    setAgentNotes({});
     setSetupErrors({});
     setSubmitted(false);
     setPhase('setup');
