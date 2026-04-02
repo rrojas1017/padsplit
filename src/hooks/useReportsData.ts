@@ -359,11 +359,25 @@ export function useReportsData(
           detectedIssues: Array.isArray((row as any).detected_issues) ? (row as any).detected_issues : undefined,
           questionsAnswered: transcription?.survey_progress?.answered ?? undefined,
           questionsTotal: transcription?.survey_progress?.total ?? undefined,
+          researchCampaignType: transcription?.research_campaign_type || undefined,
         };
       });
 
-      setRecords(transformedRecords);
-      setTotalCount(count || 0);
+      // Post-fetch filtering for campaign type (comes from joined table)
+      let filteredRecords = transformedRecords;
+      if (filters.campaignTypeFilter && filters.campaignTypeFilter !== 'all') {
+        filteredRecords = filteredRecords.filter(r => r.researchCampaignType === filters.campaignTypeFilter);
+      }
+
+      // For audience survey, exclude records with < 1 question answered (quality gate)
+      if (filters.campaignTypeFilter === 'audience_survey') {
+        filteredRecords = filteredRecords.filter(r => (r.questionsAnswered || 0) >= 1);
+      }
+
+      setRecords(filteredRecords);
+      // Adjust total count for client-side filtering
+      const clientFiltered = filters.campaignTypeFilter && filters.campaignTypeFilter !== 'all';
+      setTotalCount(clientFiltered ? filteredRecords.length : (count || 0));
     } catch (err) {
       console.error('Error fetching reports data:', err);
       setError(err instanceof Error ? err : new Error('Failed to fetch records'));

@@ -142,6 +142,7 @@ export interface Booking {
   // Survey progress fields (research records only)
   questionsAnswered?: number;
   questionsTotal?: number;
+  researchCampaignType?: string;
 }
 
 export interface DailyMetrics {

@@ -1076,7 +1076,13 @@ Deno.serve(async (req) => {
 
     const processedRecords = (records || []).filter((r: any) => {
       const t = Array.isArray(r.booking_transcriptions) ? r.booking_transcriptions[0] : r.booking_transcriptions;
-      return campaignType === 'audience_survey' ? t?.research_extraction : t?.research_classification;
+      const hasData = campaignType === 'audience_survey' ? t?.research_extraction : t?.research_classification;
+      // For audience survey, require at least 1 question answered (quality gate)
+      if (campaignType === 'audience_survey' && hasData) {
+        const answered = t?.survey_progress?.answered;
+        return answered != null && answered >= 1;
+      }
+      return hasData;
     });
 
     if (processedRecords.length === 0) {
