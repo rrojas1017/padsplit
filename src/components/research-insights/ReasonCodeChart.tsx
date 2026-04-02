@@ -561,6 +561,17 @@ function ReasonDrillDown({ active, total, onCodeClick, onViewAllMembers, onBack 
       onOpenChange={(o) => { if (!o) setDetailId(null); }}
       transcriptionId={detailId}
     />
+
+    {subReasonDrillDown && (
+      <ReasonCodeDrillDown
+        open={!!subReasonDrillDown}
+        onOpenChange={(o) => { if (!o) setSubReasonDrillDown(null); }}
+        reasonCode={subReasonDrillDown.name}
+        reasonColor={active.color}
+        reasonCount={subReasonDrillDown.bookingIds.length}
+        bookingIds={subReasonDrillDown.bookingIds}
+      />
+    )}
     </>
   );
 }
