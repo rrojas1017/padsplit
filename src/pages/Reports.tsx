@@ -1033,6 +1033,31 @@ export default function Reports() {
                         })()}
                       </div>
                     </td>
+                    {/* Campaign */}
+                    <td className="py-3 px-4 text-sm">
+                      {booking.researchCampaignType === 'audience_survey' ? (
+                        <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium bg-blue-500/15 text-blue-600 dark:text-blue-400">
+                          <span className="w-1.5 h-1.5 rounded-full bg-blue-500"></span>
+                          Audience
+                          {(booking.questionsAnswered || 0) < 3 && (
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <AlertTriangle className="h-3 w-3 text-amber-500 cursor-help" />
+                              </TooltipTrigger>
+                              <TooltipContent side="right">
+                                <p className="text-xs font-medium">Thin Data</p>
+                                <p className="text-xs text-muted-foreground">Only {booking.questionsAnswered || 0} questions answered</p>
+                              </TooltipContent>
+                            </Tooltip>
+                          )}
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium bg-purple-500/15 text-purple-600 dark:text-purple-400">
+                          <span className="w-1.5 h-1.5 rounded-full bg-purple-500"></span>
+                          Move-Out
+                        </span>
+                      )}
+                    </td>
                     {/* Contact (phone-first) */}
                     <td className="py-3 px-4 text-sm text-foreground">
                       {booking.contactPhone ? (
