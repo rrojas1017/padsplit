@@ -38,6 +38,7 @@ import { ReasonCodeDrillDown } from '@/components/research-insights/ReasonCodeDr
 import { MemberDataTab } from '@/components/research-insights/MemberDataTab';
 
 import { AudienceSurveyDashboard } from '@/components/audience-survey/AudienceSurveyDashboard';
+import { AudienceSurveyInsightsDashboard } from '@/components/audience-survey/AudienceSurveyInsightsDashboard';
 import { ExportMembersModal } from '@/components/research-insights/ExportMembersModal';
 import { exportFullReport } from '@/utils/export-report';
 import type { ExportFilter } from '@/hooks/useExportMembers';
@@ -495,9 +496,9 @@ export default function ResearchInsights() {
         </Card>
       )}
 
-      {/* Report content — AUDIENCE SURVEY */}
-      {!isLoading && reportData && isAudienceSurvey && (selectedReport?.status === 'completed' || isGenerating) && (
-        <AudienceSurveyDashboard data={reportData as AudienceSurveyInsightData} />
+      {/* Report content — AUDIENCE SURVEY (live aggregation from raw data) */}
+      {!isLoading && isAudienceSurvey && (
+        <AudienceSurveyInsightsDashboard />
       )}
 
       {/* Report content — MOVE-OUT SURVEY */}

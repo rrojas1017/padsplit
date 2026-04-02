@@ -1,0 +1,1 @@
+ALTER TABLE public.booking_transcriptions ADD COLUMN IF NOT EXISTS testimonial_status TEXT DEFAULT 'new';
