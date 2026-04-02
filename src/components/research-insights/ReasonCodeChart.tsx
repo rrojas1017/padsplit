@@ -52,40 +52,102 @@ function CenterLabel({ total, label }: { total: number; label?: string }) {
 }
 
 // ── Cluster hue extraction for treemap coloring ──
-function getClusterHue(color: string): number {
-  const hueMap: Record<string, number> = {
-    '#e53e3e': 0, '#dd6b20': 25, '#d69e2e': 45, '#805ad5': 265,
-    '#3182ce': 210, '#38a169': 150, '#718096': 220, '#a0aec0': 220,
+// Distinct color palette for treemap blocks — high contrast
+const TREEMAP_COLORS = [
+  '#dc2626', '#ea580c', '#d97706', '#65a30d', '#0891b2',
+  '#7c3aed', '#db2777', '#059669', '#2563eb', '#6d28d9',
+  '#0d9488', '#c026d3',
+];
+
+const shortLabel = (name: string): string => {
+  const map: Record<string, string> = {
+    'Mold / Pest Infestation': 'Mold / Pests',
+    'Maintenance / Repairs Ignored': 'Maintenance',
+    'Unsanitary / Dirty Conditions': 'Unsanitary',
+    'Other Host Negligence': 'Other Host',
+    'Misrepresentation': 'Misrepresent.',
+    'Host Unresponsive': 'Unresponsive',
+    'Property Condition': 'Property',
+    'Overcrowding / Illegal Conversion': 'Overcrowding',
+    'Eviction by Host': 'Eviction',
+    'Rent Too High / Increase': 'Rent Too High',
+    'Late Fees / Collections': 'Late Fees',
+    'Billing / Payment Issues': 'Billing',
+    'Noise / Cleanliness': 'Noise/Clean',
+    'Harassment / Theft / Drugs': 'Harassment',
+    'Safety Fears': 'Safety',
+    'Poor Customer Support': 'Support',
+    'Platform / App Issues': 'Platform',
+    'Lack of Communication': 'No Comms',
+    'House Rules Disputes': 'House Rules',
+    'Lease / Policy Unclear': 'Policy',
+    'Buying a Home': 'Buying Home',
+    'Job Relocation': 'Job Relocation',
+    'Family / Personal': 'Family',
+    'Found Better Housing': 'Better Housing',
+    'Wrong Person / Never Moved': 'Wrong Person',
+    'Invalid / Incomplete Data': 'Invalid Data',
+    'Other in this category': 'Other',
   };
-  return hueMap[color] ?? 220;
-}
+  for (const [key, short] of Object.entries(map)) {
+    if (name.toLowerCase().includes(key.toLowerCase())) return short;
+  }
+  const words = name.split(/[\s\/\-]+/);
+  return words.slice(0, 2).join(' ');
+};
 
 // ── Custom Treemap Content ──
 const CustomTreemapContent = (props: any) => {
-  const { x, y, width, height, name, size, fill, root } = props;
-  if (!name || !width || !height || width < 30 || height < 25) return null;
-  const displayName = String(name || '');
+  const { x, y, width, height, name, size, fill } = props;
+  if (!name || !width || !height || width < 25 || height < 22) return null;
+  const label = shortLabel(String(name));
+  const area = width * height;
+  const fontSize = area > 15000 ? 13 : area > 8000 ? 11 : area > 3000 ? 10 : 9;
+  const countSize = fontSize + 2;
+  const showLabel = width > 50 && height > 35;
+
   return (
-    <g className="cursor-pointer">
+    <g style={{ cursor: 'pointer' }}>
       <rect
         x={x} y={y} width={width} height={height}
         fill={fill}
-        stroke="hsl(var(--background))"
-        strokeWidth={2}
-        rx={4}
-        className="hover:opacity-80 transition-opacity"
+        stroke="#fff"
+        strokeWidth={3}
+        rx={6}
       />
-      {width > 70 && height > 40 && (
-        <text x={x + width / 2} y={y + height / 2 - 8} textAnchor="middle" fill="#fff" fontSize={11} fontWeight={600}>
-          {displayName.length > 22 ? displayName.substring(0, 20) + '…' : displayName}
+      {showLabel && (
+        <text
+          x={x + width / 2} y={y + height / 2 - (countSize / 2) - 2}
+          textAnchor="middle" fill="#fff" fontSize={fontSize} fontWeight="500"
+          style={{ pointerEvents: 'none' }}
+        >
+          {label}
         </text>
       )}
-      {height > 25 && (
-        <text x={x + width / 2} y={y + height / 2 + (width > 70 && height > 40 ? 10 : 4)} textAnchor="middle" fill="#fff" fontSize={13} fontWeight={700}>
-          {size}
-        </text>
-      )}
+      <text
+        x={x + width / 2} y={y + height / 2 + (showLabel ? countSize / 2 + 2 : 4)}
+        textAnchor="middle" fill="#fff" fontSize={countSize} fontWeight="bold"
+        style={{ pointerEvents: 'none' }}
+      >
+        {size}
+      </text>
     </g>
+  );
+};
+
+// ── Custom Treemap Tooltip ──
+const CustomTreemapTooltip = ({ active, payload }: any) => {
+  if (!active || !payload?.[0]) return null;
+  const data = payload[0].payload;
+  return (
+    <div className="bg-popover border border-border rounded-lg shadow-lg p-3 max-w-xs">
+      <p className="font-semibold text-sm text-foreground">{data.name}</p>
+      <p className="text-lg font-bold text-foreground">{data.size} members</p>
+      <div className="flex gap-3 mt-1 text-xs text-muted-foreground">
+        <span>{data.percentCluster}% of cluster</span>
+        <span>{data.percentTotal}% of total</span>
+      </div>
+    </div>
   );
 };
 
