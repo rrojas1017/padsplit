@@ -231,7 +231,7 @@ export default function Reports() {
     siteFilter !== 'all' || statusFilter !== 'all' || 
     typeFilter !== 'all' || methodFilter !== 'all' || 
     agentFilter !== 'all' || rebookingFilter !== 'all' || 
-    conversationFilter !== 'all' || issueFilter.length > 0 || searchQuery !== '';
+    conversationFilter !== 'all' || issueFilter.length > 0 || campaignTypeFilter !== 'all' || searchQuery !== '';
 
   const handleSort = (column: SortColumn) => {
     if (sortColumn === column) {
