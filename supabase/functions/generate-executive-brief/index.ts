@@ -179,7 +179,7 @@ ${historicalTrends.length > 0 ? historicalTrends.map((t: TrendPoint) =>
 Write the executive brief JSON now. Be specific with numbers. Compare trends. Use actual quotes from the data. Flag what's getting worse.`;
 
     // Call Lovable AI
-    const aiResponse = await fetch("https://api.lovable.dev/v1/chat/completions", {
+    const aiResponse = await fetch("https://ai.lovable.dev/chat/completions", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
