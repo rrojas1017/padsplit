@@ -349,11 +349,10 @@ function ReasonDrillDown({ active, total, onCodeClick, onViewAllMembers, onBack 
             {subData.map((s, i) => (
               <TableRow
                 key={i}
-                className={`cursor-pointer hover:bg-muted/50 transition-colors ${treemapFilter === s.name ? 'bg-muted/70 ring-1 ring-primary/30' : ''}`}
+                className="cursor-pointer hover:bg-muted/50 transition-colors"
                 onClick={() => {
-                  setTreemapFilter(treemapFilter === s.name ? null : s.name);
-                  setSelectedSubReasons(new Set());
-                  setPage(0);
+                  const ids = getMembersForSubReason(s.name).map(m => m.bookingId);
+                  setSubReasonDrillDown({ name: s.name, bookingIds: ids });
                 }}
               >
                 <TableCell onClick={e => e.stopPropagation()}>
