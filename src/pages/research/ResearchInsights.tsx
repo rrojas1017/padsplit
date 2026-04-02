@@ -311,8 +311,8 @@ export default function ResearchInsights() {
         </Select>
 
         <div className="flex items-center gap-2 ml-auto">
-          {/* Last updated badge + manual refresh */}
-          {lastUpdated && (
+          {/* Last updated badge + manual refresh (move-out only) */}
+          {lastUpdated && !isAudienceSurvey && (
             <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
               <span>Last updated: {lastUpdated}</span>
               {isAdmin && (
@@ -330,8 +330,8 @@ export default function ResearchInsights() {
             </div>
           )}
 
-          {/* Generate report — show only if no reports exist */}
-          {!selectedReport && !isGenerating && (
+          {/* Generate report — show only if no reports exist (move-out only) */}
+          {!selectedReport && !isGenerating && !isAudienceSurvey && (
             <Button onClick={handleGenerate} disabled={isGenerating} className="gap-2">
               <Sparkles className="w-4 h-4" />
               Generate Report
@@ -471,15 +471,15 @@ export default function ResearchInsights() {
         </div>
       )}
 
-      {/* No reports yet */}
-      {!isLoading && !selectedReport && !isGenerating && (
+      {/* No reports yet — only for move-out survey (audience survey uses live aggregation) */}
+      {!isLoading && !selectedReport && !isGenerating && !isAudienceSurvey && (
         <Card className="shadow-sm">
           <CardContent className="p-12 text-center">
             <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center mx-auto mb-4">
               <Sparkles className="w-8 h-8 text-primary" />
             </div>
             <h3 className="text-lg font-semibold text-foreground mb-2">
-              No {isAudienceSurvey ? 'Audience Survey' : 'Research'} Insights Yet
+              No Research Insights Yet
             </h3>
             <p className="text-sm text-muted-foreground mb-4 max-w-md mx-auto">
               {processingStats.totalResearchRecords > 0
