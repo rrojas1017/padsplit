@@ -233,7 +233,6 @@ function ReasonDrillDown({ active, total, onCodeClick, onViewAllMembers, onBack 
   const clearSelection = () => {
     setSelectedSubReasons(new Set());
     setSelectedMembers(new Set());
-    setTreemapFilter(null);
     setPage(0);
   };
 
