@@ -205,21 +205,14 @@ function ReasonDrillDown({ active, total, onCodeClick, onViewAllMembers, onBack 
 
   // Filtered members based on selection/treemap click
   const filteredMembers = useMemo(() => {
-    const activeFilter = treemapFilter || (selectedSubReasons.size > 0 ? null : null);
-    let filtered = allMembers;
-    if (treemapFilter) {
-      filtered = allMembers.filter(m =>
-        m.subReason.toLowerCase() === treemapFilter.toLowerCase() ||
-        m.reasonCode.toLowerCase() === treemapFilter.toLowerCase()
-      );
-    } else if (selectedSubReasons.size > 0) {
+    if (selectedSubReasons.size > 0) {
       const selLower = new Set([...selectedSubReasons].map(s => s.toLowerCase()));
-      filtered = allMembers.filter(m =>
+      return allMembers.filter(m =>
         selLower.has(m.subReason.toLowerCase()) || selLower.has(m.reasonCode.toLowerCase())
       );
     }
-    return filtered;
-  }, [allMembers, treemapFilter, selectedSubReasons]);
+    return allMembers;
+  }, [allMembers, selectedSubReasons]);
 
   const pagedMembers = filteredMembers.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
   const totalPages = Math.ceil(filteredMembers.length / PAGE_SIZE);
