@@ -500,7 +500,6 @@ export default function ResearchInsights() {
       {!isLoading && isAudienceSurvey && (
         <AudienceSurveyInsightsDashboard />
       )}
-      )}
 
       {/* Report content — MOVE-OUT SURVEY */}
       {!isLoading && reportData && !isAudienceSurvey && (selectedReport?.status === 'completed' || isGenerating) && (
