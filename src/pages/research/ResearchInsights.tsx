@@ -311,8 +311,8 @@ export default function ResearchInsights() {
         </Select>
 
         <div className="flex items-center gap-2 ml-auto">
-          {/* Last updated badge + manual refresh */}
-          {lastUpdated && (
+          {/* Last updated badge + manual refresh (move-out only) */}
+          {lastUpdated && !isAudienceSurvey && (
             <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
               <span>Last updated: {lastUpdated}</span>
               {isAdmin && (
