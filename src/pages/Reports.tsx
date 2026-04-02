@@ -438,7 +438,7 @@ export default function Reports() {
     <>
       {Array.from({ length: 10 }).map((_, i) => (
         <tr key={i} className="border-b border-border">
-          {Array.from({ length: isResearch ? 11 : 15 }).map((_, j) => (
+          {Array.from({ length: isResearch ? 12 : 15 }).map((_, j) => (
             <td key={j} className="py-3 px-4"><Skeleton className="h-4 w-24" /></td>
           ))}
         </tr>
