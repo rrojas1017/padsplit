@@ -318,6 +318,7 @@ export default function Reports() {
         booking.contactEmail ? (shouldMask ? maskEmail(booking.contactEmail) : booking.contactEmail) : '',
         formatDuration(booking.callDurationSeconds),
         booking.questionsTotal ? `${booking.questionsAnswered || 0}/${booking.questionsTotal}` : '',
+        booking.researchCampaignType === 'audience_survey' ? (booking.videoTestimonialInterest === true ? 'Yes' : booking.videoTestimonialInterest === false ? 'No' : '') : '',
         getAgentName(agents, booking.agentId),
         booking.marketCity || '',
         booking.marketState || '',
