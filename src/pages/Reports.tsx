@@ -246,7 +246,7 @@ export default function Reports() {
   // Reset to page 1 when filters change  
   useEffect(() => {
     setCurrentPage(1);
-  }, [recordDateRange, moveInDateRange, importBatchFilter, recordTypeFilter, siteFilter, statusFilter, typeFilter, methodFilter, agentFilter, searchQuery, rebookingFilter, conversationFilter, issueFilter]);
+  }, [recordDateRange, moveInDateRange, importBatchFilter, recordTypeFilter, siteFilter, statusFilter, typeFilter, methodFilter, agentFilter, searchQuery, rebookingFilter, conversationFilter, issueFilter, campaignTypeFilter]);
 
   // Fetch sites from Supabase
   useEffect(() => {
