@@ -311,6 +311,7 @@ export default function Reports() {
       ];
       const rows = records.map(booking => [
         format(booking.bookingDate, 'yyyy-MM-dd'),
+        booking.researchCampaignType === 'audience_survey' ? 'Audience Survey' : 'Move-Out Survey',
         booking.contactPhone ? (shouldMask ? maskPhone(booking.contactPhone) : booking.contactPhone) : '',
         booking.memberName?.startsWith('API Submission') ? '' : booking.memberName,
         booking.contactEmail ? (shouldMask ? maskEmail(booking.contactEmail) : booking.contactEmail) : '',
