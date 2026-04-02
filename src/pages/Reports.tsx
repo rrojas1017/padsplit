@@ -297,6 +297,7 @@ export default function Reports() {
     if (isResearch) {
       const headers = [
         'Call Date',
+        'Campaign',
         'Contact Phone',
         'Contact Name',
         'Contact Email',
