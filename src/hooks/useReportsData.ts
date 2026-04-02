@@ -361,6 +361,7 @@ export function useReportsData(
           questionsAnswered: transcription?.survey_progress?.answered ?? undefined,
           questionsTotal: transcription?.survey_progress?.total ?? undefined,
           researchCampaignType: transcription?.research_campaign_type || undefined,
+          videoTestimonialInterest: transcription?.research_extraction?.video_testimonial?.interested_in_recording ?? null,
         };
       });
 

@@ -143,6 +143,7 @@ export interface Booking {
   questionsAnswered?: number;
   questionsTotal?: number;
   researchCampaignType?: string;
+  videoTestimonialInterest?: boolean | null;
 }
 
 export interface DailyMetrics {

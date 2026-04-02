@@ -1152,6 +1152,20 @@ export default function Reports() {
                         <span className="text-muted-foreground text-xs">—</span>
                       )}
                     </td>
+                    {/* Video Testimonial Interest */}
+                    <td className="py-3 px-4 text-sm text-center">
+                      {booking.researchCampaignType === 'audience_survey' ? (
+                        booking.videoTestimonialInterest === true ? (
+                          <CheckCircle className="h-4 w-4 text-green-500 mx-auto" />
+                        ) : booking.videoTestimonialInterest === false ? (
+                          <XCircle className="h-4 w-4 text-red-400 mx-auto" />
+                        ) : (
+                          <span className="text-muted-foreground">—</span>
+                        )
+                      ) : (
+                        <span className="text-muted-foreground">—</span>
+                      )}
+                    </td>
                     {/* Agent */}
                     <td className="py-3 px-4 text-sm text-foreground">
                       {getAgentName(agents, booking.agentId)}
