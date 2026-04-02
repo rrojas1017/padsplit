@@ -910,7 +910,11 @@ export default function LogSurveyCall() {
 
                     {/* Probing follow-ups (general) */}
                     {currentQ.probes && currentQ.probes.length > 0 && pendingBranchAnswer === null && (
-                      <ProbingFollowUps probes={currentQ.probes} />
+                      <ProbingFollowUps
+                        probes={currentQ.probes}
+                        probeNotes={probeNotes[String(currentQ.id)]}
+                        onProbeNoteChange={(idx, note) => setProbeNote(currentQ.id, idx, note)}
+                      />
                     )}
 
                     {/* Answer input */}
