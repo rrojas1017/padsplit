@@ -481,7 +481,7 @@ function ReasonDrillDown({ active, total, onCodeClick, onViewAllMembers, onBack 
                 </div>
               </div>
             )}
-            {!treemapFilter && selectedSubReasons.size === 0 && onViewAllMembers && (
+            {selectedSubReasons.size === 0 && onViewAllMembers && (
               <Button variant="link" size="sm" className="mt-2 gap-1" onClick={() => onViewAllMembers(active.name)}>
                 View all {active.count} members <ArrowRight className="w-3.5 h-3.5" />
               </Button>
