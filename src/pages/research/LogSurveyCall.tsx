@@ -152,6 +152,19 @@ export default function LogSurveyCall() {
   const [transferNotes, setTransferNotes] = useState('');
   const [researcherNotes, setResearcherNotes] = useState('');
   const [responses, setResponses] = useState<Record<string, unknown>>({});
+  const [probeNotes, setProbeNotes] = useState<Record<string, Record<number, string>>>({});
+  const [agentNotes, setAgentNotes] = useState<Record<string, string>>({});
+
+  const setProbeNote = (qId: number, probeIndex: number, note: string) => {
+    setProbeNotes(prev => ({
+      ...prev,
+      [String(qId)]: { ...(prev[String(qId)] || {}), [probeIndex]: note }
+    }));
+  };
+
+  const setAgentNote = (qId: number, note: string) => {
+    setAgentNotes(prev => ({ ...prev, [String(qId)]: note }));
+  };
 
   // End Call dialog
   const [endCallDialogOpen, setEndCallDialogOpen] = useState(false);
@@ -424,6 +437,8 @@ export default function LogSurveyCall() {
       call_duration_seconds: callDurationMinutes ? Math.round(parseFloat(callDurationMinutes) * 60) : undefined,
       transfer_notes: callOutcome === 'transferred' ? transferNotes : undefined,
       responses: Object.keys(responses).length > 0 ? responses : undefined,
+      probe_notes: Object.keys(probeNotes).length > 0 ? probeNotes : undefined,
+      agent_notes: Object.keys(agentNotes).length > 0 ? agentNotes : undefined,
       researcher_notes: researcherNotes.trim() || undefined,
       researcher_name: agentName,
       language: surveyLanguage,
@@ -444,6 +459,8 @@ export default function LogSurveyCall() {
     setTransferNotes('');
     setResearcherNotes('');
     setResponses({});
+    setProbeNotes({});
+    setAgentNotes({});
     setSetupErrors({});
     setSubmitted(false);
     setPhase('setup');
@@ -897,7 +914,11 @@ export default function LogSurveyCall() {
 
                     {/* Probing follow-ups (general) */}
                     {currentQ.probes && currentQ.probes.length > 0 && pendingBranchAnswer === null && (
-                      <ProbingFollowUps probes={currentQ.probes} />
+                      <ProbingFollowUps
+                        probes={currentQ.probes}
+                        probeNotes={probeNotes[String(currentQ.id)]}
+                        onProbeNoteChange={(idx, note) => setProbeNote(currentQ.id, idx, note)}
+                      />
                     )}
 
                     {/* Answer input */}
@@ -927,6 +948,8 @@ export default function LogSurveyCall() {
                               probes={currentQ.branch.yes_probes}
                               label="YES follow-ups"
                               variant="branch-yes"
+                              probeNotes={probeNotes[`${currentQ.id}_yes`]}
+                              onProbeNoteChange={(idx, note) => setProbeNote(currentQ.id, idx, note)}
                             />
                           )
                           : currentQ.branch?.no_probes && (
@@ -934,11 +957,26 @@ export default function LogSurveyCall() {
                               probes={currentQ.branch.no_probes}
                               label="NO follow-ups"
                               variant="branch-no"
+                              probeNotes={probeNotes[`${currentQ.id}_no`]}
+                              onProbeNoteChange={(idx, note) => setProbeNote(currentQ.id, idx, note)}
                             />
                           )
                         }
                       </div>
                     )}
+
+                    {/* Agent notes for this question */}
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide flex items-center gap-1.5">
+                        📝 Agent Notes
+                      </label>
+                      <Textarea
+                        placeholder="Capture additional context, verbatim quotes, or observations..."
+                        className="min-h-[60px] text-sm bg-background"
+                        value={agentNotes[String(currentQ.id)] || ''}
+                        onChange={(e) => setAgentNote(currentQ.id, e.target.value)}
+                      />
+                    </div>
 
                     {/* Required hint for yes_no */}
                     {currentQ.type === 'yes_no' && responses[String(currentQ.id)] === undefined && pendingBranchAnswer === null && (

@@ -10,6 +10,7 @@ import { Slider } from '@/components/ui/slider';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { ArrowLeft, ArrowRight, ThumbsUp, ThumbsDown, MessageSquare, XCircle, CheckCircle, Play, RotateCcw, PhoneOff } from 'lucide-react';
+import { ProbingFollowUps } from '@/components/research/ProbingFollowUps';
 import padsplitLogo from '@/assets/padsplit-logo.jpeg';
 import { useScriptTranslation, type SurveyLanguage } from '@/hooks/useScriptTranslation';
 import {
@@ -107,6 +108,8 @@ export default function PublicScriptView() {
   const [phase, setPhase] = useState<Phase>('start');
   const [questionIndex, setQuestionIndex] = useState(0);
   const [responses, setResponses] = useState<Record<number, unknown>>({});
+  const [probeNotes, setProbeNotes] = useState<Record<string, Record<number, string>>>({});
+  const [agentNotes, setAgentNotes] = useState<Record<string, string>>({});
   const [endedEarly, setEndedEarly] = useState(false);
   const [earlyDisposition, setEarlyDisposition] = useState('');
   const [selectedEndDisposition, setSelectedEndDisposition] = useState('caller_hung_up');
@@ -144,6 +147,8 @@ export default function PublicScriptView() {
     setPhase('start');
     setQuestionIndex(0);
     setResponses({});
+    setProbeNotes({});
+    setAgentNotes({});
     setEndedEarly(false);
     setEarlyDisposition('');
     setSelectedEndDisposition('caller_hung_up');
@@ -436,12 +441,14 @@ export default function PublicScriptView() {
 
               {/* Probing follow-ups */}
               {currentQ.probes && currentQ.probes.length > 0 && (
-                <div className="bg-muted/40 rounded-lg p-3 space-y-1 border">
-                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">▾ Probing follow-ups</p>
-                  {currentQ.probes.map((probe, i) => (
-                    <p key={i} className="text-sm text-muted-foreground pl-2">• {probe}</p>
-                  ))}
-                </div>
+                <ProbingFollowUps
+                  probes={currentQ.probes}
+                  probeNotes={probeNotes[String(questionIndex)]}
+                  onProbeNoteChange={(idx, note) => setProbeNotes(prev => ({
+                    ...prev,
+                    [String(questionIndex)]: { ...(prev[String(questionIndex)] || {}), [idx]: note }
+                  }))}
+                />
               )}
 
               {/* Response input */}
@@ -465,22 +472,30 @@ export default function PublicScriptView() {
 
                 {/* Branch probes revealed after yes/no selection */}
                 {currentQ.type === 'yes_no' && yesNoResponse && currentQ.branch && (
-                  <div className="border-l-4 border-primary/40 pl-4 space-y-1.5 mt-1">
+                  <div className="space-y-2 mt-1">
                     {yesNoResponse === 'yes' && currentQ.branch.yes_probes && currentQ.branch.yes_probes.length > 0 && (
-                      <>
-                        <p className="text-xs font-semibold text-green-700 dark:text-green-400 uppercase tracking-wide">✓ If YES — follow up with:</p>
-                        {currentQ.branch.yes_probes.map((p, i) => (
-                          <p key={i} className="text-sm text-muted-foreground">• {p}</p>
-                        ))}
-                      </>
+                      <ProbingFollowUps
+                        probes={currentQ.branch.yes_probes}
+                        label="YES follow-ups"
+                        variant="branch-yes"
+                        probeNotes={probeNotes[`${questionIndex}_yes`]}
+                        onProbeNoteChange={(idx, note) => setProbeNotes(prev => ({
+                          ...prev,
+                          [`${questionIndex}_yes`]: { ...(prev[`${questionIndex}_yes`] || {}), [idx]: note }
+                        }))}
+                      />
                     )}
                     {yesNoResponse === 'no' && currentQ.branch.no_probes && currentQ.branch.no_probes.length > 0 && (
-                      <>
-                        <p className="text-xs font-semibold text-rose-700 dark:text-rose-400 uppercase tracking-wide">✗ If NO — follow up with:</p>
-                        {currentQ.branch.no_probes.map((p, i) => (
-                          <p key={i} className="text-sm text-muted-foreground">• {p}</p>
-                        ))}
-                      </>
+                      <ProbingFollowUps
+                        probes={currentQ.branch.no_probes}
+                        label="NO follow-ups"
+                        variant="branch-no"
+                        probeNotes={probeNotes[`${questionIndex}_no`]}
+                        onProbeNoteChange={(idx, note) => setProbeNotes(prev => ({
+                          ...prev,
+                          [`${questionIndex}_no`]: { ...(prev[`${questionIndex}_no`] || {}), [idx]: note }
+                        }))}
+                      />
                     )}
                   </div>
                 )}
@@ -524,7 +539,19 @@ export default function PublicScriptView() {
                 )}
               </div>
 
-              {/* Required hint for yes_no */}
+              {/* Agent notes for this question */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide flex items-center gap-1.5">
+                  📝 Agent Notes
+                </label>
+                <Textarea
+                  placeholder="Capture additional context, verbatim quotes, or observations..."
+                  className="min-h-[60px] text-sm bg-background"
+                  value={agentNotes[String(questionIndex)] || ''}
+                  onChange={(e) => setAgentNotes(prev => ({ ...prev, [String(questionIndex)]: e.target.value }))}
+                />
+              </div>
+
               {currentQ.type === 'yes_no' && currentResponse === undefined && (
                 <p className="text-xs text-center text-destructive font-medium">
                   A Yes or No response is required to determine next steps.
