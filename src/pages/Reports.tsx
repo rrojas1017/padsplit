@@ -165,6 +165,7 @@ export default function Reports() {
     setRebookingFilter('all');
     setConversationFilter('all');
     setImportBatchFilter('all');
+    setCampaignTypeFilter('all');
     setCurrentPage(1);
   };
 
