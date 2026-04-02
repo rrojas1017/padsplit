@@ -16,6 +16,7 @@ import { useAddressabilityBreakdown, AddressabilityBucket } from '@/hooks/useAdd
 import { ADDRESSABILITY_DESCRIPTIONS, CLUSTER_COLORS } from '@/utils/reason-code-mapping';
 import { supabase } from '@/integrations/supabase/client';
 import { MemberDetailPanel } from './MemberDetailPanel';
+import { ReasonCodeDrillDown } from './ReasonCodeDrillDown';
 import { useIsAdmin } from '@/hooks/useIsAdmin';
 import {
   DrillDownMember, exportForSurvey, exportCallList,
@@ -129,7 +130,7 @@ function ReasonDrillDown({ active, total, onCodeClick, onViewAllMembers, onBack 
   const [detailId, setDetailId] = useState<string | null>(null);
   const [selectedSubReasons, setSelectedSubReasons] = useState<Set<string>>(new Set());
   const [selectedMembers, setSelectedMembers] = useState<Set<string>>(new Set());
-  const [treemapFilter, setTreemapFilter] = useState<string | null>(null);
+  const [subReasonDrillDown, setSubReasonDrillDown] = useState<{ name: string; bookingIds: string[] } | null>(null);
   const [actionModal, setActionModal] = useState<{ subReason: string; count: number } | null>(null);
   const [page, setPage] = useState(0);
   const PAGE_SIZE = 25;
@@ -204,21 +205,14 @@ function ReasonDrillDown({ active, total, onCodeClick, onViewAllMembers, onBack 
 
   // Filtered members based on selection/treemap click
   const filteredMembers = useMemo(() => {
-    const activeFilter = treemapFilter || (selectedSubReasons.size > 0 ? null : null);
-    let filtered = allMembers;
-    if (treemapFilter) {
-      filtered = allMembers.filter(m =>
-        m.subReason.toLowerCase() === treemapFilter.toLowerCase() ||
-        m.reasonCode.toLowerCase() === treemapFilter.toLowerCase()
-      );
-    } else if (selectedSubReasons.size > 0) {
+    if (selectedSubReasons.size > 0) {
       const selLower = new Set([...selectedSubReasons].map(s => s.toLowerCase()));
-      filtered = allMembers.filter(m =>
+      return allMembers.filter(m =>
         selLower.has(m.subReason.toLowerCase()) || selLower.has(m.reasonCode.toLowerCase())
       );
     }
-    return filtered;
-  }, [allMembers, treemapFilter, selectedSubReasons]);
+    return allMembers;
+  }, [allMembers, selectedSubReasons]);
 
   const pagedMembers = filteredMembers.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
   const totalPages = Math.ceil(filteredMembers.length / PAGE_SIZE);
@@ -228,20 +222,17 @@ function ReasonDrillDown({ active, total, onCodeClick, onViewAllMembers, onBack 
     const next = new Set(selectedSubReasons);
     next.has(name) ? next.delete(name) : next.add(name);
     setSelectedSubReasons(next);
-    setTreemapFilter(null);
     setPage(0);
   };
 
   const selectAll = () => {
     setSelectedSubReasons(new Set(subData.map(s => s.name)));
-    setTreemapFilter(null);
     setPage(0);
   };
 
   const clearSelection = () => {
     setSelectedSubReasons(new Set());
     setSelectedMembers(new Set());
-    setTreemapFilter(null);
     setPage(0);
   };
 
@@ -319,9 +310,8 @@ function ReasonDrillDown({ active, total, onCodeClick, onViewAllMembers, onBack 
             content={<CustomTreemapContent />}
             onClick={(node: any) => {
               if (node?.name) {
-                setTreemapFilter(treemapFilter === node.name ? null : node.name);
-                setSelectedSubReasons(new Set());
-                setPage(0);
+                const ids = getMembersForSubReason(node.name).map(m => m.bookingId);
+                setSubReasonDrillDown({ name: node.name, bookingIds: ids });
               }
             }}
           >
@@ -334,12 +324,6 @@ function ReasonDrillDown({ active, total, onCodeClick, onViewAllMembers, onBack 
             />
           </Treemap>
         </ResponsiveContainer>
-        {treemapFilter && (
-          <div className="mt-2 flex items-center gap-2">
-            <Badge variant="secondary" className="text-xs">Filtered: {treemapFilter}</Badge>
-            <Button variant="ghost" size="sm" className="h-6 text-xs" onClick={() => setTreemapFilter(null)}>Clear</Button>
-          </div>
-        )}
       </div>
 
       {/* Sub-reason breakdown table */}
@@ -365,11 +349,10 @@ function ReasonDrillDown({ active, total, onCodeClick, onViewAllMembers, onBack 
             {subData.map((s, i) => (
               <TableRow
                 key={i}
-                className={`cursor-pointer hover:bg-muted/50 transition-colors ${treemapFilter === s.name ? 'bg-muted/70 ring-1 ring-primary/30' : ''}`}
+                className="cursor-pointer hover:bg-muted/50 transition-colors"
                 onClick={() => {
-                  setTreemapFilter(treemapFilter === s.name ? null : s.name);
-                  setSelectedSubReasons(new Set());
-                  setPage(0);
+                  const ids = getMembersForSubReason(s.name).map(m => m.bookingId);
+                  setSubReasonDrillDown({ name: s.name, bookingIds: ids });
                 }}
               >
                 <TableCell onClick={e => e.stopPropagation()}>
@@ -381,7 +364,7 @@ function ReasonDrillDown({ active, total, onCodeClick, onViewAllMembers, onBack 
                 <TableCell className="flex items-center gap-2">
                   <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: `hsl(${baseHue}, 70%, ${40 + (i * 6) % 30}%)` }} />
                   <span className="text-sm font-medium">{s.name}</span>
-                  <ChevronRight className={`w-3.5 h-3.5 text-muted-foreground transition-transform ${treemapFilter === s.name ? 'rotate-90' : ''}`} />
+                  <ChevronRight className="w-3.5 h-3.5 text-muted-foreground" />
                 </TableCell>
                 <TableCell className="text-right font-medium">{s.value}</TableCell>
                 <TableCell className="text-right text-muted-foreground">{s.pctCluster}%</TableCell>
@@ -421,7 +404,7 @@ function ReasonDrillDown({ active, total, onCodeClick, onViewAllMembers, onBack 
       <div className="border-t pt-4">
         <h4 className="text-sm font-medium mb-3 flex items-center gap-2">
           <Users className="w-4 h-4 text-muted-foreground" />
-          {treemapFilter || selectedSubReasons.size > 0
+          {selectedSubReasons.size > 0
             ? `Members (${filteredMembers.length})`
             : `Member Preview (${allMembers.length})`}
         </h4>
@@ -498,7 +481,7 @@ function ReasonDrillDown({ active, total, onCodeClick, onViewAllMembers, onBack 
                 </div>
               </div>
             )}
-            {!treemapFilter && selectedSubReasons.size === 0 && onViewAllMembers && (
+            {selectedSubReasons.size === 0 && onViewAllMembers && (
               <Button variant="link" size="sm" className="mt-2 gap-1" onClick={() => onViewAllMembers(active.name)}>
                 View all {active.count} members <ArrowRight className="w-3.5 h-3.5" />
               </Button>
@@ -578,6 +561,17 @@ function ReasonDrillDown({ active, total, onCodeClick, onViewAllMembers, onBack 
       onOpenChange={(o) => { if (!o) setDetailId(null); }}
       transcriptionId={detailId}
     />
+
+    {subReasonDrillDown && (
+      <ReasonCodeDrillDown
+        open={!!subReasonDrillDown}
+        onOpenChange={(o) => { if (!o) setSubReasonDrillDown(null); }}
+        reasonCode={subReasonDrillDown.name}
+        reasonColor={active.color}
+        reasonCount={subReasonDrillDown.bookingIds.length}
+        bookingIds={subReasonDrillDown.bookingIds}
+      />
+    )}
     </>
   );
 }
