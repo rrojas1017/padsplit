@@ -130,7 +130,7 @@ function ReasonDrillDown({ active, total, onCodeClick, onViewAllMembers, onBack 
   const [detailId, setDetailId] = useState<string | null>(null);
   const [selectedSubReasons, setSelectedSubReasons] = useState<Set<string>>(new Set());
   const [selectedMembers, setSelectedMembers] = useState<Set<string>>(new Set());
-  const [treemapFilter, setTreemapFilter] = useState<string | null>(null);
+  const [subReasonDrillDown, setSubReasonDrillDown] = useState<{ name: string; bookingIds: string[] } | null>(null);
   const [actionModal, setActionModal] = useState<{ subReason: string; count: number } | null>(null);
   const [page, setPage] = useState(0);
   const PAGE_SIZE = 25;
