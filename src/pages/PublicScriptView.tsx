@@ -539,7 +539,19 @@ export default function PublicScriptView() {
                 )}
               </div>
 
-              {/* Required hint for yes_no */}
+              {/* Agent notes for this question */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide flex items-center gap-1.5">
+                  📝 Agent Notes
+                </label>
+                <Textarea
+                  placeholder="Capture additional context, verbatim quotes, or observations..."
+                  className="min-h-[60px] text-sm bg-background"
+                  value={agentNotes[String(questionIndex)] || ''}
+                  onChange={(e) => setAgentNotes(prev => ({ ...prev, [String(questionIndex)]: e.target.value }))}
+                />
+              </div>
+
               {currentQ.type === 'yes_no' && currentResponse === undefined && (
                 <p className="text-xs text-center text-destructive font-medium">
                   A Yes or No response is required to determine next steps.
