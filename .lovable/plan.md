@@ -1,29 +1,40 @@
 
 
-# Fix Sub-Category Drill-Down: Open as Sheet Instead of Inline Filter
+# Filter Audience Survey Records by Minimum Question Coverage
 
 ## Problem
-Clicking a sub-category row (e.g. "Buying a Home") in the ReasonDrillDown currently sets an inline `treemapFilter` that just filters the member list below — pushing rows around and showing 0 members when the filter doesn't match. It should open a **separate Sheet panel** (slide-out from right) showing that sub-reason's members, exactly like clicking a reason code cluster on the main overview opens a full drill-down.
+Currently, all audience survey records with `has_valid_conversation = true` are included in reports and insights — even if the call barely covered any survey questions. The move-out survey pipeline already filters by conversation validity; the audience survey needs an equivalent "at least 1 question answered" gate.
 
-## Solution
-When a sub-category row is clicked, open the existing `ReasonCodeDrillDown` Sheet component (already built in `src/components/research-insights/ReasonCodeDrillDown.tsx`) — passing the sub-reason name and filtered booking IDs. Keep the treemap click and checkbox multi-select for export purposes only.
+## Current data
+- 35 audience survey records, all with `has_valid_conversation = true`
+- `survey_progress.answered` ranges from 2 to 12
+- The `research_extraction` also contains `agent_observations.questions_covered_estimate`
 
-## Changes
+## Approach
+Add a **minimum questions threshold** check (≥ 1 answered question) in three places:
 
-### `src/components/research-insights/ReasonCodeChart.tsx`
+### 1. `src/hooks/useReportsData.ts`
+When `campaignTypeFilter === 'audience_survey'`, after fetching records, filter out any where `survey_progress.answered < 1` (or `survey_progress` is null). This is already client-side post-fetch filtering since `survey_progress` comes from the joined `booking_transcriptions`.
 
-**In `ReasonDrillDown`:**
-1. Add state: `subReasonDrillDown: { name: string; bookingIds: string[] } | null`
-2. Change sub-reason table row `onClick` — instead of setting `treemapFilter`, collect booking IDs for that sub-reason from `allMembers` and open the `ReasonCodeDrillDown` Sheet
-3. Change treemap block click — same behavior: open the Sheet for that sub-reason
-4. Keep checkboxes for multi-select export (they don't open the sheet, they populate the floating action bar)
-5. Import and render `ReasonCodeDrillDown` at the bottom of `ReasonDrillDown`, passing the sub-reason name, color, and booking IDs
-6. Remove `treemapFilter` state and all inline filtering tied to it — the member preview section goes back to showing all members (or selected-checkbox members for export)
+### 2. `supabase/functions/generate-research-insights/index.ts`
+In the audience survey aggregation path (around line 1077), add a filter: skip records where `survey_progress.answered < 1`. This ensures the AI aggregation only uses records with real data.
 
-**Result:** Clicking a sub-reason row or treemap block opens the familiar Sheet with member list, clickable rows for `MemberDetailPanel`, search, and CSV export — matching the pattern users already know from the top-level reason code clicks.
+### 3. `src/hooks/useReasonCodeCounts.ts` (move-out only — no change needed)
+Already filters by `research_campaign_type = 'move_out_survey'`, so audience survey records are excluded.
 
-### Files
-| File | Action |
+### 4. Reports page — Campaign column display
+In the campaign badge column (from the plan you just approved), show a warning indicator for audience survey records with very low question coverage (e.g. < 3 answered) so admins can spot thin data.
+
+## Technical details
+
+| File | Change |
 |------|--------|
-| `src/components/research-insights/ReasonCodeChart.tsx` | Replace inline treemap filter with Sheet-based drill-down |
+| `src/hooks/useReportsData.ts` | Post-fetch filter: exclude audience survey records with `survey_progress.answered < 1` |
+| `supabase/functions/generate-research-insights/index.ts` | Add `survey_progress.answered >= 1` filter for audience survey records before aggregation |
+| `src/pages/Reports.tsx` | Show "thin data" indicator on audience survey rows with < 3 questions answered |
+
+## Notes
+- Threshold of **≥ 1** is the minimum gate (at least one question was answered)
+- Currently the lowest in the dataset is 2, so no records would be excluded today — but this protects against future bad data
+- The move-out survey equivalent is `has_valid_conversation` which is already enforced everywhere
 
