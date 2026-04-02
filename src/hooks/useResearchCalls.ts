@@ -213,6 +213,8 @@ export function useResearchCalls() {
       _researcher_name: submission.researcher_name || '',
       _caller_first_name: submission.caller_first_name || '',
       _caller_last_name: submission.caller_last_name || '',
+      _probe_notes: submission.probe_notes || {},
+      _agent_notes: submission.agent_notes || {},
     };
     
     // Step 1: Insert into research_calls
