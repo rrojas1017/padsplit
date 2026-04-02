@@ -951,6 +951,7 @@ export default function Reports() {
                 {isResearch ? (
                   <>
                     <SortableHeader column="bookingDate" label="Call Date" />
+                    <th className="text-left py-3 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Campaign</th>
                     <th className="text-left py-3 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Contact</th>
                     <SortableHeader column="memberName" label="Name" />
                     <th className="text-left py-3 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Email</th>
