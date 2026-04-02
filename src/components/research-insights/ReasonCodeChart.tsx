@@ -310,9 +310,8 @@ function ReasonDrillDown({ active, total, onCodeClick, onViewAllMembers, onBack 
             content={<CustomTreemapContent />}
             onClick={(node: any) => {
               if (node?.name) {
-                setTreemapFilter(treemapFilter === node.name ? null : node.name);
-                setSelectedSubReasons(new Set());
-                setPage(0);
+                const ids = getMembersForSubReason(node.name).map(m => m.bookingId);
+                setSubReasonDrillDown({ name: node.name, bookingIds: ids });
               }
             }}
           >
@@ -325,12 +324,6 @@ function ReasonDrillDown({ active, total, onCodeClick, onViewAllMembers, onBack 
             />
           </Treemap>
         </ResponsiveContainer>
-        {treemapFilter && (
-          <div className="mt-2 flex items-center gap-2">
-            <Badge variant="secondary" className="text-xs">Filtered: {treemapFilter}</Badge>
-            <Button variant="ghost" size="sm" className="h-6 text-xs" onClick={() => setTreemapFilter(null)}>Clear</Button>
-          </div>
-        )}
       </div>
 
       {/* Sub-reason breakdown table */}
