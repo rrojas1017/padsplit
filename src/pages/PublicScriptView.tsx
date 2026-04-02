@@ -146,6 +146,8 @@ export default function PublicScriptView() {
     setPhase('start');
     setQuestionIndex(0);
     setResponses({});
+    setProbeNotes({});
+    setAgentNotes({});
     setEndedEarly(false);
     setEarlyDisposition('');
     setSelectedEndDisposition('caller_hung_up');
