@@ -505,6 +505,7 @@ export type Database = {
           stt_provider: string | null
           stt_word_count: number | null
           survey_progress: Json | null
+          testimonial_status: string | null
           updated_at: string | null
         }
         Insert: {
@@ -538,6 +539,7 @@ export type Database = {
           stt_provider?: string | null
           stt_word_count?: number | null
           survey_progress?: Json | null
+          testimonial_status?: string | null
           updated_at?: string | null
         }
         Update: {
@@ -571,6 +573,7 @@ export type Database = {
           stt_provider?: string | null
           stt_word_count?: number | null
           survey_progress?: Json | null
+          testimonial_status?: string | null
           updated_at?: string | null
         }
         Relationships: [
