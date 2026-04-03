@@ -111,7 +111,7 @@ export default function ScriptBuilder() {
           <Button variant="outline" onClick={() => setImportOpen(true)}>
             <Upload className="w-4 h-4 mr-2" /> Import from Document
           </Button>
-          <Button onClick={() => { setEditingScript(null); setImportedData(null); setDialogOpen(true); }}>
+          <Button onClick={() => setWizardMode(true)}>
             <Plus className="w-4 h-4 mr-2" /> New Script
           </Button>
         </div>
