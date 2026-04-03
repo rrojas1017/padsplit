@@ -25,6 +25,12 @@ export function MoveOutKPIGrid({ kpis }: MoveOutKPIGridProps) {
   const topReasonName = kpis.topReasonCode || '—';
   const isLongName = topReasonName.length > 25;
 
+  // Compute top reason count and formatted percentage
+  const topReasonPctRaw = parseFloat(String(kpis.topReasonPct || '0').replace(/%/g, ''));
+  const topReasonCount = !isNaN(topReasonPctRaw) && kpis.totalCases > 0
+    ? Math.round((topReasonPctRaw > 1 ? topReasonPctRaw / 100 : topReasonPctRaw) * kpis.totalCases)
+    : null;
+
   const cards = [
     {
       value: totalDisplay,
@@ -45,7 +51,9 @@ export function MoveOutKPIGrid({ kpis }: MoveOutKPIGridProps) {
     {
       value: topReasonName,
       label: 'Top Reason',
-      context: kpis.topReasonPct ? `${kpis.topReasonPct} of cases` : 'most frequent',
+      context: topReasonCount && kpis.topReasonPct
+        ? `${topReasonCount} cases (${formatPercent(kpis.topReasonPct)})`
+        : 'most frequent',
       icon: TrendingUp,
       iconBg: 'bg-destructive/10',
       iconColor: 'text-destructive',
