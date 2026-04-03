@@ -1,42 +1,47 @@
 
 
-# Fix Processing Stats — Filter by Campaign Type
+# Fix Reports: Campaign Type Filter Must Be Server-Side
 
 ## Problem
-The "records processed" banner shows **609 / 655** but Total Cases is **329**. This is because:
+When you select "Research" + "Move-Out Survey", the Reports page shows only **13 records** instead of the actual **771** valid move-out survey records.
 
-- **655** = ALL research records (move-out + audience survey combined) — the query doesn't filter by campaign type
-- **609** = only move-out processed records — this query DOES filter by campaign type
-- **46 pending** = 655 - 609 = wrong, includes audience survey records that aren't "pending" for move-out
+**Root cause:** The campaign type filter (`move_out_survey` / `audience_survey`) is applied **after** the database query returns results. The DB fetches 50 records per page from ALL research records, then JavaScript filters that page down to only matching campaign types. So you only see whatever happens to match on that one page — in this case, 13 out of 50.
 
-The total count query is missing the `research_campaign_type` filter.
+The `totalCount` is also wrong because it's set to `filteredRecords.length` (the client-filtered count) instead of the true database count.
 
 ## Fix
 
-### `src/hooks/useResearchInsightsData.ts` — Add campaign type filter to totalCount query
+### `src/hooks/useReportsData.ts`
 
-Update the `totalCount` query (lines 41-47) to also filter by `research_campaign_type`:
+**Move campaign type filter into the database query** by using the `!inner` join syntax on `booking_transcriptions`:
 
+1. When `campaignTypeFilter` is set (not `'all'`), change the join from `booking_transcriptions (...)` to `booking_transcriptions!inner (...)` and add `.eq('booking_transcriptions.research_campaign_type', campaignTypeFilter)` to the query. This makes the DB filter by campaign type before pagination.
+
+2. For audience survey, also add `.gte('booking_transcriptions.survey_progress->answered', 1)` at the DB level (or use a post-filter but fetch all matching records).
+
+3. **Remove the post-fetch client-side filtering** block (lines 368-382) that currently does `filteredRecords.filter(r => r.researchCampaignType === ...)`. This is what causes the count mismatch.
+
+4. Always use the server `count` for `totalCount` — no more `clientFiltered ? filteredRecords.length : count`.
+
+**Implementation detail:** The `!inner` join syntax in Supabase means "only return parent rows where the joined child exists and matches." When `campaignTypeFilter !== 'all'`, the select changes to:
 ```typescript
-const { count: totalCount } = await supabase
-  .from('booking_transcriptions')
-  .select('id, bookings!inner(record_type, has_valid_conversation)', { count: 'exact', head: true })
-  .not('call_transcription', 'is', null)
-  .neq('call_transcription', '')
-  .eq('bookings.record_type', 'research')
-  .eq('bookings.has_valid_conversation', true)
-  .eq('research_campaign_type', campaignType);  // ADD THIS
+const joinType = (filters.campaignTypeFilter && filters.campaignTypeFilter !== 'all') 
+  ? 'booking_transcriptions!inner' 
+  : 'booking_transcriptions';
+
+// In the select string, use the joinType variable
+// Then after building the query:
+if (filters.campaignTypeFilter && filters.campaignTypeFilter !== 'all') {
+  query = query.eq('booking_transcriptions.research_campaign_type', filters.campaignTypeFilter);
+}
+if (filters.campaignTypeFilter === 'audience_survey') {
+  // Quality gate: only include records with >= 1 question answered
+  query = query.gte('booking_transcriptions.survey_progress->>answered', '1');
+}
 ```
-
-After this fix, when viewing move-out survey:
-- Total = only move-out transcribed records (e.g., ~609)
-- Processed = 609
-- Pending = 0 (or close to it)
-
-The "Total Cases: 329" from the AI report is a subset (records that passed quality gates and were analyzed in the latest report), which will always be ≤ processed count. That's expected and no longer confusing because the denominator matches.
 
 ### Files
 | File | Change |
 |------|--------|
-| `src/hooks/useResearchInsightsData.ts` | Add `.eq('research_campaign_type', campaignType)` to totalCount query |
+| `src/hooks/useReportsData.ts` | Move campaign type + audience quality gate filters to DB query level; remove client-side post-filtering; always use server count |
 
