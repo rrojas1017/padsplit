@@ -107,7 +107,7 @@ export function MessagingMatrix({ triggers, motivators, topPlatform, records, cr
                 <tr>
                   <th className="text-left p-2 text-muted-foreground">Motivator</th>
                   {platforms.map(p => (
-                    <th key={p} className="text-center p-2 text-muted-foreground">{formatLabel(p)}</th>
+                    <th key={p} className="text-center p-2 text-muted-foreground">{p}</th>
                   ))}
                 </tr>
               </thead>
