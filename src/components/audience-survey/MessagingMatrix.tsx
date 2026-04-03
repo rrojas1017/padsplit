@@ -2,7 +2,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import { MessageSquare, Star } from 'lucide-react';
 import type { AggResult, AudienceSurveyRecord } from '@/hooks/useAudienceSurveyResponses';
-import { generateMessagingInsight, DISTINCT_COLORS, formatLabel } from '@/utils/audienceSurveyInsights';
+import { generateMessagingInsight, DISTINCT_COLORS, formatLabel, normalizeLabel } from '@/utils/audienceSurveyInsights';
 
 interface Props {
   triggers: AggResult[];
