@@ -308,7 +308,15 @@ export function useReportsData(
         query = query.or(`member_name.ilike.${searchTerm},market_city.ilike.${searchTerm},market_state.ilike.${searchTerm}`);
       }
 
-      // Apply sorting
+      // Apply campaign type filter (server-side via !inner join)
+      if (useCampaignFilter) {
+        query = query.eq('booking_transcriptions.research_campaign_type', filters.campaignTypeFilter);
+      }
+      if (filters.campaignTypeFilter === 'audience_survey') {
+        query = query.gte('booking_transcriptions.survey_progress->>answered', '1');
+      }
+
+
       const dbColumn = sorting.column ? sortColumnMap[sorting.column] || 'booking_date' : 'booking_date';
       query = query.order(dbColumn, { ascending: sorting.direction === 'asc' });
 
