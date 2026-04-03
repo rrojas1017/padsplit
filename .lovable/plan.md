@@ -1,47 +1,40 @@
 
 
-# Fix Reports: Campaign Type Filter Must Be Server-Side
+# Why Only 609 Move-Out Surveys — Root Cause & Fix
 
-## Problem
-When you select "Research" + "Move-Out Survey", the Reports page shows only **13 records** instead of the actual **771** valid move-out survey records.
+## What's happening
 
-**Root cause:** The campaign type filter (`move_out_survey` / `audience_survey`) is applied **after** the database query returns results. The DB fetches 50 records per page from ALL research records, then JavaScript filters that page down to only matching campaign types. So you only see whatever happens to match on that one page — in this case, 13 out of 50.
+You have **817 valid research conversations** total, but only **609 show results** in the Move-Out Insights dashboard. The gap is **162 records** (the remaining 46 are audience surveys).
 
-The `totalCount` is also wrong because it's set to `filteredRecords.length` (the client-filtered count) instead of the true database count.
+These 162 records have:
+- `transcription_status = 'completed'` (marked as done)
+- `call_summary` populated (AI did analyze the audio)
+- `call_transcription` = empty string (raw transcript text wasn't stored)
+- Real call durations (120–676 seconds, avg 160s) — these are NOT voicemails
 
-## Fix
+The processing pipeline filters on `call_transcription IS NOT NULL AND != ''`, so these 162 get excluded even though the AI already generated summaries for them.
 
-### `src/hooks/useReportsData.ts`
+## Root cause
 
-**Move campaign type filter into the database query** by using the `!inner` join syntax on `booking_transcriptions`:
+The transcription service (Deepgram) processed the audio and the AI generated summaries, but the raw transcript text wasn't persisted — likely a bug in the `transcribe-call` edge function where the summary was saved but the transcript field was left empty.
 
-1. When `campaignTypeFilter` is set (not `'all'`), change the join from `booking_transcriptions (...)` to `booking_transcriptions!inner (...)` and add `.eq('booking_transcriptions.research_campaign_type', campaignTypeFilter)` to the query. This makes the DB filter by campaign type before pagination.
+## Two-part fix
 
-2. For audience survey, also add `.gte('booking_transcriptions.survey_progress->answered', 1)` at the DB level (or use a post-filter but fetch all matching records).
+### Part 1: Re-transcribe the 162 missing records
+Use the existing `batch-retry-transcriptions` edge function to re-process these 162 records. Their `kixie_link` audio URLs are still valid. This will populate the `call_transcription` field, after which the normal processing pipeline will pick them up.
 
-3. **Remove the post-fetch client-side filtering** block (lines 368-382) that currently does `filteredRecords.filter(r => r.researchCampaignType === ...)`. This is what causes the count mismatch.
+**Action:** Invoke the batch retry function targeting records where `transcription_status = 'completed'` but `call_transcription` is empty.
 
-4. Always use the server `count` for `totalCount` — no more `clientFiltered ? filteredRecords.length : count`.
-
-**Implementation detail:** The `!inner` join syntax in Supabase means "only return parent rows where the joined child exists and matches." When `campaignTypeFilter !== 'all'`, the select changes to:
-```typescript
-const joinType = (filters.campaignTypeFilter && filters.campaignTypeFilter !== 'all') 
-  ? 'booking_transcriptions!inner' 
-  : 'booking_transcriptions';
-
-// In the select string, use the joinType variable
-// Then after building the query:
-if (filters.campaignTypeFilter && filters.campaignTypeFilter !== 'all') {
-  query = query.eq('booking_transcriptions.research_campaign_type', filters.campaignTypeFilter);
-}
-if (filters.campaignTypeFilter === 'audience_survey') {
-  // Quality gate: only include records with >= 1 question answered
-  query = query.gte('booking_transcriptions.survey_progress->>answered', '1');
-}
-```
+### Part 2: Prevent future occurrences
+Review the `transcribe-call` edge function to ensure it always saves the raw transcript text alongside the summary. If Deepgram returns empty text, the status should be set to `failed` (not `completed`).
 
 ### Files
+
 | File | Change |
 |------|--------|
-| `src/hooks/useReportsData.ts` | Move campaign type + audience quality gate filters to DB query level; remove client-side post-filtering; always use server count |
+| `supabase/functions/transcribe-call/index.ts` | Add guard: if transcript text is empty after Deepgram returns, set status to `failed` instead of `completed` |
+| `supabase/functions/batch-retry-transcriptions/index.ts` | May need to add a mode to target "completed but empty" records |
+
+### Alternative quick option
+If you'd rather not wait for re-transcription, we could update the processing pipeline to also extract insights from records that have `call_summary` (even without raw transcription). But re-transcribing is the better long-term fix since it gives the AI the full transcript to work with.
 
