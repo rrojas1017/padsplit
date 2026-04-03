@@ -200,40 +200,19 @@ serve(async (req) => {
     if (completedButEmpty) {
       console.log('[BATCH-RETRY] Mode: completedButEmpty — finding completed records with empty transcripts');
 
-      // Find booking IDs where booking_transcriptions.call_transcription is null or empty
-      // Use two separate queries since Supabase JS doesn't handle .eq('') well in .or()
-      const { data: nullTranscripts } = await supabase
-        .from('booking_transcriptions')
-        .select('booking_id')
-        .is('call_transcription', null);
-
-      const { data: emptyStringTranscripts } = await supabase
-        .from('booking_transcriptions')
-        .select('booking_id')
-        .eq('call_transcription', '');
-
-      const emptyTranscripts = [...(nullTranscripts || []), ...(emptyStringTranscripts || [])];
-
-      const emptyBookingIds = [...new Set(emptyTranscripts.map((t: any) => t.booking_id))];
-      
-      if (emptyBookingIds.length === 0) {
-        return new Response(
-          JSON.stringify({ success: true, found: 0, message: 'No completed-but-empty records found' }),
-          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
-      }
-
-      // Now fetch those bookings that also have completed status and a kixie_link
+      // Use RPC or direct SQL-like approach: query bookings with completed status,
+      // then check their transcription records for empty text
       let emptyQuery = supabase
         .from('bookings')
         .select(`
           id, kixie_link, member_name, booking_date, import_batch_id,
-          agents!inner(id, name, sites(name))
+          agents!inner(id, name, sites(name)),
+          booking_transcriptions!inner(call_transcription)
         `)
-        .in('id', emptyBookingIds)
         .eq('transcription_status', 'completed')
         .eq('record_type', 'research')
         .not('kixie_link', 'is', null)
+        .eq('booking_transcriptions.call_transcription', '')
         .order('booking_date', { ascending: false })
         .limit(limit);
 
@@ -243,7 +222,35 @@ serve(async (req) => {
       const { data: emptyBookings, error: emptyBookingsError } = await emptyQuery;
 
       if (emptyBookingsError) {
-        throw new Error(`Failed to fetch empty-transcript bookings: ${emptyBookingsError.message}`);
+        // If filtering on empty string fails, try null approach
+        console.log('[BATCH-RETRY] Empty string filter failed, trying null filter:', emptyBookingsError.message);
+        
+        let nullQuery = supabase
+          .from('bookings')
+          .select(`
+            id, kixie_link, member_name, booking_date, import_batch_id,
+            agents!inner(id, name, sites(name)),
+            booking_transcriptions!inner(call_transcription)
+          `)
+          .eq('transcription_status', 'completed')
+          .eq('record_type', 'research')
+          .not('kixie_link', 'is', null)
+          .is('booking_transcriptions.call_transcription', null)
+          .order('booking_date', { ascending: false })
+          .limit(limit);
+
+        if (dateFrom) nullQuery = nullQuery.gte('booking_date', dateFrom);
+        if (dateTo) nullQuery = nullQuery.lte('booking_date', dateTo);
+
+        const { data: nullBookings, error: nullError } = await nullQuery;
+        if (nullError) {
+          throw new Error(`Failed to fetch empty-transcript bookings: ${nullError.message}`);
+        }
+        
+        const found = nullBookings || [];
+        console.log(`[BATCH-RETRY] Found ${found.length} completed-but-null-transcript records`);
+        // Continue with found...
+        return handleCompletedButEmpty(found, dryRun, SUPABASE_URL!, SUPABASE_SERVICE_ROLE_KEY!, supabase, corsHeaders);
       }
 
       const found = emptyBookings || [];
