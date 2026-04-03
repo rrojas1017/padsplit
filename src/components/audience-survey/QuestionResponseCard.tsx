@@ -74,10 +74,10 @@ export function QuestionResponseCard({ questionNumber, label, type, data, boolDa
         {type === 'yesno' && boolData && (
           <div className="space-y-3">
             <div className="flex items-center gap-3">
-              <div className="flex-1 flex items-center gap-2 rounded-full bg-green-50 border border-green-200 px-4 py-2.5">
-                <span className="text-sm font-medium text-green-700">Yes</span>
-                <span className="ml-auto text-sm font-bold text-green-700">{boolData.yes}</span>
-                <span className="text-xs text-green-600">({boolData.pct}%)</span>
+              <div className="flex-1 flex items-center gap-2 rounded-full bg-accent border border-primary/20 px-4 py-2.5">
+                <span className="text-sm font-medium text-primary">Yes</span>
+                <span className="ml-auto text-sm font-bold text-primary">{boolData.yes}</span>
+                <span className="text-xs text-primary/70">({boolData.pct}%)</span>
               </div>
               <div className="flex-1 flex items-center gap-2 rounded-full bg-muted border px-4 py-2.5">
                 <span className="text-sm font-medium text-muted-foreground">No</span>
