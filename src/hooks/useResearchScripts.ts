@@ -41,6 +41,13 @@ export interface ResearchScript {
   rebuttal_script_es: string | null;
   questions_es: ScriptQuestion[] | null;
   translation_status: string | null;
+  // Wizard fields
+  script_type: string | null;
+  ai_prompt: string | null;
+  ai_model: string | null;
+  ai_temperature: number | null;
+  slug: string | null;
+  status: string | null;
 }
 
 export function useResearchScripts() {
