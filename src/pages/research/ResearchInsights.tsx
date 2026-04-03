@@ -369,52 +369,54 @@ export default function ResearchInsights() {
         )}
       </div>
 
-      {/* Processing Status Banner */}
-      <div className="mb-6 flex flex-wrap gap-3">
-        <Card className="flex-1 min-w-[250px] shadow-sm">
-          <CardContent className="p-4 space-y-3">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
-                  <Database className="w-4 h-4 text-primary" />
+      {/* Processing Status Banner — move-out only */}
+      {!isAudienceSurvey && (
+        <div className="mb-6 flex flex-wrap gap-3">
+          <Card className="flex-1 min-w-[250px] shadow-sm">
+            <CardContent className="p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
+                    <Database className="w-4 h-4 text-primary" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-foreground">
+                      {processingStats.processedRecords} / {processingStats.totalResearchRecords} records processed
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {isBackfilling
+                        ? 'Processing in progress...'
+                        : processingStats.pendingRecords > 0
+                          ? `${processingStats.pendingRecords} pending AI processing`
+                          : 'All records processed'}
+                    </p>
+                  </div>
                 </div>
-                <div>
-                  <p className="text-sm font-medium text-foreground">
-                    {processingStats.processedRecords} / {processingStats.totalResearchRecords} records processed
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    {isBackfilling
-                      ? 'Processing in progress...'
-                      : processingStats.pendingRecords > 0
-                        ? `${processingStats.pendingRecords} pending AI processing`
-                        : 'All records processed'}
-                  </p>
-                </div>
               </div>
-            </div>
-            {isBackfilling && processingStats.totalResearchRecords > 0 && (
-              <Progress
-                value={(processingStats.processedRecords / processingStats.totalResearchRecords) * 100}
-                className="h-2"
-              />
-            )}
-          </CardContent>
-        </Card>
-
-        {processingStats.humanReviewCount > 0 && (
-          <Card className="min-w-[180px] shadow-sm border-amber-500/20">
-            <CardContent className="p-4 flex items-center gap-3">
-              <div className="w-9 h-9 rounded-full bg-amber-500/10 flex items-center justify-center flex-shrink-0">
-                <AlertTriangle className="w-4 h-4 text-amber-500" />
-              </div>
-              <div>
-                <p className="text-sm font-medium text-foreground">{processingStats.humanReviewCount} flagged</p>
-                <p className="text-xs text-muted-foreground">Need human review</p>
-              </div>
+              {isBackfilling && processingStats.totalResearchRecords > 0 && (
+                <Progress
+                  value={(processingStats.processedRecords / processingStats.totalResearchRecords) * 100}
+                  className="h-2"
+                />
+              )}
             </CardContent>
           </Card>
-        )}
-      </div>
+
+          {processingStats.humanReviewCount > 0 && (
+            <Card className="min-w-[180px] shadow-sm border-amber-500/20">
+              <CardContent className="p-4 flex items-center gap-3">
+                <div className="w-9 h-9 rounded-full bg-amber-500/10 flex items-center justify-center flex-shrink-0">
+                  <AlertTriangle className="w-4 h-4 text-amber-500" />
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-foreground">{processingStats.humanReviewCount} flagged</p>
+                  <p className="text-xs text-muted-foreground">Need human review</p>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+        </div>
+      )}
 
       {/* In-progress banner */}
       {isGenerating && (
