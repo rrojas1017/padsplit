@@ -47,6 +47,7 @@ export default function ScriptBuilder() {
   const [testScript, setTestScript] = useState<ResearchScript | null>(null);
   const [importedData, setImportedData] = useState<any>(null);
   const [linkLoadingId, setLinkLoadingId] = useState<string | null>(null);
+  const [wizardMode, setWizardMode] = useState(false);
 
   const filtered = filterType === 'all' ? scripts : scripts.filter(s => s.campaign_type === filterType);
 
