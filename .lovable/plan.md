@@ -1,40 +1,49 @@
 
 
-# Why Only 609 Move-Out Surveys — Root Cause & Fix
+# Fix: Total Cases KPI Shows AI-Hallucinated Count Instead of Actual Record Count
 
-## What's happening
+## Problem
+The "Total Cases" KPI shows **329** (or similar) instead of **609** because:
+- The database correctly tracks `total_records_analyzed = 599` on the `research_insights` row
+- But the AI writes `executive_summary.total_cases = 329` inside the JSONB — this is a hallucinated/approximate number
+- `deriveKPIs()` in `src/types/research-insights.ts` reads `executive_summary.total_cases` first, trusting the AI over the database
 
-You have **817 valid research conversations** total, but only **609 show results** in the Move-Out Insights dashboard. The gap is **162 records** (the remaining 46 are audience surveys).
+All percentage KPIs (addressable %, host related %, etc.) are also computed by the AI relative to its hallucinated 329 denominator, so those percentages may be inaccurate too — but since they're ratios the AI computed from its analysis, they're roughly correct. The **count** is the main issue.
 
-These 162 records have:
-- `transcription_status = 'completed'` (marked as done)
-- `call_summary` populated (AI did analyze the audio)
-- `call_transcription` = empty string (raw transcript text wasn't stored)
-- Real call durations (120–676 seconds, avg 160s) — these are NOT voicemails
+## Fix
 
-The processing pipeline filters on `call_transcription IS NOT NULL AND != ''`, so these 162 get excluded even though the AI already generated summaries for them.
+### 1. `src/pages/research/ResearchInsights.tsx` — Override totalCases with DB value
 
-## Root cause
+After computing `baseKpis`, override `totalCases` with `selectedReport.total_records_analyzed` (the database column that stores the actual count of records fed to the AI):
 
-The transcription service (Deepgram) processed the audio and the AI generated summaries, but the raw transcript text wasn't persisted — likely a bug in the `transcribe-call` edge function where the summary was saved but the transcript field was left empty.
+```typescript
+const kpis: ExtendedKPIs | null = baseKpis ? {
+  ...baseKpis,
+  totalCases: selectedReport?.total_records_analyzed || baseKpis.totalCases,
+  // ... rest stays the same
+} : null;
+```
 
-## Two-part fix
+This is a 1-line change. The `total_records_analyzed` column is already fetched by the `useResearchInsightsData` hook and available on `selectedReport`.
 
-### Part 1: Re-transcribe the 162 missing records
-Use the existing `batch-retry-transcriptions` edge function to re-process these 162 records. Their `kixie_link` audio URLs are still valid. This will populate the `call_transcription` field, after which the normal processing pipeline will pick them up.
+### 2. `src/types/research-insights.ts` — Update `deriveKPIs()` fallback order (defensive)
 
-**Action:** Invoke the batch retry function targeting records where `transcription_status = 'completed'` but `call_transcription` is empty.
+Change the `totalCases` derivation to prefer `stats.processed_records` over `executive_summary.total_cases` as a secondary signal, since the AI number is unreliable:
 
-### Part 2: Prevent future occurrences
-Review the `transcribe-call` edge function to ensure it always saves the raw transcript text alongside the summary. If Deepgram returns empty text, the status should be set to `failed` (not `completed`).
+```typescript
+const totalCases = totalCasesRaw != null && totalCasesRaw > (stats?.processed_records ?? 0) * 0.8
+  ? Math.round(totalCasesRaw)
+  : (stats?.processed_records ?? totalCasesRaw ?? 0);
+```
+
+Actually, the simpler fix: just always prefer `stats.processed_records` when available, since that's the real count.
+
+### Why This Happens
+The AI processes records in 30-record chunks. When synthesizing, it sometimes counts only a subset or approximates. The `total_records_analyzed` DB column is set programmatically from `processedRecords.length` (line 1207 of the edge function), so it's always accurate.
 
 ### Files
-
 | File | Change |
 |------|--------|
-| `supabase/functions/transcribe-call/index.ts` | Add guard: if transcript text is empty after Deepgram returns, set status to `failed` instead of `completed` |
-| `supabase/functions/batch-retry-transcriptions/index.ts` | May need to add a mode to target "completed but empty" records |
-
-### Alternative quick option
-If you'd rather not wait for re-transcription, we could update the processing pipeline to also extract insights from records that have `call_summary` (even without raw transcription). But re-transcribing is the better long-term fix since it gives the AI the full transcript to work with.
+| `src/pages/research/ResearchInsights.tsx` | Override `totalCases` with `selectedReport.total_records_analyzed` |
+| `src/types/research-insights.ts` | Update `deriveKPIs()` to prefer `stats.processed_records` over AI's `total_cases` |
 
