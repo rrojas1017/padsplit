@@ -77,6 +77,31 @@ export default function ScriptBuilder() {
     setLinkLoadingId(null);
   };
 
+  const handleWizardSave = async (wizardData: WizardData, isDraft: boolean) => {
+    await createScript({
+      name: wizardData.name,
+      description: wizardData.description || null,
+      campaign_type: wizardData.campaignType,
+      target_audience: wizardData.targetAudience,
+      questions: wizardData.questions,
+      intro_script: wizardData.introScript || null,
+      rebuttal_script: wizardData.rebuttalScript || null,
+      closing_script: wizardData.closingScript || null,
+      is_active: isDraft ? false : wizardData.isActive,
+    } as any);
+    setWizardMode(false);
+    toast.success(isDraft ? 'Script saved as draft' : 'Script launched!');
+  };
+
+  // Wizard mode
+  if (wizardMode) {
+    return (
+      <DashboardLayout title="Script Builder" subtitle="Create a new research script">
+        <ScriptWizard onClose={() => setWizardMode(false)} onSave={handleWizardSave} />
+      </DashboardLayout>
+    );
+  }
+
   return (
     <DashboardLayout
       title="Script Builder"
