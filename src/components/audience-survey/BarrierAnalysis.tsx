@@ -73,8 +73,9 @@ export function BarrierAnalysis({ concerns, interests, confusion }: Props) {
   const confusionFiltered = confusion.filter(c => c.label !== 'Nothing Was Confusing');
   const nothingConfusing = confusion.find(c => c.label === 'Nothing Was Confusing');
 
-  // Barrier-to-benefit mapping using exact-match map
-  const mappings = concerns.slice(0, 8).map(concern => {
+  // Barrier-to-benefit mapping using exact-match map, filtered to significant concerns
+  const significantConcerns = concerns.filter(c => c.count >= 2);
+  const mappings = significantConcerns.slice(0, 8).map(concern => {
     const map = BARRIER_BENEFIT_MAP[concern.label];
     const matchedInterest = map ? interests.find(i => i.label === map.interest) : null;
     return {

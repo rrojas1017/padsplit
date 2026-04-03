@@ -6,12 +6,20 @@ interface ExecutiveSummaryProps {
   data: any;
 }
 
-/** Parse percentage strings for display */
+/** Parse percentage strings for display — handles decimals (0.605 → 60.5%) and ranges ("60-70%") */
 function fmtPct(val: any): string | null {
   if (val == null) return null;
   const s = String(val).trim();
   if (!s || s === 'N/A' || s === '0') return null;
-  return s.includes('%') ? s : `${s}%`;
+  // Already has %, return as-is (e.g. "60-70%" or "65%")
+  if (s.includes('%')) return s;
+  // Try parsing as number — if it's a decimal between 0-1, multiply by 100
+  const n = parseFloat(s);
+  if (!isNaN(n)) {
+    const pct = n > 0 && n <= 1 ? n * 100 : n;
+    return `${Math.round(pct * 10) / 10}%`;
+  }
+  return `${s}%`;
 }
 
 /** Parse a long paragraph into headline + findings */

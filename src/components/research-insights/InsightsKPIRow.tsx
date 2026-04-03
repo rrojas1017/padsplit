@@ -9,6 +9,18 @@ interface InsightsKPIRowProps {
   direction?: TrendDirection | null;
 }
 
+/** Format a percentage value — handles raw decimals (0.605 → "60.5%") and string ranges ("60-70%") */
+function formatPercent(val: string): string {
+  if (!val || val === 'N/A') return 'N/A';
+  // Already formatted with %
+  if (val.includes('%')) return val;
+  const n = parseFloat(val);
+  if (isNaN(n)) return val;
+  // If it's a decimal between 0 and 1, multiply by 100
+  const pct = n > 0 && n <= 1 ? n * 100 : n;
+  return `${Math.round(pct * 10) / 10}%`;
+}
+
 export function InsightsKPIRow({ kpis, direction }: InsightsKPIRowProps) {
   const totalDisplay = kpis.dataErrorCount > 0
     ? `${(kpis.totalCases - kpis.dataErrorCount).toLocaleString()}`
