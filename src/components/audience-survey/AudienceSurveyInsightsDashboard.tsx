@@ -171,6 +171,9 @@ export function AudienceSurveyInsightsDashboard() {
           <TabsTrigger value="testimonials" className="gap-1.5 text-xs">
             <Video className="w-3.5 h-3.5" /> Testimonials
           </TabsTrigger>
+          <TabsTrigger value="responses" className="gap-1.5 text-xs">
+            <ClipboardList className="w-3.5 h-3.5" /> Script Responses <Badge variant="secondary" className="ml-1 text-[10px]">{records.length}</Badge>
+          </TabsTrigger>
         </TabsList>
 
         {/* Overview */}
