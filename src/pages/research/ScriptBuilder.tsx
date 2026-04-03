@@ -12,6 +12,8 @@ import { useScriptTokens, getScriptPublicUrl } from '@/hooks/useScriptTokens';
 import { ResearchScriptDialog } from '@/components/research/ResearchScriptDialog';
 import { ResearchScriptImportDialog } from '@/components/research/ResearchScriptImportDialog';
 import { ScriptTesterDialog } from '@/components/research/ScriptTesterDialog';
+import { ScriptWizard } from '@/components/script-builder/ScriptWizard';
+import type { WizardData } from '@/components/script-builder/StepUpload';
 import { Skeleton } from '@/components/ui/skeleton';
 import { toast } from 'sonner';
 
@@ -45,6 +47,7 @@ export default function ScriptBuilder() {
   const [testScript, setTestScript] = useState<ResearchScript | null>(null);
   const [importedData, setImportedData] = useState<any>(null);
   const [linkLoadingId, setLinkLoadingId] = useState<string | null>(null);
+  const [wizardMode, setWizardMode] = useState(false);
 
   const filtered = filterType === 'all' ? scripts : scripts.filter(s => s.campaign_type === filterType);
 
@@ -74,6 +77,31 @@ export default function ScriptBuilder() {
     setLinkLoadingId(null);
   };
 
+  const handleWizardSave = async (wizardData: WizardData, isDraft: boolean) => {
+    await createScript({
+      name: wizardData.name,
+      description: wizardData.description || null,
+      campaign_type: wizardData.campaignType,
+      target_audience: wizardData.targetAudience,
+      questions: wizardData.questions,
+      intro_script: wizardData.introScript || null,
+      rebuttal_script: wizardData.rebuttalScript || null,
+      closing_script: wizardData.closingScript || null,
+      is_active: isDraft ? false : wizardData.isActive,
+    } as any);
+    setWizardMode(false);
+    toast.success(isDraft ? 'Script saved as draft' : 'Script launched!');
+  };
+
+  // Wizard mode
+  if (wizardMode) {
+    return (
+      <DashboardLayout title="Script Builder" subtitle="Create a new research script">
+        <ScriptWizard onClose={() => setWizardMode(false)} onSave={handleWizardSave} />
+      </DashboardLayout>
+    );
+  }
+
   return (
     <DashboardLayout
       title="Script Builder"
@@ -83,7 +111,7 @@ export default function ScriptBuilder() {
           <Button variant="outline" onClick={() => setImportOpen(true)}>
             <Upload className="w-4 h-4 mr-2" /> Import from Document
           </Button>
-          <Button onClick={() => { setEditingScript(null); setImportedData(null); setDialogOpen(true); }}>
+          <Button onClick={() => setWizardMode(true)}>
             <Plus className="w-4 h-4 mr-2" /> New Script
           </Button>
         </div>

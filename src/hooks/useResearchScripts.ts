@@ -41,6 +41,13 @@ export interface ResearchScript {
   rebuttal_script_es: string | null;
   questions_es: ScriptQuestion[] | null;
   translation_status: string | null;
+  // Wizard fields
+  script_type: string | null;
+  ai_prompt: string | null;
+  ai_model: string | null;
+  ai_temperature: number | null;
+  slug: string | null;
+  status: string | null;
 }
 
 export function useResearchScripts() {
@@ -64,6 +71,12 @@ export function useResearchScripts() {
         questions: (s.questions as ScriptQuestion[]) || [],
         questions_es: (s.questions_es as ScriptQuestion[]) || null,
         translation_status: s.translation_status || 'pending',
+        script_type: s.script_type || 'qualitative',
+        ai_prompt: s.ai_prompt || null,
+        ai_model: s.ai_model || 'gemini-2.5-flash',
+        ai_temperature: s.ai_temperature ?? 0.2,
+        slug: s.slug || s.campaign_type,
+        status: s.status || 'active',
       }));
       setScripts(mapped);
     }
