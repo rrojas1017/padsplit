@@ -49,6 +49,7 @@ serve(async (req) => {
     let dateTo: string | null = null;
     let limit = 50;
     let specificBookingIds: string[] | null = null;
+    let completedButEmpty = false;
 
     try {
       const body = await req.json();
@@ -57,7 +58,8 @@ serve(async (req) => {
       dateTo = body.dateTo || null;
       limit = body.limit || 50;
       specificBookingIds = body.bookingIds || null;
-      console.log(`[BATCH-RETRY] Options: dryRun=${dryRun}, dateFrom=${dateFrom}, dateTo=${dateTo}, limit=${limit}, specificIds=${specificBookingIds?.length || 0}`);
+      completedButEmpty = body.completedButEmpty === true;
+      console.log(`[BATCH-RETRY] Options: dryRun=${dryRun}, dateFrom=${dateFrom}, dateTo=${dateTo}, limit=${limit}, specificIds=${specificBookingIds?.length || 0}, completedButEmpty=${completedButEmpty}`);
     } catch {
       // No body or invalid JSON
     }
@@ -189,6 +191,173 @@ serve(async (req) => {
             booking_date: b.booking_date
           })),
           message: `Started re-transcription for ${targetBookings.length} bookings. Processing in background with 2-second pacing.`
+        }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // === completedButEmpty mode: find records with completed status but empty call_transcription ===
+    if (completedButEmpty) {
+      console.log('[BATCH-RETRY] Mode: completedButEmpty — finding completed records with empty transcripts');
+
+      // Use RPC or direct SQL-like approach: query bookings with completed status,
+      // then check their transcription records for empty text
+      let emptyQuery = supabase
+        .from('bookings')
+        .select(`
+          id, kixie_link, member_name, booking_date, import_batch_id,
+          agents!inner(id, name, sites(name)),
+          booking_transcriptions!inner(call_transcription)
+        `)
+        .eq('transcription_status', 'completed')
+        .eq('record_type', 'research')
+        .not('kixie_link', 'is', null)
+        .eq('booking_transcriptions.call_transcription', '')
+        .order('booking_date', { ascending: false })
+        .limit(limit);
+
+      if (dateFrom) emptyQuery = emptyQuery.gte('booking_date', dateFrom);
+      if (dateTo) emptyQuery = emptyQuery.lte('booking_date', dateTo);
+
+      const { data: emptyBookings, error: emptyBookingsError } = await emptyQuery;
+
+      if (emptyBookingsError) {
+        // If filtering on empty string fails, try null approach
+        console.log('[BATCH-RETRY] Empty string filter failed, trying null filter:', emptyBookingsError.message);
+        
+        let nullQuery = supabase
+          .from('bookings')
+          .select(`
+            id, kixie_link, member_name, booking_date, import_batch_id,
+            agents!inner(id, name, sites(name)),
+            booking_transcriptions!inner(call_transcription)
+          `)
+          .eq('transcription_status', 'completed')
+          .eq('record_type', 'research')
+          .not('kixie_link', 'is', null)
+          .is('booking_transcriptions.call_transcription', null)
+          .order('booking_date', { ascending: false })
+          .limit(limit);
+
+        if (dateFrom) nullQuery = nullQuery.gte('booking_date', dateFrom);
+        if (dateTo) nullQuery = nullQuery.lte('booking_date', dateTo);
+
+        const { data: nullBookings, error: nullError } = await nullQuery;
+        if (nullError) {
+          throw new Error(`Failed to fetch empty-transcript bookings: ${nullError.message}`);
+        }
+        
+        const found = nullBookings || [];
+        console.log(`[BATCH-RETRY] Found ${found.length} completed-but-null-transcript records`);
+
+        if (found.length === 0) {
+          return new Response(
+            JSON.stringify({ success: true, found: 0, message: 'No completed-but-empty records found' }),
+            { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+
+        if (dryRun) {
+          return new Response(
+            JSON.stringify({
+              success: true, dryRun: true, found: found.length,
+              bookings: found.map((b: any) => ({ id: b.id, member_name: b.member_name, booking_date: b.booking_date }))
+            }),
+            { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+
+        const processNulls = async () => {
+          let successCount = 0; let failCount = 0;
+          for (let i = 0; i < found.length; i++) {
+            const booking = found[i];
+            try {
+              await supabase.from('booking_transcriptions').delete().eq('booking_id', booking.id);
+              await supabase.from('bookings').update({ transcription_status: 'pending', transcription_error_message: null }).eq('id', booking.id);
+              const response = await fetch(`${SUPABASE_URL}/functions/v1/transcribe-call`, {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ bookingId: booking.id, kixieUrl: booking.kixie_link, skipTts: true }),
+              });
+              if (!response.ok) { failCount++; } else { successCount++; }
+            } catch { failCount++; }
+            if (i < found.length - 1) await new Promise(resolve => setTimeout(resolve, 2000));
+          }
+          console.log(`[BATCH-RETRY] COMPLETE: Triggered=${successCount}, Failed=${failCount}`);
+        };
+        EdgeRuntime.waitUntil(processNulls());
+        return new Response(
+          JSON.stringify({ success: true, queued: found.length, message: `Started re-transcription for ${found.length} records.` }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      const found = emptyBookings || [];
+      console.log(`[BATCH-RETRY] Found ${found.length} completed-but-empty records`);
+
+      if (found.length === 0) {
+        return new Response(
+          JSON.stringify({ success: true, found: 0, message: 'No completed-but-empty records found matching filters' }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      if (dryRun) {
+        return new Response(
+          JSON.stringify({
+            success: true, dryRun: true, found: found.length,
+            bookings: found.map((b: any) => ({ id: b.id, member_name: b.member_name, booking_date: b.booking_date }))
+          }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      // Process in background — delete old transcription, reset status, re-trigger
+      const processEmpty = async () => {
+        let successCount = 0;
+        let failCount = 0;
+
+        for (let i = 0; i < found.length; i++) {
+          const booking = found[i];
+          console.log(`[BATCH-RETRY] Processing empty ${i + 1}/${found.length}: ${booking.id} (${booking.member_name})`);
+
+          try {
+            await supabase.from('booking_transcriptions').delete().eq('booking_id', booking.id);
+            await supabase.from('bookings').update({ transcription_status: 'pending', transcription_error_message: null }).eq('id', booking.id);
+
+            const response = await fetch(`${SUPABASE_URL}/functions/v1/transcribe-call`, {
+              method: 'POST',
+              headers: { 'Authorization': `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`, 'Content-Type': 'application/json' },
+              body: JSON.stringify({ bookingId: booking.id, kixieUrl: booking.kixie_link, skipTts: true }),
+            });
+
+            if (!response.ok) {
+              const errorText = await response.text();
+              console.error(`[BATCH-RETRY] FAILED for ${booking.id}: ${errorText}`);
+              failCount++;
+            } else {
+              console.log(`[BATCH-RETRY] ✓ Triggered for ${booking.id}`);
+              successCount++;
+            }
+          } catch (error) {
+            console.error(`[BATCH-RETRY] ERROR ${booking.id}:`, error);
+            failCount++;
+          }
+
+          if (i < found.length - 1) await new Promise(resolve => setTimeout(resolve, 2000));
+        }
+
+        console.log(`[BATCH-RETRY] ===== COMPLETE (completedButEmpty) =====`);
+        console.log(`[BATCH-RETRY] Triggered: ${successCount}, Failed: ${failCount}`);
+      };
+
+      EdgeRuntime.waitUntil(processEmpty());
+
+      return new Response(
+        JSON.stringify({
+          success: true, queued: found.length,
+          bookings: found.map((b: any) => ({ id: b.id, member_name: b.member_name, booking_date: b.booking_date })),
+          message: `Started re-transcription for ${found.length} completed-but-empty records. Processing in background.`
         }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
