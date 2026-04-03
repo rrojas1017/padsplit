@@ -249,8 +249,47 @@ serve(async (req) => {
         
         const found = nullBookings || [];
         console.log(`[BATCH-RETRY] Found ${found.length} completed-but-null-transcript records`);
-        // Continue with found...
-        return handleCompletedButEmpty(found, dryRun, SUPABASE_URL!, SUPABASE_SERVICE_ROLE_KEY!, supabase, corsHeaders);
+
+        if (found.length === 0) {
+          return new Response(
+            JSON.stringify({ success: true, found: 0, message: 'No completed-but-empty records found' }),
+            { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+
+        if (dryRun) {
+          return new Response(
+            JSON.stringify({
+              success: true, dryRun: true, found: found.length,
+              bookings: found.map((b: any) => ({ id: b.id, member_name: b.member_name, booking_date: b.booking_date }))
+            }),
+            { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+
+        const processNulls = async () => {
+          let successCount = 0; let failCount = 0;
+          for (let i = 0; i < found.length; i++) {
+            const booking = found[i];
+            try {
+              await supabase.from('booking_transcriptions').delete().eq('booking_id', booking.id);
+              await supabase.from('bookings').update({ transcription_status: 'pending', transcription_error_message: null }).eq('id', booking.id);
+              const response = await fetch(`${SUPABASE_URL}/functions/v1/transcribe-call`, {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ bookingId: booking.id, kixieUrl: booking.kixie_link, skipTts: true }),
+              });
+              if (!response.ok) { failCount++; } else { successCount++; }
+            } catch { failCount++; }
+            if (i < found.length - 1) await new Promise(resolve => setTimeout(resolve, 2000));
+          }
+          console.log(`[BATCH-RETRY] COMPLETE: Triggered=${successCount}, Failed=${failCount}`);
+        };
+        EdgeRuntime.waitUntil(processNulls());
+        return new Response(
+          JSON.stringify({ success: true, queued: found.length, message: `Started re-transcription for ${found.length} records.` }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
       }
 
       const found = emptyBookings || [];
