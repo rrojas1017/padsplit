@@ -41,7 +41,7 @@ export function InsightsKPIRow({ kpis, direction }: InsightsKPIRowProps) {
     },
     {
       label: 'Addressable %',
-      value: kpis.addressablePct !== 'N/A' ? kpis.addressablePct : 'N/A',
+      value: kpis.addressablePct !== 'N/A' ? formatPercent(kpis.addressablePct) : 'N/A',
       icon: Target,
       color: 'text-emerald-500',
       definition: 'Percentage of move-outs that PadSplit could have potentially prevented with better processes or intervention.',
