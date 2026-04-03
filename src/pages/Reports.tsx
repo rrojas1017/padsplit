@@ -201,6 +201,7 @@ export default function Reports() {
   const { 
     records, 
     totalCount, 
+    researchSummary,
     isLoading, 
     importBatches, 
     manualRecordCount,
@@ -430,12 +431,14 @@ export default function Reports() {
     const issuesDetected = records.filter(b => b.detectedIssues && normalizeDetectedIssues(b.detectedIssues).length > 0).length;
     
     // Research-specific stats
-    const successfulCalls = records.filter(b => b.hasValidConversation !== false && (b.callDurationSeconds || 0) >= 120).length;
+    const successfulCalls = isResearch
+      ? researchSummary.successfulCalls
+      : records.filter(b => b.hasValidConversation !== false && (b.callDurationSeconds || 0) >= 120).length;
     const totalDuration = records.reduce((sum, b) => sum + (b.callDurationSeconds || 0), 0);
     const avgDuration = records.length > 0 ? Math.round(totalDuration / records.length) : 0;
     
     return { total, pendingMoveIn, movedIn, memberRejected, noShowCancelled, postponed, nonBooking, rebookings, newBookings, issuesDetected, successfulCalls, avgDuration };
-  }, [totalCount, records]);
+  }, [totalCount, records, isResearch, researchSummary.successfulCalls]);
 
   // Loading skeleton for table rows
   const TableSkeleton = () => (

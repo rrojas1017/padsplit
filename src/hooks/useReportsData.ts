@@ -49,6 +49,9 @@ export interface ReportsSorting {
 interface UseReportsDataReturn {
   records: Booking[];
   totalCount: number;
+  researchSummary: {
+    successfulCalls: number;
+  };
   isLoading: boolean;
   error: Error | null;
   importBatches: ImportBatch[];
@@ -75,6 +78,7 @@ export function useReportsData(
   const { agents } = useAgents();
   const [records, setRecords] = useState<Booking[]>([]);
   const [totalCount, setTotalCount] = useState(0);
+  const [researchSummary, setResearchSummary] = useState({ successfulCalls: 0 });
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
   const [importBatches, setImportBatches] = useState<ImportBatch[]>([]);
@@ -160,9 +164,118 @@ export function useReportsData(
       // Use !inner join when campaign type filter is active to push filtering to DB
       const useCampaignFilter = filters.campaignTypeFilter && filters.campaignTypeFilter !== 'all';
       const joinKey = useCampaignFilter ? 'booking_transcriptions!inner' : 'booking_transcriptions';
+      const siteAgentIds = filters.siteId !== 'all'
+        ? agents.filter(a => a.siteId === filters.siteId).map(a => a.id)
+        : null;
+
+      if (filters.siteId !== 'all' && siteAgentIds && siteAgentIds.length === 0) {
+        setRecords([]);
+        setTotalCount(0);
+        setResearchSummary({ successfulCalls: 0 });
+        setIsLoading(false);
+        return;
+      }
+
+      const applyFilters = (query: any) => {
+        // Apply record date range filter (only if dates are set)
+        if (filters.recordDateRange.from) {
+          query = query.gte('booking_date', format(startOfDay(filters.recordDateRange.from), 'yyyy-MM-dd'));
+        }
+        if (filters.recordDateRange.to) {
+          query = query.lte('booking_date', format(endOfDay(filters.recordDateRange.to), 'yyyy-MM-dd'));
+        }
+
+        // Apply move-in date range filter
+        if (filters.moveInDateRange.from) {
+          query = query.gte('move_in_date', format(startOfDay(filters.moveInDateRange.from), 'yyyy-MM-dd'));
+        }
+        if (filters.moveInDateRange.to) {
+          query = query.lte('move_in_date', format(endOfDay(filters.moveInDateRange.to), 'yyyy-MM-dd'));
+        }
+
+        // Apply record type filter
+        if (filters.recordTypeFilter === 'booking') {
+          query = query.eq('record_type', 'booking');
+        } else if (filters.recordTypeFilter === 'research') {
+          query = query.eq('record_type', 'research');
+        }
+
+        // Exclude unsuccessful research calls (voicemails, no-answers, failed connections)
+        query = query.or('record_type.neq.research,has_valid_conversation.eq.true');
+
+        // Apply import batch filter
+        if (filters.importBatchFilter === 'manual') {
+          query = query.is('import_batch_id', null);
+        } else if (filters.importBatchFilter !== 'all') {
+          query = query.eq('import_batch_id', filters.importBatchFilter);
+        }
+
+        // Apply status filter
+        if (filters.status !== 'all') {
+          query = query.eq('status', filters.status);
+        }
+
+        // Apply booking type filter
+        if (filters.bookingType !== 'all') {
+          query = query.eq('booking_type', filters.bookingType);
+        }
+
+        // Apply communication method filter
+        if (filters.communicationMethod !== 'all') {
+          query = query.eq('communication_method', filters.communicationMethod);
+        }
+
+        // Apply agent filter
+        if (filters.agentId !== 'all') {
+          query = query.eq('agent_id', filters.agentId);
+        }
+
+        // Apply site filter
+        if (siteAgentIds) {
+          query = query.in('agent_id', siteAgentIds);
+        }
+
+        // Apply rebooking filter
+        if (filters.rebookingFilter === 'new') {
+          query = query.eq('is_rebooking', false);
+        } else if (filters.rebookingFilter === 'rebooking') {
+          query = query.eq('is_rebooking', true);
+        }
+
+        // Apply conversation validity filter
+        if (filters.conversationFilter === 'valid') {
+          query = query.or('has_valid_conversation.is.null,has_valid_conversation.eq.true');
+        } else if (filters.conversationFilter === 'no_conversation') {
+          query = query.eq('has_valid_conversation', false);
+        }
+
+        // Apply issue filter (pain point tagging)
+        if (filters.issueFilter && filters.issueFilter.length > 0) {
+          const issueConditions = filters.issueFilter
+            .map(issue => `detected_issues.cs.[{"issue":"${issue}"}]`)
+            .join(',');
+          query = query.or(issueConditions);
+        }
+
+        // Apply search filter (member name, market city, market state)
+        if (filters.searchQuery) {
+          const searchTerm = `%${filters.searchQuery}%`;
+          query = query.or(`member_name.ilike.${searchTerm},market_city.ilike.${searchTerm},market_state.ilike.${searchTerm}`);
+        }
+
+        // Apply campaign type filter (server-side via !inner join)
+        if (useCampaignFilter) {
+          query = query.eq('booking_transcriptions.research_campaign_type', filters.campaignTypeFilter);
+        }
+        if (filters.campaignTypeFilter === 'audience_survey') {
+          query = query.gte('booking_transcriptions.survey_progress->>answered', '1');
+        }
+
+        return query;
+      };
 
       // Build the query
-      let query = supabase
+      let query = applyFilters(supabase
         .from('bookings')
         .select(`
           id,
@@ -209,112 +322,7 @@ export function useReportsData(
             research_campaign_type,
             research_extraction
           )
-        `, { count: 'exact' });
-
-      // Apply record date range filter (only if dates are set)
-      if (filters.recordDateRange.from) {
-        query = query.gte('booking_date', format(startOfDay(filters.recordDateRange.from), 'yyyy-MM-dd'));
-      }
-      if (filters.recordDateRange.to) {
-        query = query.lte('booking_date', format(endOfDay(filters.recordDateRange.to), 'yyyy-MM-dd'));
-      }
-
-      // Apply move-in date range filter
-      if (filters.moveInDateRange.from) {
-        query = query.gte('move_in_date', format(startOfDay(filters.moveInDateRange.from), 'yyyy-MM-dd'));
-      }
-      if (filters.moveInDateRange.to) {
-        query = query.lte('move_in_date', format(endOfDay(filters.moveInDateRange.to), 'yyyy-MM-dd'));
-      }
-
-      // Apply record type filter
-      if (filters.recordTypeFilter === 'booking') {
-        query = query.eq('record_type', 'booking');
-      } else if (filters.recordTypeFilter === 'research') {
-        query = query.eq('record_type', 'research');
-      }
-
-      // Exclude unsuccessful research calls (voicemails, no-answers, failed connections)
-      query = query.or('record_type.neq.research,has_valid_conversation.eq.true');
-
-      // Apply import batch filter
-      if (filters.importBatchFilter === 'manual') {
-        query = query.is('import_batch_id', null);
-      } else if (filters.importBatchFilter !== 'all') {
-        query = query.eq('import_batch_id', filters.importBatchFilter);
-      }
-
-      // Apply status filter
-      if (filters.status !== 'all') {
-        query = query.eq('status', filters.status);
-      }
-
-      // Apply booking type filter
-      if (filters.bookingType !== 'all') {
-        query = query.eq('booking_type', filters.bookingType);
-      }
-
-      // Apply communication method filter
-      if (filters.communicationMethod !== 'all') {
-        query = query.eq('communication_method', filters.communicationMethod);
-      }
-
-      // Apply agent filter
-      if (filters.agentId !== 'all') {
-        query = query.eq('agent_id', filters.agentId);
-      }
-
-      // Apply site filter (need to get agent IDs for site)
-      if (filters.siteId !== 'all') {
-        const siteAgentIds = agents
-          .filter(a => a.siteId === filters.siteId)
-          .map(a => a.id);
-        if (siteAgentIds.length > 0) {
-          query = query.in('agent_id', siteAgentIds);
-        } else {
-          // No agents for this site, return empty
-          setRecords([]);
-          setTotalCount(0);
-          setIsLoading(false);
-          return;
-        }
-      }
-
-      // Apply rebooking filter
-      if (filters.rebookingFilter === 'new') {
-        query = query.eq('is_rebooking', false);
-      } else if (filters.rebookingFilter === 'rebooking') {
-        query = query.eq('is_rebooking', true);
-      }
-
-      // Apply conversation validity filter
-      if (filters.conversationFilter === 'valid') {
-        query = query.or('has_valid_conversation.is.null,has_valid_conversation.eq.true');
-      } else if (filters.conversationFilter === 'no_conversation') {
-        query = query.eq('has_valid_conversation', false);
-      }
-
-      // Apply issue filter (pain point tagging)
-      if (filters.issueFilter && filters.issueFilter.length > 0) {
-        const issueConditions = filters.issueFilter
-          .map(issue => `detected_issues.cs.[{"issue":"${issue}"}]`)
-          .join(',');
-        query = query.or(issueConditions);
-      }
-
-      // Apply search filter (member name, market city, market state)
-      if (filters.searchQuery) {
-        const searchTerm = `%${filters.searchQuery}%`;
-        query = query.or(`member_name.ilike.${searchTerm},market_city.ilike.${searchTerm},market_state.ilike.${searchTerm}`);
-      }
-
-      // Apply campaign type filter (server-side via !inner join)
-      if (useCampaignFilter) {
-        query = query.eq('booking_transcriptions.research_campaign_type', filters.campaignTypeFilter);
-      }
-      if (filters.campaignTypeFilter === 'audience_survey') {
-        query = query.gte('booking_transcriptions.survey_progress->>answered', '1');
-      }
+        `, { count: 'exact' }));
 
 
       const dbColumn = sorting.column ? sortColumnMap[sorting.column] || 'booking_date' : 'booking_date';
@@ -323,9 +331,28 @@ export function useReportsData(
       // Apply pagination
       query = query.range(offset, offset + pagination.pageSize - 1);
 
-      const { data, error: queryError, count } = await query;
+      const researchSummaryQuery = filters.recordTypeFilter === 'research'
+        ? applyFilters(
+            supabase
+              .from('bookings')
+              .select(`
+                id,
+                ${joinKey} (
+                  research_campaign_type,
+                  survey_progress
+                )
+              `, { count: 'exact', head: true })
+              .gte('call_duration_seconds', 120)
+          )
+        : Promise.resolve({ count: 0, error: null });
+
+      const [{ data, error: queryError, count }, researchSummaryResult] = await Promise.all([
+        query,
+        researchSummaryQuery,
+      ]);
 
       if (queryError) throw queryError;
+      if (researchSummaryResult.error) throw researchSummaryResult.error;
 
       // Transform to Booking type - get transcription data from joined table
       const transformedRecords: Booking[] = (data || []).map(row => {
@@ -379,6 +406,9 @@ export function useReportsData(
 
       setRecords(transformedRecords);
       setTotalCount(count || 0);
+      setResearchSummary({
+        successfulCalls: researchSummaryResult.count || 0,
+      });
     } catch (err) {
       console.error('Error fetching reports data:', err);
       setError(err instanceof Error ? err : new Error('Failed to fetch records'));
@@ -399,6 +429,7 @@ export function useReportsData(
   return {
     records,
     totalCount,
+    researchSummary,
     isLoading,
     error,
     importBatches,
