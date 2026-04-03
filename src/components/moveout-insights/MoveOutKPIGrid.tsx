@@ -51,7 +51,9 @@ export function MoveOutKPIGrid({ kpis }: MoveOutKPIGridProps) {
     {
       value: topReasonName,
       label: 'Top Reason',
-      context: kpis.topReasonPct ? `${kpis.topReasonPct} of cases` : 'most frequent',
+      context: topReasonCount && kpis.topReasonPct
+        ? `${topReasonCount} cases (${formatPercent(kpis.topReasonPct)})`
+        : 'most frequent',
       icon: TrendingUp,
       iconBg: 'bg-destructive/10',
       iconColor: 'text-destructive',
