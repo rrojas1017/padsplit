@@ -63,7 +63,7 @@ export function InsightsKPIRow({ kpis, direction }: InsightsKPIRowProps) {
     },
     {
       label: 'Host Related',
-      value: kpis.hostRelatedPct !== 'N/A' ? kpis.hostRelatedPct : 'N/A',
+      value: kpis.hostRelatedPct !== 'N/A' ? formatPercent(kpis.hostRelatedPct) : 'N/A',
       icon: Home,
       color: 'text-destructive',
       definition: 'Percentage of move-outs caused by host negligence, property condition issues, or host misconduct.',
