@@ -79,10 +79,164 @@ export function formatLabel(raw: string): string {
 }
 
 /**
- * Format an array of AggResults by applying formatLabel to each label.
+ * Normalize raw survey response values into canonical labels.
+ * Merges synonyms, fixes plural/singular, and combines split concepts.
+ * Run this on every value BEFORE aggregation.
+ */
+export function normalizeLabel(raw: string): string {
+  if (!raw) return 'Unknown';
+
+  const trimmed = raw.trim();
+
+  const SYNONYMS: Record<string, string> = {
+    // Safety & Security
+    'safety': 'Safety & Security',
+    'security': 'Safety & Security',
+    'safety/security': 'Safety & Security',
+    'safety / security': 'Safety & Security',
+    'safety_security': 'Safety & Security',
+    'safety and security': 'Safety & Security',
+    'safety/security emphasis': 'Safety & Security',
+
+    // Quality
+    'quality of the rooms': 'Quality of Rooms/Houses',
+    'quality of the room': 'Quality of Rooms/Houses',
+    'quality of rooms': 'Quality of Rooms/Houses',
+    'quality of the rooms/houses': 'Quality of Rooms/Houses',
+    'quality of rooms/houses': 'Quality of Rooms/Houses',
+
+    // Roommates
+    'who my roommates would be': 'Roommate Concerns',
+    'roommate concerns': 'Roommate Concerns',
+    'how roommates are matched': 'Roommate Matching',
+    'roommate matching': 'Roommate Matching',
+
+    // Pricing
+    'price/fees': 'Price & Fees',
+    'price / fees': 'Price & Fees',
+    'price_fees': 'Price & Fees',
+    'pricing': 'Price & Fees',
+    'price': 'Price & Fees',
+    'fees': 'Price & Fees',
+
+    // How it works
+    'how it actually works': 'How It Works',
+    'how it works': 'How It Works',
+    'how does it work': 'How It Works',
+    'how_it_works': 'How It Works',
+
+    // Lease
+    'lease flexibility': 'Lease Flexibility',
+    'lease rules and policies': 'Lease Rules & Policies',
+    'lease rules': 'Lease Rules & Policies',
+    'lease_rules': 'Lease Rules & Policies',
+
+    // Payments
+    'how payments work': 'How Payments Work',
+    'how the payment works': 'How Payments Work',
+    'payment process': 'How Payments Work',
+    'payment-wise': 'How Payments Work',
+
+    // Rent inclusions
+    'what is included in the rent': "What's Included in Rent",
+    "what's included in rent": "What's Included in Rent",
+    'what included in rent': "What's Included in Rent",
+    'lack of clarity on utilities included': "What's Included in Rent",
+    'utilities included': 'Utilities Included',
+
+    // Interest drivers
+    'affordable rent': 'Affordable Rent',
+    'flexibility': 'Flexibility',
+    'ability to move in quickly': 'Quick Move-In',
+    'move in quickly': 'Quick Move-In',
+    'location options': 'Location Options',
+    'joining a community of roommates': 'Community of Roommates',
+    'community of roommates': 'Community of Roommates',
+
+    // Nothing confusing
+    'nothing was confusing': 'Nothing Was Confusing',
+    'nothing confusing': 'Nothing Was Confusing',
+    'nothing': 'Nothing Was Confusing',
+
+    // Ad motivators
+    'first month discount': 'First Month Discount',
+    'lower move-in fees': 'Lower Move-In Fees',
+    'lower moving fees': 'Lower Move-In Fees',
+    'referral bonuses': 'Referral Bonuses',
+    'no long-term lease message': 'No Long-Term Lease',
+    'no long-term lease': 'No Long-Term Lease',
+    'all utilities included message': 'All Utilities Included',
+    'all utilities included': 'All Utilities Included',
+    'limited-time offer': 'Limited-Time Offer',
+    "content about a padsplit member's experience": 'Member Experience Content',
+
+    // Ad attention triggers
+    'a special offer or discount': 'Special Offer/Discount',
+    'special offer or discount': 'Special Offer/Discount',
+    'a relatable story or situation': 'Relatable Story',
+    'relatable story': 'Relatable Story',
+    'humor or entertainment': 'Humor/Entertainment',
+    'clear pricing': 'Clear Pricing',
+    'a recommendation or testimonial': 'Testimonial/Recommendation',
+    'recommendation or testimonial': 'Testimonial/Recommendation',
+    'high-quality visuals': 'High-Quality Visuals',
+    'a strong headline': 'Strong Headline',
+    'strong headline': 'Strong Headline',
+
+    // Ad content preferences
+    'real member stories/testimonials': 'Real Member Stories',
+    'real member stories': 'Real Member Stories',
+    'price comparisons vs. renting an apartment': 'Price Comparison vs Apartment',
+    'price comparisons': 'Price Comparison vs Apartment',
+    'clear explanation of how it works': 'Clear Explanation of How It Works',
+    'focus on safety and security': 'Safety & Security Focus',
+    'video walkthrough of actual rooms/houses': 'Video Room Walkthrough',
+    'video walkthrough': 'Video Room Walkthrough',
+    'short and entertaining content': 'Short & Entertaining',
+    'showcase of rooms and prices in your area': 'Local Rooms & Prices',
+
+    // Detail preferences
+    'give more detail': 'Give More Detail',
+    'keep it short and simple': 'Keep It Short & Simple',
+    'depends on the platform (tiktok short, youtube more detail)': 'Depends on Platform',
+    'depends on the platform': 'Depends on Platform',
+    'not sure': 'Not Sure',
+
+    // Platforms
+    'facebook groups to find housing': 'Facebook Groups (Housing)',
+    'x (twitter)': 'X (Twitter)',
+
+    // Free-text oddball values
+    'advertised as a home but was a hotel': 'Misleading Listing',
+    'how the living situation would be': 'Roommate Matching',
+    'where places will be rented at': 'Location Options',
+  };
+
+  const key = trimmed.toLowerCase();
+  if (SYNONYMS[key]) return SYNONYMS[key];
+
+  // Fallback: apply formatLabel() for unknown values
+  return formatLabel(trimmed);
+}
+
+/**
+ * Format an array of AggResults by applying normalizeLabel to each label,
+ * then re-merging any duplicates that result from normalization.
  */
 export function formatAggLabels(data: AggResult[]): AggResult[] {
-  return data.map(d => ({ ...d, label: formatLabel(d.label) }));
+  const merged: Record<string, { count: number; pct: number }> = {};
+  data.forEach(d => {
+    const label = normalizeLabel(d.label);
+    if (merged[label]) {
+      merged[label].count += d.count;
+      merged[label].pct += d.pct;
+    } else {
+      merged[label] = { count: d.count, pct: d.pct };
+    }
+  });
+  return Object.entries(merged)
+    .map(([label, { count, pct }]) => ({ label, count, pct: Math.round(pct) }))
+    .sort((a, b) => b.count - a.count);
 }
 
 /**
@@ -106,10 +260,10 @@ export function generatePlatformInsight(platformData: AggResult[], adPrefData: A
     const usage = platformData.find(u => u.label === p.label);
     return usage && p.pct - usage.pct > 5;
   });
-  let text = `${top.pct}% of members use ${formatLabel(top.label)}`;
+  let text = `${top.pct}% of members use ${top.label}`;
   if (adPct > 0) text += ` but only ${adPct}% want to see PadSplit ads there`;
   text += '.';
-  if (gap) text += ` The biggest opportunity is ${formatLabel(gap.label)}.`;
+  if (gap) text += ` The biggest opportunity is ${gap.label}.`;
   return text;
 }
 
@@ -122,22 +276,28 @@ export function generateMessagingInsight(triggers: AggResult[], motivators: AggR
   const topTrigger = triggers[0];
   const topMotivator = motivators[0];
   let text = '';
-  if (topTrigger) text += `The #1 scroll-stopper is "${formatLabel(topTrigger.label)}" (${topTrigger.pct}%). `;
-  if (topMotivator) text += `The #1 click motivator is "${formatLabel(topMotivator.label)}" (${topMotivator.pct}%). `;
-  if (topPlatform && topMotivator) text += `For ${formatLabel(topPlatform)} users, focus on ${formatLabel(topMotivator.label)} messaging.`;
+  if (topTrigger) text += `The #1 scroll-stopper is "${topTrigger.label}" (${topTrigger.pct}%). `;
+  if (topMotivator) text += `The #1 click motivator is "${topMotivator.label}" (${topMotivator.pct}%). `;
+  if (topPlatform && topMotivator) text += `For ${topPlatform} users, focus on ${topMotivator.label} messaging.`;
   return text;
 }
 
 export function generateBarrierInsight(concerns: AggResult[], interests: AggResult[], confusion: AggResult[]): string {
   const topConcern = concerns[0];
   const topInterest = interests[0];
-  const notConfused = confusion.find(c => c.label.toLowerCase().includes('nothing'));
-  const topConfusion = confusion.find(c => !c.label.toLowerCase().includes('nothing'));
+  const nothingConfusing = confusion.find(c => c.label === 'Nothing Was Confusing');
+  const topConfusion = confusion.filter(c => c.label !== 'Nothing Was Confusing')[0];
+
   let text = '';
-  if (topConcern) text += `The #1 concern is "${formatLabel(topConcern.label)}" (${topConcern.pct}%). `;
-  if (topInterest) text += `The #1 attraction is "${formatLabel(topInterest.label)}" (${topInterest.pct}%). `;
-  if (notConfused) text += `${notConfused.pct}% found nothing confusing. `;
-  if (topConfusion) text += `${topConfusion.pct}% were confused about "${formatLabel(topConfusion.label)}".`;
+  if (topConcern) text += `The #1 concern is "${topConcern.label}" (${topConcern.pct}%). `;
+  if (topInterest) text += `The #1 attraction is "${topInterest.label}" (${topInterest.pct}%). `;
+
+  if (nothingConfusing && nothingConfusing.pct > 50) {
+    text += `${nothingConfusing.pct}% found nothing confusing about PadSplit.`;
+  } else if (topConfusion && topConfusion.pct > 5) {
+    text += `${topConfusion.pct}% were confused about "${topConfusion.label}".`;
+  }
+
   return text;
 }
 
@@ -150,7 +310,7 @@ export function generateCreativeBrief(
 ): string {
   const shortPref = detailPref.find(d => d.label.toLowerCase().includes('short'));
   const detailStr = shortPref ? 'short and simple' : 'detailed';
-  return `Recommended: Lead with "${formatLabel(topMotivator)}" + "${formatLabel(topInterest)}" messaging. Address "${formatLabel(topConcern)}" fears upfront. Use ${detailStr} format. Feature ${formatLabel(topContent)} content.`;
+  return `Recommended: Lead with "${topMotivator}" + "${topInterest}" messaging. Address "${topConcern}" fears upfront. Use ${detailStr} format. Feature ${topContent} content.`;
 }
 
 export const SURVEY_COLORS = [

@@ -11,20 +11,57 @@ interface Props {
   confusion: AggResult[];
 }
 
-const BARRIER_MAP: Record<string, { interest: string; recommendation: string }> = {
-  'safety': { interest: 'affordable rent', recommendation: 'Lead with safety messaging alongside pricing' },
-  'security': { interest: 'affordable rent', recommendation: 'Lead with safety messaging alongside pricing' },
-  'quality': { interest: 'affordable rent', recommendation: 'Show quality rooms + competitive price together' },
-  'roommate': { interest: 'community', recommendation: 'Reframe roommates as a positive community' },
-  'price': { interest: 'affordable rent', recommendation: 'Price comparison vs apartment rentals' },
-  'how it': { interest: 'move in quickly', recommendation: 'Simplify the process explanation in ads' },
-  'fees': { interest: 'affordable rent', recommendation: 'Transparent pricing breakdown upfront' },
+const BARRIER_BENEFIT_MAP: Record<string, { interest: string; recommendation: string }> = {
+  'Safety & Security': {
+    interest: 'Safety & Security Focus',
+    recommendation: 'Lead with verified hosts, background checks, and secure properties in ads',
+  },
+  'Quality of Rooms/Houses': {
+    interest: 'Video Room Walkthrough',
+    recommendation: 'Show real HD room photos + video walkthroughs in ads to prove quality',
+  },
+  'Roommate Concerns': {
+    interest: 'Community of Roommates',
+    recommendation: 'Reframe "strangers as roommates" → "joining a vetted community"',
+  },
+  'Price & Fees': {
+    interest: 'Affordable Rent',
+    recommendation: 'Price comparison vs average 1BR apartment in same area',
+  },
+  'How It Works': {
+    interest: 'Quick Move-In',
+    recommendation: 'Simplify: show 3-step process (Apply → Approve → Move In) in ads',
+  },
+  'Lease Flexibility': {
+    interest: 'Flexibility',
+    recommendation: 'Highlight no long-term lease, weekly payments, flexibility to move',
+  },
+  'How Payments Work': {
+    interest: 'All Utilities Included',
+    recommendation: 'Explain: one weekly payment covers rent + utilities, auto-deducted',
+  },
+  "What's Included in Rent": {
+    interest: 'Utilities Included',
+    recommendation: "List what's included: WiFi, utilities, furnished room, cleaning",
+  },
+  'Roommate Matching': {
+    interest: 'Community of Roommates',
+    recommendation: 'Explain the roommate vetting process and house rules',
+  },
+  'Lease Rules & Policies': {
+    interest: 'Flexibility',
+    recommendation: 'Show clear, simple rules. Highlight flexibility over restrictions.',
+  },
+  'Location Options': {
+    interest: 'Location Options',
+    recommendation: "Showcase map of available rooms in member's area",
+  },
 };
 
 export function BarrierAnalysis({ concerns, interests, confusion }: Props) {
   const insight = generateBarrierInsight(concerns, interests, confusion);
 
-  // Butterfly chart data — labels are already formatted from parent
+  // Butterfly chart data — labels are already normalized from aggregation
   const allLabels = [...new Set([...concerns.map(c => c.label), ...interests.map(i => i.label)])];
   const butterflyData = allLabels.slice(0, 8).map(label => {
     const concern = concerns.find(c => c.label === label);
@@ -37,18 +74,17 @@ export function BarrierAnalysis({ concerns, interests, confusion }: Props) {
   }).sort((a, b) => Math.abs(b.concern) + b.interest - Math.abs(a.concern) - a.interest);
 
   // Confusion points (excluding "nothing")
-  const confusionFiltered = confusion.filter(c => !c.label.toLowerCase().includes('nothing'));
-  const nothingConfusing = confusion.find(c => c.label.toLowerCase().includes('nothing'));
+  const confusionFiltered = confusion.filter(c => c.label !== 'Nothing Was Confusing');
+  const nothingConfusing = confusion.find(c => c.label === 'Nothing Was Confusing');
 
-  // Barrier-to-benefit mapping
-  const mappings = concerns.slice(0, 6).map(concern => {
-    const key = Object.keys(BARRIER_MAP).find(k => concern.label.toLowerCase().includes(k));
-    const map = key ? BARRIER_MAP[key] : null;
-    const matchedInterest = map ? interests.find(i => i.label.toLowerCase().includes(map.interest)) : null;
+  // Barrier-to-benefit mapping using exact-match map
+  const mappings = concerns.slice(0, 8).map(concern => {
+    const map = BARRIER_BENEFIT_MAP[concern.label];
+    const matchedInterest = map ? interests.find(i => i.label === map.interest) : null;
     return {
       concern: concern.label,
       concernCount: concern.count,
-      interest: matchedInterest?.label || '—',
+      interest: matchedInterest?.label || map?.interest || '—',
       interestCount: matchedInterest?.count || 0,
       recommendation: map?.recommendation || 'Address this concern directly in ad copy',
     };
@@ -67,12 +103,35 @@ export function BarrierAnalysis({ concerns, interests, confusion }: Props) {
             <p className="text-xs text-muted-foreground">Push factors (left) vs pull factors (right)</p>
           </CardHeader>
           <CardContent>
+            {/* Legend */}
+            <div className="flex items-center justify-center gap-6 mb-4">
+              <div className="flex items-center gap-2">
+                <div className="w-4 h-3 rounded bg-red-500" />
+                <span className="text-sm text-muted-foreground">Concerns (barriers)</span>
+              </div>
+              <div className="w-px h-4 bg-border" />
+              <div className="flex items-center gap-2">
+                <div className="w-4 h-3 rounded bg-green-500" />
+                <span className="text-sm text-muted-foreground">Interest Drivers (pull factors)</span>
+              </div>
+            </div>
             <div className="h-[320px]">
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={butterflyData} layout="vertical" margin={{ left: 120, right: 20 }}>
+                <BarChart data={butterflyData} layout="vertical" margin={{ left: 10, right: 20, bottom: 30 }}>
                   <CartesianGrid strokeDasharray="3 3" className="stroke-border/30" />
-                  <XAxis type="number" tick={{ fontSize: 11 }} />
-                  <YAxis dataKey="label" type="category" tick={{ fontSize: 11 }} width={115} />
+                  <XAxis
+                    type="number"
+                    tick={{ fontSize: 11 }}
+                    tickFormatter={(v: number) => Math.abs(v).toString()}
+                    label={{ value: '← Concerns          Interest Drivers →', position: 'bottom', offset: 10, style: { fontSize: 12, fill: '#6b7280' } }}
+                  />
+                  <YAxis
+                    dataKey="label"
+                    type="category"
+                    tick={{ fontSize: 11 }}
+                    width={180}
+                    tickFormatter={(val: string) => val.length > 22 ? val.substring(0, 22) + '…' : val}
+                  />
                   <Tooltip formatter={(v: number) => Math.abs(v)} />
                   <ReferenceLine x={0} className="stroke-border" />
                   <Bar dataKey="concern" name="Concerns" fill="#dc2626" radius={[4, 0, 0, 4]} />
@@ -94,11 +153,11 @@ export function BarrierAnalysis({ concerns, interests, confusion }: Props) {
             {nothingConfusing && (
               <div className="mb-4 flex items-center gap-2 p-3 rounded-lg bg-green-500/10">
                 <Badge className="bg-green-500/20 text-green-700 border-0">{nothingConfusing.pct}%</Badge>
-                <span className="text-sm text-foreground">found nothing confusing</span>
+                <span className="text-sm text-foreground">found nothing confusing about PadSplit</span>
               </div>
             )}
             <div className="space-y-2">
-              {confusionFiltered.slice(0, 6).map((c, i) => (
+              {confusionFiltered.slice(0, 6).map((c) => (
                 <div key={c.label} className="flex items-center gap-3">
                   <div className="flex-1">
                     <div className="flex items-center justify-between mb-1">

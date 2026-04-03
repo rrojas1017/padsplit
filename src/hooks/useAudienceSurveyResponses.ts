@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
+import { normalizeLabel } from '@/utils/audienceSurveyInsights';
 
 export interface AudienceSurveyRecord {
   id: string;
@@ -67,7 +68,10 @@ function aggregateArray(records: AudienceSurveyRecord[], accessor: (r: AudienceS
   records.forEach(r => {
     const arr = accessor(r) || [];
     arr.forEach(item => {
-      if (item) counts[item] = (counts[item] || 0) + 1;
+      if (item) {
+        const normalized = normalizeLabel(item);
+        counts[normalized] = (counts[normalized] || 0) + 1;
+      }
     });
   });
   const total = records.length || 1;
@@ -80,7 +84,10 @@ function aggregateSingle(records: AudienceSurveyRecord[], accessor: (r: Audience
   const counts: Record<string, number> = {};
   records.forEach(r => {
     const val = accessor(r);
-    if (val) counts[val] = (counts[val] || 0) + 1;
+    if (val) {
+      const normalized = normalizeLabel(val);
+      counts[normalized] = (counts[normalized] || 0) + 1;
+    }
   });
   const total = records.length || 1;
   return Object.entries(counts)
@@ -111,10 +118,12 @@ function crossTab(
     const arr2 = accessor2(r) || [];
     arr1.forEach(v1 => {
       if (!v1) return;
-      if (!matrix[v1]) matrix[v1] = {};
+      const n1 = normalizeLabel(v1);
+      if (!matrix[n1]) matrix[n1] = {};
       arr2.forEach(v2 => {
         if (!v2) return;
-        matrix[v1][v2] = (matrix[v1][v2] || 0) + 1;
+        const n2 = normalizeLabel(v2);
+        matrix[n1][n2] = (matrix[n1][n2] || 0) + 1;
       });
     });
   });
