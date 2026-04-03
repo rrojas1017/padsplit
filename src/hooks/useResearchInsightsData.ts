@@ -44,7 +44,8 @@ export function useResearchInsightsData(campaignType: CampaignType = 'move_out_s
         .not('call_transcription', 'is', null)
         .neq('call_transcription', '')
         .eq('bookings.record_type', 'research')
-        .eq('bookings.has_valid_conversation', true);
+        .eq('bookings.has_valid_conversation', true)
+        .eq('research_campaign_type', campaignType);
 
       // Count processed records for this campaign type
       const { count: processedCount } = await supabase
