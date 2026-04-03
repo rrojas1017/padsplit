@@ -157,6 +157,10 @@ export function useReportsData(
       // Calculate offset for pagination
       const offset = (pagination.page - 1) * pagination.pageSize;
 
+      // Use !inner join when campaign type filter is active to push filtering to DB
+      const useCampaignFilter = filters.campaignTypeFilter && filters.campaignTypeFilter !== 'all';
+      const joinKey = useCampaignFilter ? 'booking_transcriptions!inner' : 'booking_transcriptions';
+
       // Build the query
       let query = supabase
         .from('bookings')
@@ -194,7 +198,7 @@ export function useReportsData(
           record_type,
           research_call_id,
           detected_issues,
-          booking_transcriptions (
+          ${joinKey} (
             call_transcription,
             call_summary,
             call_key_points,
