@@ -20,6 +20,7 @@ import { useIsAdmin } from '@/hooks/useIsAdmin';
 import { deriveKPIs, isAudienceSurveyData } from '@/types/research-insights';
 import type { AudienceSurveyInsightData, CampaignType } from '@/types/research-insights';
 import { generateExecutivePDF } from '@/utils/generate-executive-pdf';
+import { useCostAlertMonitor } from '@/hooks/useCostAlertMonitor';
 
 import { ExecutiveSummary } from '@/components/research-insights/ExecutiveSummary';
 import { ReasonCodeChart } from '@/components/research-insights/ReasonCodeChart';
