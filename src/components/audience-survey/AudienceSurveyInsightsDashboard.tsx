@@ -3,7 +3,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useSearchParams } from 'react-router-dom';
-import { BarChart3, Eye, MessageSquare, ShieldAlert, Palette, Video, LayoutDashboard, Users, Megaphone, Target, TrendingUp } from 'lucide-react';
+import { BarChart3, Eye, MessageSquare, ShieldAlert, Palette, Video, LayoutDashboard, Users, Megaphone, Target, TrendingUp, ClipboardList } from 'lucide-react';
 import { useAudienceSurveyResponses } from '@/hooks/useAudienceSurveyResponses';
 import { useIsAdmin } from '@/hooks/useIsAdmin';
 import { PlatformGapChart } from './PlatformGapChart';
