@@ -250,6 +250,7 @@ export default function ResearchInsights() {
   const firstReason = reportData?.reason_code_distribution?.[0];
   const kpis: ExtendedKPIs | null = baseKpis ? {
     ...baseKpis,
+    totalCases: selectedReport?.total_records_analyzed || baseKpis.totalCases,
     highRegretPct: es?.high_regret_pct?.toString() || undefined,
     paymentRelatedPct: es?.payment_related_pct?.toString() || undefined,
     processedRecords: processingStats.processedRecords,

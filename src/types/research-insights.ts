@@ -495,9 +495,11 @@ export function deriveKPIs(data: any | null, stats: ProcessingStats | null): Der
   const es = data?.executive_summary as Record<string, any> | undefined;
   const reasons = data?.reason_code_distribution || [];
 
-  // Total cases — prefer executive_summary.total_cases
+  // Total cases — prefer stats.processed_records (DB truth) over AI's executive_summary.total_cases (often hallucinated)
   const totalCasesRaw = parseNumericish(es?.total_cases ?? es?.total_cases_analyzed ?? es?.cases_analyzed);
-  const totalCases = totalCasesRaw != null ? Math.round(totalCasesRaw) : (stats?.processed_records ?? 0);
+  const totalCases = stats?.processed_records
+    ? stats.processed_records
+    : (totalCasesRaw != null ? Math.round(totalCasesRaw) : 0);
 
   // Addressable % — display as-is since it's a string like "60-70%"
   const addressablePct = es?.addressable_pct?.toString() || es?.preventable_pct?.toString() || es?.preventable_percent?.toString() || 'N/A';
