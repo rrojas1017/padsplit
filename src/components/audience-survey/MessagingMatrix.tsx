@@ -116,24 +116,10 @@ export function MessagingMatrix({ triggers, motivators, topPlatform, records, cr
                   <tr key={mot} className="border-t border-border">
                     <td className="p-2 text-foreground font-medium">{mot}</td>
                     {platforms.map(plat => {
-                      // crossTabData uses raw keys from the original aggregation, but motivator labels are already formatted
-                      // We need to find the raw key that matches this formatted label
-                      const val = Object.keys(crossTabData).reduce((found, rawKey) => {
-                        if (formatLabel(rawKey) === mot) {
-                          return crossTabData[rawKey]?.[plat] || found;
-                        }
-                        return found;
-                      }, crossTabData[mot]?.[plat] || 0);
+                      const val = crossTabData[mot]?.[plat] || 0;
                       const maxVal = Math.max(
                         ...topMotivators.flatMap(m =>
-                          platforms.map(p => {
-                            return Object.keys(crossTabData).reduce((found, rawKey) => {
-                              if (formatLabel(rawKey) === m) {
-                                return crossTabData[rawKey]?.[p] || found;
-                              }
-                              return found;
-                            }, crossTabData[m]?.[p] || 0);
-                          })
+                          platforms.map(p => crossTabData[m]?.[p] || 0)
                         ),
                         1
                       );
