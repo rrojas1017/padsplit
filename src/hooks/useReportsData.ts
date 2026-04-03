@@ -157,6 +157,10 @@ export function useReportsData(
       // Calculate offset for pagination
       const offset = (pagination.page - 1) * pagination.pageSize;
 
+      // Use !inner join when campaign type filter is active to push filtering to DB
+      const useCampaignFilter = filters.campaignTypeFilter && filters.campaignTypeFilter !== 'all';
+      const joinKey = useCampaignFilter ? 'booking_transcriptions!inner' : 'booking_transcriptions';
+
       // Build the query
       let query = supabase
         .from('bookings')
@@ -194,7 +198,7 @@ export function useReportsData(
           record_type,
           research_call_id,
           detected_issues,
-          booking_transcriptions (
+          ${joinKey} (
             call_transcription,
             call_summary,
             call_key_points,
@@ -304,7 +308,15 @@ export function useReportsData(
         query = query.or(`member_name.ilike.${searchTerm},market_city.ilike.${searchTerm},market_state.ilike.${searchTerm}`);
       }
 
-      // Apply sorting
+      // Apply campaign type filter (server-side via !inner join)
+      if (useCampaignFilter) {
+        query = query.eq('booking_transcriptions.research_campaign_type', filters.campaignTypeFilter);
+      }
+      if (filters.campaignTypeFilter === 'audience_survey') {
+        query = query.gte('booking_transcriptions.survey_progress->>answered', '1');
+      }
+
+
       const dbColumn = sorting.column ? sortColumnMap[sorting.column] || 'booking_date' : 'booking_date';
       query = query.order(dbColumn, { ascending: sorting.direction === 'asc' });
 
@@ -365,21 +377,8 @@ export function useReportsData(
         };
       });
 
-      // Post-fetch filtering for campaign type (comes from joined table)
-      let filteredRecords = transformedRecords;
-      if (filters.campaignTypeFilter && filters.campaignTypeFilter !== 'all') {
-        filteredRecords = filteredRecords.filter(r => r.researchCampaignType === filters.campaignTypeFilter);
-      }
-
-      // For audience survey, exclude records with < 1 question answered (quality gate)
-      if (filters.campaignTypeFilter === 'audience_survey') {
-        filteredRecords = filteredRecords.filter(r => (r.questionsAnswered || 0) >= 1);
-      }
-
-      setRecords(filteredRecords);
-      // Adjust total count for client-side filtering
-      const clientFiltered = filters.campaignTypeFilter && filters.campaignTypeFilter !== 'all';
-      setTotalCount(clientFiltered ? filteredRecords.length : (count || 0));
+      setRecords(transformedRecords);
+      setTotalCount(count || 0);
     } catch (err) {
       console.error('Error fetching reports data:', err);
       setError(err instanceof Error ? err : new Error('Failed to fetch records'));
