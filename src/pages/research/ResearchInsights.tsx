@@ -22,21 +22,17 @@ import type { AudienceSurveyInsightData, CampaignType } from '@/types/research-i
 import { generateExecutivePDF } from '@/utils/generate-executive-pdf';
 import { useCostAlertMonitor } from '@/hooks/useCostAlertMonitor';
 
-import { ExecutiveSummary } from '@/components/research-insights/ExecutiveSummary';
-import { ReasonCodeChart } from '@/components/research-insights/ReasonCodeChart';
-import { IssueClustersPanel } from '@/components/research-insights/IssueClustersPanel';
-import { PaymentFrictionCard } from '@/components/research-insights/PaymentFrictionCard';
-import { TransferFrictionCard } from '@/components/research-insights/TransferFrictionCard';
-import { BlindSpotsPanel } from '@/components/research-insights/BlindSpotsPanel';
-import { HostAccountabilityPanel } from '@/components/research-insights/HostAccountabilityPanel';
-import { AgentPerformanceCard } from '@/components/research-insights/AgentPerformanceCard';
-import { TopActionsTable } from '@/components/research-insights/TopActionsTable';
-import { EmergingPatternsPanel } from '@/components/research-insights/EmergingPatternsPanel';
+// Old research-insights components (still used by some features)
 import { HumanReviewQueue } from '@/components/research-insights/HumanReviewQueue';
-import { InsightsKPIRow } from '@/components/research-insights/InsightsKPIRow';
 import type { ExtendedKPIs } from '@/components/research-insights/InsightsKPIRow';
 import { ReasonCodeDrillDown } from '@/components/research-insights/ReasonCodeDrillDown';
-import { MemberDataTab } from '@/components/research-insights/MemberDataTab';
+
+// New move-out insights components
+import { MoveOutKPIGrid } from '@/components/moveout-insights/MoveOutKPIGrid';
+import { MoveOutOverview } from '@/components/moveout-insights/MoveOutOverview';
+import { MoveOutIssuesTab } from '@/components/moveout-insights/MoveOutIssuesTab';
+import { MoveOutOperationsTab } from '@/components/moveout-insights/MoveOutOperationsTab';
+import { MoveOutMemberTab } from '@/components/moveout-insights/MoveOutMemberTab';
 
 import { AudienceSurveyDashboard } from '@/components/audience-survey/AudienceSurveyDashboard';
 import { AudienceSurveyInsightsDashboard } from '@/components/audience-survey/AudienceSurveyInsightsDashboard';
@@ -462,15 +458,10 @@ export default function ResearchInsights() {
       {/* Report content — MOVE-OUT SURVEY */}
       {!isLoading && reportData && !isAudienceSurvey && (selectedReport?.status === 'completed' || isGenerating) && (
         <div className="space-y-4">
-          {/* ZONE 2 — Executive Summary Hero */}
-          {reportData.executive_summary && (
-            <ExecutiveSummary data={reportData.executive_summary as any} lastUpdated={lastUpdated} />
-          )}
-
           {/* KPI Grid (3×2) */}
-          {kpis && <InsightsKPIRow kpis={kpis} />}
+          {kpis && <MoveOutKPIGrid kpis={kpis} />}
 
-          {/* ZONE 3 — Tab Navigation */}
+          {/* Tab Navigation */}
           <Tabs value={currentTab} onValueChange={setTab}>
             <TabsList className="w-full justify-start border-b border-border bg-transparent p-0 h-auto rounded-none">
               <TabsTrigger value="overview" className="gap-1.5 rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none px-4 py-2.5">
@@ -494,58 +485,31 @@ export default function ResearchInsights() {
               </TabsTrigger>
             </TabsList>
 
-            {/* TAB 1: Overview (charts + patterns) */}
             <TabsContent value="overview" className="space-y-4 mt-4">
-              <ReasonCodeChart
-                data={reportData.reason_code_distribution}
+              <MoveOutOverview
+                reportData={reportData}
+                kpis={kpis!}
+                lastUpdated={lastUpdated}
+                totalRecords={kpis?.totalCases || 0}
                 onCodeClick={(code) => setDrillDownCode(code)}
-                onViewAllMembers={(cluster) => { setTab('members'); }}
+                onViewAllMembers={() => setTab('members')}
               />
-              {reportData.emerging_patterns && (
-                <EmergingPatternsPanel data={reportData.emerging_patterns} maxVisible={5} />
-              )}
             </TabsContent>
 
-            {/* TAB 2: Issues & Root Causes */}
             <TabsContent value="issues" className="space-y-4 mt-4">
-              {reportData.issue_clusters && (
-                <IssueClustersPanel data={reportData.issue_clusters as any} maxVisible={5} />
-              )}
-              {reportData.top_actions && (
-                <TopActionsTable data={reportData.top_actions} />
-              )}
-              {reportData.operational_blind_spots && (
-                <BlindSpotsPanel data={reportData.operational_blind_spots as any} maxVisible={5} />
-              )}
+              <MoveOutIssuesTab reportData={reportData} />
             </TabsContent>
 
-            {/* TAB 3: Operations */}
             <TabsContent value="operations" className="space-y-4 mt-4">
-              {reportData.host_accountability_flags && (
-                <HostAccountabilityPanel data={reportData.host_accountability_flags} maxVisible={8} />
-              )}
-              {(reportData.payment_friction_analysis || reportData.transfer_friction_analysis) && (
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                  {reportData.payment_friction_analysis && (
-                    <PaymentFrictionCard data={reportData.payment_friction_analysis} />
-                  )}
-                  {reportData.transfer_friction_analysis && (
-                    <TransferFrictionCard data={reportData.transfer_friction_analysis} />
-                  )}
-                </div>
-              )}
-              {reportData.agent_performance_summary && (
-                <AgentPerformanceCard data={reportData.agent_performance_summary as any} />
-              )}
+              <MoveOutOperationsTab reportData={reportData} />
             </TabsContent>
 
-            {/* TAB 4: Member Data */}
             <TabsContent value="members" className="space-y-4 mt-4">
-              <MemberDataTab isAdmin={isAdmin} />
+              <MoveOutMemberTab isAdmin={isAdmin} />
             </TabsContent>
           </Tabs>
 
-          {/* ZONE 5 — Human Review Queue (collapsed by default) */}
+          {/* Human Review Queue (collapsed by default) */}
           <div className="pt-2">
             <Collapsible open={reviewOpen} onOpenChange={setReviewOpen}>
               <CollapsibleTrigger asChild>
