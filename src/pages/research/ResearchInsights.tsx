@@ -629,7 +629,7 @@ function CostAlertSlimBanner() {
   const [dismissed, setDismissed] = useState(false);
   const { alertLevel, rollingAvg, threshold } = useCostAlertMonitor();
 
-  if (dismissed || alertLevel === 'healthy') return null;
+  if (dismissed || alertLevel === 'normal') return null;
 
   return (
     <div className={`flex items-center justify-between gap-3 px-4 py-2 rounded-lg text-xs ${
