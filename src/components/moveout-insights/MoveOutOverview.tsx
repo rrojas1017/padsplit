@@ -75,7 +75,7 @@ export function MoveOutOverview({
 
       {/* Emerging Patterns */}
       {reportData.emerging_patterns && reportData.emerging_patterns.length > 0 && (
-        <MoveOutPatterns data={reportData.emerging_patterns} />
+        <MoveOutActionCenter data={reportData.emerging_patterns} />
       )}
     </div>
   );
