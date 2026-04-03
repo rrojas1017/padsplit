@@ -197,15 +197,25 @@ export function normalizeLabel(raw: string): string {
 
     // Click motivators (Q7)
     'first month discount': 'First Month Discount',
+    'first-month discount': 'First Month Discount',
+    '1st month discount': 'First Month Discount',
     'lower move-in fees': 'Lower Move-In Fees',
+    'lower move-in fee': 'Lower Move-In Fees',
+    'lower move in fees': 'Lower Move-In Fees',
     'lower moving fees': 'Lower Move-In Fees',
+    'lower moving fee': 'Lower Move-In Fees',
     'referral bonuses': 'Referral Bonuses',
+    'referral bonus': 'Referral Bonuses',
     'no long-term lease message': 'No Long-Term Lease',
     'no long-term lease': 'No Long-Term Lease',
+    'no long term lease': 'No Long-Term Lease',
     'all utilities included message': 'All Utilities Included',
     'all utilities included': 'All Utilities Included',
     'limited-time offer': 'Limited-Time Offer',
     "content about a padsplit member's experience": 'Member Experience Content',
+
+    // Affordability (Q7/Q9 crossover)
+    'affordability': 'Affordable Rent',
 
     // Ad content preferences (Q12)
     'real member stories/testimonials': 'Real Member Stories',
