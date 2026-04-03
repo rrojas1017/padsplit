@@ -13,6 +13,7 @@ import { BarrierAnalysis } from './BarrierAnalysis';
 import { CreativeStrategy } from './CreativeStrategy';
 import { TestimonialPipeline } from './TestimonialPipeline';
 import { formatLabel, formatAggLabels } from '@/utils/audienceSurveyInsights';
+import { ScriptResponsesTab } from './ScriptResponsesTab';
 import type { AudienceSurveyRecord } from '@/hooks/useAudienceSurveyResponses';
 
 type TabValue = 'overview' | 'platforms' | 'awareness' | 'messaging' | 'barriers' | 'creative' | 'testimonials';
