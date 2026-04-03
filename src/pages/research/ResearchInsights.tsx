@@ -22,21 +22,17 @@ import type { AudienceSurveyInsightData, CampaignType } from '@/types/research-i
 import { generateExecutivePDF } from '@/utils/generate-executive-pdf';
 import { useCostAlertMonitor } from '@/hooks/useCostAlertMonitor';
 
-import { ExecutiveSummary } from '@/components/research-insights/ExecutiveSummary';
-import { ReasonCodeChart } from '@/components/research-insights/ReasonCodeChart';
-import { IssueClustersPanel } from '@/components/research-insights/IssueClustersPanel';
-import { PaymentFrictionCard } from '@/components/research-insights/PaymentFrictionCard';
-import { TransferFrictionCard } from '@/components/research-insights/TransferFrictionCard';
-import { BlindSpotsPanel } from '@/components/research-insights/BlindSpotsPanel';
-import { HostAccountabilityPanel } from '@/components/research-insights/HostAccountabilityPanel';
-import { AgentPerformanceCard } from '@/components/research-insights/AgentPerformanceCard';
-import { TopActionsTable } from '@/components/research-insights/TopActionsTable';
-import { EmergingPatternsPanel } from '@/components/research-insights/EmergingPatternsPanel';
+// Old research-insights components (still used by some features)
 import { HumanReviewQueue } from '@/components/research-insights/HumanReviewQueue';
-import { InsightsKPIRow } from '@/components/research-insights/InsightsKPIRow';
 import type { ExtendedKPIs } from '@/components/research-insights/InsightsKPIRow';
 import { ReasonCodeDrillDown } from '@/components/research-insights/ReasonCodeDrillDown';
-import { MemberDataTab } from '@/components/research-insights/MemberDataTab';
+
+// New move-out insights components
+import { MoveOutKPIGrid } from '@/components/moveout-insights/MoveOutKPIGrid';
+import { MoveOutOverview } from '@/components/moveout-insights/MoveOutOverview';
+import { MoveOutIssuesTab } from '@/components/moveout-insights/MoveOutIssuesTab';
+import { MoveOutOperationsTab } from '@/components/moveout-insights/MoveOutOperationsTab';
+import { MoveOutMemberTab } from '@/components/moveout-insights/MoveOutMemberTab';
 
 import { AudienceSurveyDashboard } from '@/components/audience-survey/AudienceSurveyDashboard';
 import { AudienceSurveyInsightsDashboard } from '@/components/audience-survey/AudienceSurveyInsightsDashboard';
