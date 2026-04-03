@@ -214,11 +214,7 @@ serve(async (req) => {
 
       const emptyTranscripts = [...(nullTranscripts || []), ...(emptyStringTranscripts || [])];
 
-      if (emptyError) {
-        throw new Error(`Failed to query empty transcripts: ${emptyError.message}`);
-      }
-
-      const emptyBookingIds = (emptyTranscripts || []).map((t: any) => t.booking_id);
+      const emptyBookingIds = [...new Set(emptyTranscripts.map((t: any) => t.booking_id))];
       
       if (emptyBookingIds.length === 0) {
         return new Response(
