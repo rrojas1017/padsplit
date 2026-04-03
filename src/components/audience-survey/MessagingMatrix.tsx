@@ -20,8 +20,10 @@ export function MessagingMatrix({ triggers, motivators, topPlatform, records, cr
     fill: DISTINCT_COLORS[i % DISTINCT_COLORS.length],
   }));
 
-  // Get top platforms for heatmap
-  const platforms = [...new Set(records.flatMap(r => r.extraction.social_media_platforms?.platforms_used || []))].slice(0, 6);
+  // Get top platforms for heatmap — normalize platform names
+  const platforms = [...new Set(records.flatMap(r =>
+    (r.extraction.social_media_platforms?.platforms_used || []).map(p => normalizeLabel(p))
+  ))].slice(0, 6);
   const topMotivators = motivators.slice(0, 6).map(m => m.label);
 
   return (
