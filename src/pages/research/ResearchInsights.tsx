@@ -285,17 +285,19 @@ export default function ResearchInsights() {
           </SelectContent>
         </Select>
 
-        <Select value={campaignId} onValueChange={setCampaignId}>
-          <SelectTrigger className="w-[200px]">
-            <SelectValue placeholder="All Campaigns" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Campaigns</SelectItem>
-            {campaigns.map((c) => (
-              <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        {!isAudienceSurvey && (
+          <Select value={campaignId} onValueChange={setCampaignId}>
+            <SelectTrigger className="w-[200px]">
+              <SelectValue placeholder="All Campaigns" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Campaigns</SelectItem>
+              {campaigns.map((c) => (
+                <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
 
         <Select value={dateRange} onValueChange={(v) => setDateRange(v as DateRangeOption)}>
           <SelectTrigger className="w-[180px]">
