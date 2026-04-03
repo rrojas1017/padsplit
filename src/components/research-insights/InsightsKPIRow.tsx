@@ -9,6 +9,18 @@ interface InsightsKPIRowProps {
   direction?: TrendDirection | null;
 }
 
+/** Format a percentage value — handles raw decimals (0.605 → "60.5%") and string ranges ("60-70%") */
+function formatPercent(val: string): string {
+  if (!val || val === 'N/A') return 'N/A';
+  // Already formatted with %
+  if (val.includes('%')) return val;
+  const n = parseFloat(val);
+  if (isNaN(n)) return val;
+  // If it's a decimal between 0 and 1, multiply by 100
+  const pct = n > 0 && n <= 1 ? n * 100 : n;
+  return `${Math.round(pct * 10) / 10}%`;
+}
+
 export function InsightsKPIRow({ kpis, direction }: InsightsKPIRowProps) {
   const totalDisplay = kpis.dataErrorCount > 0
     ? `${(kpis.totalCases - kpis.dataErrorCount).toLocaleString()}`
@@ -29,7 +41,7 @@ export function InsightsKPIRow({ kpis, direction }: InsightsKPIRowProps) {
     },
     {
       label: 'Addressable %',
-      value: kpis.addressablePct !== 'N/A' ? kpis.addressablePct : 'N/A',
+      value: kpis.addressablePct !== 'N/A' ? formatPercent(kpis.addressablePct) : 'N/A',
       icon: Target,
       color: 'text-emerald-500',
       definition: 'Percentage of move-outs that PadSplit could have potentially prevented with better processes or intervention.',
@@ -51,7 +63,7 @@ export function InsightsKPIRow({ kpis, direction }: InsightsKPIRowProps) {
     },
     {
       label: 'Host Related',
-      value: kpis.hostRelatedPct !== 'N/A' ? kpis.hostRelatedPct : 'N/A',
+      value: kpis.hostRelatedPct !== 'N/A' ? formatPercent(kpis.hostRelatedPct) : 'N/A',
       icon: Home,
       color: 'text-destructive',
       definition: 'Percentage of move-outs caused by host negligence, property condition issues, or host misconduct.',
