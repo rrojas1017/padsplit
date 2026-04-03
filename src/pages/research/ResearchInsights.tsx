@@ -17,10 +17,10 @@ import { useResearchInsightsData, DateRangeOption } from '@/hooks/useResearchIns
 import { useResearchInsightsPolling } from '@/hooks/useResearchInsightsPolling';
 import { useResearchCampaigns } from '@/hooks/useResearchCampaigns';
 import { useIsAdmin } from '@/hooks/useIsAdmin';
-import { useResearchTrends } from '@/hooks/useResearchTrends';
 import { deriveKPIs, isAudienceSurveyData } from '@/types/research-insights';
 import type { AudienceSurveyInsightData, CampaignType } from '@/types/research-insights';
 import { generateExecutivePDF } from '@/utils/generate-executive-pdf';
+import { useCostAlertMonitor } from '@/hooks/useCostAlertMonitor';
 
 import { ExecutiveSummary } from '@/components/research-insights/ExecutiveSummary';
 import { ReasonCodeChart } from '@/components/research-insights/ReasonCodeChart';
@@ -34,6 +34,7 @@ import { TopActionsTable } from '@/components/research-insights/TopActionsTable'
 import { EmergingPatternsPanel } from '@/components/research-insights/EmergingPatternsPanel';
 import { HumanReviewQueue } from '@/components/research-insights/HumanReviewQueue';
 import { InsightsKPIRow } from '@/components/research-insights/InsightsKPIRow';
+import type { ExtendedKPIs } from '@/components/research-insights/InsightsKPIRow';
 import { ReasonCodeDrillDown } from '@/components/research-insights/ReasonCodeDrillDown';
 import { MemberDataTab } from '@/components/research-insights/MemberDataTab';
 
@@ -78,7 +79,6 @@ export default function ResearchInsights() {
   const [showRegenConfirm, setShowRegenConfirm] = useState(false);
 
   const { isAdmin } = useIsAdmin();
-  const { trends, direction } = useResearchTrends();
 
   const openExportModal = useCallback((filter: ExportFilter, title: string, filename: string) => {
     if (!isAdmin) return;
@@ -238,14 +238,23 @@ export default function ResearchInsights() {
   const reportData = selectedReport?.data as any;
   const isAudienceSurvey = campaignType === 'audience_survey';
 
-  const mappedStats: import('@/types/research-insights').ProcessingStats = {
+  const mappedStats = {
     total_research_records: processingStats.totalResearchRecords,
     processed_records: processingStats.processedRecords,
     flagged_for_review: processingStats.humanReviewCount,
     pending_records: processingStats.pendingRecords,
     failed_records: 0,
   };
-  const kpis = !isAudienceSurvey ? deriveKPIs(reportData, mappedStats) : null;
+  const baseKpis = !isAudienceSurvey ? deriveKPIs(reportData, mappedStats) : null;
+  const es = reportData?.executive_summary;
+  const firstReason = reportData?.reason_code_distribution?.[0];
+  const kpis: ExtendedKPIs | null = baseKpis ? {
+    ...baseKpis,
+    highRegretPct: es?.high_regret_pct?.toString() || undefined,
+    paymentRelatedPct: es?.payment_related_pct?.toString() || undefined,
+    processedRecords: processingStats.processedRecords,
+    topReasonPct: firstReason?.percentage?.toString() || undefined,
+  } : null;
 
   const subtitle = isAudienceSurvey
     ? 'Marketing research insights from audience survey campaigns'
@@ -255,7 +264,7 @@ export default function ResearchInsights() {
     if (!reportData) return;
     toast.info('Generating AI Executive Brief...');
     try {
-      await generateExecutivePDF(reportData, trends, selectedReport?.created_at, selectedReport?.id);
+      await generateExecutivePDF(reportData, [], selectedReport?.created_at, selectedReport?.id);
       toast.success('PDF downloaded successfully');
     } catch (err) {
       console.error('PDF generation error:', err);
@@ -268,100 +277,95 @@ export default function ResearchInsights() {
     : null;
 
   return (
-    <DashboardLayout title="Research Insights" subtitle={subtitle}>
-      {/* Controls Bar */}
-      <div className="flex flex-wrap items-center gap-3 mb-6 p-4 rounded-xl bg-card/80 backdrop-blur border border-border shadow-sm">
+    <DashboardLayout title="" subtitle="">
+      <div className="max-w-7xl mx-auto space-y-4">
+
+      {/* ZONE 0 — Slim Dismissible Cost Alert (admin only) */}
+      {isAdmin && !isAudienceSurvey && (
+        <CostAlertSlimBanner />
+      )}
+
+      {/* ZONE 1 — Compact Command Bar */}
+      <div className="flex flex-wrap items-center gap-2 py-2">
+        {/* Left: Title + processing status badge */}
+        <div className="flex items-center gap-2 mr-auto">
+          <h1 className="text-lg font-semibold text-foreground">Research Insights</h1>
+          {!isAudienceSurvey && (
+            processingStats.pendingRecords > 0
+              ? <Badge variant="outline" className="text-xs gap-1 border-amber-500/40 text-amber-600">
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-500 inline-block" />
+                  {processingStats.pendingRecords} pending
+                </Badge>
+              : <Badge variant="outline" className="text-xs gap-1 border-emerald-500/40 text-emerald-600">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block" />
+                  {processingStats.processedRecords} processed
+                </Badge>
+          )}
+        </div>
+
+        {/* Center: Campaign type + time filter */}
         <Select value={campaignType} onValueChange={handleCampaignTypeChange}>
-          <SelectTrigger className="w-[220px]">
+          <SelectTrigger className="w-[180px] h-8 text-xs">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="move_out_survey">
-              <span className="flex items-center gap-2">Move-Out Research <Badge variant="outline" className="text-[10px] px-1.5 py-0 font-normal">Qualitative</Badge></span>
-            </SelectItem>
-            <SelectItem value="audience_survey">
-              <span className="flex items-center gap-2">Audience Survey <Badge variant="outline" className="text-[10px] px-1.5 py-0 font-normal">Quantitative</Badge></span>
-            </SelectItem>
+            <SelectItem value="move_out_survey">Move-Out Research</SelectItem>
+            <SelectItem value="audience_survey">Audience Survey</SelectItem>
           </SelectContent>
         </Select>
 
         {!isAudienceSurvey && (
-          <Select value={campaignId} onValueChange={setCampaignId}>
-            <SelectTrigger className="w-[200px]">
-              <SelectValue placeholder="All Campaigns" />
+          <Select value={dateRange} onValueChange={(v) => setDateRange(v as DateRangeOption)}>
+            <SelectTrigger className="w-[140px] h-8 text-xs">
+              <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">All Campaigns</SelectItem>
-              {campaigns.map((c) => (
-                <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
-              ))}
+              <SelectItem value="thisWeek">This Week</SelectItem>
+              <SelectItem value="thisMonth">This Month</SelectItem>
+              <SelectItem value="lastMonth">Last Month</SelectItem>
+              <SelectItem value="last3months">Last 3 Months</SelectItem>
+              <SelectItem value="allTime">All Time</SelectItem>
             </SelectContent>
           </Select>
         )}
 
-        <Select value={dateRange} onValueChange={(v) => setDateRange(v as DateRangeOption)}>
-          <SelectTrigger className="w-[180px]">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="thisWeek">This Week</SelectItem>
-            <SelectItem value="thisMonth">This Month</SelectItem>
-            <SelectItem value="lastMonth">Last Month</SelectItem>
-            <SelectItem value="last3months">Last 3 Months</SelectItem>
-            <SelectItem value="allTime">All Time</SelectItem>
-          </SelectContent>
-        </Select>
+        {/* Right: Actions */}
+        {isAdmin && !isAudienceSurvey && (
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8"
+            onClick={handleManualRegenerate}
+            disabled={isGenerating}
+            title="Refresh report"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${isGenerating ? 'animate-spin' : ''}`} />
+          </Button>
+        )}
 
-        <div className="flex items-center gap-2 ml-auto">
-          {/* Last updated badge + manual refresh (move-out only) */}
-          {lastUpdated && !isAudienceSurvey && (
-            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-              <span>Last updated: {lastUpdated}</span>
-              {isAdmin && (
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-6 w-6"
-                  onClick={handleManualRegenerate}
-                  disabled={isGenerating}
-                  title="Regenerate report"
-                >
-                  <RefreshCw className={`w-3.5 h-3.5 ${isGenerating ? 'animate-spin' : ''}`} />
-                </Button>
-              )}
-            </div>
-          )}
+        {isAdmin && reportData && !isAudienceSurvey && (
+          <Button variant="outline" size="sm" className="h-8 gap-1.5 text-xs" onClick={handleDownloadPDF}>
+            <FileText className="w-3.5 h-3.5" />
+            PDF
+          </Button>
+        )}
 
-          {/* Generate report — show only if no reports exist (move-out only) */}
-          {!selectedReport && !isGenerating && !isAudienceSurvey && (
-            <Button onClick={handleGenerate} disabled={isGenerating} className="gap-2">
-              <Sparkles className="w-4 h-4" />
-              Generate Report
-            </Button>
-          )}
-
-          {/* Download Executive Brief PDF */}
-          {isAdmin && reportData && !isAudienceSurvey && (
-            <Button variant="outline" className="gap-2" onClick={handleDownloadPDF}>
-              <FileText className="w-4 h-4" />
-              Executive Brief (PDF)
-            </Button>
-          )}
-        </div>
+        {!selectedReport && !isGenerating && !isAudienceSurvey && (
+          <Button size="sm" className="h-8 gap-1.5 text-xs" onClick={handleGenerate} disabled={isGenerating}>
+            <Sparkles className="w-3.5 h-3.5" />
+            Generate
+          </Button>
+        )}
 
         {!isAudienceSurvey && reports.length > 1 && (
-          <Select
-            value={selectedReport?.id || ''}
-            onValueChange={(id) => fetchReportDetail(id)}
-          >
-            <SelectTrigger className="w-[240px]">
-              <SelectValue placeholder="Previous Reports" />
+          <Select value={selectedReport?.id || ''} onValueChange={(id) => fetchReportDetail(id)}>
+            <SelectTrigger className="w-[180px] h-8 text-xs">
+              <SelectValue placeholder="Snapshot" />
             </SelectTrigger>
             <SelectContent>
-              {reports.filter(r => r.status === 'completed').map((r) => (
+              {reports.filter(r => r.status === 'completed').map(r => (
                 <SelectItem key={r.id} value={r.id}>
-                  {r.created_at ? format(new Date(r.created_at), 'MMM d, yyyy h:mm a') : r.id.slice(0, 8)}
-                  {' '}({r.total_records_analyzed} records)
+                  {r.created_at ? format(new Date(r.created_at), 'MMM d h:mm a') : r.id.slice(0, 8)}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -369,58 +373,9 @@ export default function ResearchInsights() {
         )}
       </div>
 
-      {/* Processing Status Banner — move-out only */}
-      {!isAudienceSurvey && (
-        <div className="mb-6 flex flex-wrap gap-3">
-          <Card className="flex-1 min-w-[250px] shadow-sm">
-            <CardContent className="p-4 space-y-3">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="w-9 h-9 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
-                    <Database className="w-4 h-4 text-primary" />
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium text-foreground">
-                      {processingStats.processedRecords} / {processingStats.totalResearchRecords} records processed
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      {isBackfilling
-                        ? 'Processing in progress...'
-                        : processingStats.pendingRecords > 0
-                          ? `${processingStats.pendingRecords} pending AI processing`
-                          : 'All records processed'}
-                    </p>
-                  </div>
-                </div>
-              </div>
-              {isBackfilling && processingStats.totalResearchRecords > 0 && (
-                <Progress
-                  value={(processingStats.processedRecords / processingStats.totalResearchRecords) * 100}
-                  className="h-2"
-                />
-              )}
-            </CardContent>
-          </Card>
-
-          {processingStats.humanReviewCount > 0 && (
-            <Card className="min-w-[180px] shadow-sm border-amber-500/20">
-              <CardContent className="p-4 flex items-center gap-3">
-                <div className="w-9 h-9 rounded-full bg-amber-500/10 flex items-center justify-center flex-shrink-0">
-                  <AlertTriangle className="w-4 h-4 text-amber-500" />
-                </div>
-                <div>
-                  <p className="text-sm font-medium text-foreground">{processingStats.humanReviewCount} flagged</p>
-                  <p className="text-xs text-muted-foreground">Need human review</p>
-                </div>
-              </CardContent>
-            </Card>
-          )}
-        </div>
-      )}
-
       {/* In-progress banner */}
       {isGenerating && (
-        <div className="mb-6 rounded-xl p-6 space-y-3 border border-primary/20 bg-gradient-to-r from-primary/5 via-primary/10 to-primary/5 shadow-sm">
+        <div className="rounded-lg p-4 space-y-2 border border-primary/20 bg-primary/5">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <div className="w-9 h-9 rounded-full bg-primary/15 flex items-center justify-center flex-shrink-0">
@@ -478,22 +433,20 @@ export default function ResearchInsights() {
       {/* No reports yet — only for move-out survey (audience survey uses live aggregation) */}
       {!isLoading && !selectedReport && !isGenerating && !isAudienceSurvey && (
         <Card className="shadow-sm">
-          <CardContent className="p-12 text-center">
-            <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center mx-auto mb-4">
-              <Sparkles className="w-8 h-8 text-primary" />
+          <CardContent className="p-8 text-center">
+            <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mx-auto mb-3">
+              <Sparkles className="w-6 h-6 text-primary" />
             </div>
-            <h3 className="text-lg font-semibold text-foreground mb-2">
-              No Research Insights Yet
-            </h3>
-            <p className="text-sm text-muted-foreground mb-4 max-w-md mx-auto">
+            <h3 className="text-base font-semibold text-foreground mb-1">No Insights Yet</h3>
+            <p className="text-sm text-muted-foreground mb-3 max-w-md mx-auto">
               {processingStats.totalResearchRecords > 0
-                ? `${processingStats.processedRecords} processed records found. Click "Generate Report" to analyze them.`
-                : 'No research records found yet. Log survey calls to start building insights.'}
+                ? `${processingStats.processedRecords} processed records. Click Generate to analyze.`
+                : 'No research records yet.'}
             </p>
             {processingStats.totalResearchRecords > 0 && (
-              <Button onClick={handleGenerate} className="gap-2">
-                <Sparkles className="w-4 h-4" />
-                Generate Report
+              <Button size="sm" onClick={handleGenerate} className="gap-1.5">
+                <Sparkles className="w-3.5 h-3.5" />
+                Generate
               </Button>
             )}
           </CardContent>
@@ -507,34 +460,41 @@ export default function ResearchInsights() {
 
       {/* Report content — MOVE-OUT SURVEY */}
       {!isLoading && reportData && !isAudienceSurvey && (selectedReport?.status === 'completed' || isGenerating) && (
-        <div className="space-y-6">
-          {kpis && <InsightsKPIRow kpis={kpis} direction={direction} />}
+        <div className="space-y-4">
+          {/* ZONE 2 — Executive Summary Hero */}
+          {reportData.executive_summary && (
+            <ExecutiveSummary data={reportData.executive_summary as any} lastUpdated={lastUpdated} />
+          )}
 
+          {/* KPI Grid (3×2) */}
+          {kpis && <InsightsKPIRow kpis={kpis} />}
+
+          {/* ZONE 3 — Tab Navigation */}
           <Tabs value={currentTab} onValueChange={setTab}>
-            <TabsList className="grid w-full grid-cols-4">
-              <TabsTrigger value="overview" className="gap-2">
+            <TabsList className="w-full justify-start border-b border-border bg-transparent p-0 h-auto rounded-none">
+              <TabsTrigger value="overview" className="gap-1.5 rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none px-4 py-2.5">
                 <LayoutDashboard className="w-4 h-4" />
                 <span className="hidden sm:inline">Overview</span>
               </TabsTrigger>
-              <TabsTrigger value="issues" className="gap-2">
+              <TabsTrigger value="issues" className="gap-1.5 rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none px-4 py-2.5">
                 <SearchCode className="w-4 h-4" />
                 <span className="hidden sm:inline">Issues & Root Causes</span>
+                {processingStats.humanReviewCount > 0 && (
+                  <Badge variant="secondary" className="text-[10px] h-5 px-1.5 ml-1">{processingStats.humanReviewCount}</Badge>
+                )}
               </TabsTrigger>
-              <TabsTrigger value="operations" className="gap-2">
+              <TabsTrigger value="operations" className="gap-1.5 rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none px-4 py-2.5">
                 <Settings2 className="w-4 h-4" />
                 <span className="hidden sm:inline">Operations</span>
               </TabsTrigger>
-              <TabsTrigger value="members" className="gap-2">
+              <TabsTrigger value="members" className="gap-1.5 rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none px-4 py-2.5">
                 <Users className="w-4 h-4" />
                 <span className="hidden sm:inline">Member Data</span>
               </TabsTrigger>
             </TabsList>
 
-            {/* TAB 1: Overview */}
-            <TabsContent value="overview" className="space-y-6 mt-6">
-              {reportData.executive_summary && (
-                <ExecutiveSummary data={reportData.executive_summary as any} />
-              )}
+            {/* TAB 1: Overview (charts + patterns) */}
+            <TabsContent value="overview" className="space-y-4 mt-4">
               <ReasonCodeChart
                 data={reportData.reason_code_distribution}
                 onCodeClick={(code) => setDrillDownCode(code)}
@@ -546,7 +506,7 @@ export default function ResearchInsights() {
             </TabsContent>
 
             {/* TAB 2: Issues & Root Causes */}
-            <TabsContent value="issues" className="space-y-6 mt-6">
+            <TabsContent value="issues" className="space-y-4 mt-4">
               {reportData.issue_clusters && (
                 <IssueClustersPanel data={reportData.issue_clusters as any} maxVisible={5} />
               )}
@@ -559,12 +519,12 @@ export default function ResearchInsights() {
             </TabsContent>
 
             {/* TAB 3: Operations */}
-            <TabsContent value="operations" className="space-y-6 mt-6">
+            <TabsContent value="operations" className="space-y-4 mt-4">
               {reportData.host_accountability_flags && (
                 <HostAccountabilityPanel data={reportData.host_accountability_flags} maxVisible={8} />
               )}
               {(reportData.payment_friction_analysis || reportData.transfer_friction_analysis) && (
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                   {reportData.payment_friction_analysis && (
                     <PaymentFrictionCard data={reportData.payment_friction_analysis} />
                   )}
@@ -579,16 +539,16 @@ export default function ResearchInsights() {
             </TabsContent>
 
             {/* TAB 4: Member Data */}
-            <TabsContent value="members" className="space-y-6 mt-6">
+            <TabsContent value="members" className="space-y-4 mt-4">
               <MemberDataTab isAdmin={isAdmin} />
             </TabsContent>
           </Tabs>
 
-          {/* Human Review Queue - collapsible footer */}
-          <div className="space-y-3 pt-4 border-t border-border">
+          {/* ZONE 5 — Human Review Queue (collapsed by default) */}
+          <div className="pt-2">
             <Collapsible open={reviewOpen} onOpenChange={setReviewOpen}>
-              <CollapsibleTrigger className="w-full">
-                <div className="flex items-center justify-between p-3 rounded-lg border border-border hover:bg-muted/50 transition-colors">
+              <CollapsibleTrigger asChild>
+                <button className="w-full flex items-center justify-between p-3 rounded-lg border border-border hover:bg-muted/50 transition-colors">
                   <div className="flex items-center gap-2">
                     <AlertTriangle className="w-4 h-4 text-amber-500" />
                     <span className="text-sm font-medium text-foreground">Human Review Queue</span>
@@ -597,15 +557,17 @@ export default function ResearchInsights() {
                     )}
                   </div>
                   <ChevronDown className={`w-4 h-4 transition-transform ${reviewOpen ? 'rotate-180' : ''}`} />
-                </div>
+                </button>
               </CollapsibleTrigger>
-              <CollapsibleContent className="mt-3">
+              <CollapsibleContent className="mt-2">
                 <HumanReviewQueue onExportModal={isAdmin ? openExportModal : undefined} />
               </CollapsibleContent>
             </Collapsible>
           </div>
         </div>
       )}
+
+      </div>{/* end max-w-7xl wrapper */}
 
       {/* Failed report */}
       {!isLoading && selectedReport?.status === 'failed' && (
@@ -659,5 +621,29 @@ export default function ResearchInsights() {
         </AlertDialogContent>
       </AlertDialog>
     </DashboardLayout>
+  );
+}
+
+/** Slim dismissible cost alert banner */
+function CostAlertSlimBanner() {
+  const [dismissed, setDismissed] = useState(false);
+  const { alertLevel, rollingAvg, threshold } = useCostAlertMonitor();
+
+  if (dismissed || alertLevel === 'normal') return null;
+
+  return (
+    <div className={`flex items-center justify-between gap-3 px-4 py-2 rounded-lg text-xs ${
+      alertLevel === 'critical'
+        ? 'bg-destructive/10 border border-destructive/30 text-destructive'
+        : 'bg-amber-500/10 border border-amber-500/30 text-amber-700 dark:text-amber-400'
+    }`}>
+      <div className="flex items-center gap-2">
+        <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" />
+        <span>
+          Cost {alertLevel === 'critical' ? 'ceiling breach' : 'warning'}: ${rollingAvg.toFixed(4)}/record avg vs ${threshold.toFixed(2)} threshold
+        </span>
+      </div>
+      <button onClick={() => setDismissed(true)} className="text-current hover:opacity-70 font-bold px-1">×</button>
+    </div>
   );
 }
