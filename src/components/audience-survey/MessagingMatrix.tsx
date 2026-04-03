@@ -2,7 +2,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import { MessageSquare, Star } from 'lucide-react';
 import type { AggResult, AudienceSurveyRecord } from '@/hooks/useAudienceSurveyResponses';
-import { generateMessagingInsight, DISTINCT_COLORS, formatLabel } from '@/utils/audienceSurveyInsights';
+import { generateMessagingInsight, DISTINCT_COLORS, formatLabel, normalizeLabel } from '@/utils/audienceSurveyInsights';
 
 interface Props {
   triggers: AggResult[];
@@ -20,8 +20,10 @@ export function MessagingMatrix({ triggers, motivators, topPlatform, records, cr
     fill: DISTINCT_COLORS[i % DISTINCT_COLORS.length],
   }));
 
-  // Get top platforms for heatmap
-  const platforms = [...new Set(records.flatMap(r => r.extraction.social_media_platforms?.platforms_used || []))].slice(0, 6);
+  // Get top platforms for heatmap — normalize platform names
+  const platforms = [...new Set(records.flatMap(r =>
+    (r.extraction.social_media_platforms?.platforms_used || []).map(p => normalizeLabel(p))
+  ))].slice(0, 6);
   const topMotivators = motivators.slice(0, 6).map(m => m.label);
 
   return (
@@ -105,7 +107,7 @@ export function MessagingMatrix({ triggers, motivators, topPlatform, records, cr
                 <tr>
                   <th className="text-left p-2 text-muted-foreground">Motivator</th>
                   {platforms.map(p => (
-                    <th key={p} className="text-center p-2 text-muted-foreground">{formatLabel(p)}</th>
+                    <th key={p} className="text-center p-2 text-muted-foreground">{p}</th>
                   ))}
                 </tr>
               </thead>
@@ -114,24 +116,10 @@ export function MessagingMatrix({ triggers, motivators, topPlatform, records, cr
                   <tr key={mot} className="border-t border-border">
                     <td className="p-2 text-foreground font-medium">{mot}</td>
                     {platforms.map(plat => {
-                      // crossTabData uses raw keys from the original aggregation, but motivator labels are already formatted
-                      // We need to find the raw key that matches this formatted label
-                      const val = Object.keys(crossTabData).reduce((found, rawKey) => {
-                        if (formatLabel(rawKey) === mot) {
-                          return crossTabData[rawKey]?.[plat] || found;
-                        }
-                        return found;
-                      }, crossTabData[mot]?.[plat] || 0);
+                      const val = crossTabData[mot]?.[plat] || 0;
                       const maxVal = Math.max(
                         ...topMotivators.flatMap(m =>
-                          platforms.map(p => {
-                            return Object.keys(crossTabData).reduce((found, rawKey) => {
-                              if (formatLabel(rawKey) === m) {
-                                return crossTabData[rawKey]?.[p] || found;
-                              }
-                              return found;
-                            }, crossTabData[m]?.[p] || 0);
-                          })
+                          platforms.map(p => crossTabData[m]?.[p] || 0)
                         ),
                         1
                       );

@@ -89,7 +89,7 @@ export function normalizeLabel(raw: string): string {
   const trimmed = raw.trim();
 
   const SYNONYMS: Record<string, string> = {
-    // Safety & Security
+    // Safety & Security (one concept in original survey)
     'safety': 'Safety & Security',
     'security': 'Safety & Security',
     'safety/security': 'Safety & Security',
@@ -97,6 +97,11 @@ export function normalizeLabel(raw: string): string {
     'safety_security': 'Safety & Security',
     'safety and security': 'Safety & Security',
     'safety/security emphasis': 'Safety & Security',
+    'security issues': 'Safety & Security',
+    'security concern': 'Safety & Security',
+    'safety concern': 'Safety & Security',
+    'safety concerns': 'Safety & Security',
+    'security concerns': 'Safety & Security',
 
     // Quality
     'quality of the rooms': 'Quality of Rooms/Houses',
@@ -104,10 +109,14 @@ export function normalizeLabel(raw: string): string {
     'quality of rooms': 'Quality of Rooms/Houses',
     'quality of the rooms/houses': 'Quality of Rooms/Houses',
     'quality of rooms/houses': 'Quality of Rooms/Houses',
+    'quality': 'Quality of Rooms/Houses',
+    'room quality': 'Quality of Rooms/Houses',
 
     // Roommates
     'who my roommates would be': 'Roommate Concerns',
     'roommate concerns': 'Roommate Concerns',
+    'roommates': 'Roommate Concerns',
+    'roommate': 'Roommate Concerns',
     'how roommates are matched': 'Roommate Matching',
     'roommate matching': 'Roommate Matching',
 
@@ -118,6 +127,9 @@ export function normalizeLabel(raw: string): string {
     'pricing': 'Price & Fees',
     'price': 'Price & Fees',
     'fees': 'Price & Fees',
+    'cost': 'Price & Fees',
+    'costs': 'Price & Fees',
+    'expensive': 'Price & Fees',
 
     // How it works
     'how it actually works': 'How It Works',
@@ -125,8 +137,15 @@ export function normalizeLabel(raw: string): string {
     'how does it work': 'How It Works',
     'how_it_works': 'How It Works',
 
+    // Location
+    'location': 'Location Options',
+    'locations': 'Location Options',
+    'location options': 'Location Options',
+
     // Lease
     'lease flexibility': 'Lease Flexibility',
+    'lease': 'Lease Flexibility',
+    'lease terms': 'Lease Flexibility',
     'lease rules and policies': 'Lease Rules & Policies',
     'lease rules': 'Lease Rules & Policies',
     'lease_rules': 'Lease Rules & Policies',
@@ -136,29 +155,47 @@ export function normalizeLabel(raw: string): string {
     'how the payment works': 'How Payments Work',
     'payment process': 'How Payments Work',
     'payment-wise': 'How Payments Work',
+    'payments': 'How Payments Work',
+    'payment': 'How Payments Work',
 
     // Rent inclusions
     'what is included in the rent': "What's Included in Rent",
     "what's included in rent": "What's Included in Rent",
     'what included in rent': "What's Included in Rent",
     'lack of clarity on utilities included': "What's Included in Rent",
-    'utilities included': 'Utilities Included',
 
-    // Interest drivers
+    // Interest drivers (Q9)
     'affordable rent': 'Affordable Rent',
     'flexibility': 'Flexibility',
     'ability to move in quickly': 'Quick Move-In',
     'move in quickly': 'Quick Move-In',
-    'location options': 'Location Options',
+    'utilities included': 'Utilities Included',
     'joining a community of roommates': 'Community of Roommates',
     'community of roommates': 'Community of Roommates',
 
-    // Nothing confusing
+    // Nothing confusing (Q10)
     'nothing was confusing': 'Nothing Was Confusing',
     'nothing confusing': 'Nothing Was Confusing',
     'nothing': 'Nothing Was Confusing',
 
-    // Ad motivators
+    // Ad attention triggers (Q6)
+    'a special offer or discount': 'Special Offer/Discount',
+    'special offer or discount': 'Special Offer/Discount',
+    'special offer': 'Special Offer/Discount',
+    'discount': 'Special Offer/Discount',
+    'a relatable story or situation': 'Relatable Story',
+    'relatable story': 'Relatable Story',
+    'humor or entertainment': 'Humor/Entertainment',
+    'humor': 'Humor/Entertainment',
+    'clear pricing': 'Clear Pricing',
+    'a recommendation or testimonial': 'Testimonial/Recommendation',
+    'recommendation or testimonial': 'Testimonial/Recommendation',
+    'high-quality visuals': 'High-Quality Visuals',
+    'high_quality_visuals': 'High-Quality Visuals',
+    'a strong headline': 'Strong Headline',
+    'strong headline': 'Strong Headline',
+
+    // Click motivators (Q7)
     'first month discount': 'First Month Discount',
     'lower move-in fees': 'Lower Move-In Fees',
     'lower moving fees': 'Lower Move-In Fees',
@@ -170,37 +207,41 @@ export function normalizeLabel(raw: string): string {
     'limited-time offer': 'Limited-Time Offer',
     "content about a padsplit member's experience": 'Member Experience Content',
 
-    // Ad attention triggers
-    'a special offer or discount': 'Special Offer/Discount',
-    'special offer or discount': 'Special Offer/Discount',
-    'a relatable story or situation': 'Relatable Story',
-    'relatable story': 'Relatable Story',
-    'humor or entertainment': 'Humor/Entertainment',
-    'clear pricing': 'Clear Pricing',
-    'a recommendation or testimonial': 'Testimonial/Recommendation',
-    'recommendation or testimonial': 'Testimonial/Recommendation',
-    'high-quality visuals': 'High-Quality Visuals',
-    'a strong headline': 'Strong Headline',
-    'strong headline': 'Strong Headline',
-
-    // Ad content preferences
+    // Ad content preferences (Q12)
     'real member stories/testimonials': 'Real Member Stories',
     'real member stories': 'Real Member Stories',
     'price comparisons vs. renting an apartment': 'Price Comparison vs Apartment',
     'price comparisons': 'Price Comparison vs Apartment',
     'clear explanation of how it works': 'Clear Explanation of How It Works',
+    'clear explanations': 'Clear Explanation of How It Works',
+    'clear explanation': 'Clear Explanation of How It Works',
     'focus on safety and security': 'Safety & Security Focus',
     'video walkthrough of actual rooms/houses': 'Video Room Walkthrough',
+    'video walkthrough of rooms': 'Video Room Walkthrough',
     'video walkthrough': 'Video Room Walkthrough',
     'short and entertaining content': 'Short & Entertaining',
     'showcase of rooms and prices in your area': 'Local Rooms & Prices',
 
-    // Detail preferences
+    // Detail preferences (Q11)
     'give more detail': 'Give More Detail',
     'keep it short and simple': 'Keep It Short & Simple',
     'depends on the platform (tiktok short, youtube more detail)': 'Depends on Platform',
     'depends on the platform': 'Depends on Platform',
     'not sure': 'Not Sure',
+
+    // Misc
+    'photos': 'Photos',
+    'move-in process': 'Move-In Process',
+    'pictures of the resident': 'Resident Photos',
+    'reviews': 'Reviews',
+    'updated videos': 'Updated Videos',
+    'flat rates': 'Flat Rates',
+    'house rules': 'House Rules',
+    'cleaning supplies': 'Cleaning Supplies',
+    'entertainment': 'Entertainment',
+    'testimonies': 'Testimonial',
+    'testimonial': 'Testimonial',
+    'other': 'Other',
 
     // Platforms
     'facebook groups to find housing': 'Facebook Groups (Housing)',
