@@ -12,8 +12,49 @@ import { MessagingMatrix } from './MessagingMatrix';
 import { BarrierAnalysis } from './BarrierAnalysis';
 import { CreativeStrategy } from './CreativeStrategy';
 import { TestimonialPipeline } from './TestimonialPipeline';
+import { formatLabel, formatAggLabels } from '@/utils/audienceSurveyInsights';
+import type { AudienceSurveyRecord } from '@/hooks/useAudienceSurveyResponses';
 
 type TabValue = 'overview' | 'platforms' | 'awareness' | 'messaging' | 'barriers' | 'creative' | 'testimonials';
+
+/** Count how many of the 13 core extraction sections have data for a single record */
+function countAnsweredQuestions(r: AudienceSurveyRecord): number {
+  const ext = r.extraction;
+  let count = 0;
+
+  const hasArray = (arr: any[] | undefined) => Array.isArray(arr) && arr.length > 0;
+  const hasStr = (s: string | undefined | null) => typeof s === 'string' && s.trim().length > 0;
+  const hasBool = (b: boolean | undefined | null) => typeof b === 'boolean';
+
+  // Q1: platforms used
+  if (hasArray(ext.social_media_platforms?.platforms_used)) count++;
+  // Q2: follows influencers
+  if (hasBool(ext.influencer_following?.follows_influencers)) count++;
+  // Q3: noticed standout ads
+  if (hasBool(ext.ad_awareness?.noticed_standout_ads)) count++;
+  // Q4: seen padsplit ads
+  if (hasBool(ext.ad_awareness?.has_seen_padsplit_ads)) count++;
+  // Q5: expected ad platforms
+  if (hasArray(ext.ad_awareness?.expected_padsplit_ad_platforms) || hasArray(ext.ad_awareness?.where_seen_padsplit_ads)) count++;
+  // Q6: scroll stoppers
+  if (hasArray(ext.ad_engagement?.what_makes_them_stop_scrolling)) count++;
+  // Q7: click motivators
+  if (hasArray(ext.ad_engagement?.what_makes_them_click_ad)) count++;
+  // Q8: initial concerns
+  if (hasArray(ext.first_impressions?.initial_concerns)) count++;
+  // Q9: interest drivers
+  if (hasArray(ext.first_impressions?.interest_drivers)) count++;
+  // Q10: confusing aspects
+  if (hasArray(ext.first_impressions?.confusing_aspects)) count++;
+  // Q11: ad detail preference
+  if (hasArray(ext.ad_engagement?.ad_detail_preferences)) count++;
+  // Q12: preferred content types
+  if (hasArray(ext.ad_engagement?.preferred_content_types)) count++;
+  // Q13: video testimonial interest
+  if (hasBool(ext.video_testimonial?.interested_in_recording)) count++;
+
+  return count;
+}
 
 export function AudienceSurveyInsightsDashboard() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -49,15 +90,15 @@ export function AudienceSurveyInsightsDashboard() {
   }
 
   // Aggregations
-  const platformUsage = aggregateArray(records, r => r.extraction.social_media_platforms?.platforms_used);
-  const adPrefPlatforms = aggregateArray(records, r => r.extraction.ad_awareness?.expected_padsplit_ad_platforms);
-  const triggers = aggregateArray(records, r => r.extraction.ad_engagement?.what_makes_them_stop_scrolling);
-  const motivators = aggregateArray(records, r => r.extraction.ad_engagement?.what_makes_them_click_ad);
-  const concerns = aggregateArray(records, r => r.extraction.first_impressions?.initial_concerns);
-  const interests = aggregateArray(records, r => r.extraction.first_impressions?.interest_drivers);
-  const confusion = aggregateArray(records, r => r.extraction.first_impressions?.confusing_aspects);
-  const detailPref = aggregateArray(records, r => r.extraction.ad_engagement?.ad_detail_preferences);
-  const desiredContent = aggregateArray(records, r => r.extraction.ad_engagement?.preferred_content_types);
+  const platformUsage = formatAggLabels(aggregateArray(records, r => r.extraction.social_media_platforms?.platforms_used));
+  const adPrefPlatforms = formatAggLabels(aggregateArray(records, r => r.extraction.ad_awareness?.expected_padsplit_ad_platforms));
+  const triggers = formatAggLabels(aggregateArray(records, r => r.extraction.ad_engagement?.what_makes_them_stop_scrolling));
+  const motivators = formatAggLabels(aggregateArray(records, r => r.extraction.ad_engagement?.what_makes_them_click_ad));
+  const concerns = formatAggLabels(aggregateArray(records, r => r.extraction.first_impressions?.initial_concerns));
+  const interests = formatAggLabels(aggregateArray(records, r => r.extraction.first_impressions?.interest_drivers));
+  const confusion = formatAggLabels(aggregateArray(records, r => r.extraction.first_impressions?.confusing_aspects));
+  const detailPref = formatAggLabels(aggregateArray(records, r => r.extraction.ad_engagement?.ad_detail_preferences));
+  const desiredContent = formatAggLabels(aggregateArray(records, r => r.extraction.ad_engagement?.preferred_content_types));
 
   const adRecall = aggregateBoolean(records, r => r.extraction.ad_awareness?.has_seen_padsplit_ads);
   const testimonialOptIn = aggregateBoolean(records, r => r.extraction.video_testimonial?.interested_in_recording);
@@ -74,16 +115,16 @@ export function AudienceSurveyInsightsDashboard() {
     r => r.extraction.social_media_platforms?.platforms_used,
   );
 
-  // Completion rate from questions_covered_estimate
-  const withEstimate = records.filter(r => (r.extraction.agent_observations?.questions_covered_estimate ?? 0) > 0);
-  const avgCoverage = withEstimate.length > 0
-    ? Math.round(withEstimate.reduce((s, r) => s + (r.extraction.agent_observations?.questions_covered_estimate || 0), 0) / withEstimate.length)
+  // Avg questions answered (out of 13 core questions)
+  const totalAnswered = records.reduce((sum, r) => sum + countAnsweredQuestions(r), 0);
+  const avgQsAnswered = records.length > 0
+    ? Math.round((totalAnswered / records.length) * 10) / 10
     : 0;
 
   const kpis = [
     { label: 'Total Responses', value: records.length, icon: Users, color: 'text-primary' },
-    { label: 'Avg Questions Covered', value: avgCoverage > 0 ? `${avgCoverage}` : '—', icon: Target, color: 'text-blue-600' },
-    { label: 'Top Platform', value: topPlatform, icon: Megaphone, color: 'text-purple-600' },
+    { label: 'Avg Qs Answered', value: avgQsAnswered > 0 ? `${avgQsAnswered} / 13` : '—', icon: Target, color: 'text-blue-600' },
+    { label: 'Top Platform', value: topPlatform.length > 18 ? topPlatform.slice(0, 15) + '...' : topPlatform, icon: Megaphone, color: 'text-purple-600' },
     { label: 'Ad Recall Rate', value: `${adRecall.pct}%`, icon: Eye, color: 'text-amber-600' },
     { label: '#1 Click Motivator', value: topMotivator.length > 25 ? topMotivator.slice(0, 22) + '...' : topMotivator, icon: TrendingUp, color: 'text-green-600' },
     { label: 'Testimonial Opt-In', value: `${testimonialOptIn.pct}%`, icon: Video, color: 'text-pink-600' },

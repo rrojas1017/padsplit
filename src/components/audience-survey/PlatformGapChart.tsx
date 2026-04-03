@@ -10,6 +10,7 @@ interface Props {
 }
 
 export function PlatformGapChart({ platformUsage, adPreference }: Props) {
+  // Labels are already formatted from parent
   const allLabels = new Set([...platformUsage.map(p => p.label), ...adPreference.map(p => p.label)]);
   const chartData = Array.from(allLabels).map(label => ({
     platform: label,

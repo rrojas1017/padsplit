@@ -1,9 +1,8 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
-import { Badge } from '@/components/ui/badge';
 import { MessageSquare, Star } from 'lucide-react';
 import type { AggResult, AudienceSurveyRecord } from '@/hooks/useAudienceSurveyResponses';
-import { generateMessagingInsight, DISTINCT_COLORS } from '@/utils/audienceSurveyInsights';
+import { generateMessagingInsight, DISTINCT_COLORS, formatLabel } from '@/utils/audienceSurveyInsights';
 
 interface Props {
   triggers: AggResult[];
@@ -106,7 +105,7 @@ export function MessagingMatrix({ triggers, motivators, topPlatform, records, cr
                 <tr>
                   <th className="text-left p-2 text-muted-foreground">Motivator</th>
                   {platforms.map(p => (
-                    <th key={p} className="text-center p-2 text-muted-foreground">{p}</th>
+                    <th key={p} className="text-center p-2 text-muted-foreground">{formatLabel(p)}</th>
                   ))}
                 </tr>
               </thead>
@@ -115,8 +114,27 @@ export function MessagingMatrix({ triggers, motivators, topPlatform, records, cr
                   <tr key={mot} className="border-t border-border">
                     <td className="p-2 text-foreground font-medium">{mot}</td>
                     {platforms.map(plat => {
-                      const val = crossTabData[mot]?.[plat] || 0;
-                      const maxVal = Math.max(...topMotivators.flatMap(m => platforms.map(p => crossTabData[m]?.[p] || 0)), 1);
+                      // crossTabData uses raw keys from the original aggregation, but motivator labels are already formatted
+                      // We need to find the raw key that matches this formatted label
+                      const val = Object.keys(crossTabData).reduce((found, rawKey) => {
+                        if (formatLabel(rawKey) === mot) {
+                          return crossTabData[rawKey]?.[plat] || found;
+                        }
+                        return found;
+                      }, crossTabData[mot]?.[plat] || 0);
+                      const maxVal = Math.max(
+                        ...topMotivators.flatMap(m =>
+                          platforms.map(p => {
+                            return Object.keys(crossTabData).reduce((found, rawKey) => {
+                              if (formatLabel(rawKey) === m) {
+                                return crossTabData[rawKey]?.[p] || found;
+                              }
+                              return found;
+                            }, crossTabData[m]?.[p] || 0);
+                          })
+                        ),
+                        1
+                      );
                       const intensity = val / maxVal;
                       return (
                         <td key={plat} className="text-center p-2">

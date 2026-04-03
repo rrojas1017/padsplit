@@ -3,7 +3,7 @@ import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from 'recha
 import { Badge } from '@/components/ui/badge';
 import { Palette, FileText } from 'lucide-react';
 import type { AggResult } from '@/hooks/useAudienceSurveyResponses';
-import { generateCreativeBrief, DISTINCT_COLORS } from '@/utils/audienceSurveyInsights';
+import { generateCreativeBrief, DISTINCT_COLORS, capSlices } from '@/utils/audienceSurveyInsights';
 
 interface Props {
   detailPref: AggResult[];
@@ -15,12 +15,13 @@ interface Props {
 
 export function CreativeStrategy({ detailPref, desiredContent, topMotivator, topInterest, topConcern }: Props) {
   const brief = generateCreativeBrief(topMotivator, topInterest, topConcern, desiredContent[0]?.label || 'member stories', detailPref);
+  const cappedDetailPref = capSlices(detailPref);
 
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {/* Detail Preference Pie */}
-        {detailPref.length > 0 && (
+        {cappedDetailPref.length > 0 && (
           <Card className="shadow-sm">
             <CardHeader className="pb-2">
               <CardTitle className="text-base flex items-center gap-2">
@@ -29,16 +30,26 @@ export function CreativeStrategy({ detailPref, desiredContent, topMotivator, top
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="h-[250px]">
+              <div className="h-[280px]">
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
-                    <Pie data={detailPref} dataKey="count" nameKey="label" cx="50%" cy="50%" outerRadius={80} paddingAngle={3}>
-                      {detailPref.map((_, i) => (
+                    <Pie
+                      data={cappedDetailPref}
+                      dataKey="count"
+                      nameKey="label"
+                      cx="40%"
+                      cy="50%"
+                      outerRadius={80}
+                      paddingAngle={3}
+                      label={({ pct }) => `${pct}%`}
+                      labelLine={{ strokeWidth: 1 }}
+                    >
+                      {cappedDetailPref.map((_, i) => (
                         <Cell key={i} fill={DISTINCT_COLORS[i % DISTINCT_COLORS.length]} />
                       ))}
                     </Pie>
                     <Tooltip />
-                    <Legend />
+                    <Legend layout="vertical" align="right" verticalAlign="middle" />
                   </PieChart>
                 </ResponsiveContainer>
               </div>

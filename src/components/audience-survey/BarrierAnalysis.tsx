@@ -1,5 +1,5 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, ReferenceLine } from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts';
 import { Badge } from '@/components/ui/badge';
 import { ShieldAlert, Lightbulb } from 'lucide-react';
 import type { AggResult } from '@/hooks/useAudienceSurveyResponses';
@@ -24,7 +24,7 @@ const BARRIER_MAP: Record<string, { interest: string; recommendation: string }> 
 export function BarrierAnalysis({ concerns, interests, confusion }: Props) {
   const insight = generateBarrierInsight(concerns, interests, confusion);
 
-  // Butterfly chart data
+  // Butterfly chart data — labels are already formatted from parent
   const allLabels = [...new Set([...concerns.map(c => c.label), ...interests.map(i => i.label)])];
   const butterflyData = allLabels.slice(0, 8).map(label => {
     const concern = concerns.find(c => c.label === label);
