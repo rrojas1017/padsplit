@@ -349,7 +349,7 @@ export default function ResearchInsights() {
           )}
         </div>
 
-        {reports.length > 1 && (
+        {!isAudienceSurvey && reports.length > 1 && (
           <Select
             value={selectedReport?.id || ''}
             onValueChange={(id) => fetchReportDetail(id)}
