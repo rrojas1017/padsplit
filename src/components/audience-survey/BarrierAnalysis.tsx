@@ -13,12 +13,12 @@ interface Props {
 
 const BARRIER_BENEFIT_MAP: Record<string, { interest: string; recommendation: string }> = {
   'Safety & Security': {
-    interest: 'Safety & Security Focus',
+    interest: 'Community of Roommates',
     recommendation: 'Lead with verified hosts, background checks, and secure properties in ads',
   },
   'Quality of Rooms/Houses': {
-    interest: 'Video Room Walkthrough',
-    recommendation: 'Show real HD room photos + video walkthroughs in ads to prove quality',
+    interest: 'Location Options',
+    recommendation: 'Show real HD room photos + video walkthroughs to prove quality',
   },
   'Roommate Concerns': {
     interest: 'Community of Roommates',
@@ -37,7 +37,7 @@ const BARRIER_BENEFIT_MAP: Record<string, { interest: string; recommendation: st
     recommendation: 'Highlight no long-term lease, weekly payments, flexibility to move',
   },
   'How Payments Work': {
-    interest: 'All Utilities Included',
+    interest: 'Utilities Included',
     recommendation: 'Explain: one weekly payment covers rent + utilities, auto-deducted',
   },
   "What's Included in Rent": {
@@ -48,13 +48,9 @@ const BARRIER_BENEFIT_MAP: Record<string, { interest: string; recommendation: st
     interest: 'Community of Roommates',
     recommendation: 'Explain the roommate vetting process and house rules',
   },
-  'Lease Rules & Policies': {
-    interest: 'Flexibility',
-    recommendation: 'Show clear, simple rules. Highlight flexibility over restrictions.',
-  },
   'Location Options': {
     interest: 'Location Options',
-    recommendation: "Showcase map of available rooms in member's area",
+    recommendation: "Showcase interactive map of available rooms in member's area",
   },
 };
 
