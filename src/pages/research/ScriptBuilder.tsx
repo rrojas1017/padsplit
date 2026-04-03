@@ -12,6 +12,8 @@ import { useScriptTokens, getScriptPublicUrl } from '@/hooks/useScriptTokens';
 import { ResearchScriptDialog } from '@/components/research/ResearchScriptDialog';
 import { ResearchScriptImportDialog } from '@/components/research/ResearchScriptImportDialog';
 import { ScriptTesterDialog } from '@/components/research/ScriptTesterDialog';
+import { ScriptWizard } from '@/components/script-builder/ScriptWizard';
+import type { WizardData } from '@/components/script-builder/StepUpload';
 import { Skeleton } from '@/components/ui/skeleton';
 import { toast } from 'sonner';
 
