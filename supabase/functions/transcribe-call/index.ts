@@ -1710,6 +1710,14 @@ async function processTranscription(bookingId: string, kixieUrl: string, skipTts
     
     console.log(`[Background] ${selectedProvider} transcription formatted, length:`, transcription.length);
 
+    // Guard: if transcription text is empty after STT processing, mark as failed
+    if (!transcription || transcription.trim().length === 0) {
+      console.error(`[Background] Empty transcript returned by ${selectedProvider} for booking ${bookingId}. Marking as failed.`);
+      clearTimeout(timeoutId);
+      await updateBookingError(supabase, bookingId, `STT returned empty transcript (${selectedProvider}). Audio may be silent or corrupted.`);
+      return;
+    }
+
     // Log STT cost for the selected provider
     if (callDurationSeconds) {
       logApiCost(supabase, {

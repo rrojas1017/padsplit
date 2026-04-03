@@ -49,6 +49,7 @@ serve(async (req) => {
     let dateTo: string | null = null;
     let limit = 50;
     let specificBookingIds: string[] | null = null;
+    let completedButEmpty = false;
 
     try {
       const body = await req.json();
@@ -57,7 +58,8 @@ serve(async (req) => {
       dateTo = body.dateTo || null;
       limit = body.limit || 50;
       specificBookingIds = body.bookingIds || null;
-      console.log(`[BATCH-RETRY] Options: dryRun=${dryRun}, dateFrom=${dateFrom}, dateTo=${dateTo}, limit=${limit}, specificIds=${specificBookingIds?.length || 0}`);
+      completedButEmpty = body.completedButEmpty === true;
+      console.log(`[BATCH-RETRY] Options: dryRun=${dryRun}, dateFrom=${dateFrom}, dateTo=${dateTo}, limit=${limit}, specificIds=${specificBookingIds?.length || 0}, completedButEmpty=${completedButEmpty}`);
     } catch {
       // No body or invalid JSON
     }
