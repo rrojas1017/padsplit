@@ -2450,6 +2450,9 @@ export type Database = {
       }
       research_scripts: {
         Row: {
+          ai_model: string | null
+          ai_prompt: string | null
+          ai_temperature: number | null
           campaign_type: string
           closing_script: string | null
           closing_script_es: string | null
@@ -2465,11 +2468,17 @@ export type Database = {
           questions_es: Json | null
           rebuttal_script: string | null
           rebuttal_script_es: string | null
+          script_type: string | null
+          slug: string | null
+          status: string | null
           target_audience: string
           translation_status: string | null
           updated_at: string
         }
         Insert: {
+          ai_model?: string | null
+          ai_prompt?: string | null
+          ai_temperature?: number | null
           campaign_type: string
           closing_script?: string | null
           closing_script_es?: string | null
@@ -2485,11 +2494,17 @@ export type Database = {
           questions_es?: Json | null
           rebuttal_script?: string | null
           rebuttal_script_es?: string | null
+          script_type?: string | null
+          slug?: string | null
+          status?: string | null
           target_audience: string
           translation_status?: string | null
           updated_at?: string
         }
         Update: {
+          ai_model?: string | null
+          ai_prompt?: string | null
+          ai_temperature?: number | null
           campaign_type?: string
           closing_script?: string | null
           closing_script_es?: string | null
@@ -2505,6 +2520,9 @@ export type Database = {
           questions_es?: Json | null
           rebuttal_script?: string | null
           rebuttal_script_es?: string | null
+          script_type?: string | null
+          slug?: string | null
+          status?: string | null
           target_audience?: string
           translation_status?: string | null
           updated_at?: string
