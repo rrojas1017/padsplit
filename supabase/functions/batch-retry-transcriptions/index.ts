@@ -200,11 +200,19 @@ serve(async (req) => {
     if (completedButEmpty) {
       console.log('[BATCH-RETRY] Mode: completedButEmpty — finding completed records with empty transcripts');
 
-      // Find booking IDs where transcription_status = 'completed' but booking_transcriptions.call_transcription is empty
-      const { data: emptyTranscripts, error: emptyError } = await supabase
+      // Find booking IDs where booking_transcriptions.call_transcription is null or empty
+      // Use two separate queries since Supabase JS doesn't handle .eq('') well in .or()
+      const { data: nullTranscripts } = await supabase
         .from('booking_transcriptions')
         .select('booking_id')
-        .or('call_transcription.is.null,call_transcription.eq.');
+        .is('call_transcription', null);
+
+      const { data: emptyStringTranscripts } = await supabase
+        .from('booking_transcriptions')
+        .select('booking_id')
+        .eq('call_transcription', '');
+
+      const emptyTranscripts = [...(nullTranscripts || []), ...(emptyStringTranscripts || [])];
 
       if (emptyError) {
         throw new Error(`Failed to query empty transcripts: ${emptyError.message}`);
