@@ -16,7 +16,7 @@ import { formatLabel, formatAggLabels } from '@/utils/audienceSurveyInsights';
 import { ScriptResponsesTab } from './ScriptResponsesTab';
 import type { AudienceSurveyRecord } from '@/hooks/useAudienceSurveyResponses';
 
-type TabValue = 'overview' | 'platforms' | 'awareness' | 'messaging' | 'barriers' | 'creative' | 'testimonials';
+type TabValue = 'overview' | 'platforms' | 'awareness' | 'messaging' | 'barriers' | 'creative' | 'testimonials' | 'responses';
 
 /** Count how many of the 13 core extraction sections have data for a single record */
 function countAnsweredQuestions(r: AudienceSurveyRecord): number {
