@@ -3,7 +3,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useSearchParams } from 'react-router-dom';
-import { BarChart3, Eye, MessageSquare, ShieldAlert, Palette, Video, LayoutDashboard, Users, Megaphone, Target, TrendingUp } from 'lucide-react';
+import { BarChart3, Eye, MessageSquare, ShieldAlert, Palette, Video, LayoutDashboard, Users, Megaphone, Target, TrendingUp, ClipboardList } from 'lucide-react';
 import { useAudienceSurveyResponses } from '@/hooks/useAudienceSurveyResponses';
 import { useIsAdmin } from '@/hooks/useIsAdmin';
 import { PlatformGapChart } from './PlatformGapChart';
@@ -13,9 +13,10 @@ import { BarrierAnalysis } from './BarrierAnalysis';
 import { CreativeStrategy } from './CreativeStrategy';
 import { TestimonialPipeline } from './TestimonialPipeline';
 import { formatLabel, formatAggLabels } from '@/utils/audienceSurveyInsights';
+import { ScriptResponsesTab } from './ScriptResponsesTab';
 import type { AudienceSurveyRecord } from '@/hooks/useAudienceSurveyResponses';
 
-type TabValue = 'overview' | 'platforms' | 'awareness' | 'messaging' | 'barriers' | 'creative' | 'testimonials';
+type TabValue = 'overview' | 'platforms' | 'awareness' | 'messaging' | 'barriers' | 'creative' | 'testimonials' | 'responses';
 
 /** Count how many of the 13 core extraction sections have data for a single record */
 function countAnsweredQuestions(r: AudienceSurveyRecord): number {
@@ -170,6 +171,9 @@ export function AudienceSurveyInsightsDashboard() {
           <TabsTrigger value="testimonials" className="gap-1.5 text-xs">
             <Video className="w-3.5 h-3.5" /> Testimonials
           </TabsTrigger>
+          <TabsTrigger value="responses" className="gap-1.5 text-xs">
+            <ClipboardList className="w-3.5 h-3.5" /> Script Responses <Badge variant="secondary" className="ml-1 text-[10px]">{records.length}</Badge>
+          </TabsTrigger>
         </TabsList>
 
         {/* Overview */}
@@ -230,6 +234,11 @@ export function AudienceSurveyInsightsDashboard() {
         {/* Testimonials */}
         <TabsContent value="testimonials" className="space-y-6 mt-6">
           <TestimonialPipeline records={records} isAdmin={isAdmin} onRefetch={refetch} />
+        </TabsContent>
+
+        {/* Script Responses */}
+        <TabsContent value="responses" className="space-y-6 mt-6">
+          <ScriptResponsesTab records={records} aggregateArray={aggregateArray} aggregateBoolean={aggregateBoolean} />
         </TabsContent>
       </Tabs>
     </div>
