@@ -235,6 +235,11 @@ export function AudienceSurveyInsightsDashboard() {
         <TabsContent value="testimonials" className="space-y-6 mt-6">
           <TestimonialPipeline records={records} isAdmin={isAdmin} onRefetch={refetch} />
         </TabsContent>
+
+        {/* Script Responses */}
+        <TabsContent value="responses" className="space-y-6 mt-6">
+          <ScriptResponsesTab records={records} aggregateArray={aggregateArray} aggregateBoolean={aggregateBoolean} />
+        </TabsContent>
       </Tabs>
     </div>
   );
