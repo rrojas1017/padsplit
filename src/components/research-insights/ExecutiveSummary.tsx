@@ -29,7 +29,6 @@ function parseParagraph(text: string): { headline: string; findings: string[] } 
   return { headline: sentences[0], findings: sentences.slice(1) };
 }
 
-export function ExecutiveSummary({ data: rawData }: ExecutiveSummaryProps) {
 export function ExecutiveSummary({ data: rawData, lastUpdated }: ExecutiveSummaryProps) {
   if (!rawData) return null;
   const data = typeof rawData === 'string' ? { headline: rawData } : rawData;
