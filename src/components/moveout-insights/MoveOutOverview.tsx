@@ -1,7 +1,7 @@
 import { Card, CardContent } from '@/components/ui/card';
 import { Sparkles } from 'lucide-react';
 import { stripUUIDs, formatCount } from './utils';
-import { MoveOutPatterns } from './MoveOutPatterns';
+import { MoveOutActionCenter } from './MoveOutActionCenter';
 import { ReasonCodeChart } from '@/components/research-insights/ReasonCodeChart';
 import type { ResearchInsightData } from '@/types/research-insights';
 import type { ExtendedKPIs } from '@/components/research-insights/InsightsKPIRow';
@@ -75,7 +75,7 @@ export function MoveOutOverview({
 
       {/* Emerging Patterns */}
       {reportData.emerging_patterns && reportData.emerging_patterns.length > 0 && (
-        <MoveOutPatterns data={reportData.emerging_patterns} />
+        <MoveOutActionCenter data={reportData.emerging_patterns} />
       )}
     </div>
   );
