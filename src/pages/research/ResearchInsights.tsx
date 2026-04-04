@@ -249,6 +249,8 @@ export default function ResearchInsights() {
 
   const reportData = selectedReport?.data as any;
   const isAudienceSurvey = campaignType === 'audience_survey';
+  const isScriptView = campaignType.startsWith('script:');
+  const selectedScriptId = isScriptView ? campaignType.replace('script:', '') : null;
 
   const mappedStats = {
     total_research_records: processingStats.totalResearchRecords,
