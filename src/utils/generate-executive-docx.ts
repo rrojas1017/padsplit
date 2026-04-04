@@ -221,8 +221,7 @@ export async function generateMoveOutDocx(
     }
   }
 
-  // Reason Code Distribution
-  const reasons = reportData.reason_code_distribution || [];
+  // Reason Code Distribution (reuse reasons from above)
   if (reasons.length > 0) {
     children.push(new Paragraph({ text: 'Reason Code Distribution', heading: HeadingLevel.HEADING_1 }));
     children.push(new Table({
