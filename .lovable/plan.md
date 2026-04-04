@@ -1,42 +1,52 @@
 
 
-# Automate Nightly Communication Insights + Word Export
+# Fix: Communication Insights Word Export — Missing Pain Point Names + Wrong Metrics
 
-## What Changes
+## Problem
+The exported .docx has two bugs visible in the screenshot:
 
-1. **Nightly automation** — Add two pg_cron jobs (like the existing research insights nightly job) to auto-generate both Booking Insights and Non-Booking Insights every night at 10 PM EST (3 AM UTC), using the `allTime` analysis period
-2. **Remove manual "Run Analysis" buttons** — Both tabs currently have a "Run Analysis" button that manually triggers the edge functions. These will be removed since generation is automated
-3. **Add Word (.docx) executive export** — Create a new `generate-communication-insights-docx.ts` utility that produces a single Word document combining both Booking and Non-Booking insights (similar to the existing `generate-executive-docx.ts` for Move-Out research). Replace the current PDF export button with a Word export button
+1. **Pain Point names are blank** — the data uses `category` as the field name (e.g., "Payment & Pricing Confusion"), but the code only checks `p.pain_point || p.name || p.issue` — none of which exist
+2. **"Mentions" column shows raw decimals** (12.6, 12.1, 10.2) — these are actually percentages (`frequency`), not mention counts. Should display as "12.6%" or show actual counts from sub-categories
 
-## Files
+## Data Shape (from DB)
+```json
+{
+  "category": "Payment & Pricing Confusion",
+  "frequency": 12.6,
+  "description": "Members are frequently confused by...",
+  "sub_categories": [...],
+  "examples": [...]
+}
+```
 
-### New Files
+## Fix — `src/utils/generate-communication-insights-docx.ts`
 
-| File | Purpose |
-|------|---------|
-| `src/utils/generate-communication-insights-docx.ts` | Word (.docx) generator combining Booking Insights (pain points, objections, sentiment, market breakdown, recommendations, customer journeys) and Non-Booking Insights (rejection reasons, missed opportunities, objection patterns, recovery recommendations) into one executive summary document |
+### Line 164-167: Rename column header
+Change `'Mentions'` → `'Frequency'`
 
-### Modified Files
+### Line 171: Add `category` to field lookup
+```typescript
+const name = typeof p === 'string' ? p : (p.category || p.pain_point || p.name || p.issue || '');
+```
 
+### Line 172: Format frequency as percentage
+```typescript
+const count = p.frequency ? `${p.frequency}%` : (p.count || p.mentions || '');
+```
+
+### Line 173: Use `description` field (which exists in the data)
+```typescript
+const detail = p.description || p.detail || p.example || '';
+```
+
+## Result
+The table will show:
+| Pain Point | Frequency | Details |
+|---|---|---|
+| Payment & Pricing Confusion | 12.6% | Members are frequently confused by... |
+
+## Single file change
 | File | Change |
 |------|--------|
-| `src/components/call-insights/BookingInsightsTab.tsx` | Remove "Run Analysis" button. Replace PDF export with Word (.docx) export button. Show "last generated" timestamp from most recent completed insight. Keep date range selector for filtering historical analyses |
-| `src/components/call-insights/NonBookingAnalysisTab.tsx` | Remove "Run Analysis" button. Add Word (.docx) export button. Show "last generated" timestamp. Keep date range selector |
-| `src/pages/CallInsights.tsx` | Add a top-level "Export Executive Summary" button that generates a combined Word doc from both the latest booking and non-booking insights for the selected period |
-
-### Database (no schema changes)
-
-Two new pg_cron jobs (inserted via `supabase--read_query` insert, not migration):
-
-1. **Nightly Booking Insights** — `0 3 * * *` (10 PM EST) → calls `analyze-member-insights` with `{ analysis_period: "allTime", automated: true }`
-2. **Nightly Non-Booking Insights** — `5 3 * * *` (10:05 PM EST, staggered by 5 min) → calls `analyze-non-booking-insights` with `{ analysis_period: "allTime", automated: true }`
-
-## Technical Details
-
-- The Word document follows the same structure as `generate-executive-docx.ts`: navy headers, KPI table, findings sections, recommendations
-- Booking section includes: KPI summary (total calls, sentiment split), top pain points table, objection patterns, market breakdown, AI recommendations
-- Non-Booking section includes: KPI summary (total non-booking calls, avg duration), rejection reasons table, missed opportunities, recovery recommendations
-- Both edge functions already accept `analysis_period` and date range params — no backend changes needed
-- The existing `memberInsightsPDF.ts` (jsPDF) export will be replaced by the new `.docx` export
-- Lazy-load the docx generator in the tabs to avoid bundle bloat
+| `src/utils/generate-communication-insights-docx.ts` | Fix field mapping for pain points: add `category`, format frequency as %, rename column header, prioritize `description` |
 
