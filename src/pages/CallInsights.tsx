@@ -114,18 +114,24 @@ export default function CallInsights() {
     >
       <div className="space-y-6">
         {/* Header with Icon */}
-        <div className="flex items-center gap-3">
-          <div className="p-3 rounded-xl bg-gradient-to-br from-primary/20 to-accent/20 shadow-lg">
-            <Lightbulb className="h-7 w-7 text-primary" />
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="p-3 rounded-xl bg-gradient-to-br from-primary/20 to-accent/20 shadow-lg">
+              <Lightbulb className="h-7 w-7 text-primary" />
+            </div>
+            <div>
+              <h1 className="text-2xl font-bold bg-gradient-to-r from-foreground to-foreground/70 bg-clip-text">
+                Communication Insights
+              </h1>
+              <p className="text-sm text-muted-foreground">
+                Analyze booking and non-booking communication patterns to improve conversion
+              </p>
+            </div>
           </div>
-          <div>
-            <h1 className="text-2xl font-bold bg-gradient-to-r from-foreground to-foreground/70 bg-clip-text">
-              Communication Insights
-            </h1>
-            <p className="text-sm text-muted-foreground">
-              Analyze booking and non-booking communication patterns to improve conversion
-            </p>
-          </div>
+          <Button onClick={handleExportCombined} disabled={isExporting} variant="outline">
+            {isExporting ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Download className="h-4 w-4 mr-2" />}
+            Export Executive Summary
+          </Button>
         </div>
 
         {/* Main Tabs */}
