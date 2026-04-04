@@ -32,6 +32,59 @@ interface UseCoachingDataOptions {
   includeAudio?: boolean;
 }
 
+const PAGE_SIZE = 1000;
+
+async function fetchAllPages() {
+  const allRows: any[] = [];
+  let page = 0;
+  let hasMore = true;
+
+  while (hasMore) {
+    const from = page * PAGE_SIZE;
+    const to = from + PAGE_SIZE - 1;
+
+    const { data, error } = await supabase
+      .from('booking_transcriptions')
+      .select(`
+        booking_id,
+        agent_feedback,
+        coaching_audio_url,
+        coaching_audio_generated_at,
+        coaching_audio_listened_at,
+        created_at,
+        updated_at,
+        bookings!inner (
+          id,
+          booking_date,
+          agent_id,
+          member_name,
+          market_city,
+          market_state,
+          transcription_status,
+          record_type
+        )
+      `)
+      .not('agent_feedback', 'is', null)
+      .neq('bookings.record_type', 'research')
+      .order('updated_at', { ascending: false })
+      .range(from, to);
+
+    if (error) {
+      console.error('Error fetching coaching page', page, error);
+      break;
+    }
+
+    if (data) {
+      allRows.push(...data);
+    }
+
+    hasMore = (data?.length ?? 0) === PAGE_SIZE;
+    page++;
+  }
+
+  return allRows;
+}
+
 export function useCoachingData(options: UseCoachingDataOptions = {}) {
   const { user, isLoading: authLoading } = useAuth();
   const { agents } = useAgents();
@@ -47,41 +100,9 @@ export function useCoachingData(options: UseCoachingDataOptions = {}) {
     const fetchCoachingData = async () => {
       setIsLoading(true);
       try {
-        let query = supabase
-          .from('booking_transcriptions')
-          .select(`
-            booking_id,
-            agent_feedback,
-            coaching_audio_url,
-            coaching_audio_generated_at,
-            coaching_audio_listened_at,
-            created_at,
-            updated_at,
-            bookings!inner (
-              id,
-              booking_date,
-              agent_id,
-              member_name,
-              market_city,
-              market_state,
-              transcription_status,
-              record_type
-            )
-          `)
-          .not('agent_feedback', 'is', null)
-          .neq('bookings.record_type', 'research')
-          .order('coaching_audio_generated_at', { ascending: false, nullsFirst: false });
+        const allData = await fetchAllPages();
 
-        const { data, error } = await query;
-
-        if (error) {
-          console.error('Error fetching coaching data:', error);
-          setCoachingBookings([]);
-          setCoachingBookingsWithAudio([]);
-          return;
-        }
-
-        let filteredData = data || [];
+        let filteredData = allData;
         if (agentId) {
           filteredData = filteredData.filter((item: any) => item.bookings.agent_id === agentId);
         }
@@ -104,6 +125,13 @@ export function useCoachingData(options: UseCoachingDataOptions = {}) {
             coachingAudioListenedAt: item.coaching_audio_listened_at,
             coachingAudioGeneratedAt: item.coaching_audio_generated_at,
           };
+        });
+
+        // Sort by derived analysis timestamp (newest first)
+        mappedData.sort((a, b) => {
+          const tsA = a.analyzedAt ? new Date(a.analyzedAt).getTime() : 0;
+          const tsB = b.analyzedAt ? new Date(b.analyzedAt).getTime() : 0;
+          return tsB - tsA;
         });
 
         setCoachingBookings(mappedData);
@@ -130,6 +158,13 @@ export function useCoachingData(options: UseCoachingDataOptions = {}) {
               marketState: booking.market_state,
             };
           });
+
+          mappedWithAudio.sort((a, b) => {
+            const tsA = a.analyzedAt ? new Date(a.analyzedAt).getTime() : 0;
+            const tsB = b.analyzedAt ? new Date(b.analyzedAt).getTime() : 0;
+            return tsB - tsA;
+          });
+
           setCoachingBookingsWithAudio(mappedWithAudio);
         }
       } catch (err) {

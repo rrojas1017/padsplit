@@ -186,9 +186,9 @@ export default function CoachingHub() {
           <Card>
             <CardContent className="py-12 text-center">
               <Phone className="w-12 h-12 mx-auto text-muted-foreground/50 mb-4" />
-              <h3 className="text-lg font-medium text-foreground mb-2">No Coaching Data Yet</h3>
+              <h3 className="text-lg font-medium text-foreground mb-2">No Coaching Data for This Period</h3>
               <p className="text-muted-foreground">
-                Transcribe call recordings from the Reports page to generate coaching insights.
+                Coaching insights appear after calls are transcribed and AI analysis generates agent feedback. Try expanding the date range or check the Reports page.
               </p>
             </CardContent>
           </Card>
