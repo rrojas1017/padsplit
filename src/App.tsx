@@ -244,7 +244,9 @@ const App = () => (
               <Route path="/billing" element={
                 <ProtectedRoute allowedRoles={['super_admin']}>
                   <DataProviders>
-                    <Billing />
+                    <Suspense fallback={null}>
+                      <Billing />
+                    </Suspense>
                   </DataProviders>
                 </ProtectedRoute>
               } />
