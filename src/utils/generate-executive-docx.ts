@@ -138,13 +138,26 @@ export async function generateMoveOutDocx(
     spacing: { after: 200 },
   }));
 
-  // KPI row
+  // KPI row — use DB total_records_analyzed (accurate) instead of AI-generated total_cases
+  const totalCases = totalRecordsOverride || es.total_cases || 0;
+
+  // Recompute percentages from reason_code_distribution against real total
+  const reasons = reportData.reason_code_distribution || [];
+  const hostRelatedCount = reasons
+    .filter((r: any) => /host|property|maintenance|mold|pest/i.test(r.reason_group || r.name || ''))
+    .reduce((sum: number, r: any) => sum + (r.count || r.value || 0), 0);
+  const paymentCount = reasons
+    .filter((r: any) => /payment|financial|afford/i.test(r.reason_group || r.name || ''))
+    .reduce((sum: number, r: any) => sum + (r.count || r.value || 0), 0);
+
+  const pctOf = (n: number) => totalCases > 0 ? `${Math.round((n / totalCases) * 100)}%` : '—';
+
   const metrics = [
-    { label: 'Total Cases', value: es.total_cases?.toString() || '—' },
+    { label: 'Total Cases', value: totalCases.toString() },
     { label: 'Addressable', value: fmtPct(es.addressable_pct) },
     { label: 'High Regret', value: fmtPct(es.high_regret_pct) },
-    { label: 'Host Related', value: fmtPct(es.host_related_pct) },
-    { label: 'Payment', value: fmtPct(es.payment_related_pct) },
+    { label: 'Host Related', value: pctOf(hostRelatedCount) },
+    { label: 'Payment', value: pctOf(paymentCount) },
   ];
   const kpiColWidth = Math.floor(9360 / metrics.length);
   children.push(new Table({

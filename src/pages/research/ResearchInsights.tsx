@@ -261,7 +261,7 @@ export default function ResearchInsights() {
     if (!reportData) return;
     toast.info('Generating Executive Brief...');
     try {
-      await generateMoveOutDocx(reportData, selectedReport?.created_at, selectedReport?.id);
+      await generateMoveOutDocx(reportData, selectedReport?.created_at, selectedReport?.id, selectedReport?.total_records_analyzed);
       toast.success('Report downloaded successfully');
     } catch (err) {
       console.error('Report generation error:', err);
