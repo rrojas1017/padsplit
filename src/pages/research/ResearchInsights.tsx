@@ -36,6 +36,7 @@ import { MoveOutMemberTab } from '@/components/moveout-insights/MoveOutMemberTab
 
 import { AudienceSurveyDashboard } from '@/components/audience-survey/AudienceSurveyDashboard';
 import { AudienceSurveyInsightsDashboard } from '@/components/audience-survey/AudienceSurveyInsightsDashboard';
+import { ScriptInsightsPanel } from '@/components/research-insights/ScriptInsightsPanel';
 import { ExportMembersModal } from '@/components/research-insights/ExportMembersModal';
 import { exportFullReport } from '@/utils/export-report';
 import type { ExportFilter } from '@/hooks/useExportMembers';
