@@ -116,7 +116,7 @@ export default function ResearchInsights() {
         !['satisfaction', 'audience_survey', 'move_out_survey'].includes((s as any).slug || '')
       );
       if (error) throw error;
-      return data || [];
+      return filtered;
     },
   });
 
