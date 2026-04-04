@@ -56,6 +56,7 @@ import MyCallHistory from "./pages/research/MyCallHistory";
 import ScriptBuilder from "./pages/research/ScriptBuilder";
 import CampaignManager from "./pages/research/CampaignManager";
 import ResearchInsights from "./pages/research/ResearchInsights";
+import ScriptResults from "./pages/ScriptResults";
 
 const Billing = lazy(() => import("./pages/Billing"));
 
