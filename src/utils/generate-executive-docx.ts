@@ -97,6 +97,7 @@ export async function generateMoveOutDocx(
   reportData: ReportData,
   reportDate?: string,
   insightId?: string,
+  totalRecordsOverride?: number,
 ) {
   const dateStr = reportDate
     ? format(new Date(reportDate), 'MMMM d, yyyy')
