@@ -298,50 +298,52 @@ export function NonBookingAnalysisTab({ dateRange, onDateRangeChange }: NonBooki
           </Select>
 
           <Button 
-            onClick={handleRunAnalysis} 
-            disabled={isAnalyzing || !hasTranscribed}
+            variant="outline" 
+            onClick={async () => {
+              if (!selectedInsight) return;
+              try {
+                const { generateCommunicationInsightsDocx } = await import('@/utils/generate-communication-insights-docx');
+                await generateCommunicationInsightsDocx(null, selectedInsight);
+                toast.success('Non-booking insights report downloaded');
+              } catch (e) {
+                console.error('Export error:', e);
+                toast.error('Failed to generate report');
+              }
+            }}
+            disabled={!selectedInsight}
           >
-            {isAnalyzing ? (
-              <>
-                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                Analyzing...
-              </>
-            ) : (
-              <>
-                <RefreshCw className="h-4 w-4 mr-2" />
-                Run Analysis
-              </>
-            )}
+            <Download className="h-4 w-4 mr-2" />
+            Export .docx
           </Button>
 
           {previousInsights && previousInsights.length > 0 && (
-            <Select 
-              value={selectedInsightId || ''} 
-              onValueChange={setSelectedInsightId}
-            >
-              <SelectTrigger className="w-[200px]">
-                <Clock className="h-4 w-4 mr-2" />
-                <SelectValue placeholder="Previous analyses" />
-              </SelectTrigger>
-              <SelectContent>
-                {previousInsights.map((insight) => (
-                  <SelectItem key={insight.id} value={insight.id}>
-                    <span className="flex items-center gap-2">
-                      <span>{getPeriodLabel(insight.analysis_period)}</span>
-                      <span className="text-muted-foreground text-xs">
-                        {format(new Date(insight.created_at), 'MMM d, h:mm a')}
+            <>
+              <Select 
+                value={selectedInsightId || ''} 
+                onValueChange={setSelectedInsightId}
+              >
+                <SelectTrigger className="w-[200px]">
+                  <Clock className="h-4 w-4 mr-2" />
+                  <SelectValue placeholder="Previous analyses" />
+                </SelectTrigger>
+                <SelectContent>
+                  {previousInsights.map((insight) => (
+                    <SelectItem key={insight.id} value={insight.id}>
+                      <span className="flex items-center gap-2">
+                        <span>{getPeriodLabel(insight.analysis_period)}</span>
+                        <span className="text-muted-foreground text-xs">
+                          {format(new Date(insight.created_at), 'MMM d, h:mm a')}
+                        </span>
                       </span>
-                    </span>
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <span className="text-xs text-muted-foreground">
+                Last generated: {format(new Date(previousInsights[0].created_at), 'MMM d, yyyy h:mm a')}
+              </span>
+            </>
           )}
-
-          <Button variant="outline" disabled>
-            <Download className="h-4 w-4 mr-2" />
-            Export
-          </Button>
         </div>
       </div>
 
