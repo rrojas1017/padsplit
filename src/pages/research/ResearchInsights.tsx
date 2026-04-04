@@ -305,7 +305,7 @@ export default function ResearchInsights() {
         {/* Left: Title + processing status badge */}
         <div className="flex items-center gap-2 mr-auto">
           <h1 className="text-lg font-semibold text-foreground">Research Insights</h1>
-          {!isAudienceSurvey && (
+          {!isAudienceSurvey && !isScriptView && (
             processingStats.pendingRecords > 0
               ? <Badge variant="outline" className="text-xs gap-1 border-amber-500/40 text-amber-600">
                   <span className="w-1.5 h-1.5 rounded-full bg-amber-500 inline-block" />
