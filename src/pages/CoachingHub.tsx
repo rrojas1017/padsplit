@@ -76,11 +76,15 @@ export default function CoachingHub() {
     return agents;
   }, [agents, user]);
 
-  // Filter coaching bookings by filtered agents
+  // Filter coaching bookings by allowed agents; for admins, don't hide data if agents are still loading
   const filteredCoachingBookings = useMemo(() => {
+    if (user?.role !== 'supervisor' && filteredAgents.length === 0) {
+      return coachingBookings;
+    }
+
     const agentIds = new Set(filteredAgents.map(a => a.id));
     return coachingBookings.filter(b => agentIds.has(b.agentId));
-  }, [coachingBookings, filteredAgents]);
+  }, [coachingBookings, filteredAgents, user]);
 
   const getCoachingReferenceDate = (booking: CoachingBooking): Date => {
     if (booking.analyzedAt) {
