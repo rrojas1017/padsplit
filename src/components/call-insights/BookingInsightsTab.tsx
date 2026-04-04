@@ -492,11 +492,8 @@ export function BookingInsightsTab({ dateRange, onDateRangeChange }: BookingInsi
             <Lightbulb className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
             <h3 className="text-lg font-semibold mb-2">No Insights for {getPeriodLabel(dateRange)}</h3>
             <p className="text-muted-foreground mb-4">
-              Run analysis to discover member trends and patterns from booking calls in this period
+              Insights are generated automatically each night. Check back in the morning for {getPeriodLabel(dateRange)} analysis.
             </p>
-            <Button onClick={runAnalysis} disabled={isAnalyzing}>
-              Run Analysis for {getPeriodLabel(dateRange)}
-            </Button>
           </CardContent>
         </Card>
       ) : null}
