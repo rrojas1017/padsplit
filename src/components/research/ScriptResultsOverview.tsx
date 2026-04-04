@@ -4,7 +4,7 @@ import { BarChart3, Users, CheckCircle, AlertTriangle, TrendingUp } from "lucide
 import { useMemo } from "react";
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip } from "recharts";
 import type { ScriptQuestion } from "@/hooks/useResearchScripts";
-import type { ScriptResponse } from "@/pages/ScriptResults";
+import type { ScriptResponse } from "@/components/research-insights/ScriptInsightsPanel";
 
 interface Props {
   script: any;
