@@ -459,7 +459,7 @@ export interface ProcessingStats {
 
 // ── Campaign type helpers ──
 
-export type CampaignType = 'move_out_survey' | 'audience_survey';
+export type CampaignType = 'move_out_survey' | 'audience_survey' | `script:${string}`;
 
 export function isAudienceSurveyData(data: any): data is AudienceSurveyInsightData {
   return data && (data.platform_breakdown || data.ad_awareness || data.audience_segments);

@@ -100,6 +100,20 @@ export default function ResearchInsights() {
 
   const { campaigns } = useResearchCampaigns();
 
+  // Fetch active scripts for the dropdown
+  const { data: activeScripts = [] } = useQuery({
+    queryKey: ['research-scripts-for-insights'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('research_scripts')
+        .select('id, name')
+        .eq('is_active', true)
+        .order('name');
+      if (error) throw error;
+      return data || [];
+    },
+  });
+
   const refreshCallback = useCallback(() => {
     refresh();
     setIsGenerating(false);
