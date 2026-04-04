@@ -60,7 +60,7 @@ export default function CoachingHub() {
   const { user } = useAuth();
   const { coachingBlocked } = useDailyCostGate();
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
-  const [dateRange, setDateRange] = useState<DateRangeFilterType>('today');
+  const [dateRange, setDateRange] = useState<DateRangeFilterType>('7d');
   const [customDates, setCustomDates] = useState<CalcCustomDateRange | undefined>(undefined);
 
   const handleRangeChange = (range: DateFilterValue, dates?: CustomDateRange) => {

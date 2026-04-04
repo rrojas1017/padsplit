@@ -56,11 +56,17 @@ export interface CustomDateRange {
   to: Date;
 }
 
+/** Returns current date/time anchored to US Eastern (America/New_York). */
+export const getEasternNow = (): Date => {
+  const eastern = new Date().toLocaleString('en-US', { timeZone: 'America/New_York' });
+  return new Date(eastern);
+};
+
 export const getDateRangeFromFilter = (
   filter: DateRangeFilter, 
   customDates?: CustomDateRange
 ): { start: Date; end: Date } => {
-  const today = startOfDay(new Date());
+  const today = startOfDay(getEasternNow());
   
   // Handle custom date range
   if (filter === 'custom' && customDates) {
@@ -383,7 +389,7 @@ export const calculateInsightsData = (
   // Helper to get agent name from agents array
   const getAgentName = (agentId: string): string => 
     agents.find(a => a.id === agentId)?.name || 'Unknown Agent';
-  const now = new Date();
+  const now = getEasternNow();
   const currentHour = now.getHours();
   const currentMinutes = now.getMinutes();
   const currentTime = format(now, 'h:mm a');
