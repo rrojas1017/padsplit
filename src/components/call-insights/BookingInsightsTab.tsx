@@ -11,7 +11,7 @@ import { Badge } from '@/components/ui/badge';
 import { Lightbulb, RefreshCw, Loader2, Download, Sparkles, AlertTriangle } from 'lucide-react';
 import { toast } from 'sonner';
 import { format, subMonths, startOfMonth, endOfMonth, startOfWeek, endOfDay } from 'date-fns';
-import { generateMemberInsightsPDF } from '@/utils/memberInsightsPDF';
+import { toast as sonnerToast } from 'sonner';
 import InsightsSummaryCards from '@/components/member-insights/InsightsSummaryCards';
 import PainPointsPanel from '@/components/member-insights/PainPointsPanel';
 import ObjectionsChart from '@/components/member-insights/ObjectionsChart';
@@ -324,28 +324,30 @@ export function BookingInsightsTab({ dateRange, onDateRangeChange }: BookingInsi
             </SelectContent>
           </Select>
 
-          <Button onClick={runAnalysis} disabled={isAnalyzing}>
-            {isAnalyzing ? (
-              <>
-                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                Analyzing...
-              </>
-            ) : (
-              <>
-                <RefreshCw className="h-4 w-4 mr-2" />
-                Run Analysis
-              </>
-            )}
-          </Button>
-
           <Button 
             variant="outline" 
-            onClick={() => selectedInsight && generateMemberInsightsPDF(selectedInsight)}
+            onClick={async () => {
+              if (!selectedInsight) return;
+              try {
+                const { generateCommunicationInsightsDocx } = await import('@/utils/generate-communication-insights-docx');
+                await generateCommunicationInsightsDocx(selectedInsight, null);
+                sonnerToast.success('Booking insights report downloaded');
+              } catch (e) {
+                console.error('Export error:', e);
+                sonnerToast.error('Failed to generate report');
+              }
+            }}
             disabled={!selectedInsight}
           >
             <Download className="h-4 w-4 mr-2" />
-            Export
+            Export .docx
           </Button>
+
+          {insights.length > 0 && insights[0]?.created_at && (
+            <span className="text-xs text-muted-foreground">
+              Last generated: {format(new Date(insights[0].created_at), 'MMM d, yyyy h:mm a')}
+            </span>
+          )}
         </div>
 
         {/* Previous Analyses Selector */}
@@ -394,7 +396,7 @@ export function BookingInsightsTab({ dateRange, onDateRangeChange }: BookingInsi
               <div>
                 <p className="font-medium">No analysis for this time period</p>
                 <p className="text-sm text-muted-foreground">
-                  Click "Run Analysis" to generate insights for {getPeriodLabel(dateRange)}
+                  Insights are generated automatically each night. Check back in the morning.
                 </p>
               </div>
             </div>
@@ -490,11 +492,8 @@ export function BookingInsightsTab({ dateRange, onDateRangeChange }: BookingInsi
             <Lightbulb className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
             <h3 className="text-lg font-semibold mb-2">No Insights for {getPeriodLabel(dateRange)}</h3>
             <p className="text-muted-foreground mb-4">
-              Run analysis to discover member trends and patterns from booking calls in this period
+              Insights are generated automatically each night. Check back in the morning for {getPeriodLabel(dateRange)} analysis.
             </p>
-            <Button onClick={runAnalysis} disabled={isAnalyzing}>
-              Run Analysis for {getPeriodLabel(dateRange)}
-            </Button>
           </CardContent>
         </Card>
       ) : null}

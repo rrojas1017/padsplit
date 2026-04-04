@@ -3,11 +3,14 @@ import { useSearchParams } from 'react-router-dom';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { BookingInsightsTab } from '@/components/call-insights/BookingInsightsTab';
 import { NonBookingAnalysisTab } from '@/components/call-insights/NonBookingAnalysisTab';
 import { CrossSellOpportunitiesTab } from '@/components/call-insights/CrossSellOpportunitiesTab';
 import { useAuth } from '@/contexts/AuthContext';
-import { Lightbulb, TrendingUp, UserX, ShoppingBag } from 'lucide-react';
+import { supabase } from '@/integrations/supabase/client';
+import { Lightbulb, TrendingUp, UserX, ShoppingBag, Download, Loader2 } from 'lucide-react';
+import { toast } from 'sonner';
 
 // Interface matching the Call type expected by child components
 export interface Call {
@@ -42,6 +45,46 @@ export default function CallInsights() {
                      searchParams.get('tab') === 'cross-sell' && isSuperAdmin ? 'cross-sell' : 'non-bookings';
   const [activeTab, setActiveTab] = useState(initialTab);
   const [dateRange, setDateRange] = useState<DateRangeOption>('allTime');
+  const [isExporting, setIsExporting] = useState(false);
+
+  const handleExportCombined = async () => {
+    setIsExporting(true);
+    try {
+      // Fetch latest booking insight
+      const { data: bookingData } = await supabase
+        .from('member_insights')
+        .select('*')
+        .eq('status', 'completed')
+        .eq('analysis_period', dateRange)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      // Fetch latest non-booking insight
+      const { data: nonBookingData } = await supabase
+        .from('non_booking_insights')
+        .select('*')
+        .eq('status', 'completed')
+        .eq('analysis_period', dateRange)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (!bookingData && !nonBookingData) {
+        toast.error('No insights available to export for this period');
+        return;
+      }
+
+      const { generateCommunicationInsightsDocx } = await import('@/utils/generate-communication-insights-docx');
+      await generateCommunicationInsightsDocx(bookingData as any, nonBookingData as any);
+      toast.success('Executive summary downloaded');
+    } catch (e) {
+      console.error('Export error:', e);
+      toast.error('Failed to generate report');
+    } finally {
+      setIsExporting(false);
+    }
+  };
 
   // Sync tab with URL
   useEffect(() => {
@@ -71,18 +114,24 @@ export default function CallInsights() {
     >
       <div className="space-y-6">
         {/* Header with Icon */}
-        <div className="flex items-center gap-3">
-          <div className="p-3 rounded-xl bg-gradient-to-br from-primary/20 to-accent/20 shadow-lg">
-            <Lightbulb className="h-7 w-7 text-primary" />
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="p-3 rounded-xl bg-gradient-to-br from-primary/20 to-accent/20 shadow-lg">
+              <Lightbulb className="h-7 w-7 text-primary" />
+            </div>
+            <div>
+              <h1 className="text-2xl font-bold bg-gradient-to-r from-foreground to-foreground/70 bg-clip-text">
+                Communication Insights
+              </h1>
+              <p className="text-sm text-muted-foreground">
+                Analyze booking and non-booking communication patterns to improve conversion
+              </p>
+            </div>
           </div>
-          <div>
-            <h1 className="text-2xl font-bold bg-gradient-to-r from-foreground to-foreground/70 bg-clip-text">
-              Communication Insights
-            </h1>
-            <p className="text-sm text-muted-foreground">
-              Analyze booking and non-booking communication patterns to improve conversion
-            </p>
-          </div>
+          <Button onClick={handleExportCombined} disabled={isExporting} variant="outline">
+            {isExporting ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Download className="h-4 w-4 mr-2" />}
+            Export Executive Summary
+          </Button>
         </div>
 
         {/* Main Tabs */}
