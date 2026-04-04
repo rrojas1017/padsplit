@@ -338,13 +338,6 @@ const App = () => (
               } />
 
               {/* Research routes - Admin role */}
-              <Route path="/research/scripts/:scriptId/results" element={
-                <ProtectedRoute allowedRoles={['super_admin', 'admin']}>
-                  <DataProviders>
-                    <ScriptResults />
-                  </DataProviders>
-                </ProtectedRoute>
-              } />
               <Route path="/research/scripts" element={
                 <ProtectedRoute allowedRoles={['super_admin', 'admin']}>
                   <DataProviders>
