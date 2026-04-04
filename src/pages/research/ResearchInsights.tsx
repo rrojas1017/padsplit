@@ -296,7 +296,7 @@ export default function ResearchInsights() {
       <div className="max-w-7xl mx-auto space-y-4">
 
       {/* ZONE 0 — Slim Dismissible Cost Alert (admin only) */}
-      {isAdmin && !isAudienceSurvey && (
+      {isAdmin && !isAudienceSurvey && !isScriptView && (
         <CostAlertSlimBanner />
       )}
 
@@ -332,7 +332,7 @@ export default function ResearchInsights() {
           </SelectContent>
         </Select>
 
-        {!isAudienceSurvey && (
+        {!isAudienceSurvey && !isScriptView && (
           <Select value={dateRange} onValueChange={(v) => setDateRange(v as DateRangeOption)}>
             <SelectTrigger className="w-[140px] h-8 text-xs">
               <SelectValue />
@@ -348,7 +348,7 @@ export default function ResearchInsights() {
         )}
 
         {/* Right: Actions */}
-        {isAdmin && !isAudienceSurvey && (
+        {isAdmin && !isAudienceSurvey && !isScriptView && (
           <Button
             variant="ghost"
             size="icon"
@@ -361,21 +361,21 @@ export default function ResearchInsights() {
           </Button>
         )}
 
-        {isAdmin && reportData && !isAudienceSurvey && (
+        {isAdmin && reportData && !isAudienceSurvey && !isScriptView && (
           <Button variant="outline" size="sm" className="h-8 gap-1.5 text-xs" onClick={handleDownloadReport}>
             <FileText className="w-3.5 h-3.5" />
             Word
           </Button>
         )}
 
-        {!selectedReport && !isGenerating && !isAudienceSurvey && (
+        {!selectedReport && !isGenerating && !isAudienceSurvey && !isScriptView && (
           <Button size="sm" className="h-8 gap-1.5 text-xs" onClick={handleGenerate} disabled={isGenerating}>
             <Sparkles className="w-3.5 h-3.5" />
             Generate
           </Button>
         )}
 
-        {!isAudienceSurvey && reports.length > 1 && (
+        {!isAudienceSurvey && !isScriptView && reports.length > 1 && (
           <Select value={selectedReport?.id || ''} onValueChange={(id) => fetchReportDetail(id)}>
             <SelectTrigger className="w-[180px] h-8 text-xs">
               <SelectValue placeholder="Snapshot" />
@@ -449,7 +449,7 @@ export default function ResearchInsights() {
       )}
 
       {/* No reports yet — only for move-out survey (audience survey uses live aggregation) */}
-      {!isLoading && !selectedReport && !isGenerating && !isAudienceSurvey && (
+      {!isLoading && !selectedReport && !isGenerating && !isAudienceSurvey && !isScriptView && (
         <Card className="shadow-sm">
           <CardContent className="p-8 text-center">
             <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mx-auto mb-3">
@@ -482,7 +482,7 @@ export default function ResearchInsights() {
       )}
 
       {/* Report content — MOVE-OUT SURVEY */}
-      {!isLoading && reportData && !isAudienceSurvey && (selectedReport?.status === 'completed' || isGenerating) && (
+      {!isLoading && reportData && !isAudienceSurvey && !isScriptView && (selectedReport?.status === 'completed' || isGenerating) && (
         <div className="space-y-4">
           {/* KPI Grid (3×2) */}
           {kpis && <MoveOutKPIGrid kpis={kpis} />}
@@ -579,7 +579,7 @@ export default function ResearchInsights() {
       )}
 
       {/* Drill-down modal for reason codes (move-out only) */}
-      {!isAudienceSurvey && (
+      {!isAudienceSurvey && !isScriptView && (
         <ReasonCodeDrillDown
           open={!!drillDownCode}
           onOpenChange={(open) => { if (!open) setDrillDownCode(null); }}
