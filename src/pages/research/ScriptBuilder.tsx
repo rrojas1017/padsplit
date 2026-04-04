@@ -7,7 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { Plus, Pencil, Trash2, FileText, ClipboardList, Eye, Upload, Play, Link, Copy, RefreshCw, X, Languages, Loader2, BarChart3 } from 'lucide-react';
+import { Plus, Pencil, Trash2, FileText, ClipboardList, Eye, Upload, Play, Link, Copy, RefreshCw, X, Languages, Loader2 } from 'lucide-react';
 import { useResearchScripts, type ResearchScript } from '@/hooks/useResearchScripts';
 import { useScriptTokens, getScriptPublicUrl } from '@/hooks/useScriptTokens';
 import { ResearchScriptDialog } from '@/components/research/ResearchScriptDialog';
