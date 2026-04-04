@@ -11,7 +11,7 @@ import { Badge } from '@/components/ui/badge';
 import { Lightbulb, RefreshCw, Loader2, Download, Sparkles, AlertTriangle } from 'lucide-react';
 import { toast } from 'sonner';
 import { format, subMonths, startOfMonth, endOfMonth, startOfWeek, endOfDay } from 'date-fns';
-import { generateMemberInsightsPDF } from '@/utils/memberInsightsPDF';
+import { toast as sonnerToast } from 'sonner';
 import InsightsSummaryCards from '@/components/member-insights/InsightsSummaryCards';
 import PainPointsPanel from '@/components/member-insights/PainPointsPanel';
 import ObjectionsChart from '@/components/member-insights/ObjectionsChart';
