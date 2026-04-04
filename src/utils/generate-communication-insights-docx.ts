@@ -163,14 +163,14 @@ export async function generateCommunicationInsightsDocx(
         rows: [
           new TableRow({ children: [
             headerCell('Pain Point', 3500),
-            headerCell('Mentions', 1200),
+            headerCell('Frequency', 1200),
             headerCell('Details', 4660),
           ] }),
           ...bookingInsight.pain_points.slice(0, 10).map((p: any, i: number) => {
             const bg = i % 2 === 1 ? LIGHT_BG : undefined;
-            const name = typeof p === 'string' ? p : (p.pain_point || p.name || p.issue || '');
-            const count = p.count || p.frequency || p.mentions || '';
-            const detail = p.detail || p.description || p.example || '';
+            const name = typeof p === 'string' ? p : (p.category || p.pain_point || p.name || p.issue || '');
+            const count = p.frequency ? `${p.frequency}%` : (p.count || p.mentions || '');
+            const detail = p.description || p.detail || p.example || '';
             return new TableRow({ children: [
               dataCell(name, 3500, { shading: bg }),
               dataCell(String(count), 1200, { shading: bg }),
