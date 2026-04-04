@@ -107,12 +107,16 @@ export default function ResearchInsights() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('research_scripts')
-        .select('id, name')
+        .select('id, name, slug')
         .eq('is_active', true)
         .not('campaign_type', 'in', '("move_out_survey","audience_survey")')
         .order('name');
+      // Filter out legacy scripts that have dedicated hardcoded dashboards
+      const filtered = (data || []).filter(s => 
+        !['satisfaction', 'audience_survey', 'move_out_survey'].includes((s as any).slug || '')
+      );
       if (error) throw error;
-      return data || [];
+      return filtered;
     },
   });
 
