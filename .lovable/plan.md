@@ -1,33 +1,41 @@
 
 
-# Fix: Executive Brief .docx Uses AI-Hallucinated Counts Instead of Real Data
+# Fix: Coaching Hub Default Filter + Eastern Time Alignment
 
 ## Problem
-The Word export shows "329 Total Cases" and broken percentages (1%, 0%, 0%) because `generate-executive-docx.ts` reads everything from `reportData.executive_summary` — which is AI-generated JSONB with hallucinated values. The UI was already fixed (Step earlier) to use `selectedReport.total_records_analyzed`, but the export was never updated.
-
-## Root Cause
-Line 142 of `generate-executive-docx.ts`:
-```typescript
-{ label: 'Total Cases', value: es.total_cases?.toString() || '—' },
-```
-This reads from the AI's `executive_summary.total_cases` (329) instead of the accurate DB column `total_records_analyzed` (599).
-
-Same issue for all KPI percentages — they come from the AI summary which computed against 329.
+1. The Coaching Hub defaults to `'today'` filter — users land on an empty page if no calls have come in yet today
+2. Date calculations use `new Date()` which depends on runtime timezone (UTC in preview). The user expects Eastern Standard Time. When the preview runs in UTC, "today" and "yesterday" point to the wrong calendar day for an EST user.
 
 ## Fix
 
-### 1. `src/utils/generate-executive-docx.ts`
-- Add a new `totalRecordsOverride` parameter to `generateMoveOutDocx()`
-- Use it for "Total Cases" instead of `es.total_cases`
-- Pass it to the AI narrative replacement (find-and-replace "329" with real count in AI text)
+### 1. `src/pages/CoachingHub.tsx`
+- Change default `dateRange` from `'today'` to `'last_7_days'` (`'7d'`) so the page always shows recent coaching data on load
 
-### 2. `src/pages/research/ResearchInsights.tsx`
-- Pass `selectedReport?.total_records_analyzed` as the override when calling `generateMoveOutDocx()`
+### 2. `src/utils/dashboardCalculations.ts`
+- Create a helper `getEasternNow()` that returns the current date/time adjusted to US Eastern (America/New_York)
+- Use it in `getDateRangeFromFilter()` instead of bare `new Date()` so all date range calculations (today, yesterday, 7d, 30d, month) anchor to Eastern time
 
-### Changes
+The helper:
+```typescript
+function getEasternNow(): Date {
+  // Get current time string in Eastern, then parse it back
+  const eastern = new Date().toLocaleString('en-US', { timeZone: 'America/New_York' });
+  return new Date(eastern);
+}
+```
+
+Then replace `const today = startOfDay(new Date())` with `const today = startOfDay(getEasternNow())` in `getDateRangeFromFilter`.
+
+### 3. `src/hooks/useCoachingData.ts`
+- No changes needed — the hook fetches ALL coaching data without date filters; filtering is done client-side in CoachingHub
+
+## Impact
+- Coaching Hub loads with 7 days of data by default
+- All date filters across Dashboard, Coaching Hub, Leaderboard, etc. that use `getDateRangeFromFilter` will now anchor to Eastern time
+- The 4 April 3rd coaching records will be visible immediately
 
 | File | Change |
 |------|--------|
-| `src/utils/generate-executive-docx.ts` | Add `totalRecords?: number` param; use it for Total Cases KPI; also use KPIs derived from `reportData` the same way the UI does (via `deriveKPIs()` or inline) instead of AI summary values |
-| `src/pages/research/ResearchInsights.tsx` | Pass `selectedReport?.total_records_analyzed` to `generateMoveOutDocx()` |
+| `src/pages/CoachingHub.tsx` | Change default `dateRange` from `'today'` to `'7d'` |
+| `src/utils/dashboardCalculations.ts` | Add `getEasternNow()` helper; use in `getDateRangeFromFilter` |
 
