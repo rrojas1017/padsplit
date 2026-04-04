@@ -3,11 +3,14 @@ import { useSearchParams } from 'react-router-dom';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { BookingInsightsTab } from '@/components/call-insights/BookingInsightsTab';
 import { NonBookingAnalysisTab } from '@/components/call-insights/NonBookingAnalysisTab';
 import { CrossSellOpportunitiesTab } from '@/components/call-insights/CrossSellOpportunitiesTab';
 import { useAuth } from '@/contexts/AuthContext';
-import { Lightbulb, TrendingUp, UserX, ShoppingBag } from 'lucide-react';
+import { supabase } from '@/integrations/supabase/client';
+import { Lightbulb, TrendingUp, UserX, ShoppingBag, Download, Loader2 } from 'lucide-react';
+import { toast } from 'sonner';
 
 // Interface matching the Call type expected by child components
 export interface Call {
