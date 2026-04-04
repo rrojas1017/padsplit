@@ -324,28 +324,30 @@ export function BookingInsightsTab({ dateRange, onDateRangeChange }: BookingInsi
             </SelectContent>
           </Select>
 
-          <Button onClick={runAnalysis} disabled={isAnalyzing}>
-            {isAnalyzing ? (
-              <>
-                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                Analyzing...
-              </>
-            ) : (
-              <>
-                <RefreshCw className="h-4 w-4 mr-2" />
-                Run Analysis
-              </>
-            )}
-          </Button>
-
           <Button 
             variant="outline" 
-            onClick={() => selectedInsight && generateMemberInsightsPDF(selectedInsight)}
+            onClick={async () => {
+              if (!selectedInsight) return;
+              try {
+                const { generateCommunicationInsightsDocx } = await import('@/utils/generate-communication-insights-docx');
+                await generateCommunicationInsightsDocx(selectedInsight, null);
+                sonnerToast.success('Booking insights report downloaded');
+              } catch (e) {
+                console.error('Export error:', e);
+                sonnerToast.error('Failed to generate report');
+              }
+            }}
             disabled={!selectedInsight}
           >
             <Download className="h-4 w-4 mr-2" />
-            Export
+            Export .docx
           </Button>
+
+          {insights.length > 0 && insights[0]?.created_at && (
+            <span className="text-xs text-muted-foreground">
+              Last generated: {format(new Date(insights[0].created_at), 'MMM d, yyyy h:mm a')}
+            </span>
+          )}
         </div>
 
         {/* Previous Analyses Selector */}
