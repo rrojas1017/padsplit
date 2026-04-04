@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router-dom';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { supabase } from '@/integrations/supabase/client';
@@ -36,6 +37,7 @@ import { MoveOutMemberTab } from '@/components/moveout-insights/MoveOutMemberTab
 
 import { AudienceSurveyDashboard } from '@/components/audience-survey/AudienceSurveyDashboard';
 import { AudienceSurveyInsightsDashboard } from '@/components/audience-survey/AudienceSurveyInsightsDashboard';
+import { ScriptInsightsPanel } from '@/components/research-insights/ScriptInsightsPanel';
 import { ExportMembersModal } from '@/components/research-insights/ExportMembersModal';
 import { exportFullReport } from '@/utils/export-report';
 import type { ExportFilter } from '@/hooks/useExportMembers';
@@ -98,6 +100,20 @@ export default function ResearchInsights() {
   } = useResearchInsightsData(campaignType);
 
   const { campaigns } = useResearchCampaigns();
+
+  // Fetch active scripts for the dropdown
+  const { data: activeScripts = [] } = useQuery({
+    queryKey: ['research-scripts-for-insights'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('research_scripts')
+        .select('id, name')
+        .eq('is_active', true)
+        .order('name');
+      if (error) throw error;
+      return data || [];
+    },
+  });
 
   const refreshCallback = useCallback(() => {
     refresh();
@@ -233,6 +249,8 @@ export default function ResearchInsights() {
 
   const reportData = selectedReport?.data as any;
   const isAudienceSurvey = campaignType === 'audience_survey';
+  const isScriptView = campaignType.startsWith('script:');
+  const selectedScriptId = isScriptView ? campaignType.replace('script:', '') : null;
 
   const mappedStats = {
     total_research_records: processingStats.totalResearchRecords,
@@ -278,7 +296,7 @@ export default function ResearchInsights() {
       <div className="max-w-7xl mx-auto space-y-4">
 
       {/* ZONE 0 — Slim Dismissible Cost Alert (admin only) */}
-      {isAdmin && !isAudienceSurvey && (
+      {isAdmin && !isAudienceSurvey && !isScriptView && (
         <CostAlertSlimBanner />
       )}
 
@@ -287,7 +305,7 @@ export default function ResearchInsights() {
         {/* Left: Title + processing status badge */}
         <div className="flex items-center gap-2 mr-auto">
           <h1 className="text-lg font-semibold text-foreground">Research Insights</h1>
-          {!isAudienceSurvey && (
+          {!isAudienceSurvey && !isScriptView && (
             processingStats.pendingRecords > 0
               ? <Badge variant="outline" className="text-xs gap-1 border-amber-500/40 text-amber-600">
                   <span className="w-1.5 h-1.5 rounded-full bg-amber-500 inline-block" />
@@ -308,10 +326,13 @@ export default function ResearchInsights() {
           <SelectContent>
             <SelectItem value="move_out_survey">Move-Out Research</SelectItem>
             <SelectItem value="audience_survey">Audience Survey</SelectItem>
+            {activeScripts.map(s => (
+              <SelectItem key={s.id} value={`script:${s.id}`}>{s.name}</SelectItem>
+            ))}
           </SelectContent>
         </Select>
 
-        {!isAudienceSurvey && (
+        {!isAudienceSurvey && !isScriptView && (
           <Select value={dateRange} onValueChange={(v) => setDateRange(v as DateRangeOption)}>
             <SelectTrigger className="w-[140px] h-8 text-xs">
               <SelectValue />
@@ -327,7 +348,7 @@ export default function ResearchInsights() {
         )}
 
         {/* Right: Actions */}
-        {isAdmin && !isAudienceSurvey && (
+        {isAdmin && !isAudienceSurvey && !isScriptView && (
           <Button
             variant="ghost"
             size="icon"
@@ -340,21 +361,21 @@ export default function ResearchInsights() {
           </Button>
         )}
 
-        {isAdmin && reportData && !isAudienceSurvey && (
+        {isAdmin && reportData && !isAudienceSurvey && !isScriptView && (
           <Button variant="outline" size="sm" className="h-8 gap-1.5 text-xs" onClick={handleDownloadReport}>
             <FileText className="w-3.5 h-3.5" />
             Word
           </Button>
         )}
 
-        {!selectedReport && !isGenerating && !isAudienceSurvey && (
+        {!selectedReport && !isGenerating && !isAudienceSurvey && !isScriptView && (
           <Button size="sm" className="h-8 gap-1.5 text-xs" onClick={handleGenerate} disabled={isGenerating}>
             <Sparkles className="w-3.5 h-3.5" />
             Generate
           </Button>
         )}
 
-        {!isAudienceSurvey && reports.length > 1 && (
+        {!isAudienceSurvey && !isScriptView && reports.length > 1 && (
           <Select value={selectedReport?.id || ''} onValueChange={(id) => fetchReportDetail(id)}>
             <SelectTrigger className="w-[180px] h-8 text-xs">
               <SelectValue placeholder="Snapshot" />
@@ -428,7 +449,7 @@ export default function ResearchInsights() {
       )}
 
       {/* No reports yet — only for move-out survey (audience survey uses live aggregation) */}
-      {!isLoading && !selectedReport && !isGenerating && !isAudienceSurvey && (
+      {!isLoading && !selectedReport && !isGenerating && !isAudienceSurvey && !isScriptView && (
         <Card className="shadow-sm">
           <CardContent className="p-8 text-center">
             <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mx-auto mb-3">
@@ -450,13 +471,18 @@ export default function ResearchInsights() {
         </Card>
       )}
 
+      {/* Report content — SCRIPT INSIGHTS (dynamic per-script) */}
+      {!isLoading && isScriptView && selectedScriptId && (
+        <ScriptInsightsPanel scriptId={selectedScriptId} />
+      )}
+
       {/* Report content — AUDIENCE SURVEY (live aggregation from raw data) */}
       {!isLoading && isAudienceSurvey && (
         <AudienceSurveyInsightsDashboard />
       )}
 
       {/* Report content — MOVE-OUT SURVEY */}
-      {!isLoading && reportData && !isAudienceSurvey && (selectedReport?.status === 'completed' || isGenerating) && (
+      {!isLoading && reportData && !isAudienceSurvey && !isScriptView && (selectedReport?.status === 'completed' || isGenerating) && (
         <div className="space-y-4">
           {/* KPI Grid (3×2) */}
           {kpis && <MoveOutKPIGrid kpis={kpis} />}
@@ -553,7 +579,7 @@ export default function ResearchInsights() {
       )}
 
       {/* Drill-down modal for reason codes (move-out only) */}
-      {!isAudienceSurvey && (
+      {!isAudienceSurvey && !isScriptView && (
         <ReasonCodeDrillDown
           open={!!drillDownCode}
           onOpenChange={(open) => { if (!open) setDrillDownCode(null); }}

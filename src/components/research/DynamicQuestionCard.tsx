@@ -7,7 +7,7 @@ import { useMemo, useState } from "react";
 import { ChevronDown, ChevronUp } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { ScriptQuestion } from "@/hooks/useResearchScripts";
-import type { ScriptResponse } from "@/pages/ScriptResults";
+import type { ScriptResponse } from "@/components/research-insights/ScriptInsightsPanel";
 
 const COLORS = ["hsl(var(--primary))", "hsl(var(--accent))", "#A23B72", "#F18F01", "#C73E1D", "#44BBA4", "#E94F37", "#393E41", "#8D6A9F", "#2E86AB"];
 

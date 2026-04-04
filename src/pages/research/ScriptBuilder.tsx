@@ -1,5 +1,4 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -7,7 +6,7 @@ import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { Plus, Pencil, Trash2, FileText, ClipboardList, Eye, Upload, Play, Link, Copy, RefreshCw, X, Languages, Loader2, BarChart3 } from 'lucide-react';
+import { Plus, Pencil, Trash2, FileText, ClipboardList, Eye, Upload, Play, Link, Copy, RefreshCw, X, Languages, Loader2 } from 'lucide-react';
 import { useResearchScripts, type ResearchScript } from '@/hooks/useResearchScripts';
 import { useScriptTokens, getScriptPublicUrl } from '@/hooks/useScriptTokens';
 import { ResearchScriptDialog } from '@/components/research/ResearchScriptDialog';
@@ -36,7 +35,7 @@ const AUDIENCE_LABELS: Record<string, string> = {
 };
 
 export default function ScriptBuilder() {
-  const navigate = useNavigate();
+  
   const { scripts, isLoading, createScript, updateScript, deleteScript, retranslateScript } = useResearchScripts();
   const scriptIds = scripts.map(s => s.id);
   const { tokens, generateToken, copyToken, revokeToken, regenerateToken } = useScriptTokens(scriptIds);
@@ -287,15 +286,6 @@ export default function ScriptBuilder() {
                       <p className="text-xs text-muted-foreground">
                         {script.questions.length} question{script.questions.length !== 1 ? 's' : ''} • Created {new Date(script.created_at).toLocaleDateString()}
                       </p>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="gap-1.5 text-xs"
-                        onClick={() => navigate(`/research/scripts/${script.id}/results`)}
-                      >
-                        <BarChart3 className="w-3.5 h-3.5" />
-                        Results {(script as any).total_responses > 0 ? `(${(script as any).total_responses})` : ''}
-                      </Button>
                     </div>
                   </CardContent>
                 </Card>
