@@ -76,7 +76,7 @@ export default function CallInsights() {
       }
 
       const { generateCommunicationInsightsDocx } = await import('@/utils/generate-communication-insights-docx');
-      await generateCommunicationInsightsDocx(bookingData, nonBookingData);
+      await generateCommunicationInsightsDocx(bookingData as any, nonBookingData as any);
       toast.success('Executive summary downloaded');
     } catch (e) {
       console.error('Export error:', e);
