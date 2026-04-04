@@ -341,9 +341,9 @@ export default function ResearchInsights() {
         )}
 
         {isAdmin && reportData && !isAudienceSurvey && (
-          <Button variant="outline" size="sm" className="h-8 gap-1.5 text-xs" onClick={handleDownloadPDF}>
+          <Button variant="outline" size="sm" className="h-8 gap-1.5 text-xs" onClick={handleDownloadReport}>
             <FileText className="w-3.5 h-3.5" />
-            PDF
+            Word
           </Button>
         )}
 
