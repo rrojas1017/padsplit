@@ -283,9 +283,20 @@ export default function ScriptBuilder() {
                         </Badge>
                       )}
                     </div>
-                    <p className="text-xs text-muted-foreground">
-                      {script.questions.length} question{script.questions.length !== 1 ? 's' : ''} • Created {new Date(script.created_at).toLocaleDateString()}
-                    </p>
+                    <div className="flex items-center justify-between">
+                      <p className="text-xs text-muted-foreground">
+                        {script.questions.length} question{script.questions.length !== 1 ? 's' : ''} • Created {new Date(script.created_at).toLocaleDateString()}
+                      </p>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="gap-1.5 text-xs"
+                        onClick={() => navigate(`/research/scripts/${script.id}/results`)}
+                      >
+                        <BarChart3 className="w-3.5 h-3.5" />
+                        Results {(script as any).total_responses > 0 ? `(${(script as any).total_responses})` : ''}
+                      </Button>
+                    </div>
                   </CardContent>
                 </Card>
               );
