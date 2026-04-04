@@ -373,7 +373,7 @@ export function NonBookingAnalysisTab({ dateRange, onDateRangeChange }: NonBooki
               <div>
                 <p className="font-medium">No analysis for this time period</p>
                 <p className="text-sm text-muted-foreground">
-                  Click "Run Analysis" to generate insights for {getPeriodLabel(dateRange)}
+                  Insights are generated automatically each night. Check back in the morning.
                 </p>
               </div>
             </div>
