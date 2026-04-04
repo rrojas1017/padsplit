@@ -64,7 +64,7 @@ export async function generateDynamicReport(
     byOrder.get(r.question_order)!.push(r);
   });
 
-  const qSections: Paragraph[] = [];
+  const qSections: (Paragraph | Table)[] = [];
   let curSection = "";
 
   questions.filter(q => !q.is_internal).forEach(q => {
