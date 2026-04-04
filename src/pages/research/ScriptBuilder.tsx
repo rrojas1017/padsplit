@@ -35,7 +35,7 @@ const AUDIENCE_LABELS: Record<string, string> = {
 };
 
 export default function ScriptBuilder() {
-  const navigate = useNavigate();
+  
   const { scripts, isLoading, createScript, updateScript, deleteScript, retranslateScript } = useResearchScripts();
   const scriptIds = scripts.map(s => s.id);
   const { tokens, generateToken, copyToken, revokeToken, regenerateToken } = useScriptTokens(scriptIds);
