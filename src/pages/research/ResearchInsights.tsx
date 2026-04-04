@@ -109,6 +109,7 @@ export default function ResearchInsights() {
         .from('research_scripts')
         .select('id, name')
         .eq('is_active', true)
+        .not('campaign_type', 'in', '("move_out_survey","audience_survey")')
         .order('name');
       if (error) throw error;
       return data || [];
