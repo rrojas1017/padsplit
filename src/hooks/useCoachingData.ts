@@ -7,6 +7,7 @@ import { AgentFeedback } from '@/types';
 export interface CoachingBooking {
   id: string;
   bookingDate: Date;
+  analyzedAt?: string | null;
   agentId: string;
   agentName: string;
   memberName?: string;
@@ -21,6 +22,7 @@ export interface CoachingBookingWithAudio extends CoachingBooking {
   coachingAudioUrl: string | null;
   coachingAudioGeneratedAt: string | null;
   coachingAudioListenedAt: string | null;
+  analyzedAt: string | null;
   marketCity: string | null;
   marketState: string | null;
 }
@@ -45,7 +47,6 @@ export function useCoachingData(options: UseCoachingDataOptions = {}) {
     const fetchCoachingData = async () => {
       setIsLoading(true);
       try {
-        // Build query for booking_transcriptions with agent_feedback
         let query = supabase
           .from('booking_transcriptions')
           .select(`
@@ -54,6 +55,8 @@ export function useCoachingData(options: UseCoachingDataOptions = {}) {
             coaching_audio_url,
             coaching_audio_generated_at,
             coaching_audio_listened_at,
+            created_at,
+            updated_at,
             bookings!inner (
               id,
               booking_date,
@@ -78,20 +81,20 @@ export function useCoachingData(options: UseCoachingDataOptions = {}) {
           return;
         }
 
-        // Filter by agentId if provided (post-query filter due to nested join)
         let filteredData = data || [];
         if (agentId) {
           filteredData = filteredData.filter((item: any) => item.bookings.agent_id === agentId);
         }
 
-        // Map to CoachingBooking format
         const mappedData: CoachingBooking[] = filteredData.map((item: any) => {
           const booking = item.bookings;
           const agent = agents.find(a => a.id === booking.agent_id);
-          
+          const analyzedAt = item.coaching_audio_generated_at || item.updated_at || item.created_at || `${booking.booking_date}T00:00:00`;
+
           return {
             id: booking.id,
             bookingDate: new Date(booking.booking_date + 'T00:00:00'),
+            analyzedAt,
             agentId: booking.agent_id,
             agentName: agent?.name || 'Unknown Agent',
             memberName: booking.member_name || 'Unknown Member',
@@ -105,15 +108,16 @@ export function useCoachingData(options: UseCoachingDataOptions = {}) {
 
         setCoachingBookings(mappedData);
 
-        // If audio data is needed, also populate the extended type
         if (includeAudio) {
           const mappedWithAudio: CoachingBookingWithAudio[] = filteredData.map((item: any) => {
             const booking = item.bookings;
             const agent = agents.find(a => a.id === booking.agent_id);
-            
+            const analyzedAt = item.coaching_audio_generated_at || item.updated_at || item.created_at || `${booking.booking_date}T00:00:00`;
+
             return {
               id: booking.id,
               bookingDate: new Date(booking.booking_date + 'T00:00:00'),
+              analyzedAt,
               agentId: booking.agent_id,
               agentName: agent?.name || 'Unknown Agent',
               memberName: booking.member_name || 'Unknown Member',
