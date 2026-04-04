@@ -45,6 +45,46 @@ export default function CallInsights() {
                      searchParams.get('tab') === 'cross-sell' && isSuperAdmin ? 'cross-sell' : 'non-bookings';
   const [activeTab, setActiveTab] = useState(initialTab);
   const [dateRange, setDateRange] = useState<DateRangeOption>('allTime');
+  const [isExporting, setIsExporting] = useState(false);
+
+  const handleExportCombined = async () => {
+    setIsExporting(true);
+    try {
+      // Fetch latest booking insight
+      const { data: bookingData } = await supabase
+        .from('member_insights')
+        .select('*')
+        .eq('status', 'completed')
+        .eq('analysis_period', dateRange)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      // Fetch latest non-booking insight
+      const { data: nonBookingData } = await supabase
+        .from('non_booking_insights')
+        .select('*')
+        .eq('status', 'completed')
+        .eq('analysis_period', dateRange)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (!bookingData && !nonBookingData) {
+        toast.error('No insights available to export for this period');
+        return;
+      }
+
+      const { generateCommunicationInsightsDocx } = await import('@/utils/generate-communication-insights-docx');
+      await generateCommunicationInsightsDocx(bookingData, nonBookingData);
+      toast.success('Executive summary downloaded');
+    } catch (e) {
+      console.error('Export error:', e);
+      toast.error('Failed to generate report');
+    } finally {
+      setIsExporting(false);
+    }
+  };
 
   // Sync tab with URL
   useEffect(() => {
