@@ -326,6 +326,9 @@ export default function ResearchInsights() {
           <SelectContent>
             <SelectItem value="move_out_survey">Move-Out Research</SelectItem>
             <SelectItem value="audience_survey">Audience Survey</SelectItem>
+            {activeScripts.map(s => (
+              <SelectItem key={s.id} value={`script:${s.id}`}>{s.name}</SelectItem>
+            ))}
           </SelectContent>
         </Select>
 
