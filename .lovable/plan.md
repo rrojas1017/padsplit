@@ -1,41 +1,43 @@
 
+Goal: make Coaching Hub show today’s coaching records that already exist.
 
-# Fix: Coaching Hub Default Filter + Eastern Time Alignment
+What I found
+- This is not primarily a timezone/RLS problem anymore.
+- The database already has 4 Apr 3 coaching-ready rows: transcript present and `agent_feedback` present.
+- The frontend request is returning 200, so access is working.
+- The real bug is in `src/hooks/useCoachingData.ts`: it orders by `coaching_audio_generated_at desc nullslast`.
+- Today’s 4 rows have `coaching_audio_generated_at = null`, so they get pushed behind all rows that do have audio.
+- There are 6,358 coaching rows total, and 1,279 audio rows sort ahead of any null-audio row.
+- The API only returns the first 1,000 rows by default, so today’s 4 rows never reach the browser.
 
-## Problem
-1. The Coaching Hub defaults to `'today'` filter — users land on an empty page if no calls have come in yet today
-2. Date calculations use `new Date()` which depends on runtime timezone (UTC in preview). The user expects Eastern Standard Time. When the preview runs in UTC, "today" and "yesterday" point to the wrong calendar day for an EST user.
+Implementation plan
 
-## Fix
+1. Fix `src/hooks/useCoachingData.ts`
+- Replace the single query with paginated `.range()` fetching so coaching data is not silently capped at 1,000 rows.
+- Change the server-side order to `updated_at desc` instead of `coaching_audio_generated_at desc`.
+- Keep filtering on `agent_feedback is not null` and excluding research records.
+- After mapping, sort in JS by a derived analysis timestamp:
+  `coaching_audio_generated_at ?? updated_at ?? created_at ?? booking_date`
+- This keeps recent coaching visible even when audio has not been generated yet.
 
-### 1. `src/pages/CoachingHub.tsx`
-- Change default `dateRange` from `'today'` to `'last_7_days'` (`'7d'`) so the page always shows recent coaching data on load
+2. Keep Coaching Hub filtering on coaching-analysis time
+- Leave the Eastern-time date logic in place.
+- Continue filtering Coaching Hub by the derived coaching reference date, not raw booking date.
 
-### 2. `src/utils/dashboardCalculations.ts`
-- Create a helper `getEasternNow()` that returns the current date/time adjusted to US Eastern (America/New_York)
-- Use it in `getDateRangeFromFilter()` instead of bare `new Date()` so all date range calculations (today, yesterday, 7d, 30d, month) anchor to Eastern time
+3. Improve empty-state messaging in `src/pages/CoachingHub.tsx`
+- Update the empty/help text so it explains that Coaching Hub shows calls with coaching feedback, not just completed transcripts.
+- This avoids confusion when transcripts exist but coaching analysis has not been generated yet.
 
-The helper:
-```typescript
-function getEasternNow(): Date {
-  // Get current time string in Eastern, then parse it back
-  const eastern = new Date().toLocaleString('en-US', { timeZone: 'America/New_York' });
-  return new Date(eastern);
-}
-```
+Validation
+- Confirm Apr 3 shows the 4 expected coaching records.
+- Confirm “Today” and “Last 7 Days” both include them in Eastern time.
+- Confirm “All Time” still shows older coaching records.
+- Confirm Coaching Engagement / My Performance still behave correctly with audio-specific fields.
 
-Then replace `const today = startOfDay(new Date())` with `const today = startOfDay(getEasternNow())` in `getDateRangeFromFilter`.
+Files to change
+- `src/hooks/useCoachingData.ts` — main fix
+- `src/pages/CoachingHub.tsx` — clearer messaging only
 
-### 3. `src/hooks/useCoachingData.ts`
-- No changes needed — the hook fetches ALL coaching data without date filters; filtering is done client-side in CoachingHub
-
-## Impact
-- Coaching Hub loads with 7 days of data by default
-- All date filters across Dashboard, Coaching Hub, Leaderboard, etc. that use `getDateRangeFromFilter` will now anchor to Eastern time
-- The 4 April 3rd coaching records will be visible immediately
-
-| File | Change |
-|------|--------|
-| `src/pages/CoachingHub.tsx` | Change default `dateRange` from `'today'` to `'7d'` |
-| `src/utils/dashboardCalculations.ts` | Add `getEasternNow()` helper; use in `getDateRangeFromFilter` |
-
+Technical details
+- Root cause: default API row cap + `nullslast` ordering.
+- No backend schema or RLS changes are needed for this fix.
