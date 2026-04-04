@@ -19,7 +19,7 @@ import { useResearchCampaigns } from '@/hooks/useResearchCampaigns';
 import { useIsAdmin } from '@/hooks/useIsAdmin';
 import { deriveKPIs, isAudienceSurveyData } from '@/types/research-insights';
 import type { AudienceSurveyInsightData, CampaignType } from '@/types/research-insights';
-import { generateExecutivePDF } from '@/utils/generate-executive-pdf';
+import { generateMoveOutDocx } from '@/utils/generate-executive-docx';
 import { useCostAlertMonitor } from '@/hooks/useCostAlertMonitor';
 
 // Old research-insights components (still used by some features)
