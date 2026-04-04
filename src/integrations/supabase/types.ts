@@ -2463,6 +2463,7 @@ export type Database = {
           intro_script: string | null
           intro_script_es: string | null
           is_active: boolean
+          last_response_at: string | null
           name: string
           questions: Json
           questions_es: Json | null
@@ -2472,6 +2473,7 @@ export type Database = {
           slug: string | null
           status: string | null
           target_audience: string
+          total_responses: number | null
           translation_status: string | null
           updated_at: string
         }
@@ -2489,6 +2491,7 @@ export type Database = {
           intro_script?: string | null
           intro_script_es?: string | null
           is_active?: boolean
+          last_response_at?: string | null
           name: string
           questions?: Json
           questions_es?: Json | null
@@ -2498,6 +2501,7 @@ export type Database = {
           slug?: string | null
           status?: string | null
           target_audience: string
+          total_responses?: number | null
           translation_status?: string | null
           updated_at?: string
         }
@@ -2515,6 +2519,7 @@ export type Database = {
           intro_script?: string | null
           intro_script_es?: string | null
           is_active?: boolean
+          last_response_at?: string | null
           name?: string
           questions?: Json
           questions_es?: Json | null
@@ -2524,6 +2529,7 @@ export type Database = {
           slug?: string | null
           status?: string | null
           target_audience?: string
+          total_responses?: number | null
           translation_status?: string | null
           updated_at?: string
         }
@@ -2566,6 +2572,53 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "script_access_tokens_script_id_fkey"
+            columns: ["script_id"]
+            isOneToOne: false
+            referencedRelation: "research_scripts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      script_responses: {
+        Row: {
+          created_at: string | null
+          id: string
+          metadata: Json | null
+          question_order: number
+          respondent_id: string | null
+          response_numeric: number | null
+          response_options: string[] | null
+          response_value: string | null
+          script_id: string
+          session_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          metadata?: Json | null
+          question_order: number
+          respondent_id?: string | null
+          response_numeric?: number | null
+          response_options?: string[] | null
+          response_value?: string | null
+          script_id: string
+          session_id: string
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          metadata?: Json | null
+          question_order?: number
+          respondent_id?: string | null
+          response_numeric?: number | null
+          response_options?: string[] | null
+          response_value?: string | null
+          script_id?: string
+          session_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "script_responses_script_id_fkey"
             columns: ["script_id"]
             isOneToOne: false
             referencedRelation: "research_scripts"

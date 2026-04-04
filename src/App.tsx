@@ -56,6 +56,7 @@ import MyCallHistory from "./pages/research/MyCallHistory";
 import ScriptBuilder from "./pages/research/ScriptBuilder";
 import CampaignManager from "./pages/research/CampaignManager";
 import ResearchInsights from "./pages/research/ResearchInsights";
+import ScriptResults from "./pages/ScriptResults";
 
 const Billing = lazy(() => import("./pages/Billing"));
 
@@ -337,6 +338,13 @@ const App = () => (
               } />
 
               {/* Research routes - Admin role */}
+              <Route path="/research/scripts/:scriptId/results" element={
+                <ProtectedRoute allowedRoles={['super_admin', 'admin']}>
+                  <DataProviders>
+                    <ScriptResults />
+                  </DataProviders>
+                </ProtectedRoute>
+              } />
               <Route path="/research/scripts" element={
                 <ProtectedRoute allowedRoles={['super_admin', 'admin']}>
                   <DataProviders>
