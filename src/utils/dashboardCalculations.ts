@@ -389,7 +389,7 @@ export const calculateInsightsData = (
   // Helper to get agent name from agents array
   const getAgentName = (agentId: string): string => 
     agents.find(a => a.id === agentId)?.name || 'Unknown Agent';
-  const now = new Date();
+  const now = getEasternNow();
   const currentHour = now.getHours();
   const currentMinutes = now.getMinutes();
   const currentTime = format(now, 'h:mm a');
