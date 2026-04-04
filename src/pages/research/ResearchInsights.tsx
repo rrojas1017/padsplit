@@ -19,7 +19,7 @@ import { useResearchCampaigns } from '@/hooks/useResearchCampaigns';
 import { useIsAdmin } from '@/hooks/useIsAdmin';
 import { deriveKPIs, isAudienceSurveyData } from '@/types/research-insights';
 import type { AudienceSurveyInsightData, CampaignType } from '@/types/research-insights';
-import { generateExecutivePDF } from '@/utils/generate-executive-pdf';
+import { generateMoveOutDocx } from '@/utils/generate-executive-docx';
 import { useCostAlertMonitor } from '@/hooks/useCostAlertMonitor';
 
 // Old research-insights components (still used by some features)
@@ -257,15 +257,15 @@ export default function ResearchInsights() {
     ? 'Marketing research insights from audience survey campaigns'
     : 'Member churn analysis from move-out survey campaigns';
 
-  const handleDownloadPDF = async () => {
+  const handleDownloadReport = async () => {
     if (!reportData) return;
-    toast.info('Generating AI Executive Brief...');
+    toast.info('Generating Executive Brief...');
     try {
-      await generateExecutivePDF(reportData, [], selectedReport?.created_at, selectedReport?.id);
-      toast.success('PDF downloaded successfully');
+      await generateMoveOutDocx(reportData, selectedReport?.created_at, selectedReport?.id);
+      toast.success('Report downloaded successfully');
     } catch (err) {
-      console.error('PDF generation error:', err);
-      toast.error('Failed to generate PDF');
+      console.error('Report generation error:', err);
+      toast.error('Failed to generate report');
     }
   };
 
@@ -341,9 +341,9 @@ export default function ResearchInsights() {
         )}
 
         {isAdmin && reportData && !isAudienceSurvey && (
-          <Button variant="outline" size="sm" className="h-8 gap-1.5 text-xs" onClick={handleDownloadPDF}>
+          <Button variant="outline" size="sm" className="h-8 gap-1.5 text-xs" onClick={handleDownloadReport}>
             <FileText className="w-3.5 h-3.5" />
-            PDF
+            Word
           </Button>
         )}
 
