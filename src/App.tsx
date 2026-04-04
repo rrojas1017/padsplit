@@ -1,3 +1,4 @@
+import { Suspense, lazy } from "react";
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -35,7 +36,6 @@ import AgentStatus from "./pages/AgentStatus";
 import MyQA from "./pages/MyQA";
 import QADashboard from "./pages/QADashboard";
 import AgentGoals from "./pages/AgentGoals";
-import Billing from "./pages/Billing";
 import CoachingEngagement from "./pages/CoachingEngagement";
 import MyBookings from "./pages/MyBookings";
 import MoveInCalculator from "./pages/MoveInCalculator";
@@ -56,6 +56,8 @@ import MyCallHistory from "./pages/research/MyCallHistory";
 import ScriptBuilder from "./pages/research/ScriptBuilder";
 import CampaignManager from "./pages/research/CampaignManager";
 import ResearchInsights from "./pages/research/ResearchInsights";
+
+const Billing = lazy(() => import("./pages/Billing"));
 
 const queryClient = new QueryClient();
 
