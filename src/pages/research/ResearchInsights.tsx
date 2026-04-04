@@ -257,15 +257,15 @@ export default function ResearchInsights() {
     ? 'Marketing research insights from audience survey campaigns'
     : 'Member churn analysis from move-out survey campaigns';
 
-  const handleDownloadPDF = async () => {
+  const handleDownloadReport = async () => {
     if (!reportData) return;
-    toast.info('Generating AI Executive Brief...');
+    toast.info('Generating Executive Brief...');
     try {
-      await generateExecutivePDF(reportData, [], selectedReport?.created_at, selectedReport?.id);
-      toast.success('PDF downloaded successfully');
+      await generateMoveOutDocx(reportData, selectedReport?.created_at, selectedReport?.id);
+      toast.success('Report downloaded successfully');
     } catch (err) {
-      console.error('PDF generation error:', err);
-      toast.error('Failed to generate PDF');
+      console.error('Report generation error:', err);
+      toast.error('Failed to generate report');
     }
   };
 
