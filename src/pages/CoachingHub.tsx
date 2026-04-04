@@ -82,16 +82,28 @@ export default function CoachingHub() {
     return coachingBookings.filter(b => agentIds.has(b.agentId));
   }, [coachingBookings, filteredAgents]);
 
-  // Apply date filtering
+  const getCoachingReferenceDate = (booking: CoachingBooking): Date => {
+    if (booking.analyzedAt) {
+      const easternTimestamp = new Date(booking.analyzedAt).toLocaleString('en-US', { timeZone: 'America/New_York' });
+      return startOfDay(new Date(easternTimestamp));
+    }
+
+    return booking.bookingDate instanceof Date
+      ? startOfDay(booking.bookingDate)
+      : startOfDay(new Date(booking.bookingDate + 'T00:00:00'));
+  };
+
+  // Apply date filtering using coaching analysis time, not original booking date
   const dateFilteredCoachingBookings = useMemo(() => {
     if (dateRange === 'all') return filteredCoachingBookings;
-    
+
     const { start, end } = getDateRangeFromFilter(dateRange, customDates);
-    return filteredCoachingBookings.filter(b => {
-      const bookingDate = b.bookingDate instanceof Date 
-        ? startOfDay(b.bookingDate)
-        : startOfDay(new Date(b.bookingDate + 'T00:00:00'));
-      return bookingDate >= startOfDay(start) && bookingDate <= startOfDay(end);
+    const startDay = startOfDay(start);
+    const endDay = startOfDay(end);
+
+    return filteredCoachingBookings.filter((booking) => {
+      const referenceDate = getCoachingReferenceDate(booking);
+      return referenceDate >= startDay && referenceDate <= endDay;
     });
   }, [filteredCoachingBookings, dateRange, customDates]);
 
@@ -150,7 +162,7 @@ export default function CoachingHub() {
         <div className="flex items-center justify-between">
           <DateRangeFilter 
             onRangeChange={handleRangeChange} 
-            defaultValue="today"
+            defaultValue={dateRange}
             includeAllTime={true}
             includeCustom={true}
           />
