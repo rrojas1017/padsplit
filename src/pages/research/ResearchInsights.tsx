@@ -471,6 +471,11 @@ export default function ResearchInsights() {
         </Card>
       )}
 
+      {/* Report content — SCRIPT INSIGHTS (dynamic per-script) */}
+      {!isLoading && isScriptView && selectedScriptId && (
+        <ScriptInsightsPanel scriptId={selectedScriptId} />
+      )}
+
       {/* Report content — AUDIENCE SURVEY (live aggregation from raw data) */}
       {!isLoading && isAudienceSurvey && (
         <AudienceSurveyInsightsDashboard />
