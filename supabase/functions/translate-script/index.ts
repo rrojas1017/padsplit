@@ -115,12 +115,26 @@ Use the translate_script tool to return the translated content.`;
     }
 
     const result = await response.json();
-    const toolCall = result.choices?.[0]?.message?.tool_calls?.[0];
-    if (!toolCall?.function?.arguments) {
+    const message = result.choices?.[0]?.message;
+    const toolCall = message?.tool_calls?.[0];
+    
+    let translated: any;
+    if (toolCall?.function?.arguments) {
+      translated = JSON.parse(toolCall.function.arguments);
+    } else if (message?.content) {
+      // Fallback: model returned plain text instead of tool call — try to parse JSON from it
+      const contentStr = message.content.trim();
+      const jsonMatch = contentStr.match(/```(?:json)?\s*([\s\S]*?)```/) || [null, contentStr];
+      try {
+        translated = JSON.parse(jsonMatch[1]!.trim());
+      } catch {
+        console.error("Could not parse AI content as JSON:", contentStr.substring(0, 500));
+        throw new Error("No translation returned from AI");
+      }
+    } else {
+      console.error("AI response structure:", JSON.stringify(result.choices?.[0]).substring(0, 500));
       throw new Error("No translation returned from AI");
     }
-
-    const translated = JSON.parse(toolCall.function.arguments);
 
     // Merge translations back into original questions structure
     const translatedQuestions = (questions || []).map((origQ: any) => {
