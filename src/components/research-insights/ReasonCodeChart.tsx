@@ -98,7 +98,7 @@ const shortLabel = (name: string): string => {
 
 // ── Custom Treemap Content ──
 const CustomTreemapContent = (props: any) => {
-  const { x, y, width, height, name, size, fill } = props;
+  const { x, y, width, height, name, size, fill, onBlockClick } = props;
   if (!name || !width || !height || width < 25 || height < 22) return null;
   const label = shortLabel(String(name));
   const area = width * height;
@@ -107,7 +107,7 @@ const CustomTreemapContent = (props: any) => {
   const showLabel = width > 50 && height > 35;
 
   return (
-    <g style={{ cursor: 'pointer' }}>
+    <g style={{ cursor: 'pointer' }} onClick={(e) => { e.stopPropagation(); onBlockClick?.(name); }}>
       <rect
         x={x} y={y} width={width} height={height}
         fill={fill}
@@ -370,13 +370,10 @@ function ReasonDrillDown({ active, total, onCodeClick, onViewAllMembers, onBack 
             data={treemapData}
             dataKey="size"
             aspectRatio={4 / 3}
-            content={<CustomTreemapContent />}
-            onClick={(node: any) => {
-              if (node?.name) {
-                const ids = getMembersForSubReason(node.name).map(m => m.bookingId);
-                setSubReasonDrillDown({ name: node.name, bookingIds: ids });
-              }
-            }}
+            content={<CustomTreemapContent onBlockClick={(name: string) => {
+              const ids = getMembersForSubReason(name).map(m => m.bookingId);
+              setSubReasonDrillDown({ name, bookingIds: ids });
+            }} />}
           >
             <Tooltip content={<CustomTreemapTooltip />} />
           </Treemap>
