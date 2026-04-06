@@ -1,57 +1,34 @@
 
 
-# Fix: Sub-Reason Treemap Click Shows Wrong Data (0 cases / 346 members)
+# Fix: Enable Transcript & Audio Playback for All Record Types
 
 ## Problem
-Two bugs when clicking a treemap block (e.g., "Unsanitary / Dirty Conditions — 16"):
-
-1. **Header says "0 cases"** — `reasonCount` is set to `bookingIds.length`, but `bookingIds` is empty
-2. **Shows 346 members** — when `bookingIds` is empty, `ReasonCodeDrillDown` falls back to a broad keyword search that matches everything in the parent cluster
-
-**Root cause**: Sub-reasons are derived using `extractSubReason(cluster, caseBrief)` — keyword matching on `case_brief` text. But `getMembersForSubReason` tries to match against `reason_detail` / `primary_reason_code`, which are completely different fields. Result: 0 matches → empty bookingIds → keyword fallback.
+The "Transcript" button in the Reports page only appears when a record has a `kixieLink`. Records that have completed transcriptions but no `kixieLink` (or where the recording URL is stored differently) can't be accessed. Users should be able to view transcripts and play call recordings for all record types — bookings, non-bookings, and research/survey calls.
 
 ## Solution
-Fix `getMembersForSubReason` to use the same logic as `useReasonCodeCounts`: apply `mapToCluster` + `extractSubReason` on each member's data, then match the derived sub-reason name.
-
-Also pass the actual count from `subData` instead of relying on `bookingIds.length`.
-
-## Changes
+Two changes across two files:
 
 | File | Change |
 |------|--------|
-| `src/components/research-insights/ReasonCodeChart.tsx` | 1) Fix `getMembersForSubReason` to derive sub-reason via `extractSubReason(active.name, caseBrief)` and match against the sub-reason name; 2) Pass actual count from `subData` as `reasonCount` instead of `bookingIds.length`; 3) Import `extractSubReason` from reason-code-mapping |
+| `src/pages/Reports.tsx` | **Research tab** (~line 1246): Show Transcript button when `kixieLink` exists OR `transcriptionStatus === 'completed'`. **Bookings tab** (~line 1519): Same — show the transcript icon when `kixieLink` exists OR `transcriptionStatus === 'completed'` |
+| `src/components/booking/TranscriptionModal.tsx` | No change needed — the audio player already conditionally renders only when `kixieLink` exists, and the transcript/insights display works independently of the audio URL |
 
-### Detail
+### Specific Changes in Reports.tsx
 
-**`getMembersForSubReason` fix** (line ~334):
-```typescript
-import { extractSubReason } from '@/utils/reason-code-mapping';
-
-const getMembersForSubReason = (subName: string) => {
-  return allMembers.filter(m => {
-    const caseBrief = m.caseSummary || '';
-    const derived = extractSubReason(active.name, caseBrief);
-    return derived.toLowerCase() === subName.toLowerCase();
-  });
-};
+**Research rows** (line ~1246):
+```
+// Before: {booking.kixieLink && (
+// After:  {(booking.kixieLink || booking.transcriptionStatus === 'completed') && (
 ```
 
-**Pass real count** — where `subReasonDrillDown` is set (treemap click + table row click), also store the count from `subData`:
-```typescript
-// In state
-const [subReasonDrillDown, setSubReasonDrillDown] = useState<{
-  name: string; bookingIds: string[]; count: number;
-} | null>(null);
-
-// On click
-const sub = subData.find(s => s.name === name);
-setSubReasonDrillDown({ name, bookingIds: ids, count: sub?.value || ids.length });
-
-// In render
-reasonCount={subReasonDrillDown.count}
+**Bookings rows — transcript icon** (line ~1519):
+```
+// Before: {booking.kixieLink && (
+// After:  {(booking.kixieLink || booking.transcriptionStatus === 'completed') && (
 ```
 
-**Also fix the member fetch** — the current fetch (line ~207) uses `.limit(500)` and matches on `reason_detail` which misses records. Instead, apply `extractSubReason` during the filter step of the already-fetched data, matching `caseSummary` (case_brief) the same way the hooks do.
-
-This ensures the treemap click → drill-down shows exactly the 16 members that belong to "Unsanitary / Dirty Conditions", with the correct count in the header.
+This ensures:
+- Records with a `kixieLink` show the button AND the audio player (as today)
+- Records with a completed transcription but no `kixieLink` show the button to view insights (no audio player, which is fine)
+- The audio player in the modal remains gated by `kixieLink` existence, so it only appears when there's actually audio to play
 
