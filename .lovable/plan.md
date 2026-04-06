@@ -1,21 +1,35 @@
 
 
-# Fix: Duplicate Scripts in Research Insights Dropdown
+# Fix: Research Insights Flash of Move-Out View on Navigation
 
 ## Problem
-The dropdown has 2 hardcoded items (Move-Out Research, Audience Survey) plus ALL active scripts from the database. But the Move-Out and Audience Survey scripts also exist as rows in `research_scripts`, so they show up twice — once hardcoded and once dynamically.
+Every time you click "Research Insights" in the sidebar, the page navigates to `/research/insights` without any `campaign` parameter. This defaults to `move_out_survey` (line 63-64), which renders instantly from cached data. If you were previously viewing a different campaign type, you see the move-out view flash before you manually switch back.
 
 ## Solution
-Filter out scripts whose `campaign_type` matches `move_out_survey` or `audience_survey` from the dynamic query, since those two already have dedicated hardcoded entries and their own specialized dashboards.
+Persist the last-selected campaign type in `localStorage`. When the page loads without a `campaign` URL param, use the persisted value instead of always defaulting to `move_out_survey`.
 
 ## Change
 
 | File | Change |
 |------|--------|
-| `src/pages/research/ResearchInsights.tsx` | Add `.not('campaign_type', 'in', '("move_out_survey","audience_survey")')` to the `activeScripts` query (line ~111), so only custom scripts appear in the dynamic portion of the dropdown |
+| `src/pages/research/ResearchInsights.tsx` | Read last campaign from `localStorage` as fallback default; save to `localStorage` in `handleCampaignTypeChange` |
 
-This way:
-- Move-Out Research and Audience Survey keep their hardcoded entries and specialized dashboards
-- Only truly new/custom scripts (like the Post Move-In Satisfaction survey) appear dynamically
-- Adding more scripts in the future works automatically without duplication
+Specifically:
+```typescript
+// Line 63-65 — initialize from URL param → localStorage → fallback
+const [campaignType, setCampaignType] = useState<CampaignType>(
+  (searchParams.get('campaign') as CampaignType) 
+  || (localStorage.getItem('research_insights_campaign') as CampaignType) 
+  || 'move_out_survey'
+);
+
+// In handleCampaignTypeChange — persist selection
+const handleCampaignTypeChange = (value: string) => {
+  setCampaignType(value as CampaignType);
+  localStorage.setItem('research_insights_campaign', value);
+  setSearchParams({ tab: currentTab, campaign: value }, { replace: true });
+};
+```
+
+This way the page remembers your last selection and renders it immediately — no flash of the move-out view.
 
