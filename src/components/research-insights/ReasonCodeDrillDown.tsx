@@ -149,10 +149,17 @@ export function ReasonCodeDrillDown({
     return data.map((row: any) => {
       const b = row.bookings as any;
       const cls = row.research_classification as any;
+      const rawName = b?.member_name || '';
+      const isApiPlaceholder = rawName.startsWith('API Submission');
+      const extractedName = cls?.respondent_name || cls?.member_name || '';
+      const cleanPhone = b?.contact_phone || rawName.replace('API Submission - ', '');
+      const memberName = isApiPlaceholder
+        ? (extractedName || cleanPhone || 'Unknown')
+        : (rawName || 'Unknown');
       return {
         transcriptionId: row.id,
         bookingId: row.booking_id,
-        memberName: b?.member_name || 'Unknown',
+        memberName,
         phone: b?.contact_phone || null,
         bookingDate: b?.booking_date || '',
         preventabilityScore: cls?.preventability_score ?? cls?.preventability ?? null,
