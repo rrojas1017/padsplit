@@ -1,32 +1,23 @@
 
 
-# Fix: Replace "API Submission" Labels with Member Name or Phone
+# Fix: Treemap Sub-Reason Click → Drill-Down
 
 ## Problem
-The drill-down panel displays raw `member_name` from the `bookings` table, which for API-submitted records is "API Submission - +1234567890". This is unhelpful — it should show the actual member name (extracted from transcript) or just the clean phone number.
+Clicking on a treemap block in the Sub-Reason Distribution chart doesn't reliably open the drill-down panel showing the actual records. The Recharts `<Treemap onClick>` handler doesn't fire consistently when a custom `content` renderer is used — the SVG `<g>` element in `CustomTreemapContent` intercepts the click before it reaches the Treemap component.
 
 ## Solution
-In the `mapRecords` function of `ReasonCodeDrillDown.tsx`, detect names starting with "API Submission" and replace them:
-1. Check if `research_classification` has an extracted name (e.g., `cls.member_name` or `cls.respondent_name`)
-2. If not, fall back to the clean phone number from `contact_phone`
-3. If neither exists, show the phone number stripped from the "API Submission - " prefix
+Move the click handling **into** the `CustomTreemapContent` component by passing an `onBlockClick` callback as a prop. The `<rect>` element already has `cursor: pointer` but no click handler — we add one directly.
 
 ## Change
 
 | File | Change |
 |------|--------|
-| `src/components/research-insights/ReasonCodeDrillDown.tsx` | In `mapRecords` (~line 155), add logic to clean up "API Submission" names — extract real name from classification data or fall back to phone number |
+| `src/components/research-insights/ReasonCodeChart.tsx` | 1) Add `onBlockClick` prop to `CustomTreemapContent` and attach it to the `<g>` element's `onClick`; 2) Pass the drill-down logic as `onBlockClick` when rendering `<Treemap content={...}>` |
 
-```typescript
-// Line 155 replacement logic
-const rawName = b?.member_name || '';
-const isApiPlaceholder = rawName.startsWith('API Submission');
-const extractedName = cls?.respondent_name || cls?.member_name || '';
-const cleanPhone = b?.contact_phone || rawName.replace('API Submission - ', '');
-const memberName = isApiPlaceholder
-  ? (extractedName || cleanPhone || 'Unknown')
-  : (rawName || 'Unknown');
-```
+Specifically:
+- `CustomTreemapContent` receives `onBlockClick?: (name: string) => void` via props and calls it on `<g onClick>`
+- The `<Treemap>` renders `content={<CustomTreemapContent onBlockClick={handleTreemapClick} />}` where `handleTreemapClick` builds the booking IDs and opens `setSubReasonDrillDown`
+- Keep the existing `<Treemap onClick>` as a fallback
 
-This applies to both query paths (bookingIds and keyword-match), since both go through `mapRecords`.
+This is a single-file change affecting ~10 lines.
 
