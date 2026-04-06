@@ -371,7 +371,8 @@ function ReasonDrillDown({ active, total, onCodeClick, onViewAllMembers, onBack 
             aspectRatio={4 / 3}
             content={<CustomTreemapContent onBlockClick={(name: string) => {
               const ids = getMembersForSubReason(name).map(m => m.bookingId);
-              setSubReasonDrillDown({ name, bookingIds: ids });
+              const sub = subData.find(s => s.name === name);
+              setSubReasonDrillDown({ name, bookingIds: ids, count: sub?.value || ids.length });
             }} />}
           >
             <Tooltip content={<CustomTreemapTooltip />} />
@@ -414,7 +415,7 @@ function ReasonDrillDown({ active, total, onCodeClick, onViewAllMembers, onBack 
                 className="cursor-pointer hover:bg-muted/50 transition-colors"
                 onClick={() => {
                   const ids = getMembersForSubReason(s.name).map(m => m.bookingId);
-                  setSubReasonDrillDown({ name: s.name, bookingIds: ids });
+                  setSubReasonDrillDown({ name: s.name, bookingIds: ids, count: s.value });
                 }}
               >
                 <TableCell onClick={e => e.stopPropagation()}>
