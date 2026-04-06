@@ -12,6 +12,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useBookingDetails } from '@/hooks/useBookingDetails';
 import { Booking, CallKeyPoints, AgentFeedback, MemberDetails } from '@/types';
 import { MemberDetailsCard } from './MemberDetailsCard';
+import { ProxiedAudioPlayer } from './ProxiedAudioPlayer';
 import { getProviderLabel, getProviderBadgeColor } from '@/utils/providerLabels';
 import { normalizeDetectedIssues, ISSUE_BADGE_CONFIG } from '@/utils/issueClassifier';
 
@@ -366,22 +367,9 @@ export function TranscriptionModal({ booking, isOpen, onClose, onTranscriptionCo
         </DialogHeader>
 
         <ScrollArea className="max-h-[calc(85vh-100px)] pr-4">
-          {/* Audio Player - always visible when kixieLink exists */}
+          {/* Audio Player - proxied through edge function for cross-origin compatibility */}
           {booking.kixieLink && (
-            <Card className="mb-4">
-              <CardContent className="py-4 space-y-3">
-                <div className="flex items-center gap-3">
-                  <Play className="h-5 w-5 text-primary" />
-                  <span className="font-medium">Call Recording</span>
-                </div>
-                <audio
-                  controls
-                  src={booking.kixieLink}
-                  className="w-full h-10 rounded-lg"
-                  preload="metadata"
-                />
-              </CardContent>
-            </Card>
+            <ProxiedAudioPlayer bookingId={booking.id} />
           )}
 
           {!hasTranscription ? (

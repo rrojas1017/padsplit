@@ -159,3 +159,6 @@ verify_jwt = false
 [functions.generate-executive-brief]
 verify_jwt = true
 
+[functions.proxy-recording-audio]
+verify_jwt = true
+

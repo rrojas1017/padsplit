@@ -17,6 +17,7 @@ import {
   Play, ExternalLink, Loader2, Mic
 } from 'lucide-react';
 import { format } from 'date-fns';
+import { ProxiedAudioPlayer } from '@/components/booking/ProxiedAudioPlayer';
 
 interface CallDetailsModalProps {
   call: Call;
@@ -133,8 +134,11 @@ export function CallDetailsModal({ call, agentName, onClose }: CallDetailsModalP
               </div>
             </div>
 
-            {/* Recording */}
-            {call.recording_url && (
+            {/* Recording - proxied for cross-origin compatibility */}
+            {call.recording_url && call.booking_id && (
+              <ProxiedAudioPlayer bookingId={call.booking_id} />
+            )}
+            {call.recording_url && !call.booking_id && (
               <Card>
                 <CardContent className="py-4 space-y-3">
                   <div className="flex items-center gap-3">
