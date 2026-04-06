@@ -1243,7 +1243,7 @@ export default function Reports() {
                     </td>
                     {/* Actions — research: view transcript only */}
                     <td className="py-3 px-4">
-                      {booking.kixieLink && (
+                      {(booking.kixieLink || booking.transcriptionStatus === 'completed') && (
                         <Button
                           variant="ghost"
                           size="sm"
@@ -1516,7 +1516,7 @@ export default function Reports() {
                             <UserCircle className="h-4 w-4 text-blue-500 hover:text-blue-600 transition-colors" />
                           </a>
                         )}
-                        {booking.kixieLink && (
+                        {(booking.kixieLink || booking.transcriptionStatus === 'completed') && (
                           <button
                             onClick={() => {
                               setSelectedBooking(booking);
