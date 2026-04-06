@@ -13,7 +13,7 @@ import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Treemap } from 'rech
 import { ArrowLeft, ArrowRight, ChevronRight, Users, AlertTriangle, Eye, Download, Phone, ClipboardList, MoreVertical, Copy, CheckCircle2 } from 'lucide-react';
 import { useReasonCodeCounts, ClusterData } from '@/hooks/useReasonCodeCounts';
 import { useAddressabilityBreakdown, AddressabilityBucket } from '@/hooks/useAddressabilityBreakdown';
-import { ADDRESSABILITY_DESCRIPTIONS, CLUSTER_COLORS } from '@/utils/reason-code-mapping';
+import { ADDRESSABILITY_DESCRIPTIONS, CLUSTER_COLORS, extractSubReason, mapToCluster } from '@/utils/reason-code-mapping';
 import { supabase } from '@/integrations/supabase/client';
 import { MemberDetailPanel } from './MemberDetailPanel';
 import { ReasonCodeDrillDown } from './ReasonCodeDrillDown';
