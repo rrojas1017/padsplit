@@ -1,34 +1,39 @@
 
 
-# Fix: Enable Transcript & Audio Playback for All Record Types
+# Fix: Audio Playback for Vici Dial Research Recordings
 
 ## Problem
-The "Transcript" button in the Reports page only appears when a record has a `kixieLink`. Records that have completed transcriptions but no `kixieLink` (or where the recording URL is stored differently) can't be accessed. Users should be able to view transcripts and play call recordings for all record types — bookings, non-bookings, and research/survey calls.
+Research recordings from Vici Dial are stored in `kixie_link` as `recordings.vixicom.com` URLs. The transcription edge function fetches these server-side successfully (transcriptions complete fine). But the browser's `<audio>` element tries to load them directly — `recordings.vixicom.com` blocks cross-origin browser requests, so playback fails (shows 0:00 / 0:00).
 
 ## Solution
-Two changes across two files:
+Create a proxy edge function that fetches the audio server-side and streams it back to the browser as a blob.
+
+## Changes
 
 | File | Change |
 |------|--------|
-| `src/pages/Reports.tsx` | **Research tab** (~line 1246): Show Transcript button when `kixieLink` exists OR `transcriptionStatus === 'completed'`. **Bookings tab** (~line 1519): Same — show the transcript icon when `kixieLink` exists OR `transcriptionStatus === 'completed'` |
-| `src/components/booking/TranscriptionModal.tsx` | No change needed — the audio player already conditionally renders only when `kixieLink` exists, and the transcript/insights display works independently of the audio URL |
+| `supabase/functions/proxy-recording-audio/index.ts` | **New** — accepts `bookingId`, verifies authenticated user, fetches `kixie_link` from `bookings` table, fetches audio from Vixicom server-side, streams it back with `Content-Type: audio/mpeg` and CORS headers |
+| `src/components/booking/TranscriptionModal.tsx` | Replace direct `src={booking.kixieLink}` with a proxied blob URL. On modal open, fetch audio through the proxy edge function, create a blob URL, set it as `<audio src>`. Show a small loading spinner while audio loads. |
+| `src/components/call-insights/CallDetailsModal.tsx` | Same proxy pattern for the audio player in Call Insights |
+| `supabase/config.toml` | Add `[functions.proxy-recording-audio]` with `verify_jwt = true` |
 
-### Specific Changes in Reports.tsx
+### Edge Function: `proxy-recording-audio`
+- Accepts `bookingId` as query param
+- Validates JWT (authenticated users only)
+- Looks up `kixie_link` from `bookings` table using service role
+- Fetches the audio from `recordings.vixicom.com` server-side
+- Streams response back with `Content-Type: audio/mpeg`, CORS headers, and caching headers
+- Returns 404 if no recording URL exists, 502 if upstream fetch fails
 
-**Research rows** (line ~1246):
-```
-// Before: {booking.kixieLink && (
-// After:  {(booking.kixieLink || booking.transcriptionStatus === 'completed') && (
-```
-
-**Bookings rows — transcript icon** (line ~1519):
-```
-// Before: {booking.kixieLink && (
-// After:  {(booking.kixieLink || booking.transcriptionStatus === 'completed') && (
+### Frontend Change (TranscriptionModal)
+```text
+Modal opens → kixieLink exists?
+  → Yes → setState(audioLoading=true)
+  → fetch via supabase.functions.invoke('proxy-recording-audio', { bookingId })
+  → Create blob URL from response
+  → Set <audio src={blobUrl}>
+  → setState(audioLoading=false)
 ```
 
-This ensures:
-- Records with a `kixieLink` show the button AND the audio player (as today)
-- Records with a completed transcription but no `kixieLink` show the button to view insights (no audio player, which is fine)
-- The audio player in the modal remains gated by `kixieLink` existence, so it only appears when there's actually audio to play
+This approach avoids all CORS/network issues since blob URLs are local to the browser. The edge function runs in the same environment that already successfully fetches these URLs for transcription.
 
