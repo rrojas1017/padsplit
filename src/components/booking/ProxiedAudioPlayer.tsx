@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Play, Loader2, AlertCircle } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
@@ -11,25 +11,16 @@ export function ProxiedAudioPlayer({ bookingId }: ProxiedAudioPlayerProps) {
   const [audioSrc, setAudioSrc] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const blobUrlRef = useRef<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
+
     const loadAudio = async () => {
       setIsLoading(true);
       setError(null);
 
       try {
-        const { data, error: fnError } = await supabase.functions.invoke(
-          'proxy-recording-audio',
-          {
-            method: 'GET',
-            headers: { 'Content-Type': 'application/octet-stream' },
-            body: undefined,
-          }
-        );
-
-        // supabase.functions.invoke doesn't support query params natively,
-        // so we build the URL manually
         const session = await supabase.auth.getSession();
         const token = session.data.session?.access_token;
         if (!token) {
@@ -55,6 +46,7 @@ export function ProxiedAudioPlayer({ bookingId }: ProxiedAudioPlayerProps) {
         if (cancelled) return;
 
         const blobUrl = URL.createObjectURL(blob);
+        blobUrlRef.current = blobUrl;
         setAudioSrc(blobUrl);
       } catch (err) {
         if (!cancelled) {
@@ -67,9 +59,13 @@ export function ProxiedAudioPlayer({ bookingId }: ProxiedAudioPlayerProps) {
     };
 
     loadAudio();
+
     return () => {
       cancelled = true;
-      if (audioSrc) URL.revokeObjectURL(audioSrc);
+      if (blobUrlRef.current) {
+        URL.revokeObjectURL(blobUrlRef.current);
+        blobUrlRef.current = null;
+      }
     };
   }, [bookingId]);
 
