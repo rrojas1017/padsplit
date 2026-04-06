@@ -13,7 +13,7 @@ import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Treemap } from 'rech
 import { ArrowLeft, ArrowRight, ChevronRight, Users, AlertTriangle, Eye, Download, Phone, ClipboardList, MoreVertical, Copy, CheckCircle2 } from 'lucide-react';
 import { useReasonCodeCounts, ClusterData } from '@/hooks/useReasonCodeCounts';
 import { useAddressabilityBreakdown, AddressabilityBucket } from '@/hooks/useAddressabilityBreakdown';
-import { ADDRESSABILITY_DESCRIPTIONS, CLUSTER_COLORS } from '@/utils/reason-code-mapping';
+import { ADDRESSABILITY_DESCRIPTIONS, CLUSTER_COLORS, extractSubReason, mapToCluster } from '@/utils/reason-code-mapping';
 import { supabase } from '@/integrations/supabase/client';
 import { MemberDetailPanel } from './MemberDetailPanel';
 import { ReasonCodeDrillDown } from './ReasonCodeDrillDown';
@@ -192,7 +192,7 @@ function ReasonDrillDown({ active, total, onCodeClick, onViewAllMembers, onBack 
   const [detailId, setDetailId] = useState<string | null>(null);
   const [selectedSubReasons, setSelectedSubReasons] = useState<Set<string>>(new Set());
   const [selectedMembers, setSelectedMembers] = useState<Set<string>>(new Set());
-  const [subReasonDrillDown, setSubReasonDrillDown] = useState<{ name: string; bookingIds: string[] } | null>(null);
+  const [subReasonDrillDown, setSubReasonDrillDown] = useState<{ name: string; bookingIds: string[]; count: number } | null>(null);
   const [actionModal, setActionModal] = useState<{ subReason: string; count: number } | null>(null);
   const [page, setPage] = useState(0);
   const PAGE_SIZE = 25;
@@ -215,12 +215,10 @@ function ReasonDrillDown({ active, total, onCodeClick, onViewAllMembers, onBack 
 
       const matching = rows.filter(r => {
         const cls = r.research_classification as any;
-        const detail = (cls?.reason_detail || '').toLowerCase().trim();
-        const code = (cls?.primary_reason_code || '').toLowerCase().trim();
-        return subReasonNames.some(s => {
-          const sl = s.toLowerCase();
-          return sl === detail || sl === code;
-        });
+        const code = cls?.primary_reason_code || cls?.reason_code || '';
+        const caseBrief = cls?.case_brief || cls?.root_cause_summary || '';
+        const cluster = mapToCluster(code);
+        return cluster === active.name;
       });
 
       setAllMembers(matching.map(r => {
@@ -332,10 +330,11 @@ function ReasonDrillDown({ active, total, onCodeClick, onViewAllMembers, onBack 
   };
 
   const getMembersForSubReason = (subName: string) => {
-    const sl = subName.toLowerCase();
-    return allMembers.filter(m =>
-      m.subReason.toLowerCase() === sl || m.reasonCode.toLowerCase() === sl
-    );
+    return allMembers.filter(m => {
+      const caseBrief = m.caseSummary || '';
+      const derived = extractSubReason(active.name, caseBrief);
+      return derived.toLowerCase() === subName.toLowerCase();
+    });
   };
 
   // Action items
@@ -372,7 +371,8 @@ function ReasonDrillDown({ active, total, onCodeClick, onViewAllMembers, onBack 
             aspectRatio={4 / 3}
             content={<CustomTreemapContent onBlockClick={(name: string) => {
               const ids = getMembersForSubReason(name).map(m => m.bookingId);
-              setSubReasonDrillDown({ name, bookingIds: ids });
+              const sub = subData.find(s => s.name === name);
+              setSubReasonDrillDown({ name, bookingIds: ids, count: sub?.value || ids.length });
             }} />}
           >
             <Tooltip content={<CustomTreemapTooltip />} />
@@ -415,7 +415,7 @@ function ReasonDrillDown({ active, total, onCodeClick, onViewAllMembers, onBack 
                 className="cursor-pointer hover:bg-muted/50 transition-colors"
                 onClick={() => {
                   const ids = getMembersForSubReason(s.name).map(m => m.bookingId);
-                  setSubReasonDrillDown({ name: s.name, bookingIds: ids });
+                  setSubReasonDrillDown({ name: s.name, bookingIds: ids, count: s.value });
                 }}
               >
                 <TableCell onClick={e => e.stopPropagation()}>
@@ -631,7 +631,7 @@ function ReasonDrillDown({ active, total, onCodeClick, onViewAllMembers, onBack 
         onOpenChange={(o) => { if (!o) setSubReasonDrillDown(null); }}
         reasonCode={subReasonDrillDown.name}
         reasonColor={active.color}
-        reasonCount={subReasonDrillDown.bookingIds.length}
+        reasonCount={subReasonDrillDown.count}
         bookingIds={subReasonDrillDown.bookingIds}
       />
     )}
