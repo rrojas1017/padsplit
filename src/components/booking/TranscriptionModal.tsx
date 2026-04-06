@@ -12,6 +12,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useBookingDetails } from '@/hooks/useBookingDetails';
 import { Booking, CallKeyPoints, AgentFeedback, MemberDetails } from '@/types';
 import { MemberDetailsCard } from './MemberDetailsCard';
+import { ProxiedAudioPlayer } from './ProxiedAudioPlayer';
 import { getProviderLabel, getProviderBadgeColor } from '@/utils/providerLabels';
 import { normalizeDetectedIssues, ISSUE_BADGE_CONFIG } from '@/utils/issueClassifier';
 

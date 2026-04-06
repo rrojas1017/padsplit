@@ -17,6 +17,7 @@ import {
   Play, ExternalLink, Loader2, Mic
 } from 'lucide-react';
 import { format } from 'date-fns';
+import { ProxiedAudioPlayer } from '@/components/booking/ProxiedAudioPlayer';
 
 interface CallDetailsModalProps {
   call: Call;
