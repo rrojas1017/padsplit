@@ -631,7 +631,7 @@ function ReasonDrillDown({ active, total, onCodeClick, onViewAllMembers, onBack 
         onOpenChange={(o) => { if (!o) setSubReasonDrillDown(null); }}
         reasonCode={subReasonDrillDown.name}
         reasonColor={active.color}
-        reasonCount={subReasonDrillDown.bookingIds.length}
+        reasonCount={subReasonDrillDown.count}
         bookingIds={subReasonDrillDown.bookingIds}
       />
     )}
