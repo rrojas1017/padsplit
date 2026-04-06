@@ -61,7 +61,9 @@ export default function ResearchInsights() {
   const setTab = (tab: string) => setSearchParams({ tab, campaign: campaignType }, { replace: true });
 
   const [campaignType, setCampaignType] = useState<CampaignType>(
-    (searchParams.get('campaign') as CampaignType) || 'move_out_survey'
+    (searchParams.get('campaign') as CampaignType)
+    || (localStorage.getItem('research_insights_campaign') as CampaignType)
+    || 'move_out_survey'
   );
   const [dateRange, setDateRange] = useState<DateRangeOption>('allTime');
   const [campaignId, setCampaignId] = useState<string>('all');
@@ -180,6 +182,7 @@ export default function ResearchInsights() {
 
   const handleCampaignTypeChange = (value: string) => {
     setCampaignType(value as CampaignType);
+    localStorage.setItem('research_insights_campaign', value);
     setSearchParams({ tab: currentTab, campaign: value }, { replace: true });
   };
 
