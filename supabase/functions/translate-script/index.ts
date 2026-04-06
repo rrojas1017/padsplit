@@ -132,7 +132,7 @@ Use the translate_script tool to return the translated content.`;
         throw new Error("No translation returned from AI");
       }
     } else {
-      console.error("AI response structure:", JSON.stringify(result.choices?.[0]).substring(0, 500));
+      console.error("AI response structure:", (JSON.stringify(result.choices?.[0]) || "undefined").substring(0, 500));
       throw new Error("No translation returned from AI");
     }
 
