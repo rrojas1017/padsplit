@@ -1,39 +1,33 @@
 
 
-# Fix: Audio Playback for Vici Dial Research Recordings
+# Fix: Proxy Recording Audio Edge Function Auth Error
 
 ## Problem
-Research recordings from Vici Dial are stored in `kixie_link` as `recordings.vixicom.com` URLs. The transcription edge function fetches these server-side successfully (transcriptions complete fine). But the browser's `<audio>` element tries to load them directly — `recordings.vixicom.com` blocks cross-origin browser requests, so playback fails (shows 0:00 / 0:00).
+The `proxy-recording-audio` edge function uses `supabase.auth.getClaims()` — a method that **does not exist** in the Supabase JS client. This causes the function to return a 401 error, which the `ProxiedAudioPlayer` displays as "Failed to fetch".
 
 ## Solution
-Create a proxy edge function that fetches the audio server-side and streams it back to the browser as a blob.
-
-## Changes
+Replace `getClaims()` with `getUser()`, matching the pattern used by every other edge function in this project.
 
 | File | Change |
 |------|--------|
-| `supabase/functions/proxy-recording-audio/index.ts` | **New** — accepts `bookingId`, verifies authenticated user, fetches `kixie_link` from `bookings` table, fetches audio from Vixicom server-side, streams it back with `Content-Type: audio/mpeg` and CORS headers |
-| `src/components/booking/TranscriptionModal.tsx` | Replace direct `src={booking.kixieLink}` with a proxied blob URL. On modal open, fetch audio through the proxy edge function, create a blob URL, set it as `<audio src>`. Show a small loading spinner while audio loads. |
-| `src/components/call-insights/CallDetailsModal.tsx` | Same proxy pattern for the audio player in Call Insights |
-| `supabase/config.toml` | Add `[functions.proxy-recording-audio]` with `verify_jwt = true` |
+| `supabase/functions/proxy-recording-audio/index.ts` | Replace the `getClaims` auth block (lines 24-38) with the standard `getUser(token)` pattern used elsewhere |
 
-### Edge Function: `proxy-recording-audio`
-- Accepts `bookingId` as query param
-- Validates JWT (authenticated users only)
-- Looks up `kixie_link` from `bookings` table using service role
-- Fetches the audio from `recordings.vixicom.com` server-side
-- Streams response back with `Content-Type: audio/mpeg`, CORS headers, and caching headers
-- Returns 404 if no recording URL exists, 502 if upstream fetch fails
+### Specific Change
 
-### Frontend Change (TranscriptionModal)
-```text
-Modal opens → kixieLink exists?
-  → Yes → setState(audioLoading=true)
-  → fetch via supabase.functions.invoke('proxy-recording-audio', { bookingId })
-  → Create blob URL from response
-  → Set <audio src={blobUrl}>
-  → setState(audioLoading=false)
+Replace:
+```typescript
+const supabase = createClient(url, anonKey, { global: { headers: { Authorization: authHeader } } });
+const { data: claimsData, error: claimsError } = await supabase.auth.getClaims(authHeader.replace("Bearer ", ""));
+if (claimsError || !claimsData?.claims) { return 401; }
 ```
 
-This approach avoids all CORS/network issues since blob URLs are local to the browser. The edge function runs in the same environment that already successfully fetches these URLs for transcription.
+With:
+```typescript
+const anonClient = createClient(url, anonKey);
+const token = authHeader.replace("Bearer ", "");
+const { data: { user }, error: authError } = await anonClient.auth.getUser(token);
+if (authError || !user) { return 401; }
+```
+
+Single file, ~5 lines changed. Everything else in the function (booking lookup, audio fetch, streaming) is correct.
 
