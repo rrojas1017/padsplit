@@ -1,0 +1,1 @@
+ALTER TABLE public.coaching_settings ADD COLUMN IF NOT EXISTS cost_alerts_enabled boolean NOT NULL DEFAULT true;

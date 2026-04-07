@@ -1234,6 +1234,7 @@ export type Database = {
       }
       coaching_settings: {
         Row: {
+          cost_alerts_enabled: boolean
           id: string
           quiz_enforcement_enabled: boolean
           reminder_enabled: boolean
@@ -1241,6 +1242,7 @@ export type Database = {
           updated_by: string | null
         }
         Insert: {
+          cost_alerts_enabled?: boolean
           id?: string
           quiz_enforcement_enabled?: boolean
           reminder_enabled?: boolean
@@ -1248,6 +1250,7 @@ export type Database = {
           updated_by?: string | null
         }
         Update: {
+          cost_alerts_enabled?: boolean
           id?: string
           quiz_enforcement_enabled?: boolean
           reminder_enabled?: boolean
