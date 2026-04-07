@@ -55,7 +55,7 @@ const RATING_COLORS = {
 
 export default function CoachingHub() {
   usePageTracking('view_coaching_hub');
-  const { coachingBookings, isLoading: coachingLoading } = useCoachingData();
+  const { coachingBookings, isLoading: coachingLoading } = useCoachingData({ dateRange, customDates });
   const { agents } = useAgents();
   const { user } = useAuth();
   const { coachingBlocked } = useDailyCostGate();
