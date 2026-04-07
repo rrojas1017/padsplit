@@ -7,6 +7,7 @@ import { Headphones, Play, Pause, Loader2, Volume2, CheckCircle, Target, Lock } 
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/contexts/AuthContext';
 import { CoachingQuizModal } from './CoachingQuizModal';
+import { useCoachingSettings } from '@/hooks/useCoachingSettings';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 
 interface CoachingAudioPlayerProps {
@@ -38,6 +39,7 @@ export function CoachingAudioPlayer({
 }: CoachingAudioPlayerProps) {
   const { user, hasRole } = useAuth();
   const isSuperAdmin = hasRole(['super_admin']);
+  const { quizEnforcementEnabled } = useCoachingSettings();
   const [isGenerating, setIsGenerating] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentAudioUrl, setCurrentAudioUrl] = useState<string | null>(audioUrl || null);
@@ -122,7 +124,7 @@ export function CoachingAudioPlayer({
     setProgress(0);
     
     // If the owning agent finished listening and hasn't passed the quiz yet, show the quiz
-    if (isOwningAgent && !hasPassedQuiz && currentAudioUrl) {
+    if (isOwningAgent && !hasPassedQuiz && currentAudioUrl && quizEnforcementEnabled) {
       // Mark as listened first
       if (!hasBeenListened) {
         setHasBeenListened(true);
