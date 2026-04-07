@@ -46,6 +46,12 @@ export default function MyQA() {
     agentId: myAgent?.id
   });
 
+  // Get Jeff's coaching data
+  const { coachingBookingsWithAudio: jeffCoachingBookings, isLoading: isJeffCoachingLoading } = useCoachingData({
+    agentId: myAgent?.id,
+    includeAudio: true,
+  });
+
   // Filter by date range
   const filteredBookings = useMemo(() => {
     if (dateRange === 'all') return qaBookings;
