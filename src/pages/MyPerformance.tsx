@@ -135,11 +135,16 @@ export default function MyPerformance() {
     agentId: myAgent?.id,
     includeAudio: true,
   });
+
+  // Fetch QA coaching data (Katty) for this agent
+  const { qaCoachingBookings, isLoading: qaCoachingLoading } = useQACoachingData({
+    agentId: myAgent?.id,
+  });
   
   // Fetch weekly goal for current agent
   const { goal: myGoal, isLoading: goalLoading } = useMyGoal();
   
-  const isLoading = bookingsLoading || agentsLoading || coachingLoading || goalLoading;
+  const isLoading = bookingsLoading || agentsLoading || coachingLoading || goalLoading || qaCoachingLoading;
   const { coachingBlocked } = useDailyCostGate();
   
   const today = new Date();
