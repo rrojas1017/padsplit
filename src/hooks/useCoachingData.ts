@@ -112,7 +112,7 @@ export function useCoachingData(options: UseCoachingDataOptions = {}) {
   const [coachingBookingsWithAudio, setCoachingBookingsWithAudio] = useState<CoachingBookingWithAudio[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
-  const { agentId, includeAudio = false } = options;
+  const { agentId, includeAudio = false, dateRange, customDates } = options;
 
   useEffect(() => {
     if (authLoading || !user) return;
@@ -120,7 +120,7 @@ export function useCoachingData(options: UseCoachingDataOptions = {}) {
     const fetchCoachingData = async () => {
       setIsLoading(true);
       try {
-        const allData = await fetchAllPages();
+        const allData = await fetchAllPages(dateRange, customDates);
 
         let filteredData = allData;
         if (agentId) {
@@ -197,7 +197,7 @@ export function useCoachingData(options: UseCoachingDataOptions = {}) {
     };
 
     fetchCoachingData();
-  }, [user, authLoading, agents, agentId, includeAudio]);
+  }, [user, authLoading, agents, agentId, includeAudio, dateRange, customDates]);
 
   return { coachingBookings, coachingBookingsWithAudio, isLoading };
 }
