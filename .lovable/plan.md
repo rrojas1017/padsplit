@@ -1,33 +1,36 @@
 
 
-# Fix: Proxy Recording Audio Edge Function Auth Error
+# Add Jeff (Coach) Audio to Agent Views Alongside Katty (QA)
 
 ## Problem
-The `proxy-recording-audio` edge function uses `supabase.auth.getClaims()` — a method that **does not exist** in the Supabase JS client. This causes the function to return a 401 error, which the `ProxiedAudioPlayer` displays as "Failed to fetch".
+Agents currently see Jeff the Coach only on the **My Performance** page and Katty the QA Coach only on the **My QA** page. Each booking should show both coaches side by side so agents can access all coaching in one place.
 
 ## Solution
-Replace `getClaims()` with `getUser()`, matching the pattern used by every other edge function in this project.
+Add Katty's QA coaching audio player to the **My Performance** page alongside Jeff's existing player, and add Jeff's coaching audio player to the **My QA** page alongside Katty's existing player. This way, regardless of which page the agent visits, they see both coaches for each booking.
 
-| File | Change |
-|------|--------|
-| `supabase/functions/proxy-recording-audio/index.ts` | Replace the `getClaims` auth block (lines 24-38) with the standard `getUser(token)` pattern used elsewhere |
+## Changes
 
-### Specific Change
+### 1. `src/pages/MyPerformance.tsx`
+- Import `useQACoachingData` and `QACoachingAudioPlayer`
+- Call `useQACoachingData({ agentId: myAgent?.id })` to fetch QA coaching data
+- In the bookings list (line ~530), after Jeff's `CoachingAudioPlayer`, add Katty's `QACoachingAudioPlayer` by matching `bookingId`
+- In the "Latest Coaching" card (line ~570), add Katty's player below Jeff's
+- Label each player clearly: "Jeff (Coach)" and "Katty (QA)"
 
-Replace:
-```typescript
-const supabase = createClient(url, anonKey, { global: { headers: { Authorization: authHeader } } });
-const { data: claimsData, error: claimsError } = await supabase.auth.getClaims(authHeader.replace("Bearer ", ""));
-if (claimsError || !claimsData?.claims) { return 401; }
+### 2. `src/pages/MyQA.tsx`
+- Import `useCoachingData` and `CoachingAudioPlayer`
+- Call `useCoachingData({ agentId: myAgent?.id, includeAudio: true })` to fetch Jeff's coaching data
+- In the bookings list, after Katty's `QACoachingAudioPlayer`, add Jeff's `CoachingAudioPlayer` by matching `bookingId`
+- Label each player: "Jeff (Coach)" and "Katty (QA)"
+
+### 3. Both pages: Layout per booking row
+Each booking entry will show a small two-row audio section:
+
+```text
+[ Member Name  |  Market  |  Date ]
+  🎧 Jeff (Coach):  [▶ Play]
+  🎧 Katty (QA):    [▶ Play]
 ```
 
-With:
-```typescript
-const anonClient = createClient(url, anonKey);
-const token = authHeader.replace("Bearer ", "");
-const { data: { user }, error: authError } = await anonClient.auth.getUser(token);
-if (authError || !user) { return 401; }
-```
-
-Single file, ~5 lines changed. Everything else in the function (booking lookup, audio fetch, streaming) is correct.
+This keeps the existing player components and just stacks them with labels.
 
