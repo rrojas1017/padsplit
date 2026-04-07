@@ -55,13 +55,13 @@ const RATING_COLORS = {
 
 export default function CoachingHub() {
   usePageTracking('view_coaching_hub');
-  const { coachingBookings, isLoading: coachingLoading } = useCoachingData({ dateRange, customDates });
   const { agents } = useAgents();
   const { user } = useAuth();
   const { coachingBlocked } = useDailyCostGate();
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
   const [dateRange, setDateRange] = useState<DateRangeFilterType>('7d');
   const [customDates, setCustomDates] = useState<CalcCustomDateRange | undefined>(undefined);
+  const { coachingBookings, isLoading: coachingLoading } = useCoachingData({ dateRange, customDates });
 
   const handleRangeChange = (range: DateFilterValue, dates?: CustomDateRange) => {
     setDateRange(range as DateRangeFilterType);
