@@ -150,7 +150,7 @@ export default function CoachingEngagement() {
       const jeffListened = jeffBookings.filter(b => b.coachingAudioListenedAt).length;
       const jeffTotal = jeffBookings.length;
       const jeffPercentage = jeffTotal > 0 ? Math.round((jeffListened / jeffTotal) * 100) : 0;
-      const jeffQuizPassed = quizResults.filter(q => q.quiz_type === 'jeff_coaching' && jeffBookings.some(b => b.bookingId === q.booking_id)).length;
+      const jeffQuizPassed = quizResults.filter(q => q.quiz_type === 'jeff_coaching' && jeffBookings.some(b => b.id === q.booking_id)).length;
       
       // Katty's stats for this agent
       const kattyBookings = filteredKattyBookings.filter(b => b.agentId === agent.id);
