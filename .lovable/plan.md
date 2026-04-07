@@ -1,33 +1,29 @@
 
 
-# Fix: Coaching Engagement Page Slow Loading
+# Fix: Coaching Hub Slow Loading
 
 ## Root Cause
 
-Both `useCoachingData` and `useQACoachingData` fetch **every record** from `booking_transcriptions` (paginating 1000 at a time for Jeff's data), downloading full `agent_feedback` JSON blobs for all historical records. The page defaults to "today" but filters client-side after loading everything. As data grows, this gets progressively slower.
+Same issue as Coaching Engagement: `useCoachingData()` paginates through ALL `booking_transcriptions` records (1000 at a time), downloading full `agent_feedback` JSON blobs for every historical record. The Coaching Hub defaults to "Last 7 Days" but filters client-side after loading everything.
 
 ## Solution
 
-Create a dedicated lightweight hook for the Coaching Engagement page that:
-1. Only fetches the columns needed (audio URLs, listened timestamps — no `agent_feedback` JSON)
-2. Applies date filtering at the database level
-3. Runs a single query instead of paginated loops
+Add optional `dateRange` and `customDates` parameters to `useCoachingData` so it can apply server-side date filtering via `.gte()` / `.lte()` on `bookings.booking_date`. When a date range is provided, the paginated loop will fetch far fewer records.
 
 ## Changes
 
-### 1. New hook: `src/hooks/useCoachingEngagementData.ts`
-- Single query to `booking_transcriptions` selecting only: `booking_id`, `coaching_audio_url`, `coaching_audio_listened_at`, `qa_coaching_audio_url`, `qa_coaching_audio_listened_at`, plus `bookings(booking_date, agent_id)`
-- Accepts `dateRange` and `customDates` as parameters to filter server-side via `.gte()` / `.lte()` on `bookings.booking_date`
-- Only fetches rows where at least one audio URL exists (`.or('coaching_audio_url.not.is.null,qa_coaching_audio_url.not.is.null')`)
-- Returns lightweight typed arrays for Jeff and Katty engagement data
+### 1. `src/hooks/useCoachingData.ts`
+- Add `dateRange` and `customDates` to `UseCoachingDataOptions`
+- In `fetchAllPages()`, accept date params and apply `.gte('bookings.booking_date', startStr).lte('bookings.booking_date', endStr)` when not "all"
+- This reduces the query from thousands of records to just the relevant window
 
-### 2. Update `src/pages/CoachingEngagement.tsx`
-- Replace `useCoachingData({ includeAudio: true })` and `useQACoachingData()` with the new `useCoachingEngagementData({ dateRange, customDates })`
-- Remove client-side date filtering logic (lines ~95-128) since it's now server-side
-- Keep all existing UI, charts, and quiz result logic unchanged
+### 2. `src/pages/CoachingHub.tsx`
+- Pass `dateRange` and `customDates` to `useCoachingData({ dateRange, customDates })`
+- Remove the client-side `dateFilteredCoachingBookings` memo (lines 101-112) since filtering now happens server-side
+- Use `coachingBookings` directly (already filtered by DB)
 
 ### Impact
-- Instead of fetching thousands of full records with large JSON, fetches only rows with audio and only the 4-5 small columns needed
-- Date filtering at DB level means "today" loads near-instantly
-- No changes to any other page — MyPerformance, MyQA, CoachingHub all keep their existing hooks
+- "Last 7 Days" (default) loads only recent records — near-instant
+- No changes to other pages that use `useCoachingData` without date params (they continue to fetch all, as before)
+- All existing UI, charts, and calculations remain unchanged
 
