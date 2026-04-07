@@ -28,7 +28,47 @@ import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { useState, useEffect } from 'react';
 
-export default function Settings() {
+function CoachingEnforcementCard() {
+  const { quizEnforcementEnabled, reminderEnabled, updateSettings, isLoading } = useCoachingSettings();
+
+  if (isLoading) return null;
+
+  return (
+    <div className="bg-card rounded-xl border border-border p-6 shadow-card">
+      <div className="flex items-center gap-3 mb-6">
+        <GraduationCap className="w-5 h-5 text-accent" />
+        <div>
+          <h3 className="text-lg font-semibold text-foreground">Coaching Enforcement</h3>
+          <p className="text-sm text-muted-foreground">Control quiz requirements and agent reminders</p>
+        </div>
+      </div>
+      <div className="space-y-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <Label className="text-sm font-medium">Quiz Required After Listening</Label>
+            <p className="text-xs text-muted-foreground">Agents must pass a quiz after hearing coaching feedback</p>
+          </div>
+          <Switch
+            checked={quizEnforcementEnabled}
+            onCheckedChange={(checked) => updateSettings({ quizEnforcementEnabled: checked })}
+          />
+        </div>
+        <div className="flex items-center justify-between">
+          <div>
+            <Label className="text-sm font-medium">Show Reminder Banners</Label>
+            <p className="text-xs text-muted-foreground">Agents see pending coaching session reminders</p>
+          </div>
+          <Switch
+            checked={reminderEnabled}
+            onCheckedChange={(checked) => updateSettings({ reminderEnabled: checked })}
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
   usePageTracking('view_settings');
   const { theme, toggleTheme } = useTheme();
   const { hasRole } = useAuth();
