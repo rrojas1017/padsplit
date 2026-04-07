@@ -29,7 +29,7 @@ import { toast } from 'sonner';
 import { useState, useEffect } from 'react';
 
 function CoachingEnforcementCard() {
-  const { quizEnforcementEnabled, reminderEnabled, updateSettings, isLoading } = useCoachingSettings();
+  const { quizEnforcementEnabled, reminderEnabled, costAlertsEnabled, updateSettings, isLoading } = useCoachingSettings();
 
   if (isLoading) return null;
 
@@ -61,6 +61,16 @@ function CoachingEnforcementCard() {
           <Switch
             checked={reminderEnabled}
             onCheckedChange={(checked) => updateSettings({ reminderEnabled: checked })}
+          />
+        </div>
+        <div className="flex items-center justify-between">
+          <div>
+            <Label className="text-sm font-medium">Cost Alert Banners</Label>
+            <p className="text-xs text-muted-foreground">Show cost monitoring alerts on the Billing page</p>
+          </div>
+          <Switch
+            checked={costAlertsEnabled}
+            onCheckedChange={(checked) => updateSettings({ costAlertsEnabled: checked })}
           />
         </div>
       </div>
