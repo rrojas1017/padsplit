@@ -7,25 +7,21 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useAgents } from '@/contexts/AgentsContext';
 import { useAuth } from '@/contexts/AuthContext';
-import { useCoachingData, CoachingBookingWithAudio } from '@/hooks/useCoachingData';
-import { useQACoachingData, QACoachingBooking } from '@/hooks/useQACoachingData';
+import { useCoachingEngagementData } from '@/hooks/useCoachingEngagementData';
 import { DateRangeFilter, DateFilterValue, CustomDateRange } from '@/components/dashboard/DateRangeFilter';
-import { getDateRangeFromFilter, DateRangeFilter as DateRangeFilterType, CustomDateRange as CalcCustomDateRange } from '@/utils/dashboardCalculations';
+import { DateRangeFilter as DateRangeFilterType, CustomDateRange as CalcCustomDateRange } from '@/utils/dashboardCalculations';
 import { supabase } from '@/integrations/supabase/client';
 import { 
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, ResponsiveContainer, Tooltip as RechartsTooltip, Legend, Cell
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, ResponsiveContainer, Tooltip as RechartsTooltip, Legend
 } from 'recharts';
 import { 
   Headphones, 
-  CheckCircle2, 
-  Clock,
   Loader2,
   Trophy,
   Users,
   Mic,
   ClipboardCheck,
 } from 'lucide-react';
-import { startOfDay } from 'date-fns';
 import { useEffect } from 'react';
 
 interface Site {
@@ -54,8 +50,6 @@ interface AgentEngagementStats {
 export default function CoachingEngagement() {
   usePageTracking('view_coaching_engagement');
   
-  const { coachingBookingsWithAudio, isLoading: jeffLoading } = useCoachingData({ includeAudio: true });
-  const { qaCoachingBookings, isLoading: kattyLoading } = useQACoachingData();
   const { agents } = useAgents();
   const { user } = useAuth();
   
@@ -63,6 +57,9 @@ export default function CoachingEngagement() {
   const [customDates, setCustomDates] = useState<CalcCustomDateRange | undefined>(undefined);
   const [selectedSiteId, setSelectedSiteId] = useState<string>('all');
   const [sites, setSites] = useState<Site[]>([]);
+
+  // Lightweight server-side filtered data
+  const { records, isLoading } = useCoachingEngagementData({ dateRange, customDates });
 
   // Fetch sites
   useEffect(() => {
@@ -91,41 +88,11 @@ export default function CoachingEngagement() {
     return agents.filter(a => a.siteId === selectedSiteId);
   }, [agents, selectedSiteId]);
 
-  // Filter Jeff's coaching by date and agents
-  const filteredJeffBookings = useMemo(() => {
+  // Filter records by agent site
+  const filteredRecords = useMemo(() => {
     const agentIds = new Set(filteredAgents.map(a => a.id));
-    let filtered = coachingBookingsWithAudio.filter(b => agentIds.has(b.agentId) && b.coachingAudioUrl);
-    
-    if (dateRange !== 'all') {
-      const { start, end } = getDateRangeFromFilter(dateRange, customDates);
-      filtered = filtered.filter(b => {
-        const bookingDate = b.bookingDate instanceof Date 
-          ? startOfDay(b.bookingDate)
-          : startOfDay(new Date(b.bookingDate + 'T00:00:00'));
-        return bookingDate >= startOfDay(start) && bookingDate <= startOfDay(end);
-      });
-    }
-    
-    return filtered;
-  }, [coachingBookingsWithAudio, filteredAgents, dateRange, customDates]);
-
-  // Filter Katty's QA coaching by date and agents
-  const filteredKattyBookings = useMemo(() => {
-    const agentIds = new Set(filteredAgents.map(a => a.id));
-    let filtered = qaCoachingBookings.filter(b => agentIds.has(b.agentId) && b.qaCoachingAudioUrl);
-    
-    if (dateRange !== 'all') {
-      const { start, end } = getDateRangeFromFilter(dateRange, customDates);
-      filtered = filtered.filter(b => {
-        const bookingDate = b.bookingDate instanceof Date 
-          ? startOfDay(b.bookingDate)
-          : startOfDay(new Date(b.bookingDate + 'T00:00:00'));
-        return bookingDate >= startOfDay(start) && bookingDate <= startOfDay(end);
-      });
-    }
-    
-    return filtered;
-  }, [qaCoachingBookings, filteredAgents, dateRange, customDates]);
+    return records.filter(r => agentIds.has(r.agentId));
+  }, [records, filteredAgents]);
 
   // Fetch quiz results
   const [quizResults, setQuizResults] = useState<{booking_id: string; quiz_type: string; user_id: string}[]>([]);
@@ -144,20 +111,21 @@ export default function CoachingEngagement() {
   const agentEngagementStats: AgentEngagementStats[] = useMemo(() => {
     return filteredAgents.map(agent => {
       const site = sites.find(s => s.id === agent.siteId);
+      const agentRecords = filteredRecords.filter(r => r.agentId === agent.id);
       
-      // Jeff's stats for this agent
-      const jeffBookings = filteredJeffBookings.filter(b => b.agentId === agent.id);
-      const jeffListened = jeffBookings.filter(b => b.coachingAudioListenedAt).length;
-      const jeffTotal = jeffBookings.length;
+      // Jeff's stats
+      const jeffRecords = agentRecords.filter(r => r.coachingAudioUrl);
+      const jeffListened = jeffRecords.filter(r => r.coachingAudioListenedAt).length;
+      const jeffTotal = jeffRecords.length;
       const jeffPercentage = jeffTotal > 0 ? Math.round((jeffListened / jeffTotal) * 100) : 0;
-      const jeffQuizPassed = quizResults.filter(q => q.quiz_type === 'jeff_coaching' && jeffBookings.some(b => b.id === q.booking_id)).length;
+      const jeffQuizPassed = quizResults.filter(q => q.quiz_type === 'jeff_coaching' && jeffRecords.some(r => r.bookingId === q.booking_id)).length;
       
-      // Katty's stats for this agent
-      const kattyBookings = filteredKattyBookings.filter(b => b.agentId === agent.id);
-      const kattyListened = kattyBookings.filter(b => b.qaCoachingAudioListenedAt).length;
-      const kattyTotal = kattyBookings.length;
+      // Katty's stats
+      const kattyRecords = agentRecords.filter(r => r.qaCoachingAudioUrl);
+      const kattyListened = kattyRecords.filter(r => r.qaCoachingAudioListenedAt).length;
+      const kattyTotal = kattyRecords.length;
       const kattyPercentage = kattyTotal > 0 ? Math.round((kattyListened / kattyTotal) * 100) : 0;
-      const kattyQuizPassed = quizResults.filter(q => q.quiz_type === 'katty_qa' && kattyBookings.some(b => b.bookingId === q.booking_id)).length;
+      const kattyQuizPassed = quizResults.filter(q => q.quiz_type === 'katty_qa' && kattyRecords.some(r => r.bookingId === q.booking_id)).length;
       
       // Combined
       const combinedTotal = jeffTotal + kattyTotal;
@@ -169,29 +137,23 @@ export default function CoachingEngagement() {
         agentName: agent.name,
         siteName: site?.name || 'Unknown',
         siteId: agent.siteId,
-        jeffTotal,
-        jeffListened,
-        jeffPercentage,
-        jeffQuizPassed,
-        kattyTotal,
-        kattyListened,
-        kattyPercentage,
-        kattyQuizPassed,
-        combinedTotal,
-        combinedListened,
-        combinedPercentage,
+        jeffTotal, jeffListened, jeffPercentage, jeffQuizPassed,
+        kattyTotal, kattyListened, kattyPercentage, kattyQuizPassed,
+        combinedTotal, combinedListened, combinedPercentage,
       };
     }).filter(s => s.combinedTotal > 0).sort((a, b) => b.combinedPercentage - a.combinedPercentage);
-  }, [filteredAgents, filteredJeffBookings, filteredKattyBookings, sites, quizResults]);
+  }, [filteredAgents, filteredRecords, sites, quizResults]);
 
   // Summary stats
   const summaryStats = useMemo(() => {
-    const jeffTotal = filteredJeffBookings.length;
-    const jeffListened = filteredJeffBookings.filter(b => b.coachingAudioListenedAt).length;
+    const jeffRecords = filteredRecords.filter(r => r.coachingAudioUrl);
+    const jeffListened = jeffRecords.filter(r => r.coachingAudioListenedAt).length;
+    const jeffTotal = jeffRecords.length;
     const jeffPercentage = jeffTotal > 0 ? Math.round((jeffListened / jeffTotal) * 100) : 0;
     
-    const kattyTotal = filteredKattyBookings.length;
-    const kattyListened = filteredKattyBookings.filter(b => b.qaCoachingAudioListenedAt).length;
+    const kattyRecords = filteredRecords.filter(r => r.qaCoachingAudioUrl);
+    const kattyListened = kattyRecords.filter(r => r.qaCoachingAudioListenedAt).length;
+    const kattyTotal = kattyRecords.length;
     const kattyPercentage = kattyTotal > 0 ? Math.round((kattyListened / kattyTotal) * 100) : 0;
     
     const combinedTotal = jeffTotal + kattyTotal;
@@ -206,9 +168,9 @@ export default function CoachingEngagement() {
       combined: { total: combinedTotal, listened: combinedListened, percentage: combinedPercentage },
       topAgent,
     };
-  }, [filteredJeffBookings, filteredKattyBookings, agentEngagementStats]);
+  }, [filteredRecords, agentEngagementStats]);
 
-  // Chart data for comparison
+  // Chart data
   const chartData = useMemo(() => {
     return agentEngagementStats.slice(0, 10).map(agent => ({
       name: agent.agentName.split(' ')[0],
@@ -223,7 +185,6 @@ export default function CoachingEngagement() {
     return 'destructive';
   };
 
-  const isLoading = jeffLoading || kattyLoading;
   const isSupervisor = user?.role === 'supervisor';
 
   return (
@@ -277,7 +238,6 @@ export default function CoachingEngagement() {
           <>
             {/* Summary Cards */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-              {/* Jeff's Coaching */}
               <Card>
                 <CardContent className="pt-6">
                   <div className="flex items-center justify-between mb-3">
@@ -296,7 +256,6 @@ export default function CoachingEngagement() {
                 </CardContent>
               </Card>
 
-              {/* Katty's QA Coaching */}
               <Card>
                 <CardContent className="pt-6">
                   <div className="flex items-center justify-between mb-3">
@@ -315,7 +274,6 @@ export default function CoachingEngagement() {
                 </CardContent>
               </Card>
 
-              {/* Combined Engagement */}
               <Card>
                 <CardContent className="pt-6">
                   <div className="flex items-center justify-between mb-3">
@@ -334,7 +292,6 @@ export default function CoachingEngagement() {
                 </CardContent>
               </Card>
 
-              {/* Top Engaged Agent */}
               <Card>
                 <CardContent className="pt-6">
                   <div className="flex items-center justify-between mb-3">
