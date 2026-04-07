@@ -423,9 +423,11 @@ export default function CoachingEngagement() {
                         <TableHead className="w-12">#</TableHead>
                         <TableHead>Agent</TableHead>
                         <TableHead>Site</TableHead>
-                        <TableHead className="text-center">Jeff's Coaching</TableHead>
-                        <TableHead className="text-center">Katty's QA</TableHead>
-                        <TableHead className="text-center">Combined</TableHead>
+                          <TableHead className="text-center">Jeff's Coaching</TableHead>
+                          <TableHead className="text-center">Jeff Quiz</TableHead>
+                          <TableHead className="text-center">Katty's QA</TableHead>
+                          <TableHead className="text-center">Katty Quiz</TableHead>
+                          <TableHead className="text-center">Combined</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -449,6 +451,9 @@ export default function CoachingEngagement() {
                             </div>
                           </TableCell>
                           <TableCell className="text-center">
+                            <span className="text-sm font-medium">{agent.jeffQuizPassed}/{agent.jeffTotal}</span>
+                          </TableCell>
+                          <TableCell className="text-center">
                             <div className="flex items-center justify-center gap-2">
                               <span className="text-sm text-muted-foreground">
                                 {agent.kattyListened}/{agent.kattyTotal}
@@ -459,6 +464,9 @@ export default function CoachingEngagement() {
                                 </Badge>
                               )}
                             </div>
+                          </TableCell>
+                          <TableCell className="text-center">
+                            <span className="text-sm font-medium">{agent.kattyQuizPassed}/{agent.kattyTotal}</span>
                           </TableCell>
                           <TableCell className="text-center">
                             <div className="flex items-center justify-center gap-2">
