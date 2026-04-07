@@ -68,7 +68,7 @@ function CoachingEnforcementCard() {
   );
 }
 
-
+export default function Settings() {
   usePageTracking('view_settings');
   const { theme, toggleTheme } = useTheme();
   const { hasRole } = useAuth();
