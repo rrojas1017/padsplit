@@ -8,6 +8,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useBookings } from '@/contexts/BookingsContext';
 import { useAgents } from '@/contexts/AgentsContext';
 import { useCoachingData, CoachingBookingWithAudio } from '@/hooks/useCoachingData';
+import { useQACoachingData } from '@/hooks/useQACoachingData';
 import { useMyGoal } from '@/hooks/useAgentGoals';
 import { BroadcastBanner } from '@/components/broadcast/BroadcastBanner';
 import { CalendarDays, TrendingUp, Clock, CheckCircle2, Trophy, GraduationCap, ThumbsUp, Lightbulb, Star, Headphones, Timer, Check, Info, Target, PhoneOff } from 'lucide-react';
@@ -16,6 +17,7 @@ import { Area, AreaChart, XAxis, YAxis, CartesianGrid, Tooltip as RechartsToolti
 import { Skeleton } from '@/components/ui/skeleton';
 import { AgentFeedback } from '@/types';
 import { CoachingAudioPlayer } from '@/components/coaching/CoachingAudioPlayer';
+import { QACoachingAudioPlayer } from '@/components/qa/QACoachingAudioPlayer';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { Progress } from '@/components/ui/progress';
 import { cn } from '@/lib/utils';
