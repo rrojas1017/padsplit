@@ -8,6 +8,7 @@ import { useCoachingData } from '@/hooks/useCoachingData';
 import { QACoachingAudioPlayer } from '@/components/qa/QACoachingAudioPlayer';
 import { CoachingAudioPlayer } from '@/components/coaching/CoachingAudioPlayer';
 import { BroadcastBanner } from '@/components/broadcast/BroadcastBanner';
+import { CoachingReminderBanner } from '@/components/coaching/CoachingReminderBanner';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { DateRangeFilter, DateFilterValue, CustomDateRange } from '@/components/dashboard/DateRangeFilter';
@@ -230,6 +231,7 @@ export default function MyQA() {
       subtitle="Quality assurance scores for your calls"
     >
       <BroadcastBanner />
+      <CoachingReminderBanner />
       <div className="space-y-6">
         {/* Controls */}
         <div className="flex flex-wrap justify-between items-center gap-4">

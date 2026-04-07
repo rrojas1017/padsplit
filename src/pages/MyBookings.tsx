@@ -3,6 +3,7 @@ import { useMyBookingsData } from '@/hooks/useMyBookingsData';
 import { usePageTracking } from '@/hooks/usePageTracking';
 import { useAuth } from '@/contexts/AuthContext';
 import { BroadcastBanner } from '@/components/broadcast/BroadcastBanner';
+import { CoachingReminderBanner } from '@/components/coaching/CoachingReminderBanner';
 import { ContactProfileHoverCard } from '@/components/reports/ContactProfileHoverCard';
 import { shouldMaskContactInfo } from '@/utils/contactPrivacy';
 import { Button } from '@/components/ui/button';
@@ -265,6 +266,7 @@ export default function MyBookings() {
       subtitle="Manage and follow up on your bookings"
     >
       <BroadcastBanner />
+      <CoachingReminderBanner />
       
       {/* Summary Cards */}
       <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3 mb-6">
