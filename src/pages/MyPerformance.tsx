@@ -11,6 +11,7 @@ import { useCoachingData, CoachingBookingWithAudio } from '@/hooks/useCoachingDa
 import { useQACoachingData } from '@/hooks/useQACoachingData';
 import { useMyGoal } from '@/hooks/useAgentGoals';
 import { BroadcastBanner } from '@/components/broadcast/BroadcastBanner';
+import { CoachingReminderBanner } from '@/components/coaching/CoachingReminderBanner';
 import { CalendarDays, TrendingUp, Clock, CheckCircle2, Trophy, GraduationCap, ThumbsUp, Lightbulb, Star, Headphones, Timer, Check, Info, Target, PhoneOff } from 'lucide-react';
 import { format, subDays, startOfMonth, startOfDay, endOfDay, differenceInDays } from 'date-fns';
 import { Area, AreaChart, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer } from 'recharts';
@@ -315,6 +316,7 @@ export default function MyPerformance() {
       }
     >
       <BroadcastBanner />
+      <CoachingReminderBanner />
       
       {/* Rank Banner */}
       <div className="mb-6 p-4 rounded-xl bg-gradient-to-r from-accent/20 to-accent/5 border border-accent/30 flex items-center gap-4 animate-slide-up">

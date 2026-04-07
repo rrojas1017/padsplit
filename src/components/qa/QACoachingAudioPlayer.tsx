@@ -7,6 +7,7 @@ import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/contexts/AuthContext';
 import { CoachingQuizModal } from '@/components/coaching/CoachingQuizModal';
+import { useCoachingSettings } from '@/hooks/useCoachingSettings';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 
 interface QACoachingAudioPlayerProps {
@@ -38,6 +39,7 @@ export const QACoachingAudioPlayer: React.FC<QACoachingAudioPlayerProps> = ({
 }) => {
   const { user, hasRole } = useAuth();
   const isSuperAdmin = hasRole(['super_admin']);
+  const { quizEnforcementEnabled } = useCoachingSettings();
   const [isPlaying, setIsPlaying] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -106,7 +108,7 @@ export const QACoachingAudioPlayer: React.FC<QACoachingAudioPlayerProps> = ({
     setIsPlaying(false);
     setProgress(0);
     
-    if (isOwningAgent && !hasPassedQuiz && currentAudioUrl) {
+    if (isOwningAgent && !hasPassedQuiz && currentAudioUrl && quizEnforcementEnabled) {
       if (!hasListened) {
         await markAsListened();
       }

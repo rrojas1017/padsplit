@@ -41,9 +41,11 @@ interface AgentEngagementStats {
   jeffTotal: number;
   jeffListened: number;
   jeffPercentage: number;
+  jeffQuizPassed: number;
   kattyTotal: number;
   kattyListened: number;
   kattyPercentage: number;
+  kattyQuizPassed: number;
   combinedTotal: number;
   combinedListened: number;
   combinedPercentage: number;
@@ -125,6 +127,19 @@ export default function CoachingEngagement() {
     return filtered;
   }, [qaCoachingBookings, filteredAgents, dateRange, customDates]);
 
+  // Fetch quiz results
+  const [quizResults, setQuizResults] = useState<{booking_id: string; quiz_type: string; user_id: string}[]>([]);
+  useEffect(() => {
+    const fetchQuiz = async () => {
+      const { data } = await supabase
+        .from('coaching_quiz_results')
+        .select('booking_id, quiz_type, user_id')
+        .eq('passed', true);
+      if (data) setQuizResults(data);
+    };
+    fetchQuiz();
+  }, []);
+
   // Calculate engagement stats per agent
   const agentEngagementStats: AgentEngagementStats[] = useMemo(() => {
     return filteredAgents.map(agent => {
@@ -135,12 +150,14 @@ export default function CoachingEngagement() {
       const jeffListened = jeffBookings.filter(b => b.coachingAudioListenedAt).length;
       const jeffTotal = jeffBookings.length;
       const jeffPercentage = jeffTotal > 0 ? Math.round((jeffListened / jeffTotal) * 100) : 0;
+      const jeffQuizPassed = quizResults.filter(q => q.quiz_type === 'jeff_coaching' && jeffBookings.some(b => b.id === q.booking_id)).length;
       
       // Katty's stats for this agent
       const kattyBookings = filteredKattyBookings.filter(b => b.agentId === agent.id);
       const kattyListened = kattyBookings.filter(b => b.qaCoachingAudioListenedAt).length;
       const kattyTotal = kattyBookings.length;
       const kattyPercentage = kattyTotal > 0 ? Math.round((kattyListened / kattyTotal) * 100) : 0;
+      const kattyQuizPassed = quizResults.filter(q => q.quiz_type === 'katty_qa' && kattyBookings.some(b => b.bookingId === q.booking_id)).length;
       
       // Combined
       const combinedTotal = jeffTotal + kattyTotal;
@@ -155,15 +172,17 @@ export default function CoachingEngagement() {
         jeffTotal,
         jeffListened,
         jeffPercentage,
+        jeffQuizPassed,
         kattyTotal,
         kattyListened,
         kattyPercentage,
+        kattyQuizPassed,
         combinedTotal,
         combinedListened,
         combinedPercentage,
       };
     }).filter(s => s.combinedTotal > 0).sort((a, b) => b.combinedPercentage - a.combinedPercentage);
-  }, [filteredAgents, filteredJeffBookings, filteredKattyBookings, sites]);
+  }, [filteredAgents, filteredJeffBookings, filteredKattyBookings, sites, quizResults]);
 
   // Summary stats
   const summaryStats = useMemo(() => {
@@ -404,9 +423,11 @@ export default function CoachingEngagement() {
                         <TableHead className="w-12">#</TableHead>
                         <TableHead>Agent</TableHead>
                         <TableHead>Site</TableHead>
-                        <TableHead className="text-center">Jeff's Coaching</TableHead>
-                        <TableHead className="text-center">Katty's QA</TableHead>
-                        <TableHead className="text-center">Combined</TableHead>
+                          <TableHead className="text-center">Jeff's Coaching</TableHead>
+                          <TableHead className="text-center">Jeff Quiz</TableHead>
+                          <TableHead className="text-center">Katty's QA</TableHead>
+                          <TableHead className="text-center">Katty Quiz</TableHead>
+                          <TableHead className="text-center">Combined</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -430,6 +451,9 @@ export default function CoachingEngagement() {
                             </div>
                           </TableCell>
                           <TableCell className="text-center">
+                            <span className="text-sm font-medium">{agent.jeffQuizPassed}/{agent.jeffTotal}</span>
+                          </TableCell>
+                          <TableCell className="text-center">
                             <div className="flex items-center justify-center gap-2">
                               <span className="text-sm text-muted-foreground">
                                 {agent.kattyListened}/{agent.kattyTotal}
@@ -440,6 +464,9 @@ export default function CoachingEngagement() {
                                 </Badge>
                               )}
                             </div>
+                          </TableCell>
+                          <TableCell className="text-center">
+                            <span className="text-sm font-medium">{agent.kattyQuizPassed}/{agent.kattyTotal}</span>
                           </TableCell>
                           <TableCell className="text-center">
                             <div className="flex items-center justify-center gap-2">
@@ -455,7 +482,7 @@ export default function CoachingEngagement() {
                       ))}
                       {agentEngagementStats.length === 0 && (
                         <TableRow>
-                          <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
+                          <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
                             No agents with coaching audio in selected filters
                           </TableCell>
                         </TableRow>

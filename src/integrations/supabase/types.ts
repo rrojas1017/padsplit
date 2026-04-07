@@ -1232,6 +1232,30 @@ export type Database = {
           },
         ]
       }
+      coaching_settings: {
+        Row: {
+          id: string
+          quiz_enforcement_enabled: boolean
+          reminder_enabled: boolean
+          updated_at: string | null
+          updated_by: string | null
+        }
+        Insert: {
+          id?: string
+          quiz_enforcement_enabled?: boolean
+          reminder_enabled?: boolean
+          updated_at?: string | null
+          updated_by?: string | null
+        }
+        Update: {
+          id?: string
+          quiz_enforcement_enabled?: boolean
+          reminder_enabled?: boolean
+          updated_at?: string | null
+          updated_by?: string | null
+        }
+        Relationships: []
+      }
       company_knowledge: {
         Row: {
           call_type_ids: string[] | null
