@@ -7,6 +7,7 @@ interface CoachingSettings {
   id: string;
   quizEnforcementEnabled: boolean;
   reminderEnabled: boolean;
+  costAlertsEnabled: boolean;
 }
 
 let cachedSettings: CoachingSettings | null = null;
@@ -36,6 +37,7 @@ export function useCoachingSettings() {
           id: data.id,
           quizEnforcementEnabled: data.quiz_enforcement_enabled,
           reminderEnabled: data.reminder_enabled,
+          costAlertsEnabled: (data as any).cost_alerts_enabled ?? true,
         };
         cachedSettings = s;
         setSettings(s);
@@ -45,12 +47,13 @@ export function useCoachingSettings() {
     fetch();
   }, [user]);
 
-  const updateSettings = async (updates: Partial<Pick<CoachingSettings, 'quizEnforcementEnabled' | 'reminderEnabled'>>) => {
+  const updateSettings = async (updates: Partial<Pick<CoachingSettings, 'quizEnforcementEnabled' | 'reminderEnabled' | 'costAlertsEnabled'>>) => {
     if (!settings) return;
 
     const dbUpdates: Record<string, unknown> = { updated_at: new Date().toISOString(), updated_by: user?.id };
     if (updates.quizEnforcementEnabled !== undefined) dbUpdates.quiz_enforcement_enabled = updates.quizEnforcementEnabled;
     if (updates.reminderEnabled !== undefined) dbUpdates.reminder_enabled = updates.reminderEnabled;
+    if (updates.costAlertsEnabled !== undefined) dbUpdates.cost_alerts_enabled = updates.costAlertsEnabled;
 
     const { error } = await supabase
       .from('coaching_settings')
@@ -71,6 +74,7 @@ export function useCoachingSettings() {
   return {
     quizEnforcementEnabled: settings?.quizEnforcementEnabled ?? true,
     reminderEnabled: settings?.reminderEnabled ?? true,
+    costAlertsEnabled: settings?.costAlertsEnabled ?? true,
     isLoading,
     updateSettings,
   };
