@@ -3,6 +3,8 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { useAgents } from '@/contexts/AgentsContext';
 import { AgentFeedback } from '@/types';
+import { getDateRangeFromFilter, DateRangeFilter as DateRangeFilterType, CustomDateRange as CalcCustomDateRange } from '@/utils/dashboardCalculations';
+import { format } from 'date-fns';
 
 export interface CoachingBooking {
   id: string;
@@ -30,20 +32,31 @@ export interface CoachingBookingWithAudio extends CoachingBooking {
 interface UseCoachingDataOptions {
   agentId?: string;
   includeAudio?: boolean;
+  dateRange?: DateRangeFilterType;
+  customDates?: CalcCustomDateRange;
 }
 
 const PAGE_SIZE = 1000;
 
-async function fetchAllPages() {
+async function fetchAllPages(dateRange?: DateRangeFilterType, customDates?: CalcCustomDateRange) {
   const allRows: any[] = [];
   let page = 0;
   let hasMore = true;
+
+  // Compute date bounds if provided
+  let startStr: string | undefined;
+  let endStr: string | undefined;
+  if (dateRange && dateRange !== 'all') {
+    const { start, end } = getDateRangeFromFilter(dateRange, customDates);
+    startStr = format(start, 'yyyy-MM-dd');
+    endStr = format(end, 'yyyy-MM-dd');
+  }
 
   while (hasMore) {
     const from = page * PAGE_SIZE;
     const to = from + PAGE_SIZE - 1;
 
-    const { data, error } = await supabase
+    let query = supabase
       .from('booking_transcriptions')
       .select(`
         booking_id,
@@ -69,6 +82,13 @@ async function fetchAllPages() {
       .order('updated_at', { ascending: false })
       .range(from, to);
 
+    // Apply server-side date filtering when a range is specified
+    if (startStr && endStr) {
+      query = query.gte('bookings.booking_date', startStr).lte('bookings.booking_date', endStr);
+    }
+
+    const { data, error } = await query;
+
     if (error) {
       console.error('Error fetching coaching page', page, error);
       break;
@@ -92,7 +112,7 @@ export function useCoachingData(options: UseCoachingDataOptions = {}) {
   const [coachingBookingsWithAudio, setCoachingBookingsWithAudio] = useState<CoachingBookingWithAudio[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
-  const { agentId, includeAudio = false } = options;
+  const { agentId, includeAudio = false, dateRange, customDates } = options;
 
   useEffect(() => {
     if (authLoading || !user) return;
@@ -100,7 +120,7 @@ export function useCoachingData(options: UseCoachingDataOptions = {}) {
     const fetchCoachingData = async () => {
       setIsLoading(true);
       try {
-        const allData = await fetchAllPages();
+        const allData = await fetchAllPages(dateRange, customDates);
 
         let filteredData = allData;
         if (agentId) {
@@ -177,7 +197,7 @@ export function useCoachingData(options: UseCoachingDataOptions = {}) {
     };
 
     fetchCoachingData();
-  }, [user, authLoading, agents, agentId, includeAudio]);
+  }, [user, authLoading, agents, agentId, includeAudio, dateRange, customDates]);
 
   return { coachingBookings, coachingBookingsWithAudio, isLoading };
 }
