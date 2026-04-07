@@ -8,6 +8,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useBookings } from '@/contexts/BookingsContext';
 import { useAgents } from '@/contexts/AgentsContext';
 import { useCoachingData, CoachingBookingWithAudio } from '@/hooks/useCoachingData';
+import { useQACoachingData } from '@/hooks/useQACoachingData';
 import { useMyGoal } from '@/hooks/useAgentGoals';
 import { BroadcastBanner } from '@/components/broadcast/BroadcastBanner';
 import { CalendarDays, TrendingUp, Clock, CheckCircle2, Trophy, GraduationCap, ThumbsUp, Lightbulb, Star, Headphones, Timer, Check, Info, Target, PhoneOff } from 'lucide-react';
@@ -16,6 +17,7 @@ import { Area, AreaChart, XAxis, YAxis, CartesianGrid, Tooltip as RechartsToolti
 import { Skeleton } from '@/components/ui/skeleton';
 import { AgentFeedback } from '@/types';
 import { CoachingAudioPlayer } from '@/components/coaching/CoachingAudioPlayer';
+import { QACoachingAudioPlayer } from '@/components/qa/QACoachingAudioPlayer';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { Progress } from '@/components/ui/progress';
 import { cn } from '@/lib/utils';
@@ -133,11 +135,16 @@ export default function MyPerformance() {
     agentId: myAgent?.id,
     includeAudio: true,
   });
+
+  // Fetch QA coaching data (Katty) for this agent
+  const { qaCoachingBookings, isLoading: qaCoachingLoading } = useQACoachingData({
+    agentId: myAgent?.id,
+  });
   
   // Fetch weekly goal for current agent
   const { goal: myGoal, isLoading: goalLoading } = useMyGoal();
   
-  const isLoading = bookingsLoading || agentsLoading || coachingLoading || goalLoading;
+  const isLoading = bookingsLoading || agentsLoading || coachingLoading || goalLoading || qaCoachingLoading;
   const { coachingBlocked } = useDailyCostGate();
   
   const today = new Date();
@@ -510,11 +517,11 @@ export default function MyPerformance() {
             )}
           </h3>
           
-          {/* Jeff the Coach disclaimer */}
+          {/* Coach disclaimer */}
           <div className="flex items-center gap-2 p-3 rounded-lg bg-muted/50 border border-border mb-4">
             <Info className="h-4 w-4 text-muted-foreground flex-shrink-0" />
             <p className="text-xs text-muted-foreground">
-              <span className="font-medium">Note:</span> Jeff the Coach might occasionally mispronounce some names — we apologize in advance! 😊
+              <span className="font-medium">Note:</span> Jeff (Coach) and Katty (QA) might occasionally mispronounce some names — we apologize in advance! 😊
             </p>
           </div>
           <div className="space-y-3 max-h-[400px] overflow-y-auto">
@@ -526,10 +533,11 @@ export default function MyPerformance() {
               ).map((booking) => {
                 // Find coaching data for this booking from the dedicated hook
                 const coachingData = coachingBookingsWithAudio.find(c => c.id === booking.id);
+                const qaCoachingData = qaCoachingBookings.find(c => c.bookingId === booking.id);
                 
                 return (
                   <div key={booking.id} className="p-3 rounded-lg bg-muted/50 border border-border">
-                    <div className="flex items-center justify-between gap-3">
+                    <div className="flex items-center justify-between gap-3 mb-2">
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2">
                           <p className="font-medium text-foreground text-sm truncate">{booking.memberName}</p>
@@ -544,20 +552,43 @@ export default function MyPerformance() {
                           {booking.marketCity}, {booking.marketState}
                         </span>
                       </div>
-                      {coachingLoading ? (
-                        <span className="text-xs text-muted-foreground italic">Loading...</span>
-                      ) : coachingData ? (
-                        <CoachingAudioPlayer
-                          bookingId={booking.id}
-                          audioUrl={coachingData.coachingAudioUrl || undefined}
-                          variant="button"
-                          listenedAt={coachingData.coachingAudioListenedAt}
-                          agentUserId={myAgent?.userId}
-                          coachingBlocked={coachingBlocked}
-                        />
-                      ) : (
-                        <span className="text-xs text-muted-foreground italic">No coaching yet</span>
-                      )}
+                    </div>
+                    {/* Two-row coaching section: Jeff + Katty */}
+                    <div className="flex flex-col gap-2 mt-1">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-medium text-muted-foreground w-20 flex-shrink-0">🎧 Jeff:</span>
+                        {coachingLoading ? (
+                          <span className="text-xs text-muted-foreground italic">Loading...</span>
+                        ) : coachingData ? (
+                          <CoachingAudioPlayer
+                            bookingId={booking.id}
+                            audioUrl={coachingData.coachingAudioUrl || undefined}
+                            variant="button"
+                            listenedAt={coachingData.coachingAudioListenedAt}
+                            agentUserId={myAgent?.userId}
+                            coachingBlocked={coachingBlocked}
+                          />
+                        ) : (
+                          <span className="text-xs text-muted-foreground italic">No coaching yet</span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-medium text-muted-foreground w-20 flex-shrink-0">🎙️ Katty:</span>
+                        {qaCoachingLoading ? (
+                          <span className="text-xs text-muted-foreground italic">Loading...</span>
+                        ) : qaCoachingData ? (
+                          <QACoachingAudioPlayer
+                            bookingId={booking.id}
+                            audioUrl={qaCoachingData.qaCoachingAudioUrl || null}
+                            listenedAt={qaCoachingData.qaCoachingAudioListenedAt || null}
+                            qaScore={qaCoachingData.qaScores?.percentage}
+                            variant="button"
+                            agentUserId={myAgent?.userId}
+                          />
+                        ) : (
+                          <span className="text-xs text-muted-foreground italic">No QA yet</span>
+                        )}
+                      </div>
                     </div>
                   </div>
                 );

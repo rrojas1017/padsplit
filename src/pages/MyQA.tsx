@@ -4,7 +4,9 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useAgents } from '@/contexts/AgentsContext';
 import { useQAData, calculateQAStats } from '@/hooks/useQAData';
 import { useQACoachingData } from '@/hooks/useQACoachingData';
+import { useCoachingData } from '@/hooks/useCoachingData';
 import { QACoachingAudioPlayer } from '@/components/qa/QACoachingAudioPlayer';
+import { CoachingAudioPlayer } from '@/components/coaching/CoachingAudioPlayer';
 import { BroadcastBanner } from '@/components/broadcast/BroadcastBanner';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -42,6 +44,12 @@ export default function MyQA() {
   // Get QA coaching data
   const { qaCoachingBookings, isLoading: isCoachingLoading } = useQACoachingData({
     agentId: myAgent?.id
+  });
+
+  // Get Jeff's coaching data
+  const { coachingBookingsWithAudio: jeffCoachingBookings, isLoading: isJeffCoachingLoading } = useCoachingData({
+    agentId: myAgent?.id,
+    includeAudio: true,
   });
 
   // Filter by date range
@@ -394,11 +402,11 @@ export default function MyQA() {
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
-            {/* Katty Disclaimer Note */}
+            {/* Coach Disclaimer Note */}
             <div className="flex items-center gap-2 p-3 rounded-lg bg-muted/50 border border-border">
               <span className="text-accent">🎙️</span>
               <p className="text-xs text-muted-foreground">
-                <span className="font-medium">Note:</span> Katty may occasionally mispronounce some names — we apologize in advance! 😊
+                <span className="font-medium">Note:</span> Katty (QA) and Jeff (Coach) may occasionally mispronounce some names — we apologize in advance! 😊
               </p>
             </div>
 
@@ -408,6 +416,7 @@ export default function MyQA() {
               <div className="space-y-3 max-h-[500px] overflow-y-auto">
                 {filteredBookings.map((booking) => {
                   const matchingCoaching = qaCoachingBookings.find(c => c.bookingId === booking.bookingId);
+                  const jeffCoaching = jeffCoachingBookings.find(c => c.id === booking.bookingId);
                   const scorePercentage = booking.qaScores?.percentage || 0;
                   const hasListened = !!matchingCoaching?.qaCoachingAudioListenedAt;
                   
@@ -416,7 +425,7 @@ export default function MyQA() {
                       key={booking.id} 
                       className="p-4 rounded-lg bg-muted/50 border border-border hover:bg-muted/70 transition-colors"
                     >
-                      <div className="flex items-center justify-between gap-4">
+                      <div className="flex items-center justify-between gap-4 mb-2">
                         {/* Left side - Member info */}
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2">
@@ -438,37 +447,54 @@ export default function MyQA() {
                           </div>
                         </div>
 
-                        {/* Right side - Score + Audio */}
-                        <div className="flex items-center gap-4">
-                          {/* QA Score Badge */}
-                          <Badge 
-                            className={`text-sm px-3 py-1 ${
-                              scorePercentage >= 85 
-                                ? 'bg-success/20 text-success border-success/30' 
-                                : scorePercentage >= 70 
-                                  ? 'bg-accent/20 text-accent border-accent/30' 
-                                  : 'bg-destructive/20 text-destructive border-destructive/30'
-                            }`}
-                            variant="outline"
-                          >
-                            {scorePercentage}%
-                          </Badge>
+                        {/* QA Score Badge */}
+                        <Badge 
+                          className={`text-sm px-3 py-1 ${
+                            scorePercentage >= 85 
+                              ? 'bg-success/20 text-success border-success/30' 
+                              : scorePercentage >= 70 
+                                ? 'bg-accent/20 text-accent border-accent/30' 
+                                : 'bg-destructive/20 text-destructive border-destructive/30'
+                          }`}
+                          variant="outline"
+                        >
+                          {scorePercentage}%
+                        </Badge>
+                      </div>
 
-                          {/* Katty's Coaching */}
-                          <div className="w-48">
-                            {isCoachingLoading ? (
-                              <span className="text-muted-foreground text-sm">Loading...</span>
-                            ) : (
-                              <QACoachingAudioPlayer
-                                bookingId={booking.bookingId}
-                                audioUrl={matchingCoaching?.qaCoachingAudioUrl || null}
-                                listenedAt={matchingCoaching?.qaCoachingAudioListenedAt || null}
-                                qaScore={scorePercentage}
-                                variant="button"
-                                agentUserId={myAgent?.userId}
-                              />
-                            )}
-                          </div>
+                      {/* Two-row coaching section: Katty + Jeff */}
+                      <div className="flex flex-col gap-2 mt-2">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-medium text-muted-foreground w-20 flex-shrink-0">🎙️ Katty:</span>
+                          {isCoachingLoading ? (
+                            <span className="text-muted-foreground text-sm">Loading...</span>
+                          ) : (
+                            <QACoachingAudioPlayer
+                              bookingId={booking.bookingId}
+                              audioUrl={matchingCoaching?.qaCoachingAudioUrl || null}
+                              listenedAt={matchingCoaching?.qaCoachingAudioListenedAt || null}
+                              qaScore={scorePercentage}
+                              variant="button"
+                              agentUserId={myAgent?.userId}
+                            />
+                          )}
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-medium text-muted-foreground w-20 flex-shrink-0">🎧 Jeff:</span>
+                          {isJeffCoachingLoading ? (
+                            <span className="text-muted-foreground text-sm">Loading...</span>
+                          ) : jeffCoaching ? (
+                            <CoachingAudioPlayer
+                              bookingId={booking.bookingId}
+                              audioUrl={jeffCoaching.coachingAudioUrl || undefined}
+                              variant="button"
+                              listenedAt={jeffCoaching.coachingAudioListenedAt}
+                              agentUserId={myAgent?.userId}
+                              coachingBlocked={coachingBlocked}
+                            />
+                          ) : (
+                            <span className="text-xs text-muted-foreground italic">No coaching yet</span>
+                          )}
                         </div>
                       </div>
                     </div>
