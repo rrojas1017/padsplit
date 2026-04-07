@@ -7,7 +7,8 @@ import { Switch } from '@/components/ui/switch';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useAuth } from '@/contexts/AuthContext';
-import { Database, Bell, Moon, Sun, Upload, Key, FileText, Download, Brain, Phone, BookOpen, Shield, ScrollText, Zap, Volume2, Loader2, ClipboardCheck, RefreshCw, AlertTriangle, FlaskConical, Lock, Microscope } from 'lucide-react';
+import { Database, Bell, Moon, Sun, Upload, Key, FileText, Download, Brain, Phone, BookOpen, Shield, ScrollText, Zap, Volume2, Loader2, ClipboardCheck, RefreshCw, AlertTriangle, FlaskConical, Lock, Microscope, GraduationCap } from 'lucide-react';
+import { useCoachingSettings } from '@/hooks/useCoachingSettings';
 import { ResearchPromptsSettings } from '@/components/research-insights/ResearchPromptsSettings';
 import { generateRoleDocumentationPDF } from '@/utils/roleDocumentation';
 import { generateQADocumentationPDF } from '@/utils/qaDocumentation';
@@ -439,6 +440,9 @@ export default function Settings() {
 
               {/* Katty QA Voice Settings */}
               <KattyQASettings />
+
+              {/* Coaching Enforcement Settings */}
+              <CoachingEnforcementCard />
 
               {/* STT Quality Comparison */}
               <div className="bg-card rounded-xl border border-border p-6 shadow-card">
