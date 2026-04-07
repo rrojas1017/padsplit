@@ -1,6 +1,7 @@
 import { AlertTriangle, CheckCircle, TrendingUp, RefreshCw } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useCostAlertMonitor, CostAlertLevel } from '@/hooks/useCostAlertMonitor';
+import { useCoachingSettings } from '@/hooks/useCoachingSettings';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 
@@ -32,9 +33,14 @@ function getBannerStyles(level: CostAlertLevel) {
 
 export function CostAlertBanner() {
   const { alertLevel, rollingAvg, recordCount, recentRecords, padSplitCharge, threshold, warningThreshold, isLoading, lastUpdated, refetch } = useCostAlertMonitor();
+  const { costAlertsEnabled, isLoading: settingsLoading } = useCoachingSettings();
 
-  if (isLoading) {
+  if (settingsLoading || isLoading) {
     return <Skeleton className="h-28 w-full rounded-lg" />;
+  }
+
+  if (!costAlertsEnabled) {
+    return null;
   }
 
   const styles = getBannerStyles(alertLevel);
