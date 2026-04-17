@@ -312,6 +312,54 @@ export type Database = {
           },
         ]
       }
+      api_costs_monthly_summary: {
+        Row: {
+          created_at: string
+          id: string
+          is_internal: boolean
+          month: string
+          record_count: number
+          service_provider: string
+          service_type: string
+          total_audio_seconds: number
+          total_characters: number
+          total_cost_usd: number
+          total_input_tokens: number
+          total_output_tokens: number
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          is_internal?: boolean
+          month: string
+          record_count?: number
+          service_provider: string
+          service_type: string
+          total_audio_seconds?: number
+          total_characters?: number
+          total_cost_usd?: number
+          total_input_tokens?: number
+          total_output_tokens?: number
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          is_internal?: boolean
+          month?: string
+          record_count?: number
+          service_provider?: string
+          service_type?: string
+          total_audio_seconds?: number
+          total_characters?: number
+          total_cost_usd?: number
+          total_input_tokens?: number
+          total_output_tokens?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
       api_credentials: {
         Row: {
           application_name: string
@@ -3065,6 +3113,7 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      archive_old_api_costs: { Args: never; Returns: Json }
       can_view_booking: { Args: { booking_agent_id: string }; Returns: boolean }
       claim_booking_for_transcription: {
         Args: { p_booking_id: string }
