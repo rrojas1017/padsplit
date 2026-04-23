@@ -1,5 +1,6 @@
 import { useState, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
+import { fetchAllPages } from '@/utils/fetchAllPages';
 
 export interface ExportMember {
   bookingId: string;
@@ -95,35 +96,39 @@ export function useExportMembers() {
     try {
       if (filter.type === 'booking_ids') {
         if (!filter.bookingIds.length) { setMembers([]); return; }
-        const { data, error: err } = await supabase
-          .from('booking_transcriptions')
-          .select('booking_id, research_classification, research_extraction, bookings!inner(member_name, booking_date, contact_phone, contact_email)')
-          .in('booking_id', filter.bookingIds);
-        if (err) throw err;
-        setMembers((data || []).map(mapRow));
+        const data = await fetchAllPages((from, to) =>
+          supabase
+            .from('booking_transcriptions')
+            .select('booking_id, research_classification, research_extraction, bookings!inner(member_name, booking_date, contact_phone, contact_email)')
+            .in('booking_id', filter.bookingIds)
+            .range(from, to)
+        );
+        setMembers(data.map(mapRow));
         return;
       }
 
       if (filter.type === 'human_review') {
-        const { data, error: err } = await supabase
-          .from('booking_transcriptions')
-          .select('booking_id, research_classification, research_extraction, bookings!inner(member_name, booking_date, contact_phone, contact_email)')
-          .eq('research_human_review', true)
-          .not('research_classification', 'is', null);
-        if (err) throw err;
-        setMembers((data || []).map(mapRow));
+        const data = await fetchAllPages((from, to) =>
+          supabase
+            .from('booking_transcriptions')
+            .select('booking_id, research_classification, research_extraction, bookings!inner(member_name, booking_date, contact_phone, contact_email)')
+            .eq('research_human_review', true)
+            .not('research_classification', 'is', null)
+            .range(from, to)
+        );
+        setMembers(data.map(mapRow));
         return;
       }
 
       // For keywords, reason_code, and full_report we fetch all completed records and filter
-      const { data, error: err } = await supabase
-        .from('booking_transcriptions')
-        .select('booking_id, research_classification, research_extraction, bookings!inner(member_name, booking_date, contact_phone, contact_email, record_type, has_valid_conversation)')
-        .eq('research_processing_status', 'completed')
-        .not('research_classification', 'is', null);
-      if (err) throw err;
-
-      const rows = data || [];
+      const rows = await fetchAllPages((from, to) =>
+        supabase
+          .from('booking_transcriptions')
+          .select('booking_id, research_classification, research_extraction, bookings!inner(member_name, booking_date, contact_phone, contact_email, record_type, has_valid_conversation)')
+          .eq('research_processing_status', 'completed')
+          .not('research_classification', 'is', null)
+          .range(from, to)
+      );
 
       if (filter.type === 'full_report') {
         setMembers(rows.filter((r: any) => {
