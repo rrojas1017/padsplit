@@ -15,6 +15,7 @@ import { useReasonCodeCounts, ClusterData } from '@/hooks/useReasonCodeCounts';
 import { useAddressabilityBreakdown, AddressabilityBucket } from '@/hooks/useAddressabilityBreakdown';
 import { ADDRESSABILITY_DESCRIPTIONS, CLUSTER_COLORS, extractSubReason, mapToCluster } from '@/utils/reason-code-mapping';
 import { supabase } from '@/integrations/supabase/client';
+import { fetchAllPages } from '@/utils/fetchAllPages';
 import { MemberDetailPanel } from './MemberDetailPanel';
 import { ReasonCodeDrillDown } from './ReasonCodeDrillDown';
 import { useIsAdmin } from '@/hooks/useIsAdmin';
@@ -204,12 +205,14 @@ function ReasonDrillDown({ active, total, onCodeClick, onViewAllMembers, onBack 
 
     async function fetchMembers() {
       setMembersLoading(true);
-      const { data: rows } = await supabase
-        .from('booking_transcriptions')
-        .select('id, booking_id, research_classification, bookings!inner(member_name, contact_phone, contact_email, booking_date)')
-        .not('research_classification', 'is', null)
-        .eq('research_campaign_type', 'move_out_survey')
-        .limit(500);
+      const rows = await fetchAllPages((from, to) =>
+        supabase
+          .from('booking_transcriptions')
+          .select('id, booking_id, research_classification, bookings!inner(member_name, contact_phone, contact_email, booking_date)')
+          .not('research_classification', 'is', null)
+          .eq('research_campaign_type', 'move_out_survey')
+          .range(from, to)
+      ).catch(() => null);
 
       if (!rows) { setMembersLoading(false); return; }
 
@@ -653,12 +656,14 @@ function AddressabilityDrillDown({ bucket, total, onViewAllMembers, onBack }: {
   useEffect(() => {
     async function fetchMembers() {
       setMembersLoading(true);
-      const { data: rows } = await supabase
-        .from('booking_transcriptions')
-        .select('id, research_classification, booking_id, bookings!inner(member_name, contact_phone, booking_date)')
-        .not('research_classification', 'is', null)
-        .eq('research_campaign_type', 'move_out_survey')
-        .limit(200);
+      const rows = await fetchAllPages((from, to) =>
+        supabase
+          .from('booking_transcriptions')
+          .select('id, research_classification, booking_id, bookings!inner(member_name, contact_phone, booking_date)')
+          .not('research_classification', 'is', null)
+          .eq('research_campaign_type', 'move_out_survey')
+          .range(from, to)
+      ).catch(() => null);
 
       if (!rows) { setMembersLoading(false); return; }
 

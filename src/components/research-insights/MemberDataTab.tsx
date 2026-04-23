@@ -11,6 +11,7 @@ import { Download, Search, ChevronLeft, ChevronRight, Users, Eye } from 'lucide-
 import { supabase } from '@/integrations/supabase/client';
 import { format } from 'date-fns';
 import { normalizeAddressability } from '@/utils/reason-code-mapping';
+import { fetchAllPages } from '@/utils/fetchAllPages';
 import { MemberDetailPanel } from './MemberDetailPanel';
 
 interface MemberRecord {
@@ -55,32 +56,34 @@ export function MemberDataTab({ isAdmin }: { isAdmin: boolean }) {
     setIsLoading(true);
     try {
       // Try join first, fall back to standalone query if FK isn't resolved
-      let data: any[] | null = null;
-      let error: any = null;
+      let data: any[] = [];
 
-      const joinResult = await supabase
-        .from('booking_transcriptions')
-        .select('id, booking_id, research_extraction, research_classification, research_human_review, research_audit, research_campaign_type, created_at, bookings(member_name, contact_phone)')
-        .not('research_extraction', 'is', null)
-        .eq('research_campaign_type', 'move_out_survey')
-        .order('created_at', { ascending: false });
-
-      if (joinResult.error || !joinResult.data || joinResult.data.length === 0) {
-        // Fallback: query without join
-        const fallback = await supabase
-          .from('booking_transcriptions')
-          .select('id, booking_id, research_extraction, research_classification, research_human_review, research_audit, research_campaign_type, created_at')
-          .not('research_extraction', 'is', null)
-          .eq('research_campaign_type', 'move_out_survey')
-          .order('created_at', { ascending: false });
-        data = fallback.data;
-        error = fallback.error;
-      } else {
-        data = joinResult.data;
-        error = joinResult.error;
+      try {
+        data = await fetchAllPages((from, to) =>
+          supabase
+            .from('booking_transcriptions')
+            .select('id, booking_id, research_extraction, research_classification, research_human_review, research_audit, research_campaign_type, created_at, bookings(member_name, contact_phone)')
+            .not('research_extraction', 'is', null)
+            .eq('research_campaign_type', 'move_out_survey')
+            .order('created_at', { ascending: false })
+            .range(from, to)
+        );
+      } catch {
+        data = [];
       }
 
-      if (error) throw error;
+      if (data.length === 0) {
+        // Fallback: query without join
+        data = await fetchAllPages((from, to) =>
+          supabase
+            .from('booking_transcriptions')
+            .select('id, booking_id, research_extraction, research_classification, research_human_review, research_audit, research_campaign_type, created_at')
+            .not('research_extraction', 'is', null)
+            .eq('research_campaign_type', 'move_out_survey')
+            .order('created_at', { ascending: false })
+            .range(from, to)
+        );
+      }
 
       const mapped: MemberRecord[] = (data || []).map((r: any) => {
         const b = r.bookings as any;
