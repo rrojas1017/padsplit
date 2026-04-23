@@ -1,54 +1,52 @@
 
 
-# Storage & Cost Cleanup: 60-Day Audio Purge + 90-Day api_costs Archival
+# Fix: Move-Out Survey Export Truncation
 
-## Findings (from live DB inspection)
+## Root Cause
 
-| Resource | Status | Action |
-|---|---|---|
-| `coaching_audio_url` (Jeff) | 11 files, 0 older than 60d | Lower retention to 60d (currently 15d) |
-| `qa_coaching_audio_url` (Katty) | **1,327 files, 1,280 older than 60d** | **Add to cleanup — biggest win** |
-| `cleanup-coaching-audio` cron | Runs daily at 3 AM ✓ | Already scheduled, just needs QA logic |
-| `api_costs` rows >90 days | 3,891 / 110,647 | Archive to summary table |
-| `net._http_response` | 33 MB, 409 rows, oldest = yesterday | **Not leaking** — pg_net auto-purges. No action needed. |
+Three paths for Move-Out research records silently cap rows, causing partial exports/drill-downs:
 
-## Plan
+| Location | Current cap | Records eligible | Symptom |
+|---|---|---|---|
+| `useExportMembers` (Insights export modal) | PostgREST default **1000** | 841 today, growing | Will truncate as soon as we cross 1000 |
+| `MemberDataTab` (Member Data tab table) | PostgREST default **1000** | 841 | Same — silent truncation looming |
+| `ReasonCodeChart` reason drill-down | Hard-coded `.limit(500)` then client-filtered → effectively shows only matches in the first 500 fetched | 841 (~263 in the largest cluster) | **This is what the user sees: "first 50 contacts" of a single reason-code drill-down** |
+| `ReasonCodeChart` addressability drill-down | Hard-coded `.limit(200)` | 841 | Same |
 
-### 1. Update `cleanup-coaching-audio` edge function
-- Change `RETENTION_DAYS` from `15` → `60`
-- Add a second pass that handles `qa_coaching_audio_url` / `qa_coaching_audio_generated_at` (currently ignored)
-- Increase batch limit from 100 → 500 per pass so the 1,280 backlog clears in 3 nightly runs (or one manual trigger)
-- Both passes: delete from `coaching-audio` storage bucket, then null the URL in `booking_transcriptions` (preserve timestamps for historical record)
-- Return combined stats: `{ coaching_deleted, qa_deleted, errors }`
+PostgREST returns max 1000 rows per request unless you paginate with `.range()`. Hard-coded `.limit(N)` then client-side filtering is the worst case — only the newest N records are even considered.
 
-### 2. Archive old `api_costs` rows (>90 days)
-Create a migration that:
-- Adds `api_costs_monthly_summary` table with columns: `month` (date), `service_type`, `service_provider`, `is_internal`, `record_count`, `total_cost_usd`, `total_tokens`, `total_audio_seconds`
-- Adds `archive_old_api_costs()` SECURITY DEFINER function that:
-  - Aggregates rows older than 90 days into the summary table (idempotent via `ON CONFLICT`)
-  - Deletes the archived rows from `api_costs`
-- Schedules a weekly cron job (Sundays 4 AM) to run the archive function
-- Adds RLS: super_admin only on the summary table
+## Solution
 
-### 3. Manually trigger one-time backfill
-After deploy:
-- Call `cleanup-coaching-audio` 3× to clear the 1,280 QA audio backlog (~500 per run)
-- Call `archive_old_api_costs()` once via SQL to archive the 3,891 old rows
+Add a small reusable `fetchAllPages` helper and apply it everywhere we read Move-Out records for export/drill-down. No more silent caps.
 
-### 4. Skip: `net._http_response`
-Verified — only 1 day of data retained (oldest row is from yesterday). pg_net is correctly auto-purging. No leak.
+### File changes
 
-## Files
+**1. New helper `src/utils/fetchAllPages.ts`**
+- Generic paginator: takes a function `(from, to) => PostgrestQuery` and loops `.range()` calls in 1000-row chunks until exhausted or a hard ceiling (10,000 rows) is hit.
+- Returns combined array.
 
-| File | Change |
-|---|---|
-| `supabase/functions/cleanup-coaching-audio/index.ts` | Add QA audio pass, raise retention to 60d, batch 500 |
-| New migration | Create `api_costs_monthly_summary` + `archive_old_api_costs()` function + weekly cron |
-| Manual trigger after deploy | Run cleanup 3× and `SELECT archive_old_api_costs()` once |
+**2. `src/hooks/useExportMembers.ts`**
+- Replace each `await supabase.from(...).select(...)...` with `fetchAllPages(...)`.
+- All four filter paths (`booking_ids`, `human_review`, `full_report`, `keywords`/`reason_code`) become fully paginated.
+- No behavior change for filtering — still client-side after fetch.
 
-## Expected Impact
+**3. `src/components/research-insights/MemberDataTab.tsx`**
+- Wrap the join + fallback queries in `fetchAllPages`.
+- Member Data table will now show all 841 (and grow correctly).
 
-- Storage: ~1.7 GB → ~50 MB in `coaching-audio` bucket (~96% reduction)
-- `api_costs` table: 110k → 107k rows now, then steady-state (older rows continuously archived weekly)
-- Summary table preserves billing history forever in compact form
+**4. `src/components/research-insights/ReasonCodeChart.tsx`**
+- Remove `.limit(500)` (line 212) and `.limit(200)` (line 661); use `fetchAllPages` instead.
+- Reason-code drill-down and addressability drill-down will see the full population, not just the most recent slice.
+
+### Validation
+
+After deploy, on the Move-Out Insights page:
+- Export modal → "Export Members" should report **841** records (up from ≤1000-capped count).
+- Member Data tab → table count badge shows **841**.
+- Click any reason cluster → drill-down list now shows the full member list (e.g., 263 instead of ~50) with working pagination.
+
+### Out of scope
+
+- `HumanReviewQueue` keeps its `.limit(50)` (it's an intentional triage queue, not an export).
+- Audience Survey path is untouched (already working per the user).
 
