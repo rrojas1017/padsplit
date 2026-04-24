@@ -115,15 +115,19 @@ export function StepPreview({ data }: Props) {
                     </RadioGroup>
                   ) : null}
 
-                  {currentQ.type === 'scale' && (
-                    <div className="flex gap-1.5 flex-wrap">
-                      {Array.from({ length: 10 }, (_, i) => (
-                        <Button key={i} variant="outline" size="sm" className="h-9 w-9 text-sm" disabled>
-                          {i + 1}
-                        </Button>
-                      ))}
-                    </div>
-                  )}
+                  {currentQ.type === 'scale' && (() => {
+                    const min = currentQ.scale_min ?? 1;
+                    const max = currentQ.scale_max ?? 10;
+                    return (
+                      <div className="flex gap-1.5 flex-wrap">
+                        {Array.from({ length: max - min + 1 }, (_, i) => (
+                          <Button key={i} variant="outline" size="sm" className="h-9 w-9 text-sm" disabled>
+                            {min + i}
+                          </Button>
+                        ))}
+                      </div>
+                    );
+                  })()}
 
                   {currentQ.type === 'yes_no' && (
                     <div className="flex gap-3">

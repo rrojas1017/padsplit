@@ -14,7 +14,7 @@ import type { ScriptQuestion } from '@/hooks/useResearchScripts';
 const QUESTION_TYPES = [
   { value: 'open_ended', label: 'Open Ended' },
   { value: 'multiple_choice', label: 'Multiple Choice' },
-  { value: 'scale', label: 'Rating Scale (1-10)' },
+  { value: 'scale', label: 'Rating Scale' },
   { value: 'yes_no', label: 'Yes / No' },
 ];
 
@@ -110,6 +110,32 @@ export function QuestionCard({ question, index, totalQuestions, onChange, onMove
                 />
               </div>
             </div>
+
+            {/* Scale min/max controls */}
+            {question.type === 'scale' && (
+              <div className="grid grid-cols-2 gap-3 max-w-xs">
+                <div className="space-y-1">
+                  <Label className="text-xs">Scale Min</Label>
+                  <Input
+                    type="number"
+                    value={question.scale_min ?? 1}
+                    onChange={e => onChange({ scale_min: e.target.value === '' ? undefined : parseInt(e.target.value) })}
+                    className="h-8 text-xs"
+                    placeholder="1"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs">Scale Max</Label>
+                  <Input
+                    type="number"
+                    value={question.scale_max ?? 10}
+                    onChange={e => onChange({ scale_max: e.target.value === '' ? undefined : parseInt(e.target.value) })}
+                    className="h-8 text-xs"
+                    placeholder="10"
+                  />
+                </div>
+              </div>
+            )}
 
             {/* Multiple choice options */}
             {question.type === 'multiple_choice' && (

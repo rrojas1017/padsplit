@@ -28,10 +28,13 @@ export function ScriptResultsOverview({ script, questions, responses, uniqueSess
     });
     const completionRate = uniqueSessions > 0 ? Math.round((completedSessions / uniqueSessions) * 100) : 0;
 
-    // Avg rating
+    // Avg rating — display denominator from question's scale_max (or "mixed" if multiple distinct maxes)
     const ratingQs = questions.filter(q => q.type === "scale");
     let avgRating: string | null = null;
+    let ratingMax: number | "mixed" = 10;
     if (ratingQs.length > 0) {
+      const maxes = Array.from(new Set(ratingQs.map(q => q.scale_max ?? 10)));
+      ratingMax = maxes.length === 1 ? maxes[0] : "mixed";
       const ratingResponses = responses.filter(r =>
         ratingQs.some(q => q.order === r.question_order) && (r.response_numeric ?? 0) > 0
       );
@@ -67,7 +70,7 @@ export function ScriptResultsOverview({ script, questions, responses, uniqueSess
       rate: d.total > 0 ? Math.round((d.answered / d.total) * 100) : 0,
     }));
 
-    return { completionRate, avgRating, trendData, sectionCompletion, completedSessions };
+    return { completionRate, avgRating, ratingMax, trendData, sectionCompletion, completedSessions };
   }, [questions, responses, uniqueSessions]);
 
   return (
@@ -106,7 +109,7 @@ export function ScriptResultsOverview({ script, questions, responses, uniqueSess
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-3xl font-bold">{metrics.avgRating}/10</div>
+              <div className="text-3xl font-bold">{metrics.avgRating}/{metrics.ratingMax}</div>
               <p className="text-xs text-muted-foreground">Across all rating questions</p>
             </CardContent>
           </Card>
