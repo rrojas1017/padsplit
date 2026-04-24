@@ -44,16 +44,21 @@ export function DynamicQuestionCard({ question, responses, totalRespondents }: P
     }
 
     if (question.type === "scale") {
+      const min = question.scale_min ?? 1;
+      const max = question.scale_max ?? 10;
       const freq: Record<number, number> = {};
       responses.forEach(r => {
         const val = r.response_numeric ?? parseInt(r.response_value || "0");
-        if (val > 0) freq[val] = (freq[val] || 0) + 1;
+        if (val >= min && val <= max) freq[val] = (freq[val] || 0) + 1;
       });
-      return Array.from({ length: 10 }, (_, i) => ({
-        label: String(i + 1),
-        count: freq[i + 1] || 0,
-        pct: Math.round(((freq[i + 1] || 0) / responseCount) * 100),
-      }));
+      return Array.from({ length: max - min + 1 }, (_, i) => {
+        const v = min + i;
+        return {
+          label: String(v),
+          count: freq[v] || 0,
+          pct: Math.round(((freq[v] || 0) / responseCount) * 100),
+        };
+      });
     }
 
     if (question.type === "yes_no") {
@@ -83,9 +88,13 @@ export function DynamicQuestionCard({ question, responses, totalRespondents }: P
       return `${responseCount} responses collected. Most common: "${chartData[0]?.label?.slice(0, 60)}".`;
     }
     if (question.type === "scale") {
-      const nums = responses.map(r => r.response_numeric ?? parseInt(r.response_value || "0")).filter(n => n > 0);
+      const min = question.scale_min ?? 1;
+      const max = question.scale_max ?? 10;
+      const nums = responses
+        .map(r => r.response_numeric ?? parseInt(r.response_value || "0"))
+        .filter(n => n >= min && n <= max);
       const avg = nums.length > 0 ? (nums.reduce((a, b) => a + b, 0) / nums.length).toFixed(1) : "—";
-      return `Average score: ${avg}/10 across ${nums.length} responses.`;
+      return `Average score: ${avg}/${max} across ${nums.length} responses.`;
     }
     const top = chartData[0];
     return top ? `"${top.label}" leads with ${top.count} responses (${top.pct}%).` : `${responseCount} responses recorded.`;

@@ -15,10 +15,15 @@ export interface ScriptQuestion {
   branch?: {
     yes_goto?: number;
     no_goto?: number;
+    unsure_goto?: number;
     yes_probes?: string[];
     no_probes?: string[];
   };
   is_internal?: boolean;
+  /** For type='scale' — minimum value on the rating scale (default 1) */
+  scale_min?: number;
+  /** For type='scale' — maximum value on the rating scale (default 10). Use 5 for 1-5 scales, 10 for NPS-style. */
+  scale_max?: number;
 }
 
 export interface ResearchScript {
