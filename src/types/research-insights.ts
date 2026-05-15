@@ -459,7 +459,41 @@ export interface ProcessingStats {
 
 // ── Campaign type helpers ──
 
-export type CampaignType = 'move_out_survey' | 'audience_survey' | `script:${string}`;
+export type CampaignType = 'move_out_survey' | 'audience_survey' | 'payment_experience' | `script:${string}`;
+
+// ── Payment Experience Survey Data (per-record extraction) ──
+
+export interface PaymentExperienceExtraction {
+  payment_literacy_score?: number | null;
+  payment_literacy_breakdown?: {
+    pay_cadence_known?: boolean;
+    dues_day_correct?: boolean;
+    dues_amount_correct?: boolean;
+    commitment_understood?: boolean;
+  };
+  easy_payment_benchmark?: string | null;
+  channel_method?: { device?: string; method?: string };
+  autopay_status?: 'enrolled' | 'not_enrolled' | 'unsure' | null;
+  autopay_barrier_category?: string | null;
+  autopay_unlock_condition?: string | null;
+  move_in_cost_clarity_1to5?: number | null;
+  top_friction_theme?: string | null;
+  friction_verbatim?: string | null;
+  overdue_threshold_belief_usd?: number | null;
+  overdue_threshold_accuracy?: 'accurate' | 'inaccurate' | 'unknown' | null;
+  hardship_awareness_padsplit?: string[];
+  hardship_awareness_host?: string[];
+  hardship_awareness_gap?: boolean;
+  desired_payment_methods?: string[];
+  method_failure_history?: string | null;
+  wish_capability?: string | null;
+  wish_verbatim?: string | null;
+  pay_cadence?: string | null;
+  dues_day?: number | string | null;
+  p0_signal?: Record<string, any>;
+  key_quotes?: string[];
+  [k: string]: any;
+}
 
 export function isAudienceSurveyData(data: any): data is AudienceSurveyInsightData {
   return data && (data.platform_breakdown || data.ad_awareness || data.audience_segments);
