@@ -120,6 +120,8 @@ interface CampaignContext {
   scriptAiPrompt: string | null;
   scriptModel: string | null;
   scriptTemperature: number | null;
+  /** Provenance to stamp on booking_transcriptions.retag_source. Null = leave existing value alone. */
+  retagSource: string | null;
 }
 
 async function detectCampaignContext(supabase: any, bookingId: string): Promise<CampaignContext> {
@@ -129,6 +131,7 @@ async function detectCampaignContext(supabase: any, bookingId: string): Promise<
     scriptAiPrompt: null,
     scriptModel: null,
     scriptTemperature: null,
+    retagSource: null,
   };
 
   /**
