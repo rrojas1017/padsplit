@@ -135,21 +135,30 @@ async function detectCampaignContext(supabase: any, bookingId: string): Promise<
   };
 
   /**
-   * retag_source vocabulary on booking_transcriptions (kept in sync with
-   * src/hooks/usePaymentExperienceResponses.ts -> RETAG_SOURCES):
-   *  - 'payment_keyword_validation'  Phase 1A one-off backfill.
-   *  - 'keyword_fallback_detection'  runtime keyword fallback in detectCampaignContext (TODO Phase 1B: emit here).
-   *  - 'script_id_route'             RESERVED for true deterministic script-id routing (Phase 1B).
+   * Precedence (highest → lowest):
+   *  1. retag_source = 'script_id_route'  (deterministic linkage already established) — always trust.
+   *  2. Pre-set non-default research_campaign_type — trust.
+   *  3. Booking → research_call → campaign → script — deterministic, never overridden by keywords.
+   *  4. Keyword fallback → stamps retag_source = 'keyword_fallback_detection'.
+   *
+   * retag_source vocabulary kept in sync with src/hooks/usePaymentExperienceResponses.ts -> RETAG_SOURCES.
    */
   try {
-    // 0. Honor pre-set research_campaign_type (e.g. validation backfill).
-    //    Skips if NULL or 'move_out_survey' (legacy default — let detection run).
+    // 0. Honor any prior provenance on the transcription row.
     const { data: preTagged } = await supabase
       .from('booking_transcriptions')
       .select('research_campaign_type, retag_source')
       .eq('booking_id', bookingId)
       .maybeSingle();
 
+    // 0a. script_id_route is the highest-precedence stamp — never reclassify.
+    if (preTagged?.retag_source === 'script_id_route' && preTagged?.research_campaign_type) {
+      ctx.campaignType = preTagged.research_campaign_type;
+      console.log(`[CampaignDetect] Honoring script_id_route stamp → ${ctx.campaignType} for ${bookingId}`);
+      return ctx;
+    }
+
+    // 0b. Pre-set non-default campaign type (e.g. validation backfill).
     if (preTagged?.research_campaign_type &&
         preTagged.research_campaign_type !== 'move_out_survey') {
       ctx.campaignType = preTagged.research_campaign_type;
@@ -157,7 +166,7 @@ async function detectCampaignContext(supabase: any, bookingId: string): Promise<
       return ctx;
     }
 
-    // 1. Booking → research_call → campaign → script
+    // 1. Booking → research_call → campaign → script  (DETERMINISTIC; wins over keywords).
     const { data: booking } = await supabase
       .from('bookings')
       .select('research_call_id')
@@ -204,12 +213,13 @@ async function detectCampaignContext(supabase: any, bookingId: string): Promise<
         } else if (script.campaign_type) {
           ctx.campaignType = mapCampaignType(script.campaign_type);
         }
-        console.log(`[CampaignDetect] Detected via script ${script.id} (slug=${script.slug}, type=${script.campaign_type}) → ${ctx.campaignType}`);
+        ctx.retagSource = 'script_id_route';
+        console.log(`[CampaignDetect] Script-id route ${script.id} (slug=${script.slug}, type=${script.campaign_type}) → ${ctx.campaignType}`);
         return ctx;
       }
     }
 
-    // 2. Fallback: transcript keywords
+    // 2. Fallback: transcript keywords (only when no deterministic linkage exists).
     const { data: transcription } = await supabase
       .from('booking_transcriptions')
       .select('call_transcription')
@@ -224,14 +234,16 @@ async function detectCampaignContext(supabase: any, bookingId: string): Promise<
       const paymentMatches = paymentKeywords.filter(kw => text.includes(kw)).length;
       if (paymentMatches >= 3) {
         ctx.campaignType = 'payment_experience';
-        console.log(`[CampaignDetect] Detected via keywords (${paymentMatches} payment matches) for ${bookingId}`);
+        ctx.retagSource = 'keyword_fallback_detection';
+        console.log(`[CampaignDetect] Keyword fallback (${paymentMatches} payment matches) for ${bookingId}`);
         return ctx;
       }
 
       const audienceMatches = audienceKeywords.filter(kw => text.includes(kw)).length;
       if (audienceMatches >= 3) {
         ctx.campaignType = 'audience_survey';
-        console.log(`[CampaignDetect] Detected via keywords (${audienceMatches} audience matches) for ${bookingId}`);
+        ctx.retagSource = 'keyword_fallback_detection';
+        console.log(`[CampaignDetect] Keyword fallback (${audienceMatches} audience matches) for ${bookingId}`);
         return ctx;
       }
     }
