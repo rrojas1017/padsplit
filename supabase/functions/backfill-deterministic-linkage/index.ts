@@ -198,7 +198,7 @@ Deno.serve(async (req) => {
         caller_phone: c.phone,
         kixie_link: c.audio_url,
         call_date: c.booking_date ?? new Date().toISOString().split('T')[0],
-        caller_type: 'member',
+        caller_type: 'existing_member',
         caller_status: 'backfilled',
       }));
       const { data: insertedRows, error: insErr } = await supabase
