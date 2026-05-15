@@ -38,6 +38,7 @@ import { MoveOutMemberTab } from '@/components/moveout-insights/MoveOutMemberTab
 import { AudienceSurveyDashboard } from '@/components/audience-survey/AudienceSurveyDashboard';
 import { AudienceSurveyInsightsDashboard } from '@/components/audience-survey/AudienceSurveyInsightsDashboard';
 import { ScriptInsightsPanel } from '@/components/research-insights/ScriptInsightsPanel';
+import { PaymentExperienceInsightsDashboard } from '@/components/payment-experience/PaymentExperienceInsightsDashboard';
 import { ExportMembersModal } from '@/components/research-insights/ExportMembersModal';
 import { exportFullReport } from '@/utils/export-report';
 import type { ExportFilter } from '@/hooks/useExportMembers';
@@ -335,6 +336,7 @@ export default function ResearchInsights() {
           <SelectContent>
             <SelectItem value="move_out_survey">Move-Out Research</SelectItem>
             <SelectItem value="audience_survey">Audience Survey</SelectItem>
+            <SelectItem value="payment_experience">Payment Experience</SelectItem>
             {activeScripts.map(s => (
               <SelectItem key={s.id} value={`script:${s.id}`}>{s.name}</SelectItem>
             ))}
@@ -488,6 +490,11 @@ export default function ResearchInsights() {
       {/* Report content — AUDIENCE SURVEY (live aggregation from raw data) */}
       {!isLoading && isAudienceSurvey && (
         <AudienceSurveyInsightsDashboard />
+      )}
+
+      {/* Report content — PAYMENT EXPERIENCE (live aggregation) */}
+      {!isLoading && isPaymentExperience && (
+        <PaymentExperienceInsightsDashboard />
       )}
 
       {/* Report content — MOVE-OUT SURVEY */}
