@@ -132,6 +132,21 @@ async function detectCampaignContext(supabase: any, bookingId: string): Promise<
   };
 
   try {
+    // 0. Honor pre-set research_campaign_type (e.g. validation backfill).
+    //    Skips if NULL or 'move_out_survey' (legacy default — let detection run).
+    const { data: preTagged } = await supabase
+      .from('booking_transcriptions')
+      .select('research_campaign_type, retag_source')
+      .eq('booking_id', bookingId)
+      .maybeSingle();
+
+    if (preTagged?.research_campaign_type &&
+        preTagged.research_campaign_type !== 'move_out_survey') {
+      ctx.campaignType = preTagged.research_campaign_type;
+      console.log(`[CampaignDetect] Using pre-set campaign_type=${ctx.campaignType} (retag_source=${preTagged.retag_source ?? 'null'}) for ${bookingId}`);
+      return ctx;
+    }
+
     // 1. Booking → research_call → campaign → script
     const { data: booking } = await supabase
       .from('bookings')
