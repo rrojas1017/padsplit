@@ -101,23 +101,84 @@ Deno.serve(async (req) => {
       });
     }
 
-    // --- Look up research_campaigns by campaign_key ---
+    // --- Resolve research_campaign by id OR campaign_key (Phase 1C) ---
+    // Some dialers send the campaign UUID, others send the campaign_key string.
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(campaign);
     let matchedCampaignId: string | null = null;
-    const { data: campaignData } = await adminClient
-      .from('research_campaigns')
-      .select('id, script_id')
-      .eq('campaign_key', campaign)
-      .maybeSingle();
+    let matchedScriptId: string | null = null;
+    {
+      const { data: campaignData } = await adminClient
+        .from('research_campaigns')
+        .select('id, script_id')
+        .or(isUuid ? `id.eq.${campaign},campaign_key.eq.${campaign}` : `campaign_key.eq.${campaign}`)
+        .maybeSingle();
 
-    if (campaignData) {
-      matchedCampaignId = campaignData.id;
-      console.log(`Matched campaign_key "${campaign}" → campaign ${matchedCampaignId}`);
-    } else {
-      console.log(`No research_campaigns match for campaign_key "${campaign}", storing as free-text`);
+      if (campaignData) {
+        matchedCampaignId = campaignData.id;
+        matchedScriptId = campaignData.script_id ?? null;
+        console.log(`[submit] Matched campaign "${campaign}" → campaign=${matchedCampaignId}, script=${matchedScriptId}`);
+      } else {
+        console.log(`[submit] No research_campaigns match for "${campaign}"`);
+      }
     }
 
-    // --- Insert booking record (research type) for Reports visibility ---
+    // --- Resolve canonical research_campaign_type from script (mirrors process-research-record) ---
+    // Kept in sync with SCRIPT_ID_MAP in supabase/functions/process-research-record/index.ts.
+    const SCRIPT_ID_MAP: Record<string, string> = {
+      'c701a243-1c66-425a-8f79-99a290ec5b6b': 'payment_experience',
+    };
+    function mapScriptCampaignType(t: string | null | undefined): string | null {
+      switch (t) {
+        case 'audience_survey': return 'audience_survey';
+        case 'payment_experience': return 'payment_experience';
+        case 'satisfaction': return 'move_out_survey';
+        default: return null;
+      }
+    }
+    let resolvedCampaignType: string | null = null;
+    if (matchedScriptId) {
+      const { data: script } = await adminClient
+        .from('research_scripts')
+        .select('id, slug, campaign_type')
+        .eq('id', matchedScriptId)
+        .maybeSingle();
+      if (script) {
+        if (SCRIPT_ID_MAP[script.id]) {
+          resolvedCampaignType = SCRIPT_ID_MAP[script.id];
+        } else if (script.slug && ['payment_experience', 'audience_survey'].includes(script.slug)) {
+          resolvedCampaignType = script.slug;
+        } else if (script.campaign_type) {
+          resolvedCampaignType = mapScriptCampaignType(script.campaign_type);
+        }
+      }
+    }
+
     const today = new Date().toISOString().split('T')[0];
+
+    // --- Create research_calls row first (so booking can link to it) ---
+    let researchCallId: string | null = null;
+    if (matchedCampaignId) {
+      const { data: rc, error: rcErr } = await adminClient
+        .from('research_calls')
+        .insert({
+          campaign_id: matchedCampaignId,
+          caller_phone: phoneNumber,
+          kixie_link: audioUrl,
+          call_date: today,
+          caller_type: 'member',
+          caller_status: 'submitted',
+        })
+        .select('id')
+        .single();
+      if (rcErr) {
+        // Non-fatal: log and proceed without linkage so we don't lose the submission.
+        console.error('[submit] research_calls insert failed:', rcErr.message);
+      } else {
+        researchCallId = rc.id;
+      }
+    }
+
+    // --- Insert booking record (research type) ---
     const { data: booking, error: bookingError } = await adminClient
       .from('bookings')
       .insert({
@@ -133,6 +194,7 @@ Deno.serve(async (req) => {
         notes: `Campaign: ${campaign} | Dialer Agent: ${dialerAgentUser} | API Submission`,
         communication_method: 'Phone',
         import_batch_id: 'api-submission',
+        research_call_id: researchCallId,
       })
       .select('id')
       .single();
@@ -156,6 +218,23 @@ Deno.serve(async (req) => {
       booking_id: booking.id,
     });
 
+    // --- Stamp resolved campaign type onto booking_transcriptions when known ---
+    // The auto-transcription PG trigger may have already created the row; if not yet,
+    // a later upsert from the transcription pipeline will see the existing row. We
+    // attempt an UPDATE here; if no row exists yet, no harm done.
+    if (resolvedCampaignType) {
+      const { error: updErr } = await adminClient
+        .from('booking_transcriptions')
+        .update({
+          research_campaign_type: resolvedCampaignType,
+          retag_source: 'script_id_route',
+        })
+        .eq('booking_id', booking.id);
+      if (updErr) {
+        console.warn('[submit] booking_transcriptions stamp skipped:', updErr.message);
+      }
+    }
+
     // --- Audit log ---
     await adminClient.from('access_logs').insert({
       action: 'api_conversation_submitted',
@@ -166,6 +245,8 @@ Deno.serve(async (req) => {
     return new Response(JSON.stringify({
       success: true,
       bookingId: booking.id,
+      researchCallId,
+      resolvedCampaignType,
       matchedAgent: { id: agent.id, name: agent.name },
     }), {
       status: 201, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
