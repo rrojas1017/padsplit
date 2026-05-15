@@ -109,21 +109,39 @@ async function parseJsonWithRetry(
 
 // ── Campaign type detection ──
 
-// Known script IDs mapped to campaign types
-const SCRIPT_CAMPAIGN_MAP: Record<string, string> = {};
-// We populate this dynamically from the DB
+// Known script IDs mapped to campaign types (mirrors src/utils/campaign-detection.ts)
+const SCRIPT_ID_MAP: Record<string, string> = {
+  'c701a243-1c66-425a-8f79-99a290ec5b6b': 'payment_experience',
+};
 
-async function detectCampaignType(supabase: any, bookingId: string): Promise<string> {
+interface CampaignContext {
+  campaignType: string;
+  scriptId: string | null;
+  scriptAiPrompt: string | null;
+  scriptModel: string | null;
+  scriptTemperature: number | null;
+}
+
+async function detectCampaignContext(supabase: any, bookingId: string): Promise<CampaignContext> {
+  const ctx: CampaignContext = {
+    campaignType: 'move_out_survey',
+    scriptId: null,
+    scriptAiPrompt: null,
+    scriptModel: null,
+    scriptTemperature: null,
+  };
+
   try {
-    // 1. Check if the booking has a research_call_id linking to a research_call with a campaign
+    // 1. Booking → research_call → campaign → script
     const { data: booking } = await supabase
       .from('bookings')
       .select('research_call_id')
       .eq('id', bookingId)
       .maybeSingle();
 
+    let scriptId: string | null = null;
+
     if (booking?.research_call_id) {
-      // Look up the research_call to find campaign_id
       const { data: researchCall } = await supabase
         .from('research_calls')
         .select('campaign_id')
@@ -131,30 +149,42 @@ async function detectCampaignType(supabase: any, bookingId: string): Promise<str
         .maybeSingle();
 
       if (researchCall?.campaign_id) {
-        // Look up the campaign to find its script, then the script's campaign_type
         const { data: campaign } = await supabase
           .from('research_campaigns')
           .select('script_id')
           .eq('id', researchCall.campaign_id)
           .maybeSingle();
-
-        if (campaign?.script_id) {
-          const { data: script } = await supabase
-            .from('research_scripts')
-            .select('campaign_type')
-            .eq('id', campaign.script_id)
-            .maybeSingle();
-
-          if (script?.campaign_type) {
-            const type = mapCampaignType(script.campaign_type);
-            console.log(`[CampaignDetect] Detected via script: ${type} for booking ${bookingId}`);
-            return type;
-          }
-        }
+        if (campaign?.script_id) scriptId = campaign.script_id;
       }
     }
 
-    // 2. Fallback: check transcript for audience survey keywords
+    if (scriptId) {
+      const { data: script } = await supabase
+        .from('research_scripts')
+        .select('id, slug, campaign_type, ai_prompt, ai_model, ai_temperature')
+        .eq('id', scriptId)
+        .maybeSingle();
+
+      if (script) {
+        ctx.scriptId = script.id;
+        ctx.scriptAiPrompt = script.ai_prompt || null;
+        ctx.scriptModel = script.ai_model || null;
+        ctx.scriptTemperature = typeof script.ai_temperature === 'number' ? script.ai_temperature : null;
+
+        // Resolution waterfall: id map → slug → campaign_type
+        if (SCRIPT_ID_MAP[script.id]) {
+          ctx.campaignType = SCRIPT_ID_MAP[script.id];
+        } else if (script.slug && ['payment_experience', 'audience_survey'].includes(script.slug)) {
+          ctx.campaignType = script.slug;
+        } else if (script.campaign_type) {
+          ctx.campaignType = mapCampaignType(script.campaign_type);
+        }
+        console.log(`[CampaignDetect] Detected via script ${script.id} (slug=${script.slug}, type=${script.campaign_type}) → ${ctx.campaignType}`);
+        return ctx;
+      }
+    }
+
+    // 2. Fallback: transcript keywords
     const { data: transcription } = await supabase
       .from('booking_transcriptions')
       .select('call_transcription')
@@ -164,29 +194,44 @@ async function detectCampaignType(supabase: any, bookingId: string): Promise<str
     if (transcription?.call_transcription) {
       const text = transcription.call_transcription.toLowerCase();
       const audienceKeywords = ['social media', 'tiktok', 'instagram', 'influencer', 'ad awareness', 'padsplit ad', 'video testimonial', 'recording a video'];
-      const matchCount = audienceKeywords.filter(kw => text.includes(kw)).length;
-      if (matchCount >= 3) {
-        console.log(`[CampaignDetect] Detected via keywords (${matchCount} matches): audience_survey for booking ${bookingId}`);
-        return 'audience_survey';
+      const paymentKeywords = ['auto-pay', 'autopay', 'auto pay', 'dues date', 'payment method', 'move-in cost', 'hardship'];
+
+      const paymentMatches = paymentKeywords.filter(kw => text.includes(kw)).length;
+      if (paymentMatches >= 3) {
+        ctx.campaignType = 'payment_experience';
+        console.log(`[CampaignDetect] Detected via keywords (${paymentMatches} payment matches) for ${bookingId}`);
+        return ctx;
+      }
+
+      const audienceMatches = audienceKeywords.filter(kw => text.includes(kw)).length;
+      if (audienceMatches >= 3) {
+        ctx.campaignType = 'audience_survey';
+        console.log(`[CampaignDetect] Detected via keywords (${audienceMatches} audience matches) for ${bookingId}`);
+        return ctx;
       }
     }
 
-    // 3. Default
-    console.log(`[CampaignDetect] Defaulting to move_out_survey for booking ${bookingId}`);
-    return 'move_out_survey';
+    console.log(`[CampaignDetect] Defaulting to move_out_survey for ${bookingId}`);
+    return ctx;
   } catch (error) {
-    console.error(`[CampaignDetect] Error detecting campaign type for ${bookingId}:`, error);
-    return 'move_out_survey';
+    console.error(`[CampaignDetect] Error for ${bookingId}:`, error);
+    return ctx;
   }
 }
 
 function mapCampaignType(scriptCampaignType: string): string {
   switch (scriptCampaignType) {
     case 'audience_survey': return 'audience_survey';
+    case 'payment_experience': return 'payment_experience';
     case 'satisfaction': return 'move_out_survey';
     default: return 'move_out_survey';
   }
 }
+
+// ── Payment Experience fallback prompt (used only if script has no ai_prompt) ──
+
+const PAYMENT_EXPERIENCE_FALLBACK_PROMPT = `You are analyzing a single member call from the PadSplit Member Payment Experience Survey. Extract structured insights as JSON only.
+Respond with ONLY a JSON object with key "extraction" containing payment literacy, autopay status, friction themes, hardship awareness, and wish capabilities. No preamble, no markdown.`;
 
 // ── Audience Survey Extraction Prompt ──
 
