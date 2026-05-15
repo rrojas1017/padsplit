@@ -131,6 +131,13 @@ async function detectCampaignContext(supabase: any, bookingId: string): Promise<
     scriptTemperature: null,
   };
 
+  /**
+   * retag_source vocabulary on booking_transcriptions (kept in sync with
+   * src/hooks/usePaymentExperienceResponses.ts -> RETAG_SOURCES):
+   *  - 'payment_keyword_validation'  Phase 1A one-off backfill.
+   *  - 'keyword_fallback_detection'  runtime keyword fallback in detectCampaignContext (TODO Phase 1B: emit here).
+   *  - 'script_id_route'             RESERVED for true deterministic script-id routing (Phase 1B).
+   */
   try {
     // 0. Honor pre-set research_campaign_type (e.g. validation backfill).
     //    Skips if NULL or 'move_out_survey' (legacy default — let detection run).
