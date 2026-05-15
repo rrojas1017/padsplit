@@ -34,7 +34,7 @@ function deriveKPIs(records: PaymentExperienceRecord[]): PaymentKPIs {
 
   const autopayValues = records
     .map((r) => r.extraction?.autopay_status)
-    .filter((v): v is string => !!v);
+    .filter((v): v is NonNullable<typeof v> => !!v);
   const autopayEnrolled = autopayValues.filter((v) => v === 'enrolled').length;
 
   const clarityValues = records
