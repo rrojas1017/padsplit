@@ -1,4 +1,4 @@
-// Phase 1C — Deterministic Linkage Backfill (dry-run by default)
+// Phase 1C — Deterministic Linkage Backfill (cursor-paginated)
 //
 // For every conversation_submissions row whose `campaign` resolves to a real
 // research_campaigns row (by id OR campaign_key) AND whose linked booking has
@@ -8,8 +8,15 @@
 //   - Updates booking_transcriptions.research_campaign_type to the resolved
 //     value and stamps retag_source = 'script_id_route'.
 //
-// Default mode is dry-run: NO writes, just preview counts. Pass {"dryRun": false}
-// to actually mutate. Audit & rollback are documented in .lovable/plan.md.
+// Pagination is deterministic: source rows are ordered by
+// conversation_submissions.id ASC and the caller chains invocations using
+// `cursor` = last_processed_conversation_submission_id. This guarantees no
+// duplicates and no skips across calls.
+//
+// Body: { dryRun?: boolean, limit?: number, cursor?: string,
+//         campaignFilter?: string, includeSnapshot?: boolean }
+//
+// Default mode is dry-run (no writes). Pass {"dryRun": false} to mutate.
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
@@ -45,7 +52,8 @@ interface CampaignLite {
   resolved_campaign_type: string | null;
 }
 
-const PAGE = 1000;
+const SCAN_PAGE = 1000;
+const DEFAULT_LIMIT = 1500;
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders });
@@ -57,10 +65,12 @@ Deno.serve(async (req) => {
   try {
     const body = await req.json().catch(() => ({}));
     const dryRun = body.dryRun !== false; // default TRUE
-    const limit: number | null = typeof body.limit === 'number' ? body.limit : null;
+    const limit: number = typeof body.limit === 'number' ? body.limit : DEFAULT_LIMIT;
+    const cursor: string | null = typeof body.cursor === 'string' && body.cursor.length > 0 ? body.cursor : null;
     const campaignFilter: string | null = typeof body.campaignFilter === 'string' ? body.campaignFilter : null;
+    const includeSnapshot: boolean = body.includeSnapshot === true;
 
-    // 1) Build campaign lookup index (id + campaign_key → campaign + script).
+    // 1) Build campaign lookup index.
     const { data: campaigns, error: campErr } = await supabase
       .from('research_campaigns')
       .select('id, campaign_key, script_id');
@@ -95,7 +105,7 @@ Deno.serve(async (req) => {
       return campaignById.get(raw) || campaignByKey.get(raw) || null;
     }
 
-    // 2) Pull candidate submissions (paged), join booking + transcription state.
+    // 2) Pull candidate submissions with deterministic id-cursor pagination.
     type Candidate = {
       submission_id: string;
       booking_id: string;
@@ -103,35 +113,42 @@ Deno.serve(async (req) => {
       phone: string | null;
       audio_url: string | null;
       booking_date: string | null;
-      research_call_id: string | null;
       transcription_id: string | null;
-      current_campaign_type: string | null;
-      current_retag_source: string | null;
       resolved: CampaignLite;
     };
 
     const candidates: Candidate[] = [];
-    let from = 0;
-    while (true) {
+    let lastSeenId: string | null = cursor;
+    let scannedCount = 0;
+    let exhausted = false;
+
+    while (candidates.length < limit) {
       let q = supabase
         .from('conversation_submissions')
         .select('id, booking_id, campaign, phone_number, audio_url, bookings(booking_date, research_call_id, booking_transcriptions(id, research_campaign_type, retag_source))')
         .not('booking_id', 'is', null)
-        .range(from, from + PAGE - 1);
+        .order('id', { ascending: true })
+        .limit(SCAN_PAGE);
+      if (lastSeenId) q = q.gt('id', lastSeenId);
       if (campaignFilter) q = q.eq('campaign', campaignFilter);
+
       const { data, error } = await q;
       if (error) throw new Error(`submissions page failed: ${error.message}`);
-      if (!data || data.length === 0) break;
+      if (!data || data.length === 0) { exhausted = true; break; }
 
       for (const row of data as any[]) {
+        scannedCount++;
+        lastSeenId = row.id;
         const resolved = resolveSubmissionCampaign(row.campaign);
         if (!resolved || !resolved.resolved_campaign_type) continue;
         const booking = Array.isArray(row.bookings) ? row.bookings[0] : row.bookings;
         if (!booking) continue;
-        if (booking.research_call_id) continue; // already linked, skip
+        if (booking.research_call_id) continue; // already linked
         const trans = booking.booking_transcriptions
           ? (Array.isArray(booking.booking_transcriptions) ? booking.booking_transcriptions[0] : booking.booking_transcriptions)
           : null;
+        // Skip if already stamped with deterministic route (idempotent re-runs).
+        if (trans?.retag_source === 'script_id_route') continue;
         candidates.push({
           submission_id: row.id,
           booking_id: row.booking_id,
@@ -139,118 +156,105 @@ Deno.serve(async (req) => {
           phone: row.phone_number,
           audio_url: row.audio_url,
           booking_date: booking.booking_date ?? null,
-          research_call_id: booking.research_call_id ?? null,
           transcription_id: trans?.id ?? null,
-          current_campaign_type: trans?.research_campaign_type ?? null,
-          current_retag_source: trans?.retag_source ?? null,
           resolved,
         });
-        if (limit && candidates.length >= limit) break;
+        if (candidates.length >= limit) break;
       }
-      if (limit && candidates.length >= limit) break;
-      if (data.length < PAGE) break;
-      from += PAGE;
+
+      if (data.length < SCAN_PAGE) { exhausted = true; break; }
     }
 
-    // 3) Build aggregate counts for the response.
+    // 3) Aggregate proposed counts for response.
     const byResolved: Record<string, number> = {};
-    const byCurrent: Record<string, number> = {};
-    const byProposed: Record<string, number> = { script_id_route: candidates.length };
     for (const c of candidates) {
-      byResolved[c.resolved.resolved_campaign_type!] = (byResolved[c.resolved.resolved_campaign_type!] || 0) + 1;
-      const k = c.current_campaign_type ?? 'null';
-      byCurrent[k] = (byCurrent[k] || 0) + 1;
+      const k = c.resolved.resolved_campaign_type!;
+      byResolved[k] = (byResolved[k] || 0) + 1;
     }
 
-    const beforeCounts = await snapshotCounts(supabase);
+    // Optional: cheap remaining estimate via head count past the cursor.
+    let remainingEstimate: number | null = null;
+    if (lastSeenId) {
+      const { count } = await supabase
+        .from('conversation_submissions')
+        .select('id', { count: 'exact', head: true })
+        .gt('id', lastSeenId)
+        .not('booking_id', 'is', null);
+      remainingEstimate = count ?? null;
+    }
 
     if (dryRun) {
       return jsonResponse({
         mode: 'dry_run',
-        expected_rows_affected: candidates.length,
+        scanned_submissions: scannedCount,
+        candidates_in_chunk: candidates.length,
         by_resolved_campaign_type: byResolved,
-        by_current_transcription_campaign_type: byCurrent,
-        by_proposed_retag_source: byProposed,
-        before_counts: beforeCounts,
-        preview_sample: candidates.slice(0, 5).map(c => ({
-          booking_id: c.booking_id,
-          campaign_raw: c.campaign_raw,
-          resolved_to: c.resolved.resolved_campaign_type,
-          current_campaign_type: c.current_campaign_type,
-        })),
+        next_cursor: exhausted ? null : lastSeenId,
+        remaining_estimate: exhausted ? 0 : remainingEstimate,
+        exhausted,
+        snapshot: includeSnapshot ? await snapshotCounts(supabase) : undefined,
         note: 'Dry-run only. Pass {"dryRun": false} to apply.',
       });
     }
 
-    // 4) Write mode: chunked apply.
-    const CHUNK = 200;
+    // 4) Write mode — small per-row updates (no bulk insert; we need 1:1 mapping).
     let insertedCalls = 0;
     let updatedBookings = 0;
     let updatedTranscriptions = 0;
     const errors: Array<{ booking_id: string; stage: string; error: string }> = [];
 
-    for (let i = 0; i < candidates.length; i += CHUNK) {
-      const chunk = candidates.slice(i, i + CHUNK);
-
-      // 4a) Insert research_calls in bulk for this chunk.
-      const callRows = chunk.map(c => ({
-        campaign_id: c.resolved.id,
-        caller_phone: c.phone,
-        kixie_link: c.audio_url,
-        call_date: c.booking_date ?? new Date().toISOString().split('T')[0],
-        caller_type: 'existing_member',
-        caller_status: 'backfilled',
-      }));
-      const { data: insertedRows, error: insErr } = await supabase
+    for (const c of candidates) {
+      const { data: callRow, error: insErr } = await supabase
         .from('research_calls')
-        .insert(callRows)
-        .select('id');
-      if (insErr || !insertedRows || insertedRows.length !== chunk.length) {
-        // Fall back to per-row inserts so partial failures don't stop the chunk.
-        for (let j = 0; j < chunk.length; j++) {
-          const c = chunk[j];
-          const { data: row, error: e } = await supabase
-            .from('research_calls')
-            .insert(callRows[j])
-            .select('id')
-            .single();
-          if (e || !row) {
-            errors.push({ booking_id: c.booking_id, stage: 'research_calls.insert', error: e?.message ?? 'no row' });
-            continue;
-          }
-          insertedCalls++;
-          await applyLinkage(supabase, c, row.id, errors).then(([b, t]) => {
-            updatedBookings += b;
-            updatedTranscriptions += t;
-          });
-        }
+        .insert({
+          campaign_id: c.resolved.id,
+          caller_phone: c.phone,
+          kixie_link: c.audio_url,
+          call_date: c.booking_date ?? new Date().toISOString().split('T')[0],
+          caller_type: 'existing_member',
+          caller_status: 'backfilled',
+        })
+        .select('id')
+        .single();
+      if (insErr || !callRow) {
+        errors.push({ booking_id: c.booking_id, stage: 'research_calls.insert', error: insErr?.message ?? 'no row' });
         continue;
       }
-      insertedCalls += insertedRows.length;
+      insertedCalls++;
 
-      // 4b) Link booking + stamp transcription per row.
-      for (let j = 0; j < chunk.length; j++) {
-        const c = chunk[j];
-        const callId = insertedRows[j].id;
-        const [b, t] = await applyLinkage(supabase, c, callId, errors);
-        updatedBookings += b;
-        updatedTranscriptions += t;
+      const { error: bErr } = await supabase
+        .from('bookings').update({ research_call_id: callRow.id }).eq('id', c.booking_id);
+      if (bErr) errors.push({ booking_id: c.booking_id, stage: 'bookings.update', error: bErr.message });
+      else updatedBookings++;
+
+      if (c.transcription_id) {
+        const { error: tErr } = await supabase
+          .from('booking_transcriptions')
+          .update({
+            research_campaign_type: c.resolved.resolved_campaign_type,
+            retag_source: 'script_id_route',
+          })
+          .eq('id', c.transcription_id);
+        if (tErr) errors.push({ booking_id: c.booking_id, stage: 'booking_transcriptions.update', error: tErr.message });
+        else updatedTranscriptions++;
       }
     }
 
-    const afterCounts = await snapshotCounts(supabase);
-
     return jsonResponse({
       mode: 'write',
-      expected_rows_affected: candidates.length,
+      scanned_submissions: scannedCount,
+      candidates_in_chunk: candidates.length,
       rows_inserted_research_calls: insertedCalls,
       rows_updated_bookings: updatedBookings,
       rows_updated_transcriptions: updatedTranscriptions,
       by_resolved_campaign_type: byResolved,
-      before_counts: beforeCounts,
-      after_counts: afterCounts,
+      last_processed_conversation_submission_id: lastSeenId,
+      next_cursor: exhausted ? null : lastSeenId,
+      remaining_estimate: exhausted ? 0 : remainingEstimate,
+      exhausted,
       error_count: errors.length,
       errors: errors.slice(0, 20),
+      snapshot: includeSnapshot ? await snapshotCounts(supabase) : undefined,
       audit_query: "SELECT id, booking_id FROM booking_transcriptions WHERE retag_source = 'script_id_route';",
     });
   } catch (error) {
@@ -260,72 +264,14 @@ Deno.serve(async (req) => {
   }
 });
 
-async function applyLinkage(
-  supabase: any,
-  c: { booking_id: string; transcription_id: string | null; resolved: CampaignLite },
-  callId: string,
-  errors: Array<{ booking_id: string; stage: string; error: string }>,
-): Promise<[number, number]> {
-  let b = 0, t = 0;
-  const { error: bErr } = await supabase
-    .from('bookings')
-    .update({ research_call_id: callId })
-    .eq('id', c.booking_id);
-  if (bErr) errors.push({ booking_id: c.booking_id, stage: 'bookings.update', error: bErr.message });
-  else b = 1;
-
-  if (c.transcription_id) {
-    const { error: tErr } = await supabase
-      .from('booking_transcriptions')
-      .update({
-        research_campaign_type: c.resolved.resolved_campaign_type,
-        retag_source: 'script_id_route',
-      })
-      .eq('id', c.transcription_id);
-    if (tErr) errors.push({ booking_id: c.booking_id, stage: 'booking_transcriptions.update', error: tErr.message });
-    else t = 1;
-  }
-  return [b, t];
-}
-
 async function snapshotCounts(supabase: any) {
   const { count: rcCount } = await supabase.from('research_calls').select('*', { count: 'exact', head: true });
   const { count: linkedBookings } = await supabase
     .from('bookings').select('*', { count: 'exact', head: true })
     .eq('record_type', 'research').not('research_call_id', 'is', null);
-
-  // Fetch ALL transcription rows in pages — PostgREST caps any single response
-  // at 1000 rows, which silently truncated earlier audit numbers.
-  const txByType: Record<string, number> = {};
-  const txByRetag: Record<string, number> = {};
-  const PAGE_SIZE = 1000;
-  let offset = 0;
-  let totalScanned = 0;
-  // Cap defensively at 500k rows to avoid runaway memory in pathological cases.
-  while (offset < 500_000) {
-    const { data, error } = await supabase
-      .from('booking_transcriptions')
-      .select('research_campaign_type, retag_source')
-      .range(offset, offset + PAGE_SIZE - 1);
-    if (error) throw new Error(`snapshotCounts page failed at offset ${offset}: ${error.message}`);
-    if (!data || data.length === 0) break;
-    for (const row of data as any[]) {
-      const k = row.research_campaign_type ?? 'null';
-      txByType[k] = (txByType[k] || 0) + 1;
-      const r = row.retag_source ?? 'null';
-      txByRetag[r] = (txByRetag[r] || 0) + 1;
-    }
-    totalScanned += data.length;
-    if (data.length < PAGE_SIZE) break;
-    offset += PAGE_SIZE;
-  }
-
   return {
     research_calls: rcCount ?? 0,
     bookings_with_research_call_id: linkedBookings ?? 0,
-    transcriptions_total_scanned: totalScanned,
-    transcriptions_by_campaign_type: txByType,
-    transcriptions_by_retag_source: txByRetag,
   };
 }
 
