@@ -2,6 +2,19 @@ import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import type { PaymentExperienceExtraction } from '@/types/research-insights';
 
+/**
+ * Vocabulary for booking_transcriptions.retag_source on Payment Experience records.
+ * Mirror of the constants used in supabase/functions/process-research-record/index.ts.
+ *  - payment_keyword_validation: Phase 1A one-off keyword backfill (validate-payment-keyword-backfill).
+ *  - keyword_fallback_detection: runtime keyword fallback in detectCampaignContext.
+ *  - script_id_route: RESERVED — emitted only when Phase 1B deterministic script-id routing lands.
+ */
+export const RETAG_SOURCES = {
+  PAYMENT_KEYWORD_VALIDATION: 'payment_keyword_validation',
+  KEYWORD_FALLBACK_DETECTION: 'keyword_fallback_detection',
+  SCRIPT_ID_ROUTE: 'script_id_route',
+} as const;
+
 export interface PaymentExperienceRecord {
   id: string;
   booking_id: string;
