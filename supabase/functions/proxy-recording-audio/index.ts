@@ -74,8 +74,13 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Determine content type from upstream or default to audio/mpeg
-    const contentType = audioResponse.headers.get("Content-Type") || "audio/mpeg";
+    // Determine content type from upstream — normalize anything that isn't a
+    // playable audio/* MIME (e.g. Vici returns "application/forcedownload")
+    // to audio/mpeg so the browser <audio> element can play it.
+    const upstreamType = audioResponse.headers.get("Content-Type") || "";
+    const contentType = upstreamType.toLowerCase().startsWith("audio/")
+      ? upstreamType
+      : "audio/mpeg";
 
     // Stream the audio back to the client
     return new Response(audioResponse.body, {
