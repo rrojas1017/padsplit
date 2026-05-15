@@ -1,0 +1,1 @@
+ALTER TABLE public.booking_transcriptions ADD COLUMN IF NOT EXISTS retag_source TEXT NULL;
