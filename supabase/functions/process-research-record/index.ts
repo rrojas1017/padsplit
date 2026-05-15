@@ -674,7 +674,8 @@ Deno.serve(async (req) => {
     }
 
     // ── Detect campaign type ──
-    const campaignType = await detectCampaignType(supabase, bookingId);
+    const ctx = await detectCampaignContext(supabase, bookingId);
+    const campaignType = ctx.campaignType;
     console.log(`[Research] Campaign type for ${bookingId}: ${campaignType}`);
 
     // Mark as processing
@@ -686,7 +687,48 @@ Deno.serve(async (req) => {
     let extraction: any;
     let classification: any;
 
-    if (campaignType === 'audience_survey') {
+    if (campaignType === 'payment_experience') {
+      // ── PAYMENT EXPERIENCE MODE ──
+      const systemPrompt = ctx.scriptAiPrompt || PAYMENT_EXPERIENCE_FALLBACK_PROMPT;
+      const model = ctx.scriptModel || 'google/gemini-2.5-flash';
+      const temperature = ctx.scriptTemperature ?? 0.2;
+
+      console.log(`[Research] Running PAYMENT EXPERIENCE prompt (${model}${ctx.scriptAiPrompt ? ', script' : ', fallback'}) for ${bookingId}`);
+      const result = await callLovableAI(
+        lovableApiKey,
+        model,
+        temperature,
+        systemPrompt,
+        `Here is the transcript to analyze:\n\n${transcription.call_transcription}`
+      );
+
+      const parsed = await parseJsonWithRetry(
+        result.content,
+        lovableApiKey,
+        model,
+        temperature,
+        systemPrompt,
+        `Here is the transcript to analyze:\n\n${transcription.call_transcription}`
+      );
+
+      // Script's prompt may return a flat object or { extraction, classification }
+      extraction = parsed.extraction || parsed;
+      classification = parsed.classification || { human_review_recommended: false };
+
+      console.log(`[Research] Payment Experience complete. Literacy: ${extraction?.payment_literacy_score}, Autopay: ${extraction?.autopay_status}`);
+
+      await logApiCost(supabase, {
+        service_provider: 'lovable_ai',
+        service_type: 'research_payment_experience',
+        edge_function: 'process-research-record',
+        booking_id: bookingId,
+        input_tokens: result.inputTokens,
+        output_tokens: result.outputTokens,
+        metadata: { model, prompt: 'payment_experience', campaign_type: campaignType, script_id: ctx.scriptId },
+        is_internal: false,
+      });
+
+    } else if (campaignType === 'audience_survey') {
       // ── AUDIENCE SURVEY MODE ──
 
       // Check for custom audience survey prompt in research_prompts table
