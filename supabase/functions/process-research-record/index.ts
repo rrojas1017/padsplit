@@ -962,16 +962,22 @@ Deno.serve(async (req) => {
     }
 
     // Store results with campaign type
+    const updatePayload: Record<string, unknown> = {
+      research_extraction: extraction,
+      research_classification: classification,
+      research_processed_at: new Date().toISOString(),
+      research_processing_status: 'completed',
+      research_human_review: classification.human_review_recommended === true,
+      research_campaign_type: campaignType,
+    };
+    // Stamp provenance only when this run produced one (script-id route or keyword fallback).
+    // Never downgrade an existing 'script_id_route' stamp.
+    if (ctx.retagSource) {
+      updatePayload.retag_source = ctx.retagSource;
+    }
     const { error: updateError } = await supabase
       .from('booking_transcriptions')
-      .update({
-        research_extraction: extraction,
-        research_classification: classification,
-        research_processed_at: new Date().toISOString(),
-        research_processing_status: 'completed',
-        research_human_review: classification.human_review_recommended === true,
-        research_campaign_type: campaignType,
-      })
+      .update(updatePayload)
       .eq('booking_id', bookingId);
 
     if (updateError) {
