@@ -548,6 +548,7 @@ export type Database = {
           research_human_review: boolean | null
           research_processed_at: string | null
           research_processing_status: string | null
+          retag_source: string | null
           stt_confidence_score: number | null
           stt_latency_ms: number | null
           stt_provider: string | null
@@ -582,6 +583,7 @@ export type Database = {
           research_human_review?: boolean | null
           research_processed_at?: string | null
           research_processing_status?: string | null
+          retag_source?: string | null
           stt_confidence_score?: number | null
           stt_latency_ms?: number | null
           stt_provider?: string | null
@@ -616,6 +618,7 @@ export type Database = {
           research_human_review?: boolean | null
           research_processed_at?: string | null
           research_processing_status?: string | null
+          retag_source?: string | null
           stt_confidence_score?: number | null
           stt_latency_ms?: number | null
           stt_provider?: string | null
