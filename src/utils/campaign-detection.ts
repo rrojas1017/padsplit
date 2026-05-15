@@ -1,14 +1,22 @@
-export type CampaignType = 'move_out_survey' | 'audience_survey' | 'unknown';
+export type CampaignType = 'move_out_survey' | 'audience_survey' | 'payment_experience' | 'unknown';
 
 const SCRIPT_MAP: Record<string, CampaignType> = {
   '6397bb7f-ac6a-49ea-90ad-9ca6ec046434': 'move_out_survey',
   '12fd2184-68af-4502-9f8e-9fc9fcef1214': 'audience_survey',
+  'c701a243-1c66-425a-8f79-99a290ec5b6b': 'payment_experience',
 };
 
 const CAMPAIGN_TYPE_MAP: Record<string, CampaignType> = {
   satisfaction: 'move_out_survey',
   move_out_survey: 'move_out_survey',
   audience_survey: 'audience_survey',
+  payment_experience: 'payment_experience',
+};
+
+const SLUG_MAP: Record<string, CampaignType> = {
+  payment_experience: 'payment_experience',
+  audience_survey: 'audience_survey',
+  satisfaction: 'move_out_survey',
 };
 
 const AUDIENCE_MAP: Record<string, CampaignType> = {
@@ -32,8 +40,20 @@ const AUDIENCE_KEYWORDS = [
   'influencer',
 ];
 
+const PAYMENT_KEYWORDS = [
+  'auto-pay',
+  'autopay',
+  'auto pay',
+  'dues date',
+  'payment method',
+  'move-in cost',
+  'move in cost',
+  'hardship',
+];
+
 interface DetectOptions {
   script_id?: string | null;
+  script_slug?: string | null;
   campaign_type?: string | null;
   audience?: string | null;
   transcript?: string | null;
@@ -42,6 +62,10 @@ interface DetectOptions {
 export function detectCampaignType(opts: DetectOptions): CampaignType {
   if (opts.script_id && SCRIPT_MAP[opts.script_id]) {
     return SCRIPT_MAP[opts.script_id];
+  }
+
+  if (opts.script_slug && SLUG_MAP[opts.script_slug]) {
+    return SLUG_MAP[opts.script_slug];
   }
 
   if (opts.campaign_type && CAMPAIGN_TYPE_MAP[opts.campaign_type]) {
@@ -54,6 +78,8 @@ export function detectCampaignType(opts: DetectOptions): CampaignType {
 
   if (opts.transcript) {
     const lower = opts.transcript.toLowerCase();
+    const paymentMatches = PAYMENT_KEYWORDS.filter((kw) => lower.includes(kw)).length;
+    if (paymentMatches >= 3) return 'payment_experience';
     if (MOVE_OUT_KEYWORDS.some((kw) => lower.includes(kw))) return 'move_out_survey';
     if (AUDIENCE_KEYWORDS.some((kw) => lower.includes(kw))) return 'audience_survey';
   }
@@ -64,6 +90,7 @@ export function detectCampaignType(opts: DetectOptions): CampaignType {
 const LABELS: Record<CampaignType, string> = {
   move_out_survey: 'Move-Out Research',
   audience_survey: 'Audience Survey',
+  payment_experience: 'Payment Experience',
   unknown: 'Unknown',
 };
 
