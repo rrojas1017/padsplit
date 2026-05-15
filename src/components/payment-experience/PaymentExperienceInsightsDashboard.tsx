@@ -52,8 +52,19 @@ export function PaymentExperienceInsightsDashboard() {
     );
   }
 
+  const allValidationSample =
+    records.length > 0 && records.every((r) => r.retag_source === 'payment_keyword_validation');
+
   return (
     <div className="space-y-4">
+      {allValidationSample && (
+        <Alert>
+          <Info className="w-4 h-4" />
+          <AlertDescription>
+            Validation sample — keyword-detected records only. Permanent linkage pending.
+          </AlertDescription>
+        </Alert>
+      )}
       <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
         <KPI
           label="Members Surveyed"
