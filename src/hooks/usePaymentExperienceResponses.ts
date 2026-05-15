@@ -9,6 +9,7 @@ export interface PaymentExperienceRecord {
   contact_phone: string | null;
   booking_date: string;
   extraction: PaymentExperienceExtraction;
+  retag_source: string | null;
 }
 
 export interface PaymentKPIs {
