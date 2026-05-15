@@ -1,104 +1,83 @@
+## Goal
 
+Make the Payment Experience dashboard's provenance signals honest: every record carries a `retag_source`, and the "validation sample" banner shows whenever none of the visible records are script-linked.
 
-# Review: Payment Experience Survey Script + 1-5 Rating Fix
+## Changes
 
-## Script Upload Verification — `c701a243-1c66-425a-8f79-99a290ec5b6b`
+### 1. Backfill the 9 organic records
 
-**PadSplit Member Payment Experience Survey (Hybrid Quant + Qual)** uploaded successfully on Apr 22 with all 16 questions, intro/closing/rebuttal scripts, and section structure intact.
+Data update on `booking_transcriptions`:
 
-| Element | Status |
-|---|---|
-| Intro / Closing / Rebuttal | All present and well-formed |
-| Question count | 16 (1 scale, 6 multiple_choice, 8 open_ended, 1 yes_no) |
-| Sections | 6 logical sections preserved |
-| Probes | Captured on every question (good detail) |
-| Branching | 1 branch on Q8 → Q9/Q10 |
-| `is_active` | **`false`** — script is saved but not yet live |
-| AI Prompt | **Empty** — no extraction prompt set |
-| Slug | **Empty** — falls back to `campaign_type = market_research` |
+```sql
+UPDATE booking_transcriptions
+SET retag_source = 'keyword_fallback_detection'
+WHERE research_campaign_type = 'payment_experience'
+  AND retag_source IS NULL;
+```
 
-## Issues Found
+Expected: 9 rows updated. These are records the normal `detectCampaignContext` keyword fallback tagged during prior batch runs — not script-id routed, just a different code path than the Phase 1A backfill.
 
-### 1. Rating dashboard hard-coded to 1-10 (your specific concern)
-Q10 ("How clear was the total cost to move in") is correctly stored as `type: "scale"`, but the rendering layer assumes every scale is 1-10:
-- `DynamicQuestionCard.tsx` → histogram axis fixed to 1-10, key finding shows `Average score: X/10`
-- `ScriptResultsOverview.tsx` → KPI card shows `{avgRating}/10`
-- `QuestionCard.tsx` (builder) → type label hard-coded "Rating Scale (1-10)"
+### 2. Reserve `script_id_route` as a vocabulary value
 
-The schema has no `scale_max` field today. We need to add one.
+No schema change needed (`retag_source` is free-text TEXT). Document the three valid values in code comments only:
 
-### 2. Q9 branching is incomplete
-Q8 (auto-pay yes/no) branches `no_goto: 10, yes_goto: 9` — but Q9 is "PRIMARY REASON for not enrolling," which is the **No** path. The Yes path should skip Q9, and after Q9 the flow should explicitly resume at Q10. Q9 itself is missing the `required: false` flag and isn't marked `branch_only`.
+- `payment_keyword_validation` — Phase 1A one-off backfill
+- `keyword_fallback_detection` — runtime keyword fallback in `process-research-record`
+- `script_id_route` — reserved for Phase 1B deterministic script-id linkage (not yet emitted)
 
-### 3. Q9 options don't match Q8 No-path probes
-Q8's `no_probes` lists 7 reasons; Q9's `options` lists only 6 of them and adds none beyond. Minor — likely just missing "Other (specify)" capture.
+Add a small constant block in `supabase/functions/process-research-record/index.ts` and in `src/hooks/usePaymentExperienceResponses.ts` so both ends share the vocabulary.
 
-### 4. Section name typos
-- Q13: `"Policy awareness & hardship support PadSplit"` (extra word)
-- Q14: `"Policy awareness & hardship support Host"` (extra word)
-- Q16: `" flexible payments, dynamic due dates, and streamlined third-party payments"` (leading space, lowercase, sentence-as-section). Should be `"Recommendations"` or similar.
+Optional follow-up (not in this phase): write `retag_source = 'keyword_fallback_detection'` going forward whenever `detectCampaignContext` lands on `payment_experience` via keywords. Flag for Phase 1B.
 
-### 5. Missing AI extraction prompt
-`ai_prompt` is empty. The processing pipeline uses per-question `ai_extraction_hint` (which you set well), but the master `ai_prompt` is what guides per-record extraction synthesis. Without it, the Research Insights dashboard for this script will show only raw question-by-question results — no thematic cross-question synthesis.
+### 3. Update banner logic
 
-## Plan
+In `src/components/payment-experience/PaymentExperienceInsightsDashboard.tsx`:
 
-### Part A — Add configurable scale max (1-5, 1-10, or NPS 0-10)
+Replace:
 
-**Schema change** (`src/hooks/useResearchScripts.ts`):
-- Add `scale_min?: number` (default 1) and `scale_max?: number` (default 10) to `ScriptQuestion`.
-- Backward compatible — missing values default to existing 1-10 behavior.
+```ts
+const allValidationSample =
+  records.length > 0 && records.every((r) => r.retag_source === 'payment_keyword_validation');
+```
 
-**Builder** (`src/components/script-builder/QuestionCard.tsx`):
-- When `type === 'scale'`, show a small Min/Max number-input pair (default 1 / 10).
-- Update type label from `"Rating Scale (1-10)"` to `"Rating Scale"`.
+With:
 
-**Dashboard rendering** (`src/components/research/DynamicQuestionCard.tsx`):
-- Replace hard-coded `length: 10` histogram with `Array.from({ length: max - min + 1 }, ...)` driven by the question's `scale_min/scale_max`.
-- Replace `Average score: X/10` with `Average score: X/{max}`.
+```ts
+const scriptLinkedCount = records.filter((r) => r.retag_source === 'script_id_route').length;
 
-**KPI** (`src/components/research/ScriptResultsOverview.tsx`):
-- Avg Rating card shows `{avg}/{max}` using the question's max (or "mixed" if multiple scale questions with different maxes).
+const hasOnlyKeywordDetectedRecords =
+  records.length > 0 && scriptLinkedCount === 0;
 
-**One-time data fix**: Set `scale_max = 5` on Q10 of this script via SQL.
+const hasMixedProvenance =
+  records.length > 0 && scriptLinkedCount > 0 && scriptLinkedCount < records.length;
+```
 
-### Part B — Fix script structure issues
+Then:
 
-Update `c701a243-...` via SQL:
-- **Q9**: set `required: false` and add comment that this is conditional. Add the missing 7th option (`"Other (specify)"`) and align with Q8 no_probes list.
-- **Q8 branch**: add explicit `unsure_goto: 10` so the Unsure path doesn't fall through to Q9.
-- **Section names**: trim "PadSplit"/"Host" suffixes off Q13/Q14 to keep section grouping clean (`"Policy awareness & hardship support"`). Rename Q16 section to `"Recommendations"`.
-- **Q15 + Q16**: review currently truncated — confirm `options` and `probes` look correct (will surface in the diff for you to OK).
+if (hasOnlyKeywordDetectedRecords) {
 
-### Part C — Add AI extraction prompt
+  // Keyword-detected sample — no records are linked via script_id yet. Permanent linkage pending Phase 1B.
 
-Draft a focused `ai_prompt` for this script aligned to the P0 priorities you mentioned (flexible payments, dynamic due dates, hardship protocol). Save it on the script and set `ai_model = google/gemini-2.5-flash`, `ai_temperature = 0.2` (already set).
+}
 
-Suggested prompt scope:
-- Extract per-call: payment literacy score (composite of Q1-Q4 accuracy), top friction theme (Q11), auto-pay barrier category (Q8/Q9), hardship awareness gap (Q12-Q14), and one "wish" capability (Q16).
-- Output structured JSON for the Research Insights synthesis.
+if (hasMixedProvenance) {
 
-### Part D — Verification before launch
+  // Mixed provenance — some records are script-linked, while others were keyword-detected.
 
-After fixes:
-1. Set `is_active = true` on the script.
-2. Run `parse-research-script` once on a sample transcript to confirm Q10 renders as 1-5.
-3. Confirm new "Member Payment Experience" entry appears in Research Insights campaign dropdown (auto-discovery via slug).
-4. Generate slug `payment_experience` so the public link `/research/script/payment_experience` is shareable for your HEX dashboard team.
+}
 
-## Files to Change
+&nbsp;
 
-| File | Change |
-|---|---|
-| `src/hooks/useResearchScripts.ts` | Add `scale_min` / `scale_max` to `ScriptQuestion` interface |
-| `src/components/script-builder/QuestionCard.tsx` | Min/max inputs when type=scale; relabel type |
-| `src/components/research/DynamicQuestionCard.tsx` | Dynamic histogram range + dynamic `/max` label |
-| `src/components/research/ScriptResultsOverview.tsx` | Dynamic `/max` on Avg Rating KPI |
-| `src/components/script-builder/StepPreview.tsx` | (if it renders scale preview) match new range |
-| Migration / one-off SQL | Patch Q9, sections, Q8 branch, Q10 scale_max=5, slug, ai_prompt on script `c701a243-...` |
+Update the banner copy to reflect the broader meaning:
 
-## Out of Scope
+> "Keyword-detected sample — no records are linked via script_id yet. Permanent linkage pending Phase 1B."
 
-- HEX dashboard / external call list — you're handling that by end of week.
-- Spanish translation — script is English-only today; auto-translation will fire when the script is activated (existing background flow).
+## Verification
 
+- Re-query: `SELECT retag_source, count(*) FROM booking_transcriptions WHERE research_campaign_type='payment_experience' GROUP BY 1;` → expect `payment_keyword_validation: 14`, `keyword_fallback_detection: 9`, no NULLs.
+- Reload `/research/insights?campaign=payment_experience` → KPIs still show 23 surveyed, banner now visible (since none are `script_id_route`).
+
+## Out of scope
+
+- Emitting `keyword_fallback_detection` from the live `process-research-record` path (Phase 1B trace will define the right hook point).
+- Any change to KPI math or extraction routing.
