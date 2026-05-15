@@ -2276,10 +2276,10 @@ export type Database = {
           ai_analysis: Json | null
           call_date: string
           call_duration_seconds: number | null
-          call_outcome: string
+          call_outcome: string | null
           call_summary: string | null
           call_transcription: string | null
-          caller_name: string
+          caller_name: string | null
           caller_phone: string | null
           caller_status: string | null
           caller_type: string
@@ -2289,7 +2289,7 @@ export type Database = {
           kixie_link: string | null
           language: string | null
           original_booking_id: string | null
-          researcher_id: string
+          researcher_id: string | null
           researcher_notes: string | null
           responses: Json | null
           transcription_status: string | null
@@ -2300,10 +2300,10 @@ export type Database = {
           ai_analysis?: Json | null
           call_date?: string
           call_duration_seconds?: number | null
-          call_outcome: string
+          call_outcome?: string | null
           call_summary?: string | null
           call_transcription?: string | null
-          caller_name: string
+          caller_name?: string | null
           caller_phone?: string | null
           caller_status?: string | null
           caller_type: string
@@ -2313,7 +2313,7 @@ export type Database = {
           kixie_link?: string | null
           language?: string | null
           original_booking_id?: string | null
-          researcher_id: string
+          researcher_id?: string | null
           researcher_notes?: string | null
           responses?: Json | null
           transcription_status?: string | null
@@ -2324,10 +2324,10 @@ export type Database = {
           ai_analysis?: Json | null
           call_date?: string
           call_duration_seconds?: number | null
-          call_outcome?: string
+          call_outcome?: string | null
           call_summary?: string | null
           call_transcription?: string | null
-          caller_name?: string
+          caller_name?: string | null
           caller_phone?: string | null
           caller_status?: string | null
           caller_type?: string
@@ -2337,7 +2337,7 @@ export type Database = {
           kixie_link?: string | null
           language?: string | null
           original_booking_id?: string | null
-          researcher_id?: string
+          researcher_id?: string | null
           researcher_notes?: string | null
           responses?: Json | null
           transcription_status?: string | null

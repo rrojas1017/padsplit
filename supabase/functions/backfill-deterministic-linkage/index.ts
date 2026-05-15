@@ -198,7 +198,7 @@ Deno.serve(async (req) => {
         caller_phone: c.phone,
         kixie_link: c.audio_url,
         call_date: c.booking_date ?? new Date().toISOString().split('T')[0],
-        caller_type: 'member',
+        caller_type: 'existing_member',
         caller_status: 'backfilled',
       }));
       const { data: insertedRows, error: insErr } = await supabase
@@ -294,21 +294,36 @@ async function snapshotCounts(supabase: any) {
     .from('bookings').select('*', { count: 'exact', head: true })
     .eq('record_type', 'research').not('research_call_id', 'is', null);
 
-  const { data: byType } = await supabase
-    .from('booking_transcriptions')
-    .select('research_campaign_type, retag_source');
+  // Fetch ALL transcription rows in pages — PostgREST caps any single response
+  // at 1000 rows, which silently truncated earlier audit numbers.
   const txByType: Record<string, number> = {};
   const txByRetag: Record<string, number> = {};
-  for (const row of (byType || []) as any[]) {
-    const k = row.research_campaign_type ?? 'null';
-    txByType[k] = (txByType[k] || 0) + 1;
-    const r = row.retag_source ?? 'null';
-    txByRetag[r] = (txByRetag[r] || 0) + 1;
+  const PAGE_SIZE = 1000;
+  let offset = 0;
+  let totalScanned = 0;
+  // Cap defensively at 500k rows to avoid runaway memory in pathological cases.
+  while (offset < 500_000) {
+    const { data, error } = await supabase
+      .from('booking_transcriptions')
+      .select('research_campaign_type, retag_source')
+      .range(offset, offset + PAGE_SIZE - 1);
+    if (error) throw new Error(`snapshotCounts page failed at offset ${offset}: ${error.message}`);
+    if (!data || data.length === 0) break;
+    for (const row of data as any[]) {
+      const k = row.research_campaign_type ?? 'null';
+      txByType[k] = (txByType[k] || 0) + 1;
+      const r = row.retag_source ?? 'null';
+      txByRetag[r] = (txByRetag[r] || 0) + 1;
+    }
+    totalScanned += data.length;
+    if (data.length < PAGE_SIZE) break;
+    offset += PAGE_SIZE;
   }
 
   return {
     research_calls: rcCount ?? 0,
     bookings_with_research_call_id: linkedBookings ?? 0,
+    transcriptions_total_scanned: totalScanned,
     transcriptions_by_campaign_type: txByType,
     transcriptions_by_retag_source: txByRetag,
   };

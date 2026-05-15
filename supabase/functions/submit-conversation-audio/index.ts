@@ -165,7 +165,7 @@ Deno.serve(async (req) => {
           caller_phone: phoneNumber,
           kixie_link: audioUrl,
           call_date: today,
-          caller_type: 'member',
+          caller_type: 'existing_member',
           caller_status: 'submitted',
         })
         .select('id')

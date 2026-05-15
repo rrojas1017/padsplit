@@ -1,0 +1,1 @@
+UPDATE public.bookings SET has_valid_conversation = true WHERE id = '626163c6-8f64-429d-b248-7446455f6214';
