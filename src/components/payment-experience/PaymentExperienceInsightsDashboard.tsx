@@ -52,16 +52,18 @@ export function PaymentExperienceInsightsDashboard() {
     );
   }
 
-  const allValidationSample =
-    records.length > 0 && records.every((r) => r.retag_source === 'payment_keyword_validation');
+  // Show the warning whenever NO visible records are deterministically script-linked.
+  // `script_id_route` is reserved for Phase 1B once true script-id routing lands.
+  const noneScriptLinked =
+    records.length > 0 && records.every((r) => r.retag_source !== 'script_id_route');
 
   return (
     <div className="space-y-4">
-      {allValidationSample && (
+      {noneScriptLinked && (
         <Alert>
           <Info className="w-4 h-4" />
           <AlertDescription>
-            Validation sample — keyword-detected records only. Permanent linkage pending.
+            Keyword-detected sample — no records are linked via script_id yet. Permanent linkage pending Phase 1B.
           </AlertDescription>
         </Alert>
       )}
