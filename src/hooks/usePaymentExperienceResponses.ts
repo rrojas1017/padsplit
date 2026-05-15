@@ -67,7 +67,7 @@ export function usePaymentExperienceResponses() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('booking_transcriptions')
-        .select('id, booking_id, research_extraction, bookings!inner(member_name, contact_phone, booking_date)')
+        .select('id, booking_id, retag_source, research_extraction, bookings!inner(member_name, contact_phone, booking_date)')
         .eq('research_campaign_type', 'payment_experience')
         .not('research_extraction', 'is', null);
 
@@ -80,6 +80,7 @@ export function usePaymentExperienceResponses() {
         contact_phone: row.bookings?.contact_phone || null,
         booking_date: row.bookings?.booking_date || '',
         extraction: (row.research_extraction || {}) as PaymentExperienceExtraction,
+        retag_source: row.retag_source || null,
       })) as PaymentExperienceRecord[];
     },
   });
