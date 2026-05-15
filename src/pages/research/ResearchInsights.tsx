@@ -257,6 +257,7 @@ export default function ResearchInsights() {
 
   const reportData = selectedReport?.data as any;
   const isAudienceSurvey = campaignType === 'audience_survey';
+  const isPaymentExperience = campaignType === 'payment_experience';
   const isScriptView = campaignType.startsWith('script:');
   const selectedScriptId = isScriptView ? campaignType.replace('script:', '') : null;
 
