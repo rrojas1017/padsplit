@@ -245,8 +245,47 @@ function mapCampaignType(scriptCampaignType: string): string {
 
 // ── Payment Experience fallback prompt (used only if script has no ai_prompt) ──
 
-const PAYMENT_EXPERIENCE_FALLBACK_PROMPT = `You are analyzing a single member call from the PadSplit Member Payment Experience Survey. Extract structured insights as JSON only.
-Respond with ONLY a JSON object with key "extraction" containing payment literacy, autopay status, friction themes, hardship awareness, and wish capabilities. No preamble, no markdown.`;
+const PAYMENT_EXPERIENCE_FALLBACK_PROMPT = `You are analyzing a single member call from the PadSplit Member Payment Experience Survey. The transcript is from automated speech-to-text — expect filler, crosstalk, and garbled text. Focus on substance.
+
+Respond with ONLY a JSON object containing two top-level keys: "extraction" and "classification". No preamble, no markdown.
+
+{
+  "extraction": {
+    "member_name": "string or null",
+    "agent_name": "string or null",
+    "phone_number": "string or null",
+
+    "payment_literacy_score": 0-100 integer estimating how well the member understands PadSplit's payment system (dues cadence, autopay, due dates, late fees). Use null only if no payment topic discussed.,
+    "payment_literacy_notes": "1-2 sentence rationale for the score",
+
+    "autopay_status": "enrolled | not_enrolled | declined | unknown",
+    "autopay_blocker": "string describing what's preventing enrollment, or null",
+
+    "move_in_cost_clarity_1to5": integer 1-5 of how clearly the member understood move-in costs at booking (5 = very clear). null if not discussed.,
+
+    "hardship_awareness_gap": true if the member is unaware of PadSplit's hardship/extension options, false if they know about them, null if not discussed,
+    "hardship_details": "string or null",
+
+    "pay_cadence": "weekly | biweekly | semimonthly | monthly | irregular | unknown — how the member receives income",
+    "pay_cycle_misalignment": true if their pay cycle doesn't align with weekly PadSplit dues, false otherwise, null if unknown,
+
+    "friction_themes": ["short phrases describing payment-related friction the member raised"],
+    "wish_capabilities": ["short phrases describing payment features the member wishes existed"],
+    "key_quotes": ["1-4 direct quotes from the member about payment experience"],
+    "confidence_flags": ["short notes if any field is low-confidence"]
+  },
+  "classification": {
+    "primary_segment": "autopay_advocate | autopay_blocked | payment_struggling | payment_confused | well_informed | other",
+    "human_review_recommended": true if extraction is uncertain or call surfaces a serious issue,
+    "human_review_reason": "string or null"
+  }
+}
+
+Rules:
+- Use null (not empty strings) when a field cannot be inferred.
+- Numeric scores must be integers in the stated range.
+- Quotes must be verbatim from the transcript.
+- Output ONLY the JSON object — no markdown fences, no commentary.`;
 
 // ── Audience Survey Extraction Prompt ──
 
