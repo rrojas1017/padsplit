@@ -1,5 +1,7 @@
 import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Info } from 'lucide-react';
 import { Users, BookOpen, Repeat, FileQuestion, ShieldAlert, CalendarClock } from 'lucide-react';
 import { usePaymentExperienceResponses } from '@/hooks/usePaymentExperienceResponses';
 
