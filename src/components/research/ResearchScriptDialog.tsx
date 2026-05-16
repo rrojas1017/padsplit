@@ -30,7 +30,7 @@ const TARGET_AUDIENCES = [
 ];
 
 const QUESTION_TYPES = [
-  { value: 'scale', label: 'Scale (1-10)' },
+  { value: 'scale', label: 'Rating Scale (1-5)' },
   { value: 'open_ended', label: 'Open Ended' },
   { value: 'multiple_choice', label: 'Multiple Choice' },
   { value: 'yes_no', label: 'Yes / No' },
