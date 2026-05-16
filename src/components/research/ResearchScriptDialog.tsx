@@ -30,7 +30,7 @@ const TARGET_AUDIENCES = [
 ];
 
 const QUESTION_TYPES = [
-  { value: 'scale', label: 'Scale (1-10)' },
+  { value: 'scale', label: 'Rating Scale (1-5)' },
   { value: 'open_ended', label: 'Open Ended' },
   { value: 'multiple_choice', label: 'Multiple Choice' },
   { value: 'yes_no', label: 'Yes / No' },
@@ -294,7 +294,14 @@ export function ResearchScriptDialog({ open, onOpenChange, script, onSave, impor
                       <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                         <div className="space-y-1">
                           <Label className="text-xs">Type</Label>
-                          <Select value={q.type} onValueChange={(v: ScriptQuestion['type']) => updateQuestion(idx, { type: v })}>
+                          <Select value={q.type} onValueChange={(v: ScriptQuestion['type']) => {
+                            const updates: Partial<ScriptQuestion> = { type: v };
+                            if (v === 'scale') {
+                              if (q.scale_min === undefined) updates.scale_min = 1;
+                              if (q.scale_max === undefined) updates.scale_max = 5;
+                            }
+                            updateQuestion(idx, updates);
+                          }}>
                             <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
                             <SelectContent>
                               {QUESTION_TYPES.map(t => <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>)}
