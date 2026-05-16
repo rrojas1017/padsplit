@@ -28,9 +28,9 @@ function KPI({ label, value, denominator, meta, icon, iconBg, iconColor }: KPIPr
     <Card className="h-full">
       <CardContent className="p-4 h-full flex flex-col">
         <div className="flex items-start justify-between gap-3">
-          <div className="space-y-1 min-w-0 flex-1">
-            <p className="text-xs uppercase tracking-wide text-muted-foreground">{label}</p>
-            <p className="text-2xl font-semibold text-foreground">{value}</p>
+          <div className="space-y-1.5 min-w-0 flex-1">
+            <p className="text-[13px] font-medium tracking-wide text-muted-foreground uppercase">{label}</p>
+            <p className="text-5xl font-bold tracking-tight text-foreground leading-none">{value}</p>
           </div>
           <div
             className={cn(
