@@ -384,6 +384,7 @@ export function ResearchScriptDialog({ open, onOpenChange, script, onSave, impor
                           onChange={updates => updateQuestion(idx, updates)}
                         />
                       )}
+                    </div>
                     <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 text-destructive" onClick={() => removeQuestion(idx)}>
                       <Trash2 className="w-4 h-4" />
                     </Button>
