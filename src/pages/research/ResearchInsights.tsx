@@ -346,12 +346,7 @@ export default function ResearchInsights() {
           <SelectContent>
             <SelectItem value="move_out_survey">Move-Out Research</SelectItem>
             <SelectItem value="audience_survey">Audience Survey</SelectItem>
-            <SelectItem value="payment_experience" textValue="Payment Experience Survey">
-              <div className="flex flex-col">
-                <span>Payment Experience Survey</span>
-                <span className="text-[10px] text-muted-foreground">Hybrid Quant + Qual</span>
-              </div>
-            </SelectItem>
+            <SelectItem value="payment_experience">Payment Experience Survey</SelectItem>
             {activeScripts.map(s => (
               <SelectItem key={s.id} value={`script:${s.id}`}>{s.name}</SelectItem>
             ))}
