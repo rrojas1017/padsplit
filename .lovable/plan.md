@@ -1,91 +1,151 @@
+# Phase 2A — Payment Experience Insight Layer (revised)
 
-# Phase 1D — Move-Out Deterministic Linkage Cleanup
+Transforms `PaymentExperienceInsightsDashboard` from a flat KPI grid into a layered operational view, using only the structured `research_extraction` fields already produced. No new backend, no new tabs, no charts beyond what's needed for the three insight panels.
 
-## Current State (verified)
+## What gets added (in priority order)
 
-- `conversation_submissions.campaign = 'Q1-Research-2026'`: **31,636 rows**, every one has a `booking_id`.
-- Joined `booking_transcriptions`: **23,935 rows**, all stamped `research_campaign_type='move_out_survey'` via column default, `retag_source = NULL`. The other ~7.7k bookings have no transcription yet.
-- `research_campaigns` Move-Out row (`2dfa12b2…`) has `campaign_key = 'Move-in-out-Research:-Member-experience-&-Reason-code-Classification'` → script `6397bb7f…` (slug `satisfaction`, type `satisfaction`).
-- Resolvers in `submit-conversation-audio` and `backfill-deterministic-linkage` already map `satisfaction → move_out_survey` and stamp `retag_source='script_id_route'`. They simply find no `campaign_key` match for the raw string `Q1-Research-2026`, so the deterministic path is skipped and the default kicks in.
+### 1. AI Insight banner (top of dashboard) — compact variant
+Mirrors the Move-Out `MoveOutOverview` "AI Insight" card but tuned for operational density:
+- Reduced vertical padding (`p-4` instead of `p-6`)
+- Headline uses `text-sm font-semibold` (not `text-lg`); supporting line `text-xs text-slate-300`
+- Single line for footer metadata
+- No oversized icon — small `Sparkles` (`w-3.5 h-3.5`) only
 
-**Conclusion:** the architecture is already correct. The only missing piece is a canonical campaign identity for the string `Q1-Research-2026`.
+Pulls the latest synthesized summary for `campaign_type = 'payment_experience'` from the existing `research_insights` table. If no row exists, falls back to a deterministic client-derived headline assembled from the strongest KPI signal. The friction and auto-pay panels below the KPI row remain the primary visual focus.
 
-## Recommended Canonical Handling
+### 2. KPI grid with denominator transparency
+Local `KPI` component extended with optional `denominator` and `meta` props. Every percentage/average tile shows a small `N=x/y` line under the value.
 
-**Approach A — Insert a new `research_campaigns` row** keyed `Q1-Research-2026`, pointing at the existing Move-Out script.
-
-| Approach | Pros | Cons |
-|---|---|---|
-| **A. New campaign row (recommended)** | No schema change. Existing Move-Out campaign untouched. Mirrors the proven Payments/Audience pattern. Future Q2/Q3 just drop in another row. | One extra row to manage. |
-| B. Rename existing campaign's `campaign_key` to `Q1-Research-2026` | Single row. | Loses original key; couples identity to a single quarter; breaks if older traffic ever uses the original key. |
-| C. Add `campaign_aliases` array column + resolver rewrite | Most flexible long-term. | Schema migration, index, resolver changes — out of scope for a linkage fix. |
-
-Proposed row values:
-
+**Members Surveyed tile** carries provenance inline (legacy "Keyword-detected sample" alert is removed entirely — Payment Experience now has 26,955 `script_id_route` rows, so the warning is obsolete):
 ```
-name:         "Q1-Research-2026 — Move-Out (Member Experience & Reason Codes)"
-campaign_key: "Q1-Research-2026"
-script_id:    6397bb7f-ac6a-49ea-90ad-9ca6ec046434
-status:       active
+Members Surveyed
+27,431
+N=27,431 routed
+script_id_route: 26,955 · keyword: 476
 ```
 
-Because both campaign rows point at the **same script**, resolvers automatically produce `research_campaign_type = 'move_out_survey'` and `retag_source = 'script_id_route'`. No ingestion code changes required.
+### 3. Top Payment Friction panel
+Compact `Card` listing the top 5 normalized friction themes by frequency. Each row:
+- Canonical theme label
+- Count + share of analytics-eligible denominator
+- One representative `friction_verbatim` quote (truncated to ~140 chars)
 
-## Expected Rows Affected
+### 4. Auto-pay Barrier analysis
+Second `Card`, only rendered when ≥1 analytics-eligible record has `autopay_status === 'not_enrolled'`:
+- Headline metric: % not enrolled
+- Top 5 canonical `autopay_barrier_category` values with counts + share of not-enrolled denominator
+- Most common `autopay_unlock_condition` per barrier ("Unlock:" hint)
 
-- `research_calls` inserted: up to **23,935** (one per Q1 submission whose booking has a transcription and no `research_call_id`).
-- `bookings.research_call_id` updated: same.
-- `booking_transcriptions.retag_source` flipped NULL → `script_id_route`: same. `research_campaign_type` value unchanged (already `move_out_survey`); the win is provenance, not the value.
-- ~7.7k Q1 submissions without a transcription will be picked up via the same path once transcription completes.
+### 5. Pay-cycle Misalignment — QA / refactor
+Uses the new `CADENCE_NORMALIZATION_MAP`. Classification: `weekly | biweekly | semi_monthly | monthly | other | unknown`. Misaligned = total − weekly − unknown. `unknown` excluded from numerator and denominator. KPI tile shows `N=x/y` and a `meta` line with the breakdown count.
 
-## Plan
+## Normalization & quality gating (new)
 
-### Step 1 — Confirm recommendation (no writes)
-Pause here for approval of Approach A and the proposed row values above.
+### `src/hooks/usePaymentExperienceResponses.ts` — explicit constants
 
-### Step 2 — Insert canonical campaign row
-Single-row insert into `research_campaigns`. Reversible by deleting the row.
+```ts
+// Canonical category maps prevent aggregation drift from free-text variations.
+// Keys are normalized inputs (lowercased, trimmed, punctuation stripped);
+// values are canonical bucket labels surfaced in the UI.
 
-### Step 3 — Live ingestion verification
-Submit a synthetic `Q1-Research-2026` payload via `submit-conversation-audio`. Confirm:
-- `research_calls` row created with `campaign_id` = new row
-- `bookings.research_call_id` populated
-- `booking_transcriptions.research_campaign_type='move_out_survey'`, `retag_source='script_id_route'`
+export const CADENCE_NORMALIZATION_MAP: Record<string, CadenceBucket> = {
+  'weekly': 'weekly', 'every week': 'weekly', '1 week': 'weekly',
+  'biweekly': 'biweekly', 'bi weekly': 'biweekly', 'bi-weekly': 'biweekly',
+  'every 2 weeks': 'biweekly', 'every two weeks': 'biweekly', 'fortnightly': 'biweekly',
+  'semi monthly': 'semi_monthly', 'semimonthly': 'semi_monthly', 'twice a month': 'semi_monthly',
+  'monthly': 'monthly', 'every month': 'monthly', 'once a month': 'monthly',
+};
 
-Clean up the synthetic record afterward.
+export const FRICTION_THEME_MAP: Record<string, FrictionTheme> = {
+  'autopay distrust': 'autopay_distrust', 'fear of autopay': 'autopay_distrust',
+  'late fee confusion': 'late_fee_confusion', 'unclear fees': 'late_fee_confusion',
+  'method failures': 'method_failure', 'card declined': 'method_failure',
+  'move in cost surprise': 'move_in_cost_surprise', 'unexpected charges': 'move_in_cost_surprise',
+  'pay cycle mismatch': 'pay_cycle_mismatch', 'paid weekly not aligned': 'pay_cycle_mismatch',
+  // … extend with the actual top free-text values observed in production
+};
 
-### Step 4 — Dry-run backfill audit
-`backfill-deterministic-linkage` with `{"dryRun": true, "campaignFilter": "Q1-Research-2026", "includeSnapshot": true}`, paginated to completion. Return:
-- expected rows affected (full counts, not sampled)
-- proposed `retag_source` (`script_id_route`)
-- unresolved / skipped counts
-- before-snapshot of `research_calls` and linked-bookings counts
+export const AUTOPAY_BARRIER_MAP: Record<string, AutopayBarrier> = {
+  "don't trust autopay": 'distrust_recurring_charges',
+  'fear recurring charges': 'distrust_recurring_charges',
+  'no stable income': 'income_irregularity',
+  'irregular pay': 'income_irregularity',
+  'prefers control': 'wants_manual_control',
+  'wants to choose when to pay': 'wants_manual_control',
+  'insufficient funds': 'cashflow_constraint',
+  // …
+};
+```
 
-### Step 5 — Paginated write backfill (only after explicit approval)
-Same function with `{"dryRun": false, "limit": 1500, "cursor": "<last_processed_conversation_submission_id>", "campaignFilter": "Q1-Research-2026"}`, chained until `remaining_estimate === 0`. Deterministic `ORDER BY conversation_submissions.id ASC`. Idempotent — already skips rows stamped `script_id_route`.
+Normalization helper applies: `lowercase → trim → strip punctuation → lookup; fallback to 'other'`.
 
-### Step 6 — Post-run audit
-Return:
-- final `retag_source × research_campaign_type` breakdown
-- total `script_id_route` rows
-- per-row failures / skipped rows
-- visual confirmation that Move-Out dashboards still render
+### Analytics eligibility gate
 
-### Step 7 — Default-column evaluation (report only)
-After Step 6 is clean, surface a recommendation on whether `booking_transcriptions.research_campaign_type DEFAULT 'move_out_survey'` can be dropped in a later phase. **No removal in 1D.**
+New per-record flag derived once during mapping:
 
-## Safeguards
+```ts
+export interface PaymentExperienceRecord {
+  // …existing fields
+  analyticsEligible: boolean;
+  ineligibleReason?: 'voicemail' | 'too_short' | 'insufficient_extraction' | 'missing_required_fields';
+}
+```
 
-- **Deterministic precedence preserved:** resolver already prefers `research_call_id → campaign → script` over keyword fallback. No logic changes.
-- **Idempotency:** backfill already skips rows where `retag_source='script_id_route'`.
-- **Auditability:** dry-run returns full counts via cursor pagination (fix from 1C is in place).
-- **Rollback:**
-  - Step 2: `DELETE FROM research_campaigns WHERE campaign_key='Q1-Research-2026'`.
-  - Step 5: backfilled rows identifiable via `research_calls.campaign_id = <new row id>`. Targeted UPDATE can revert `retag_source` to NULL and null out `bookings.research_call_id`, then delete the matching `research_calls` rows.
+Eligibility rules (all must pass):
+1. `bookings.has_valid_conversation !== false` (excludes voicemail/no-conversation)
+2. Transcript length (when joinable) ≥ a minimum, OR `call_duration_seconds >= 120`
+3. Extraction has at least 3 of: `payment_literacy_score`, `autopay_status`, `move_in_cost_clarity_1to5`, `pay_cadence`, `top_friction_theme`
+4. No required `p0_signal` errors
 
-## Out of Scope
-Dashboard/UI changes, default-column removal, keyword tuning, AI prompt edits, analytics expansion.
+All KPI denominators and the Friction / Auto-pay panels operate on **analytics-eligible records only**.
 
----
+The Members Surveyed tile shows two numbers:
+- Top value: total routed (matches infra counts)
+- Meta line: `eligible: x · excluded: y (voicemail z · short w · partial v)`
 
-**Awaiting approval of Approach A and the proposed campaign row** before proceeding to Step 2. After Step 4 (dry-run), I'll stop again for explicit write-backfill approval.
+## Out of scope (intentionally deferred)
+
+- New tabs, new routes, new charts
+- Member-level slide-over / drill-down
+- Server-side AI synthesis pipeline changes (banner only consumes existing `research_insights` rows; client-derived fallback when absent)
+- Export / PDF, comparative period analysis
+
+## Technical notes
+
+**Files touched**
+- `src/components/payment-experience/PaymentExperienceInsightsDashboard.tsx` — remove legacy "Keyword-detected sample" alert; add compact AI banner + Friction panel + Auto-pay panel; extend local `KPI` with `denominator` and `meta` props
+- `src/hooks/usePaymentExperienceResponses.ts` — add normalization constants, `analyticsEligible` derivation, `payCycleBreakdown`, denominators, `topFrictionThemes[]`, `autopayBarriers[]`, `retagSourceCounts`, `eligibilityStats`
+- (new) `src/hooks/usePaymentExperienceAIInsight.ts` — fetches latest `research_insights` row for `campaign_type='payment_experience'`; returns `{ headline, finding, generatedAt, totalAnalyzed, source: 'ai' | 'derived' }`
+
+**Data sources (all already populated)**
+- `booking_transcriptions.research_extraction`
+- `booking_transcriptions.retag_source`
+- `bookings.has_valid_conversation`, `bookings.call_duration_seconds`
+- `research_insights` (when present)
+
+**Layout**
+
+```text
+┌──────────────────────────────────────────┐
+│  AI Insight (compact, dense)             │
+├──────────────────────────────────────────┤
+│  KPI grid — every tile shows N=x/y       │
+│  (Members Surveyed shows routed split)   │
+├────────────────────┬─────────────────────┤
+│ Top Payment        │ Auto-pay Barriers   │
+│ Friction (top 5)   │ (top 5 + unlock)    │
+└────────────────────┴─────────────────────┘
+```
+
+Stacks single-column under `md`. No new dependencies. Styling via existing tokens.
+
+## Acceptance checks
+
+- Legacy "Keyword-detected sample" alert is gone
+- Members Surveyed tile shows `script_id_route: 26,955 · keyword: …` inline
+- AI banner is visually compact — does not dominate the page; friction/auto-pay panels read as primary content
+- All KPI percentages and the two insight panels compute against `analyticsEligible === true` records only
+- Eligibility stats visible under Members Surveyed (eligible vs excluded with reasons)
+- Aggregations use the three normalization maps; no inline string matching for friction, autopay barriers, or cadence
+- Pay-cycle Misalignment % matches normalized breakdown; `unknown` excluded from both sides
+- Move-Out and Audience Survey dashboards untouched
