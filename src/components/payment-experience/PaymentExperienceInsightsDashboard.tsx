@@ -86,17 +86,7 @@ function membersMeta(retag: RetagSourceCounts, elig: EligibilityStats): { denom:
     `keyword: ${retag.keyword.toLocaleString()}`,
   ];
   if (retag.other) retagBits.push(`other: ${retag.other.toLocaleString()}`);
-  const eligBits = [
-    `eligible: ${elig.eligible.toLocaleString()}`,
-    `excluded: ${elig.excluded.toLocaleString()}`,
-  ];
-  if (elig.voicemail) eligBits.push(`vm ${elig.voicemail}`);
-  if (elig.tooShort) eligBits.push(`short ${elig.tooShort}`);
-  if (elig.insufficientExtraction) eligBits.push(`partial ${elig.insufficientExtraction}`);
-  return {
-    denom: denomLine,
-    meta: `${retagBits.join(' · ')} · ${eligBits.join(' · ')}`,
-  };
+  return { denom: denomLine, meta: retagBits.join(' · ') };
 }
 
 // ── Dashboard ───────────────────────────────────────────────────────────────
