@@ -146,41 +146,53 @@ export function PaymentExperienceInsightsDashboard() {
           value={records.length.toLocaleString()}
           denominator={mm.denom}
           meta={mm.meta}
-          icon={<Users className="w-4 h-4" />}
+          icon={<Users className="h-4 w-4" />}
+          iconBg="bg-blue-50"
+          iconColor="text-blue-600"
         />
         <KPI
           label="Avg Payment Literacy"
           value={fmtScore(kpis.literacy, 100)}
           denominator={denom(kpis.literacy)}
           meta="Composite of Q1–Q4"
-          icon={<BookOpen className="w-4 h-4" />}
+          icon={<BookOpen className="h-4 w-4" />}
+          iconBg="bg-indigo-50"
+          iconColor="text-indigo-600"
         />
         <KPI
           label="Auto-pay Enrolled"
           value={fmtPct(kpis.autopayEnrolled)}
           denominator={denom(kpis.autopayEnrolled)}
-          icon={<Repeat className="w-4 h-4" />}
+          icon={<Repeat className="h-4 w-4" />}
+          iconBg="bg-green-50"
+          iconColor="text-green-600"
         />
         <KPI
           label="Move-in Cost Clarity"
           value={fmtScore(kpis.moveInClarity, 5)}
           denominator={denom(kpis.moveInClarity)}
           meta="Q10 (1–5 scale)"
-          icon={<FileQuestion className="w-4 h-4" />}
+          icon={<FileQuestion className="h-4 w-4" />}
+          iconBg="bg-amber-50"
+          iconColor="text-amber-600"
         />
         <KPI
           label="Hardship-Aware"
           value={fmtPct(kpis.hardshipAware)}
           denominator={denom(kpis.hardshipAware)}
           meta="Knew at least one option"
-          icon={<ShieldAlert className="w-4 h-4" />}
+          icon={<ShieldAlert className="h-4 w-4" />}
+          iconBg="bg-rose-50"
+          iconColor="text-rose-600"
         />
         <KPI
           label="Pay-cycle Misalignment"
           value={fmtPct(kpis.payCycleMisalignment)}
           denominator={denom(kpis.payCycleMisalignment)}
           meta={`weekly ${kpis.payCycleBreakdown.weekly} · bi ${kpis.payCycleBreakdown.biweekly} · mo ${kpis.payCycleBreakdown.monthly} · other ${kpis.payCycleBreakdown.other}`}
-          icon={<CalendarClock className="w-4 h-4" />}
+          icon={<CalendarClock className="h-4 w-4" />}
+          iconBg="bg-orange-50"
+          iconColor="text-orange-600"
         />
       </div>
 
