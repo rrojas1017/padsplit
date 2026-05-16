@@ -2,7 +2,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
   Users, BookOpen, Repeat, FileQuestion, ShieldAlert, CalendarClock,
-  Sparkles, AlertTriangle, Zap,
+  Sparkles, AlertTriangle, Zap, ShieldCheck,
 } from 'lucide-react';
 import {
   usePaymentExperienceResponses,
