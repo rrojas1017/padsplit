@@ -2,7 +2,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
   Users, BookOpen, Repeat, FileQuestion, ShieldAlert, CalendarClock,
-  Sparkles, AlertTriangle, Zap,
+  Sparkles, AlertTriangle, Zap, ShieldCheck,
 } from 'lucide-react';
 import {
   usePaymentExperienceResponses,
@@ -86,17 +86,7 @@ function membersMeta(retag: RetagSourceCounts, elig: EligibilityStats): { denom:
     `keyword: ${retag.keyword.toLocaleString()}`,
   ];
   if (retag.other) retagBits.push(`other: ${retag.other.toLocaleString()}`);
-  const eligBits = [
-    `eligible: ${elig.eligible.toLocaleString()}`,
-    `excluded: ${elig.excluded.toLocaleString()}`,
-  ];
-  if (elig.voicemail) eligBits.push(`vm ${elig.voicemail}`);
-  if (elig.tooShort) eligBits.push(`short ${elig.tooShort}`);
-  if (elig.insufficientExtraction) eligBits.push(`partial ${elig.insufficientExtraction}`);
-  return {
-    denom: denomLine,
-    meta: `${retagBits.join(' · ')} · ${eligBits.join(' · ')}`,
-  };
+  return { denom: denomLine, meta: retagBits.join(' · ') };
 }
 
 // ── Dashboard ───────────────────────────────────────────────────────────────
@@ -104,7 +94,7 @@ function membersMeta(retag: RetagSourceCounts, elig: EligibilityStats): { denom:
 export function PaymentExperienceInsightsDashboard() {
   const {
     records, kpis, eligibilityStats, retagSourceCounts,
-    topFrictionThemes, autopayBarriers, isLoading,
+    topFrictionThemes, frictionSummary, autopayBarriers, isLoading,
   } = usePaymentExperienceResponses();
   const { insight } = usePaymentExperienceAIInsight({
     kpis,
@@ -183,7 +173,7 @@ export function PaymentExperienceInsightsDashboard() {
         />
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
         {/* Top Payment Friction */}
         <Card>
           <CardHeader className="pb-2">
@@ -193,9 +183,16 @@ export function PaymentExperienceInsightsDashboard() {
             </CardTitle>
           </CardHeader>
           <CardContent className="pt-0">
+            {frictionSummary.noFrictionCount > 0 && (
+              <p className="text-xs text-muted-foreground mb-3">
+                {Math.round(frictionSummary.noFrictionShare * 100)}% reported no major payment friction
+              </p>
+            )}
             {topFrictionThemes.length === 0 ? (
-              <p className="text-xs text-muted-foreground py-4">
-                Not enough qualitative friction data yet.
+              <p className="text-xs text-muted-foreground py-2">
+                {frictionSummary.noFrictionCount > 0
+                  ? 'No additional friction themes reported.'
+                  : 'Not enough qualitative friction data yet.'}
               </p>
             ) : (
               <ul className="space-y-3">
@@ -250,6 +247,53 @@ export function PaymentExperienceInsightsDashboard() {
             </CardContent>
           </Card>
         )}
+
+        {/* Analytics Eligibility */}
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm flex items-center gap-2">
+              <ShieldCheck className="w-4 h-4 text-emerald-500" />
+              Analytics Eligibility
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="pt-0 space-y-2">
+            <div className="flex items-baseline justify-between gap-2">
+              <span className="text-xs text-muted-foreground">Eligible responses</span>
+              <span className="text-sm font-medium text-foreground tabular-nums">
+                {eligibilityStats.eligible.toLocaleString()} / {(eligibilityStats.eligible + eligibilityStats.excluded).toLocaleString()}
+              </span>
+            </div>
+            <div className="flex items-baseline justify-between gap-2 pb-2 border-b border-border">
+              <span className="text-xs text-muted-foreground">Excluded responses</span>
+              <span className="text-sm font-medium text-foreground tabular-nums">
+                {eligibilityStats.excluded.toLocaleString()}
+              </span>
+            </div>
+            <ul className="space-y-1.5 pt-1">
+              {eligibilityStats.voicemail > 0 && (
+                <li className="flex items-baseline justify-between gap-2 text-xs">
+                  <span className="text-muted-foreground">Voicemail / invalid conversation</span>
+                  <span className="text-foreground tabular-nums">{eligibilityStats.voicemail.toLocaleString()}</span>
+                </li>
+              )}
+              {eligibilityStats.tooShort > 0 && (
+                <li className="flex items-baseline justify-between gap-2 text-xs">
+                  <span className="text-muted-foreground">Too short (&lt;120s)</span>
+                  <span className="text-foreground tabular-nums">{eligibilityStats.tooShort.toLocaleString()}</span>
+                </li>
+              )}
+              {eligibilityStats.insufficientExtraction > 0 && (
+                <li className="flex items-baseline justify-between gap-2 text-xs">
+                  <span className="text-muted-foreground">Incomplete extraction</span>
+                  <span className="text-foreground tabular-nums">{eligibilityStats.insufficientExtraction.toLocaleString()}</span>
+                </li>
+              )}
+              {eligibilityStats.excluded === 0 && (
+                <li className="text-xs text-muted-foreground">All routed responses are eligible.</li>
+              )}
+            </ul>
+          </CardContent>
+        </Card>
       </div>
     </div>
   );

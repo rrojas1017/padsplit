@@ -80,8 +80,19 @@ export const FRICTION_THEME_MAP: Record<string, string> = {
   'app ux': 'app_ux_issues',
   'website issues': 'app_ux_issues',
   'no friction': 'no_friction',
+  'no friction reported': 'no_friction',
+  'no payment friction': 'no_friction',
+  'no payment problems': 'no_friction',
+  'no issues': 'no_friction',
+  'no issue': 'no_friction',
+  'no problems': 'no_friction',
   'none': 'no_friction',
+  'nothing': 'no_friction',
+  'n a': 'no_friction',
+  'na': 'no_friction',
 };
+
+export const NO_FRICTION_KEY = 'no_friction';
 
 export const FRICTION_THEME_LABELS: Record<string, string> = {
   autopay_distrust: 'Auto-pay distrust',
@@ -246,6 +257,13 @@ export interface AutopayBarrierAgg {
   topUnlock: string | null;
 }
 
+export interface FrictionSummary {
+  noFrictionCount: number;
+  noFrictionShare: number; // share of answered
+  frictionAnswered: number; // answered - noFriction
+  totalAnswered: number;
+}
+
 // ────────────────────────────────────────────────────────────────────────────
 // Eligibility & aggregation
 // ────────────────────────────────────────────────────────────────────────────
@@ -334,13 +352,20 @@ function deriveKPIs(eligible: PaymentExperienceRecord[]): PaymentKPIs {
   };
 }
 
-function aggregateFrictionThemes(eligible: PaymentExperienceRecord[]): FrictionThemeAgg[] {
+function aggregateFrictionThemes(
+  eligible: PaymentExperienceRecord[],
+): { themes: FrictionThemeAgg[]; summary: FrictionSummary } {
   const counts = new Map<string, { count: number; quote: string | null }>();
   let answered = 0;
+  let noFrictionCount = 0;
   for (const r of eligible) {
     const themeKey = normalizeFriction(r.extraction?.top_friction_theme);
     if (!themeKey) continue;
     answered++;
+    if (themeKey === NO_FRICTION_KEY) {
+      noFrictionCount++;
+      continue;
+    }
     const existing = counts.get(themeKey) || { count: 0, quote: null };
     existing.count++;
     if (!existing.quote && r.extraction?.friction_verbatim) {
@@ -349,16 +374,26 @@ function aggregateFrictionThemes(eligible: PaymentExperienceRecord[]): FrictionT
     }
     counts.set(themeKey, existing);
   }
-  return Array.from(counts.entries())
+  const frictionAnswered = answered - noFrictionCount;
+  const themes = Array.from(counts.entries())
     .map(([key, v]) => ({
       key,
       label: FRICTION_THEME_LABELS[key] || key,
       count: v.count,
-      share: answered ? v.count / answered : 0,
+      share: frictionAnswered ? v.count / frictionAnswered : 0,
       sampleQuote: v.quote,
     }))
     .sort((a, b) => b.count - a.count)
     .slice(0, 5);
+  return {
+    themes,
+    summary: {
+      noFrictionCount,
+      noFrictionShare: answered ? noFrictionCount / answered : 0,
+      frictionAnswered,
+      totalAnswered: answered,
+    },
+  };
 }
 
 function aggregateAutopayBarriers(eligible: PaymentExperienceRecord[]): AutopayBarrierAgg[] {
@@ -468,7 +503,7 @@ export function usePaymentExperienceResponses() {
   const kpis: PaymentKPIs = { ...deriveKPIs(eligible), totalRouted: records.length };
   const eligibilityStats = computeEligibilityStats(records);
   const retagSourceCounts = computeRetagCounts(records);
-  const topFrictionThemes = aggregateFrictionThemes(eligible);
+  const { themes: topFrictionThemes, summary: frictionSummary } = aggregateFrictionThemes(eligible);
   const autopayBarriers = aggregateAutopayBarriers(eligible);
 
   return {
@@ -478,6 +513,7 @@ export function usePaymentExperienceResponses() {
     eligibilityStats,
     retagSourceCounts,
     topFrictionThemes,
+    frictionSummary,
     autopayBarriers,
     isLoading: query.isLoading,
     refetch: query.refetch,

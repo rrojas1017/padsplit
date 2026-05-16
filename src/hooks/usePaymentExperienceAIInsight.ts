@@ -16,20 +16,32 @@ interface DeriveInput {
   topBarriers: AutopayBarrierAgg[];
 }
 
+function joinNatural(items: string[]): string {
+  if (items.length === 0) return '';
+  if (items.length === 1) return items[0];
+  if (items.length === 2) return `${items[0]} and ${items[1]}`;
+  return `${items.slice(0, -1).join(', ')}, and ${items[items.length - 1]}`;
+}
+
 /** Deterministic client-derived headline used when no nightly insight row exists yet. */
 function deriveHeadline({ kpis, topFriction, topBarriers }: DeriveInput): PaymentAIInsight {
+  const meaningfulBarriers = topBarriers
+    .filter((b) => b.key !== 'other')
+    .slice(0, 3)
+    .map((b) => b.label.toLowerCase());
+  const meaningfulFriction = topFriction.filter((f) => f.key !== 'other' && f.key !== 'no_friction');
+
   const parts: string[] = [];
 
   if (kpis.autopayEnrolled.denominator > 0 && kpis.autopayEnrolled.value != null) {
     const notEnrolledPct = Math.round(100 - kpis.autopayEnrolled.value);
-    const barrier = topBarriers[0]?.label?.toLowerCase();
     parts.push(
-      barrier
-        ? `${notEnrolledPct}% of surveyed members are not enrolled in auto-pay — top barrier: ${barrier}.`
-        : `${notEnrolledPct}% of surveyed members are not enrolled in auto-pay.`
+      meaningfulBarriers.length
+        ? `Auto-pay adoption remains low (${notEnrolledPct}% not enrolled), with members mainly citing ${joinNatural(meaningfulBarriers)}.`
+        : `Auto-pay adoption remains low — ${notEnrolledPct}% of surveyed members are not enrolled.`
     );
-  } else if (topFriction[0]) {
-    parts.push(`Top payment friction: ${topFriction[0].label.toLowerCase()} (${topFriction[0].count} members).`);
+  } else if (meaningfulFriction[0]) {
+    parts.push(`Top payment friction: ${meaningfulFriction[0].label.toLowerCase()} (${meaningfulFriction[0].count} members).`);
   } else {
     parts.push(`${kpis.totalEligible.toLocaleString()} payment surveys analyzed.`);
   }
@@ -41,8 +53,8 @@ function deriveHeadline({ kpis, topFriction, topBarriers }: DeriveInput): Paymen
   if (kpis.moveInClarity.value != null) {
     findingBits.push(`avg move-in cost clarity ${kpis.moveInClarity.value.toFixed(1)}/5`);
   }
-  if (topFriction[0] && kpis.autopayEnrolled.denominator > 0) {
-    findingBits.push(`top friction theme: ${topFriction[0].label.toLowerCase()}`);
+  if (meaningfulFriction[0] && kpis.autopayEnrolled.denominator > 0) {
+    findingBits.push(`top friction theme: ${meaningfulFriction[0].label.toLowerCase()}`);
   }
 
   return {
