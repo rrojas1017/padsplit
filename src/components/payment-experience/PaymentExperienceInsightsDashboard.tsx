@@ -94,7 +94,7 @@ function membersMeta(retag: RetagSourceCounts, elig: EligibilityStats): { denom:
 export function PaymentExperienceInsightsDashboard() {
   const {
     records, kpis, eligibilityStats, retagSourceCounts,
-    topFrictionThemes, autopayBarriers, isLoading,
+    topFrictionThemes, frictionSummary, autopayBarriers, isLoading,
   } = usePaymentExperienceResponses();
   const { insight } = usePaymentExperienceAIInsight({
     kpis,
