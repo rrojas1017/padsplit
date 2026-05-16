@@ -18,6 +18,12 @@ export interface ScriptQuestion {
     unsure_goto?: number;
     yes_probes?: string[];
     no_probes?: string[];
+    /** Scale branching: any goto = 0 means "end survey". */
+    scale_threshold?: number;
+    scale_lte_goto?: number;
+    scale_gt_goto?: number;
+    /** Multiple-choice branching: option text → target Q# (0 = end survey). */
+    option_gotos?: Record<string, number>;
   };
   is_internal?: boolean;
   /** For type='scale' — minimum value on the rating scale (default 1) */
