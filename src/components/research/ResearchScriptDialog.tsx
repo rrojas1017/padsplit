@@ -9,7 +9,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Plus, Trash2, GripVertical, ChevronUp, ChevronDown } from 'lucide-react';
+import { Plus, Trash2, GripVertical, ChevronUp, ChevronDown, GitBranch } from 'lucide-react';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import type { ResearchScript, ScriptQuestion } from '@/hooks/useResearchScripts';
 
 const CAMPAIGN_TYPES = [
@@ -350,6 +351,39 @@ export function ResearchScriptDialog({ open, onOpenChange, script, onSave, impor
                           </div>
                         </div>
                       )}
+
+                      {q.type === 'scale' && (
+                        <div className="grid grid-cols-2 gap-3 max-w-xs">
+                          <div className="space-y-1">
+                            <Label className="text-xs">Scale Min</Label>
+                            <Input
+                              type="number"
+                              value={q.scale_min ?? 1}
+                              onChange={e => updateQuestion(idx, { scale_min: e.target.value === '' ? undefined : parseInt(e.target.value) })}
+                              className="h-8 text-xs"
+                              placeholder="1"
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <Label className="text-xs">Scale Max</Label>
+                            <Input
+                              type="number"
+                              value={q.scale_max ?? 5}
+                              onChange={e => updateQuestion(idx, { scale_max: e.target.value === '' ? undefined : parseInt(e.target.value) })}
+                              className="h-8 text-xs"
+                              placeholder="5"
+                            />
+                          </div>
+                        </div>
+                      )}
+
+                      {(q.type === 'yes_no' || q.type === 'scale' || q.type === 'multiple_choice') && (
+                        <BranchingSection
+                          question={q}
+                          totalQuestions={questions.length}
+                          onChange={updates => updateQuestion(idx, updates)}
+                        />
+                      )}
                     </div>
                     <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 text-destructive" onClick={() => removeQuestion(idx)}>
                       <Trash2 className="w-4 h-4" />
@@ -370,5 +404,160 @@ export function ResearchScriptDialog({ open, onOpenChange, script, onSave, impor
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+// Goto parser: '' → undefined, '0' → 0 (end survey), other non-negative ints → that value
+const parseGoto = (raw: string): number | undefined => {
+  if (raw === '') return undefined;
+  const n = parseInt(raw, 10);
+  if (Number.isNaN(n) || n < 0) return undefined;
+  return n;
+};
+
+interface BranchingSectionProps {
+  question: ScriptQuestion;
+  totalQuestions: number;
+  onChange: (updates: Partial<ScriptQuestion>) => void;
+}
+
+function BranchingSection({ question, totalQuestions, onChange }: BranchingSectionProps) {
+  const [open, setOpen] = useState(false);
+  const updateBranch = (patch: Partial<NonNullable<ScriptQuestion['branch']>>) => {
+    onChange({ branch: { ...question.branch, ...patch } });
+  };
+  const scaleMin = question.scale_min ?? 1;
+  const scaleMax = question.scale_max ?? 5;
+  const thresholdMax = Math.max(scaleMin, scaleMax - 1);
+
+  return (
+    <Collapsible open={open} onOpenChange={setOpen} className="w-full">
+      <CollapsibleTrigger asChild>
+        <Button variant="ghost" size="sm" className="h-7 text-xs gap-1.5">
+          <GitBranch className="w-3 h-3" />
+          Branching
+        </Button>
+      </CollapsibleTrigger>
+      <CollapsibleContent className="mt-2 space-y-3">
+        {question.type === 'yes_no' && (
+          <div className="grid grid-cols-2 gap-3 max-w-md">
+            <div className="space-y-1">
+              <Label className="text-xs">If Yes → Go to Q#</Label>
+              <Input
+                type="number"
+                min={0}
+                max={totalQuestions}
+                value={question.branch?.yes_goto ?? ''}
+                onChange={e => updateBranch({ yes_goto: parseGoto(e.target.value) })}
+                className="h-8 text-xs"
+                placeholder="Q# or 0 to end"
+              />
+              <p className="text-[11px] text-muted-foreground">Enter 0 to end survey.</p>
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">If No → Go to Q#</Label>
+              <Input
+                type="number"
+                min={0}
+                max={totalQuestions}
+                value={question.branch?.no_goto ?? ''}
+                onChange={e => updateBranch({ no_goto: parseGoto(e.target.value) })}
+                className="h-8 text-xs"
+                placeholder="Q# or 0 to end"
+              />
+              <p className="text-[11px] text-muted-foreground">Enter 0 to end survey.</p>
+            </div>
+          </div>
+        )}
+
+        {question.type === 'scale' && (
+          <div className="space-y-2 max-w-md">
+            <div className="grid grid-cols-3 gap-3">
+              <div className="space-y-1">
+                <Label className="text-xs">Threshold</Label>
+                <Input
+                  type="number"
+                  min={scaleMin}
+                  max={thresholdMax}
+                  value={question.branch?.scale_threshold ?? ''}
+                  onChange={e => {
+                    const raw = e.target.value;
+                    if (raw === '') return updateBranch({ scale_threshold: undefined });
+                    const n = parseInt(raw, 10);
+                    if (Number.isNaN(n)) return;
+                    updateBranch({ scale_threshold: Math.min(thresholdMax, Math.max(scaleMin, n)) });
+                  }}
+                  className="h-8 text-xs"
+                  placeholder={String(scaleMin)}
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">If ≤ threshold → Q#</Label>
+                <Input
+                  type="number"
+                  min={0}
+                  max={totalQuestions}
+                  value={question.branch?.scale_lte_goto ?? ''}
+                  onChange={e => updateBranch({ scale_lte_goto: parseGoto(e.target.value) })}
+                  className="h-8 text-xs"
+                  placeholder="Q# or 0 to end"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">If &gt; threshold → Q#</Label>
+                <Input
+                  type="number"
+                  min={0}
+                  max={totalQuestions}
+                  value={question.branch?.scale_gt_goto ?? ''}
+                  onChange={e => updateBranch({ scale_gt_goto: parseGoto(e.target.value) })}
+                  className="h-8 text-xs"
+                  placeholder="Q# or 0 to end"
+                />
+              </div>
+            </div>
+            <p className="text-[11px] text-muted-foreground">Enter 0 to end survey. Threshold range: {scaleMin}–{thresholdMax}.</p>
+            <p className="text-[11px] text-muted-foreground italic">
+              Scale and multiple-choice branching are saved here but will not affect live survey navigation until runtime support is enabled.
+            </p>
+          </div>
+        )}
+
+        {question.type === 'multiple_choice' && (
+          <div className="space-y-2 max-w-md">
+            {(question.options || []).length === 0 && (
+              <p className="text-[11px] text-muted-foreground">Add options above to configure per-option branching.</p>
+            )}
+            {(question.options || []).map((opt) => (
+              <div key={opt} className="grid grid-cols-[1fr_auto] items-center gap-2">
+                <Label className="text-xs truncate" title={opt}>If "{opt}" →</Label>
+                <Input
+                  type="number"
+                  min={0}
+                  max={totalQuestions}
+                  value={question.branch?.option_gotos?.[opt] ?? ''}
+                  onChange={e => {
+                    const next = parseGoto(e.target.value);
+                    const current = question.branch?.option_gotos || {};
+                    if (next === undefined) {
+                      const { [opt]: _drop, ...rest } = current;
+                      updateBranch({ option_gotos: rest });
+                    } else {
+                      updateBranch({ option_gotos: { ...current, [opt]: next } });
+                    }
+                  }}
+                  className="h-8 text-xs w-32"
+                  placeholder="Q# or 0 to end"
+                />
+              </div>
+            ))}
+            <p className="text-[11px] text-muted-foreground">Enter 0 to end survey.</p>
+            <p className="text-[11px] text-muted-foreground italic">
+              Scale and multiple-choice branching are saved here but will not affect live survey navigation until runtime support is enabled.
+            </p>
+          </div>
+        )}
+      </CollapsibleContent>
+    </Collapsible>
   );
 }
