@@ -257,6 +257,13 @@ export interface AutopayBarrierAgg {
   topUnlock: string | null;
 }
 
+export interface FrictionSummary {
+  noFrictionCount: number;
+  noFrictionShare: number; // share of answered
+  frictionAnswered: number; // answered - noFriction
+  totalAnswered: number;
+}
+
 // ────────────────────────────────────────────────────────────────────────────
 // Eligibility & aggregation
 // ────────────────────────────────────────────────────────────────────────────
