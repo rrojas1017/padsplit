@@ -1,104 +1,91 @@
-# Phase 1C — Deterministic Linkage Implementation
 
-Approved Phase 1B trace established the root cause: `submit-conversation-audio` never creates `research_calls` rows or sets `bookings.research_call_id`, and its campaign lookup fails for Payments submissions (which arrive as the campaign UUID, not the `campaign_key`). Phase 1C closes that loop with strict guardrails.
+# Phase 1D — Move-Out Deterministic Linkage Cleanup
 
-## Guardrails (must hold for every change)
+## Current State (verified)
 
-1. **Dry-run first.** Backfill ships with `dryRun: true` as the default. In dry-run mode the function performs only SELECTs and returns a JSON preview — zero writes.
-2. **Deterministic linkage wins.** Once a record resolves via `booking → research_call → campaign → script`, the keyword fallback in `detectCampaignContext` is short-circuited and may not reclassify it.
-3. **Keep the column default.** `booking_transcriptions.research_campaign_type` keeps its current `'move_out_survey'` default for backward compatibility. Removal is deferred to a later phase after production stability.
-4. **Auditability.** Every backfilled row carries `retag_source = 'script_id_route'`. A revert query can identify them; before/after counts are included in every backfill response.
+- `conversation_submissions.campaign = 'Q1-Research-2026'`: **31,636 rows**, every one has a `booking_id`.
+- Joined `booking_transcriptions`: **23,935 rows**, all stamped `research_campaign_type='move_out_survey'` via column default, `retag_source = NULL`. The other ~7.7k bookings have no transcription yet.
+- `research_campaigns` Move-Out row (`2dfa12b2…`) has `campaign_key = 'Move-in-out-Research:-Member-experience-&-Reason-code-Classification'` → script `6397bb7f…` (slug `satisfaction`, type `satisfaction`).
+- Resolvers in `submit-conversation-audio` and `backfill-deterministic-linkage` already map `satisfaction → move_out_survey` and stamp `retag_source='script_id_route'`. They simply find no `campaign_key` match for the raw string `Q1-Research-2026`, so the deterministic path is skipped and the default kicks in.
 
-## Scope of changes
+**Conclusion:** the architecture is already correct. The only missing piece is a canonical campaign identity for the string `Q1-Research-2026`.
 
-### A. `submit-conversation-audio` — close the loop at write time
+## Recommended Canonical Handling
 
-- Broaden campaign resolution: match `research_campaigns` by `id` OR `campaign_key` (current code only matches `campaign_key`, which fails for Payments).
-- When matched, also load `research_scripts.{id, slug, campaign_type}` for the campaign's `script_id`.
-- INSERT a `research_calls` row (`campaign_id`, `caller_phone`, `kixie_link`, `call_date = today`, minimal required fields). Capture its `id`.
-- INSERT the `bookings` row with `research_call_id` populated.
-- Resolve the canonical `research_campaign_type` from `script.slug` (`payment_experience`, `audience_survey`, …) using the same waterfall already in `process-research-record` (`SCRIPT_ID_MAP` → slug → `campaign_type`). When known, after the auto-transcription trigger creates the `booking_transcriptions` row, UPDATE it with `research_campaign_type = <resolved>` and `retag_source = 'script_id_route'`. (We don't change the column default; we just overwrite at known-good moments.)
-- If no campaign matches, behavior is unchanged (current keyword-fallback path stays intact).
+**Approach A — Insert a new `research_campaigns` row** keyed `Q1-Research-2026`, pointing at the existing Move-Out script.
 
-### B. `process-research-record` → `detectCampaignContext` — enforce precedence
+| Approach | Pros | Cons |
+|---|---|---|
+| **A. New campaign row (recommended)** | No schema change. Existing Move-Out campaign untouched. Mirrors the proven Payments/Audience pattern. Future Q2/Q3 just drop in another row. | One extra row to manage. |
+| B. Rename existing campaign's `campaign_key` to `Q1-Research-2026` | Single row. | Loses original key; couples identity to a single quarter; breaks if older traffic ever uses the original key. |
+| C. Add `campaign_aliases` array column + resolver rewrite | Most flexible long-term. | Schema migration, index, resolver changes — out of scope for a linkage fix. |
 
-Current order is already script-first, fallback-second, but the short-circuit added in Phase 1A only protects pre-set values that aren't `'move_out_survey'`. Tighten to:
+Proposed row values:
 
-- If `booking.research_call_id` resolves a `script_id` → return that `campaignType` immediately. **Never** consult the keyword fallback in this case.
-- If the row already carries `retag_source = 'script_id_route'` → trust it; never reclassify.
-- Keyword fallback continues to apply only when neither linkage nor a prior deterministic stamp exists.
-
-When the keyword fallback does fire and lands on `payment_experience` or `audience_survey`, stamp `retag_source = 'keyword_fallback_detection'` (closes the gap noted in Phase 1A's TODO).
-
-### C. New edge function: `backfill-deterministic-linkage` (dry-run by default)
-
-POST body:
-```json
-{ "dryRun": true, "limit": null, "campaignFilter": null }
+```
+name:         "Q1-Research-2026 — Move-Out (Member Experience & Reason Codes)"
+campaign_key: "Q1-Research-2026"
+script_id:    6397bb7f-ac6a-49ea-90ad-9ca6ec046434
+status:       active
 ```
 
-Selection set (one query, joined): `conversation_submissions` whose `campaign` resolves to a `research_campaigns` row by `id` OR `campaign_key`, and whose linked `bookings.research_call_id IS NULL`.
+Because both campaign rows point at the **same script**, resolvers automatically produce `research_campaign_type = 'move_out_survey'` and `retag_source = 'script_id_route'`. No ingestion code changes required.
 
-**Dry-run response (no writes):**
-```json
-{
-  "mode": "dry_run",
-  "expected_rows_affected": 6430,
-  "by_resolved_campaign_type": {
-    "payment_experience": 4767,
-    "audience_survey": 1663
-  },
-  "by_current_transcription_campaign_type": {
-    "move_out_survey": 6201,
-    "payment_experience": 24,
-    "audience_survey": 204,
-    "null": 1
-  },
-  "by_proposed_retag_source": {
-    "script_id_route": 6430
-  },
-  "preview_sample_ids": ["…", "…"]
-}
-```
+## Expected Rows Affected
 
-**Write mode (`dryRun: false`):** for each selected submission, in chunks of ~200, perform a single transaction that:
-1. INSERTs into `research_calls` (campaign_id, caller_phone = submission.phone_number, kixie_link = submission.audio_url, call_date = booking.booking_date).
-2. UPDATEs `bookings.research_call_id` for that submission's `booking_id`.
-3. UPDATEs the corresponding `booking_transcriptions.research_campaign_type` to the resolved value AND sets `retag_source = 'script_id_route'`. Existing `retag_source` values (`payment_keyword_validation`, `keyword_fallback_detection`) are overwritten — script-id linkage is the higher-precedence source.
+- `research_calls` inserted: up to **23,935** (one per Q1 submission whose booking has a transcription and no `research_call_id`).
+- `bookings.research_call_id` updated: same.
+- `booking_transcriptions.retag_source` flipped NULL → `script_id_route`: same. `research_campaign_type` value unchanged (already `move_out_survey`); the win is provenance, not the value.
+- ~7.7k Q1 submissions without a transcription will be picked up via the same path once transcription completes.
 
-Write-mode response includes:
-```json
-{
-  "mode": "write",
-  "before_counts": { "research_calls": 0, "bookings_with_research_call_id": 0, "transcriptions_by_campaign_type": { … } },
-  "after_counts":  { "research_calls": 6430, "bookings_with_research_call_id": 6430, "transcriptions_by_campaign_type": { … } },
-  "rows_inserted_research_calls": 6430,
-  "rows_updated_bookings": 6430,
-  "rows_updated_transcriptions": 6430,
-  "retag_source_breakdown_after": { "script_id_route": 6430, "payment_keyword_validation": 15, "keyword_fallback_detection": 9 }
-}
-```
+## Plan
 
-### D. Audit & rollback
+### Step 1 — Confirm recommendation (no writes)
+Pause here for approval of Approach A and the proposed row values above.
 
-- Every transcription row written by the backfill carries `retag_source = 'script_id_route'`. Identification query:
-  ```sql
-  SELECT id, booking_id FROM booking_transcriptions WHERE retag_source = 'script_id_route';
-  ```
-- Every `research_calls` row inserted by the backfill is identifiable as: `created_at >= <backfill start>` AND no `researcher_id` (this function never sets one).
-- Rollback (separate manual SQL, not auto-run): set affected `research_campaign_type` back to `'move_out_survey'`, clear `retag_source`, null out `bookings.research_call_id`, delete the matching `research_calls` rows.
-- Run order is **always**: dry-run → review counts with user → write.
+### Step 2 — Insert canonical campaign row
+Single-row insert into `research_campaigns`. Reversible by deleting the row.
 
-## Out of scope for Phase 1C
+### Step 3 — Live ingestion verification
+Submit a synthetic `Q1-Research-2026` payload via `submit-conversation-audio`. Confirm:
+- `research_calls` row created with `campaign_id` = new row
+- `bookings.research_call_id` populated
+- `booking_transcriptions.research_campaign_type='move_out_survey'`, `retag_source='script_id_route'`
 
-- Removing the `booking_transcriptions.research_campaign_type` default.
-- Phase 2 aggregations / Phase 3 AI synthesis.
-- Loosening keyword detection.
-- Backfilling submissions whose `campaign` string matches no `research_campaigns` row (e.g. `Q1-Research-2026`) — flagged separately for a follow-up "alias resolution" task.
+Clean up the synthetic record afterward.
 
-## Verification after write-mode run
+### Step 4 — Dry-run backfill audit
+`backfill-deterministic-linkage` with `{"dryRun": true, "campaignFilter": "Q1-Research-2026", "includeSnapshot": true}`, paginated to completion. Return:
+- expected rows affected (full counts, not sampled)
+- proposed `retag_source` (`script_id_route`)
+- unresolved / skipped counts
+- before-snapshot of `research_calls` and linked-bookings counts
 
-1. `SELECT count(*) FROM research_calls;` should jump from 0 to ~6,430.
-2. `SELECT count(*) FROM bookings WHERE research_call_id IS NOT NULL AND record_type='research';` matches.
-3. `SELECT research_campaign_type, count(*) FROM booking_transcriptions WHERE research_campaign_type='payment_experience';` should reach ~4,767.
-4. Reload `/research/insights?campaign=payment_experience`; "Members Surveyed" reflects the new total; the Phase 1A banner disappears (since most records now carry `script_id_route`).
+### Step 5 — Paginated write backfill (only after explicit approval)
+Same function with `{"dryRun": false, "limit": 1500, "cursor": "<last_processed_conversation_submission_id>", "campaignFilter": "Q1-Research-2026"}`, chained until `remaining_estimate === 0`. Deterministic `ORDER BY conversation_submissions.id ASC`. Idempotent — already skips rows stamped `script_id_route`.
+
+### Step 6 — Post-run audit
+Return:
+- final `retag_source × research_campaign_type` breakdown
+- total `script_id_route` rows
+- per-row failures / skipped rows
+- visual confirmation that Move-Out dashboards still render
+
+### Step 7 — Default-column evaluation (report only)
+After Step 6 is clean, surface a recommendation on whether `booking_transcriptions.research_campaign_type DEFAULT 'move_out_survey'` can be dropped in a later phase. **No removal in 1D.**
+
+## Safeguards
+
+- **Deterministic precedence preserved:** resolver already prefers `research_call_id → campaign → script` over keyword fallback. No logic changes.
+- **Idempotency:** backfill already skips rows where `retag_source='script_id_route'`.
+- **Auditability:** dry-run returns full counts via cursor pagination (fix from 1C is in place).
+- **Rollback:**
+  - Step 2: `DELETE FROM research_campaigns WHERE campaign_key='Q1-Research-2026'`.
+  - Step 5: backfilled rows identifiable via `research_calls.campaign_id = <new row id>`. Targeted UPDATE can revert `retag_source` to NULL and null out `bookings.research_call_id`, then delete the matching `research_calls` rows.
+
+## Out of Scope
+Dashboard/UI changes, default-column removal, keyword tuning, AI prompt edits, analytics expansion.
+
+---
+
+**Awaiting approval of Approach A and the proposed campaign row** before proceeding to Step 2. After Step 4 (dry-run), I'll stop again for explicit write-backfill approval.
