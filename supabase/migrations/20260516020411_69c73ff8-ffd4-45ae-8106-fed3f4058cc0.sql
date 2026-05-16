@@ -1,0 +1,8 @@
+DELETE FROM public.research_calls rc
+USING (
+  SELECT ctid FROM public.research_calls
+  WHERE campaign_id = '2bff3835-53b4-4c19-bf72-19f3a7298380'
+    AND NOT EXISTS (SELECT 1 FROM public.bookings b WHERE b.research_call_id = research_calls.id)
+  LIMIT 500
+) c
+WHERE rc.ctid = c.ctid;
