@@ -348,7 +348,7 @@ export default function ResearchInsights() {
             <SelectItem value="audience_survey">Audience Survey</SelectItem>
             <SelectItem value="payment_experience">
               <div className="flex flex-col">
-                <span>PadSplit Member Payment Experience Survey</span>
+                <span>Payment Experience Survey</span>
                 <span className="text-[10px] text-muted-foreground">Hybrid Quant + Qual</span>
               </div>
             </SelectItem>
