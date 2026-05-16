@@ -224,9 +224,15 @@ export function PaymentExperienceInsightsDashboard() {
         />
       </div>
 
+      <div className="pt-2">
+        <h2 className="text-xs font-semibold tracking-[0.12em] text-muted-foreground uppercase">
+          Member Insights
+        </h2>
+      </div>
+
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
         {/* Payment Friction Summary */}
-        <Card>
+        <Card className="h-full">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm flex items-center gap-2">
               <AlertTriangle className="w-4 h-4 text-amber-500" />
