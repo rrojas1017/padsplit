@@ -106,19 +106,29 @@ export default function ResearchInsights() {
 
   // Fetch active scripts for the dropdown
   const { data: activeScripts = [] } = useQuery({
-    queryKey: ['research-scripts-for-insights'],
+    queryKey: ['research-scripts-for-insights', 'v2-dedupe-payment'],
     queryFn: async () => {
       const { data, error } = await supabase
         .from('research_scripts')
-        .select('id, name, slug')
+        .select('id, name, slug, campaign_type')
         .eq('is_active', true)
         .not('campaign_type', 'in', '("move_out_survey","audience_survey")')
         .order('name');
-      // Filter out legacy scripts that have dedicated hardcoded dashboards
-      const filtered = (data || []).filter(s =>
-        !['satisfaction', 'audience_survey', 'move_out_survey', 'payment_experience'].includes((s as any).slug || '')
-      );
       if (error) throw error;
+      // Hide scripts that already have a canonical dashboard entry above.
+      const HIDDEN_SLUGS = ['satisfaction', 'audience_survey', 'move_out_survey', 'payment_experience'];
+      const HIDDEN_CAMPAIGN_TYPES = ['payment_experience'];
+      const HIDDEN_IDS = ['c701a243-1c66-425a-8f79-99a290ec5b6b'];
+      const filtered = (data || []).filter((s: any) => {
+        const slug = (s.slug || '').toLowerCase();
+        const ct = (s.campaign_type || '').toLowerCase();
+        const name = (s.name || '').toLowerCase();
+        if (HIDDEN_SLUGS.includes(slug)) return false;
+        if (HIDDEN_CAMPAIGN_TYPES.includes(ct)) return false;
+        if (HIDDEN_IDS.includes(s.id)) return false;
+        if (name.includes('padsplit member payment experience survey')) return false;
+        return true;
+      });
       return filtered;
     },
   });
