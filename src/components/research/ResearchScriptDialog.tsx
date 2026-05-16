@@ -351,7 +351,39 @@ export function ResearchScriptDialog({ open, onOpenChange, script, onSave, impor
                           </div>
                         </div>
                       )}
-                    </div>
+
+                      {q.type === 'scale' && (
+                        <div className="grid grid-cols-2 gap-3 max-w-xs">
+                          <div className="space-y-1">
+                            <Label className="text-xs">Scale Min</Label>
+                            <Input
+                              type="number"
+                              value={q.scale_min ?? 1}
+                              onChange={e => updateQuestion(idx, { scale_min: e.target.value === '' ? undefined : parseInt(e.target.value) })}
+                              className="h-8 text-xs"
+                              placeholder="1"
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <Label className="text-xs">Scale Max</Label>
+                            <Input
+                              type="number"
+                              value={q.scale_max ?? 5}
+                              onChange={e => updateQuestion(idx, { scale_max: e.target.value === '' ? undefined : parseInt(e.target.value) })}
+                              className="h-8 text-xs"
+                              placeholder="5"
+                            />
+                          </div>
+                        </div>
+                      )}
+
+                      {(q.type === 'yes_no' || q.type === 'scale' || q.type === 'multiple_choice') && (
+                        <BranchingSection
+                          question={q}
+                          totalQuestions={questions.length}
+                          onChange={updates => updateQuestion(idx, updates)}
+                        />
+                      )}
                     <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 text-destructive" onClick={() => removeQuestion(idx)}>
                       <Trash2 className="w-4 h-4" />
                     </Button>
