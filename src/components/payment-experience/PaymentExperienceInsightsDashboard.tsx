@@ -25,18 +25,12 @@ interface KPIProps {
 
 function KPI({ label, value, denominator, meta, icon, iconBg, iconColor }: KPIProps) {
   return (
-    <Card>
-      <CardContent className="p-4">
+    <Card className="h-full">
+      <CardContent className="p-4 h-full flex flex-col">
         <div className="flex items-start justify-between gap-3">
           <div className="space-y-1 min-w-0 flex-1">
             <p className="text-xs uppercase tracking-wide text-muted-foreground">{label}</p>
             <p className="text-2xl font-semibold text-foreground">{value}</p>
-            {denominator && (
-              <p className="text-[11px] text-muted-foreground leading-snug break-words">{denominator}</p>
-            )}
-            {meta && (
-              <p className="text-[11px] text-muted-foreground/70 leading-snug break-words">{meta}</p>
-            )}
           </div>
           <div
             className={cn(
@@ -47,6 +41,14 @@ function KPI({ label, value, denominator, meta, icon, iconBg, iconColor }: KPIPr
           >
             {icon}
           </div>
+        </div>
+        <div className="mt-auto pt-2 min-h-[40px] space-y-1">
+          {denominator && (
+            <p className="text-[11px] text-muted-foreground leading-snug break-words">{denominator}</p>
+          )}
+          {meta && (
+            <p className="text-[11px] text-muted-foreground/70 leading-snug break-words">{meta}</p>
+          )}
         </div>
       </CardContent>
     </Card>
@@ -66,11 +68,26 @@ const denom = (m: KPIMetric) =>
 function polishInsightText(text?: string | null): string {
   if (!text) return '';
   let out = text.trim();
+
+  // Targeted phrasing fixes (machine-generated → natural prose)
   out = out.replace(
     /mainly citing cash-flow constraint and prefers manual control/gi,
-    'mainly due to cash-flow concerns and preference for manual control',
+    'primarily due to cash-flow concerns and preference for manual control',
   );
-  out = out.replace(/\bavg\.\s/g, 'Avg. ');
+  out = out.replace(
+    /mainly due to cash-flow concerns and preference for manual control/gi,
+    'primarily due to cash-flow concerns and preference for manual control',
+  );
+  out = out.replace(
+    /members\s+(primarily|mainly)\s+due to/gi,
+    '$1 due to',
+  );
+  out = out.replace(/\bare on a non-weekly pay cadence\b/gi, 'report a non-weekly pay cadence');
+  out = out.replace(/\bavg move-in cost clarity\s+/gi, 'Avg. move-in cost clarity: ');
+  out = out.replace(/\bavg\.\s+/g, 'Avg. ');
+
+  // Collapse stray double spaces & trailing period duplication
+  out = out.replace(/\s{2,}/g, ' ').replace(/\.\.+$/g, '.');
   return out;
 }
 
