@@ -28,9 +28,9 @@ function KPI({ label, value, denominator, meta, icon, iconBg, iconColor }: KPIPr
     <Card className="h-full">
       <CardContent className="p-4 h-full flex flex-col">
         <div className="flex items-start justify-between gap-3">
-          <div className="space-y-1 min-w-0 flex-1">
-            <p className="text-xs uppercase tracking-wide text-muted-foreground">{label}</p>
-            <p className="text-2xl font-semibold text-foreground">{value}</p>
+          <div className="space-y-1.5 min-w-0 flex-1">
+            <p className="text-[13px] font-medium tracking-wide text-muted-foreground uppercase">{label}</p>
+            <p className="text-5xl font-bold tracking-tight text-foreground leading-none">{value}</p>
           </div>
           <div
             className={cn(
@@ -72,11 +72,16 @@ function polishInsightText(text?: string | null): string {
   // Targeted phrasing fixes (machine-generated → natural prose)
   out = out.replace(
     /mainly citing cash-flow constraint and prefers manual control/gi,
-    'primarily due to cash-flow concerns and preference for manual control',
+    'primarily driven by cash-flow concerns and preference for manual control',
   );
   out = out.replace(
-    /mainly due to cash-flow concerns and preference for manual control/gi,
-    'primarily due to cash-flow concerns and preference for manual control',
+    /(?:mainly|primarily)\s+due to cash-flow concerns and preference for manual control/gi,
+    'primarily driven by cash-flow concerns and preference for manual control',
+  );
+  // Drop dangling "with " preceding the rewritten clause (e.g. "...not enrolled), with primarily...")
+  out = out.replace(
+    /,?\s*with\s+(primarily driven by cash-flow concerns)/gi,
+    ', $1',
   );
   out = out.replace(
     /members\s+(primarily|mainly)\s+due to/gi,
@@ -86,8 +91,8 @@ function polishInsightText(text?: string | null): string {
   out = out.replace(/\bavg move-in cost clarity\s+/gi, 'Avg. move-in cost clarity: ');
   out = out.replace(/\bavg\.\s+/g, 'Avg. ');
 
-  // Collapse stray double spaces & trailing period duplication
-  out = out.replace(/\s{2,}/g, ' ').replace(/\.\.+$/g, '.');
+  // Collapse stray double spaces, duplicated commas, and trailing period duplication
+  out = out.replace(/\s{2,}/g, ' ').replace(/,\s*,/g, ',').replace(/\.\.+$/g, '.');
   return out;
 }
 
@@ -219,9 +224,15 @@ export function PaymentExperienceInsightsDashboard() {
         />
       </div>
 
+      <div className="pt-2">
+        <h2 className="text-xs font-semibold tracking-[0.12em] text-muted-foreground uppercase">
+          Member Insights
+        </h2>
+      </div>
+
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
         {/* Payment Friction Summary */}
-        <Card>
+        <Card className="h-full">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm flex items-center gap-2">
               <AlertTriangle className="w-4 h-4 text-amber-500" />
@@ -264,7 +275,7 @@ export function PaymentExperienceInsightsDashboard() {
 
         {/* Auto-pay Barriers */}
         {autopayBarriers.length > 0 && (
-          <Card>
+          <Card className="h-full">
             <CardHeader className="pb-2">
               <CardTitle className="text-sm flex items-center gap-2">
                 <Zap className="w-4 h-4 text-blue-500" />
@@ -297,7 +308,7 @@ export function PaymentExperienceInsightsDashboard() {
         )}
 
         {/* Analytics Eligibility */}
-        <Card className="bg-muted/30">
+        <Card className="h-full bg-muted/30">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm flex items-center gap-2">
               <ShieldCheck className="w-4 h-4 text-emerald-500" />
