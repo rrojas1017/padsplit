@@ -80,8 +80,19 @@ export const FRICTION_THEME_MAP: Record<string, string> = {
   'app ux': 'app_ux_issues',
   'website issues': 'app_ux_issues',
   'no friction': 'no_friction',
+  'no friction reported': 'no_friction',
+  'no payment friction': 'no_friction',
+  'no payment problems': 'no_friction',
+  'no issues': 'no_friction',
+  'no issue': 'no_friction',
+  'no problems': 'no_friction',
   'none': 'no_friction',
+  'nothing': 'no_friction',
+  'n a': 'no_friction',
+  'na': 'no_friction',
 };
+
+export const NO_FRICTION_KEY = 'no_friction';
 
 export const FRICTION_THEME_LABELS: Record<string, string> = {
   autopay_distrust: 'Auto-pay distrust',
