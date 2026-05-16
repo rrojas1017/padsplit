@@ -275,7 +275,7 @@ export function PaymentExperienceInsightsDashboard() {
 
         {/* Auto-pay Barriers */}
         {autopayBarriers.length > 0 && (
-          <Card>
+          <Card className="h-full">
             <CardHeader className="pb-2">
               <CardTitle className="text-sm flex items-center gap-2">
                 <Zap className="w-4 h-4 text-blue-500" />
