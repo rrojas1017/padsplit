@@ -72,11 +72,16 @@ function polishInsightText(text?: string | null): string {
   // Targeted phrasing fixes (machine-generated → natural prose)
   out = out.replace(
     /mainly citing cash-flow constraint and prefers manual control/gi,
-    'primarily due to cash-flow concerns and preference for manual control',
+    'primarily driven by cash-flow concerns and preference for manual control',
   );
   out = out.replace(
-    /mainly due to cash-flow concerns and preference for manual control/gi,
-    'primarily due to cash-flow concerns and preference for manual control',
+    /(?:mainly|primarily)\s+due to cash-flow concerns and preference for manual control/gi,
+    'primarily driven by cash-flow concerns and preference for manual control',
+  );
+  // Drop dangling "with " preceding the rewritten clause (e.g. "...not enrolled), with primarily...")
+  out = out.replace(
+    /,?\s*with\s+(primarily driven by cash-flow concerns)/gi,
+    ', $1',
   );
   out = out.replace(
     /members\s+(primarily|mainly)\s+due to/gi,
@@ -86,8 +91,8 @@ function polishInsightText(text?: string | null): string {
   out = out.replace(/\bavg move-in cost clarity\s+/gi, 'Avg. move-in cost clarity: ');
   out = out.replace(/\bavg\.\s+/g, 'Avg. ');
 
-  // Collapse stray double spaces & trailing period duplication
-  out = out.replace(/\s{2,}/g, ' ').replace(/\.\.+$/g, '.');
+  // Collapse stray double spaces, duplicated commas, and trailing period duplication
+  out = out.replace(/\s{2,}/g, ' ').replace(/,\s*,/g, ',').replace(/\.\.+$/g, '.');
   return out;
 }
 
