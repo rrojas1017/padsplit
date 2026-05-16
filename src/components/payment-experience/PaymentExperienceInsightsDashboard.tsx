@@ -173,7 +173,7 @@ export function PaymentExperienceInsightsDashboard() {
         />
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
         {/* Top Payment Friction */}
         <Card>
           <CardHeader className="pb-2">
@@ -183,9 +183,16 @@ export function PaymentExperienceInsightsDashboard() {
             </CardTitle>
           </CardHeader>
           <CardContent className="pt-0">
+            {frictionSummary.noFrictionCount > 0 && (
+              <p className="text-xs text-muted-foreground mb-3">
+                {Math.round(frictionSummary.noFrictionShare * 100)}% reported no major payment friction
+              </p>
+            )}
             {topFrictionThemes.length === 0 ? (
-              <p className="text-xs text-muted-foreground py-4">
-                Not enough qualitative friction data yet.
+              <p className="text-xs text-muted-foreground py-2">
+                {frictionSummary.noFrictionCount > 0
+                  ? 'No additional friction themes reported.'
+                  : 'Not enough qualitative friction data yet.'}
               </p>
             ) : (
               <ul className="space-y-3">
