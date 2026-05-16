@@ -247,6 +247,53 @@ export function PaymentExperienceInsightsDashboard() {
             </CardContent>
           </Card>
         )}
+
+        {/* Analytics Eligibility */}
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm flex items-center gap-2">
+              <ShieldCheck className="w-4 h-4 text-emerald-500" />
+              Analytics Eligibility
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="pt-0 space-y-2">
+            <div className="flex items-baseline justify-between gap-2">
+              <span className="text-xs text-muted-foreground">Eligible responses</span>
+              <span className="text-sm font-medium text-foreground tabular-nums">
+                {eligibilityStats.eligible.toLocaleString()} / {(eligibilityStats.eligible + eligibilityStats.excluded).toLocaleString()}
+              </span>
+            </div>
+            <div className="flex items-baseline justify-between gap-2 pb-2 border-b border-border">
+              <span className="text-xs text-muted-foreground">Excluded responses</span>
+              <span className="text-sm font-medium text-foreground tabular-nums">
+                {eligibilityStats.excluded.toLocaleString()}
+              </span>
+            </div>
+            <ul className="space-y-1.5 pt-1">
+              {eligibilityStats.voicemail > 0 && (
+                <li className="flex items-baseline justify-between gap-2 text-xs">
+                  <span className="text-muted-foreground">Voicemail / invalid conversation</span>
+                  <span className="text-foreground tabular-nums">{eligibilityStats.voicemail.toLocaleString()}</span>
+                </li>
+              )}
+              {eligibilityStats.tooShort > 0 && (
+                <li className="flex items-baseline justify-between gap-2 text-xs">
+                  <span className="text-muted-foreground">Too short (&lt;120s)</span>
+                  <span className="text-foreground tabular-nums">{eligibilityStats.tooShort.toLocaleString()}</span>
+                </li>
+              )}
+              {eligibilityStats.insufficientExtraction > 0 && (
+                <li className="flex items-baseline justify-between gap-2 text-xs">
+                  <span className="text-muted-foreground">Incomplete extraction</span>
+                  <span className="text-foreground tabular-nums">{eligibilityStats.insufficientExtraction.toLocaleString()}</span>
+                </li>
+              )}
+              {eligibilityStats.excluded === 0 && (
+                <li className="text-xs text-muted-foreground">All routed responses are eligible.</li>
+              )}
+            </ul>
+          </CardContent>
+        </Card>
       </div>
     </div>
   );
