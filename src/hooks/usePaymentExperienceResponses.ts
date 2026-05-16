@@ -503,7 +503,7 @@ export function usePaymentExperienceResponses() {
   const kpis: PaymentKPIs = { ...deriveKPIs(eligible), totalRouted: records.length };
   const eligibilityStats = computeEligibilityStats(records);
   const retagSourceCounts = computeRetagCounts(records);
-  const topFrictionThemes = aggregateFrictionThemes(eligible);
+  const { themes: topFrictionThemes, summary: frictionSummary } = aggregateFrictionThemes(eligible);
   const autopayBarriers = aggregateAutopayBarriers(eligible);
 
   return {
@@ -513,6 +513,7 @@ export function usePaymentExperienceResponses() {
     eligibilityStats,
     retagSourceCounts,
     topFrictionThemes,
+    frictionSummary,
     autopayBarriers,
     isLoading: query.isLoading,
     refetch: query.refetch,
