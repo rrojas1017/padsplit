@@ -308,7 +308,7 @@ export function PaymentExperienceInsightsDashboard() {
         )}
 
         {/* Analytics Eligibility */}
-        <Card className="bg-muted/30">
+        <Card className="h-full bg-muted/30">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm flex items-center gap-2">
               <ShieldCheck className="w-4 h-4 text-emerald-500" />
