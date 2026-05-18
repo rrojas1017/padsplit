@@ -162,7 +162,6 @@ export function PaymentExperienceInsightsDashboard() {
   }
 
   const routedTotal = eligibilityStats.eligible + eligibilityStats.excluded;
-  const membersDenom = `N=${routedTotal.toLocaleString()} routed`;
 
   return (
     <div className="space-y-4">
@@ -172,8 +171,7 @@ export function PaymentExperienceInsightsDashboard() {
         <KPI
           label="Members Surveyed"
           value={records.length.toLocaleString()}
-          denominator={membersDenom}
-          meta="Survey responses captured"
+          denominator={`${records.length.toLocaleString()} surveyed`}
           icon={<Users className="h-4 w-4" />}
           iconBg="bg-blue-50"
           iconColor="text-blue-600"
@@ -181,8 +179,7 @@ export function PaymentExperienceInsightsDashboard() {
         <KPI
           label="Avg Payment Literacy"
           value={fmtScore(kpis.literacy, 100)}
-          denominator={denom(kpis.literacy)}
-          meta="Based on core payment understanding responses"
+          denominator={`Based on ${kpis.literacy.numerator.toLocaleString()} responses`}
           icon={<BookOpen className="h-4 w-4" />}
           iconBg="bg-indigo-50"
           iconColor="text-indigo-600"
@@ -190,7 +187,7 @@ export function PaymentExperienceInsightsDashboard() {
         <KPI
           label="Auto-pay Enrolled"
           value={fmtPct(kpis.autopayEnrolled)}
-          denominator={denom(kpis.autopayEnrolled)}
+          denominator={`${kpis.autopayEnrolled.numerator.toLocaleString()} enrolled members`}
           icon={<Repeat className="h-4 w-4" />}
           iconBg="bg-green-50"
           iconColor="text-green-600"
@@ -198,8 +195,7 @@ export function PaymentExperienceInsightsDashboard() {
         <KPI
           label="Move-in Cost Clarity"
           value={fmtScore(kpis.moveInClarity, 5)}
-          denominator={denom(kpis.moveInClarity)}
-          meta="Member-rated clarity score"
+          denominator={`${kpis.moveInClarity.numerator.toLocaleString()} member ratings`}
           icon={<FileQuestion className="h-4 w-4" />}
           iconBg="bg-amber-50"
           iconColor="text-amber-600"
@@ -207,8 +203,7 @@ export function PaymentExperienceInsightsDashboard() {
         <KPI
           label="Hardship-Aware"
           value={fmtPct(kpis.hardshipAware)}
-          denominator={denom(kpis.hardshipAware)}
-          meta="Knew at least one option"
+          denominator={`${kpis.hardshipAware.numerator.toLocaleString()} of ${kpis.hardshipAware.denominator.toLocaleString()} aware`}
           icon={<ShieldAlert className="h-4 w-4" />}
           iconBg="bg-rose-50"
           iconColor="text-rose-600"
@@ -216,8 +211,7 @@ export function PaymentExperienceInsightsDashboard() {
         <KPI
           label="Pay-cycle Misalignment"
           value={fmtPct(kpis.payCycleMisalignment)}
-          denominator={denom(kpis.payCycleMisalignment)}
-          meta="Non-weekly cadence detected"
+          denominator={`${kpis.payCycleMisalignment.numerator.toLocaleString()} non-weekly schedules`}
           icon={<CalendarClock className="h-4 w-4" />}
           iconBg="bg-orange-50"
           iconColor="text-orange-600"
