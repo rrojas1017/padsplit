@@ -160,5 +160,5 @@ verify_jwt = false
 verify_jwt = true
 
 [functions.proxy-recording-audio]
-verify_jwt = true
+verify_jwt = false
 
