@@ -313,7 +313,7 @@ export default function Reports() {
       ];
       const rows = records.map(booking => [
         format(booking.bookingDate, 'yyyy-MM-dd'),
-        booking.researchCampaignType === 'audience_survey' ? 'Audience Survey' : 'Move-Out Survey',
+        booking.researchCampaignType === 'audience_survey' ? 'Audience Survey' : booking.researchCampaignType === 'payment_experience' ? 'Payment Experience' : 'Move-Out Survey',
         booking.contactPhone ? (shouldMask ? maskPhone(booking.contactPhone) : booking.contactPhone) : '',
         booking.memberName?.startsWith('API Submission') ? '' : booking.memberName,
         booking.contactEmail ? (shouldMask ? maskEmail(booking.contactEmail) : booking.contactEmail) : '',
@@ -675,7 +675,13 @@ export default function Reports() {
             <DropdownMenuTrigger asChild>
               <Button variant={campaignTypeFilter !== 'all' ? 'default' : 'outline'} className="gap-2">
                 <FlaskConical className="w-4 h-4" />
-                {campaignTypeFilter === 'all' ? 'All Campaigns' : campaignTypeFilter === 'move_out_survey' ? 'Move-Out Survey' : 'Audience Survey'}
+                {campaignTypeFilter === 'all'
+                  ? 'All Campaigns'
+                  : campaignTypeFilter === 'move_out_survey'
+                  ? 'Move-Out Survey'
+                  : campaignTypeFilter === 'payment_experience'
+                  ? 'Payment Experience'
+                  : 'Audience Survey'}
                 <ChevronDown className="w-4 h-4" />
               </Button>
             </DropdownMenuTrigger>
@@ -702,6 +708,15 @@ export default function Reports() {
                 <span className="flex items-center gap-2">
                   <span className="w-2 h-2 rounded-full bg-blue-500"></span>
                   Audience Survey
+                </span>
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={() => setCampaignTypeFilter('payment_experience')}
+                className={campaignTypeFilter === 'payment_experience' ? 'bg-accent/20' : ''}
+              >
+                <span className="flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+                  Payment Experience
                 </span>
               </DropdownMenuItem>
             </DropdownMenuContent>
@@ -1060,6 +1075,11 @@ export default function Reports() {
                               </TooltipContent>
                             </Tooltip>
                           )}
+                        </span>
+                      ) : booking.researchCampaignType === 'payment_experience' ? (
+                        <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-500/15 text-emerald-600 dark:text-emerald-400">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                          Payment
                         </span>
                       ) : (
                         <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium bg-purple-500/15 text-purple-600 dark:text-purple-400">
