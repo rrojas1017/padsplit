@@ -675,7 +675,13 @@ export default function Reports() {
             <DropdownMenuTrigger asChild>
               <Button variant={campaignTypeFilter !== 'all' ? 'default' : 'outline'} className="gap-2">
                 <FlaskConical className="w-4 h-4" />
-                {campaignTypeFilter === 'all' ? 'All Campaigns' : campaignTypeFilter === 'move_out_survey' ? 'Move-Out Survey' : 'Audience Survey'}
+                {campaignTypeFilter === 'all'
+                  ? 'All Campaigns'
+                  : campaignTypeFilter === 'move_out_survey'
+                  ? 'Move-Out Survey'
+                  : campaignTypeFilter === 'payment_experience'
+                  ? 'Payment Experience'
+                  : 'Audience Survey'}
                 <ChevronDown className="w-4 h-4" />
               </Button>
             </DropdownMenuTrigger>
@@ -702,6 +708,15 @@ export default function Reports() {
                 <span className="flex items-center gap-2">
                   <span className="w-2 h-2 rounded-full bg-blue-500"></span>
                   Audience Survey
+                </span>
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={() => setCampaignTypeFilter('payment_experience')}
+                className={campaignTypeFilter === 'payment_experience' ? 'bg-accent/20' : ''}
+              >
+                <span className="flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+                  Payment Experience
                 </span>
               </DropdownMenuItem>
             </DropdownMenuContent>
