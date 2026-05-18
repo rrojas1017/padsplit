@@ -117,30 +117,35 @@ Deno.serve(async (req) => {
 
   // 3) Pull a chunk of candidate transcription rows.
   // Candidate = transcript present AND (survey_progress NULL OR total != TOTAL_Q)
-  // We page through bookingIds in slices of 500 (PostgREST IN limit safety) and
-  // gather up to CHUNK_SIZE candidates.
+  // Filter at DB level so already-correct rows do not consume the per-slice limit.
+  // Deterministic ordering by (updated_at NULLS FIRST, booking_id) so retries are stable.
   const candidates: { booking_id: string; call_transcription: string; survey_progress: any }[] = [];
   const sliceSize = 100;
+  const TOTAL_STR = String(TOTAL_Q);
   for (let i = 0; i < bookingIds.length && candidates.length < CHUNK_SIZE; i += sliceSize) {
     const slice = bookingIds.slice(i, i + sliceSize);
+    const need = CHUNK_SIZE - candidates.length;
     const { data, error } = await supabase
       .from('booking_transcriptions')
-      .select('booking_id, call_transcription, survey_progress')
+      .select('booking_id, call_transcription, survey_progress, updated_at')
       .in('booking_id', slice)
       .not('call_transcription', 'is', null)
       .neq('call_transcription', '')
-      .limit(CHUNK_SIZE * 2);
+      // Either no survey_progress yet, or total != TOTAL_Q (stored as string in jsonb ->>)
+      .or(`survey_progress.is.null,survey_progress->>total.neq.${TOTAL_STR}`)
+      .order('updated_at', { ascending: true, nullsFirst: true })
+      .order('booking_id', { ascending: true })
+      .limit(need);
     if (error) {
       console.error('[BackfillPE] candidate fetch error:', error);
       continue;
     }
     for (const row of data || []) {
-      const total = (row as any).survey_progress?.total;
-      if (total === TOTAL_Q) continue; // already correct
       candidates.push(row as any);
       if (candidates.length >= CHUNK_SIZE) break;
     }
   }
+  console.log(`[BackfillPE] selected ${candidates.length} candidates from ${bookingIds.length} PE bookings`);
 
   // Dry-run: just report remaining work
   if (dryRun) {
