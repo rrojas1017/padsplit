@@ -9,7 +9,7 @@ export interface DateRange {
   to: Date | undefined;
 }
 
-export type SortColumn = 'bookingDate' | 'moveInDate' | 'memberName' | 'agentName' | 'market' | 'bookingType' | 'status' | 'communicationMethod' | null;
+export type SortColumn = 'bookingDate' | 'moveInDate' | 'memberName' | 'agentName' | 'market' | 'bookingType' | 'status' | 'communicationMethod' | 'surveyProgress' | null;
 export type SortDirection = 'asc' | 'desc';
 
 export interface ImportBatch {
@@ -325,8 +325,10 @@ export function useReportsData(
         `, { count: 'exact' }));
 
 
-      const dbColumn = sorting.column ? sortColumnMap[sorting.column] || 'booking_date' : 'booking_date';
-      query = query.order(dbColumn, { ascending: sorting.direction === 'asc' });
+      const isClientSortColumn = sorting.column === 'surveyProgress';
+      const dbColumn = sorting.column && !isClientSortColumn ? sortColumnMap[sorting.column] || 'booking_date' : 'booking_date';
+      const dbAscending = isClientSortColumn ? false : sorting.direction === 'asc';
+      query = query.order(dbColumn, { ascending: dbAscending });
 
       // Apply pagination
       query = query.range(offset, offset + pagination.pageSize - 1);

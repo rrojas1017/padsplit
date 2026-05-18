@@ -199,7 +199,7 @@ export default function Reports() {
 
   // Use the server-side pagination hook
   const { 
-    records, 
+    records: rawRecords, 
     totalCount, 
     researchSummary,
     isLoading, 
@@ -207,6 +207,24 @@ export default function Reports() {
     manualRecordCount,
     refetch 
   } = useReportsData(filters, pagination, sorting);
+
+  // Client-side sort for survey progress (page-scoped) — JSON field on embedded join can't be sorted server-side
+  const records = useMemo(() => {
+    if (sortColumn !== 'surveyProgress') return rawRecords;
+    const dir = sortDirection === 'asc' ? 1 : -1;
+    return [...rawRecords].sort((a, b) => {
+      const aTotal = a.questionsTotal ?? 0;
+      const bTotal = b.questionsTotal ?? 0;
+      const aValid = aTotal > 0;
+      const bValid = bTotal > 0;
+      if (!aValid && !bValid) return 0;
+      if (!aValid) return 1; // nulls last
+      if (!bValid) return -1;
+      const aRatio = (a.questionsAnswered ?? 0) / aTotal;
+      const bRatio = (b.questionsAnswered ?? 0) / bTotal;
+      return (aRatio - bRatio) * dir;
+    });
+  }, [rawRecords, sortColumn, sortDirection]);
 
   // Clear all filters
   const clearAllFilters = () => {
@@ -239,7 +257,7 @@ export default function Reports() {
       setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc');
     } else {
       setSortColumn(column);
-      setSortDirection(column === 'bookingDate' || column === 'moveInDate' ? 'desc' : 'asc');
+      setSortDirection(column === 'bookingDate' || column === 'moveInDate' || column === 'surveyProgress' ? 'desc' : 'asc');
     }
     setCurrentPage(1);
   };
@@ -978,7 +996,7 @@ export default function Reports() {
                     <SortableHeader column="memberName" label="Name" />
                     <th className="text-left py-3 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Email</th>
                     <th className="text-left py-3 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Duration</th>
-                    <th className="text-left py-3 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Progress</th>
+                    <SortableHeader column="surveyProgress" label="Progress" />
                     <th className="text-left py-3 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
                       <div className="flex items-center gap-1"><Video className="h-3.5 w-3.5" />Video</div>
                     </th>
