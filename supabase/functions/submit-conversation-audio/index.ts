@@ -218,20 +218,29 @@ Deno.serve(async (req) => {
       booking_id: booking.id,
     });
 
-    // --- Stamp resolved campaign type onto booking_transcriptions when known ---
-    // The auto-transcription PG trigger may have already created the row; if not yet,
-    // a later upsert from the transcription pipeline will see the existing row. We
-    // attempt an UPDATE here; if no row exists yet, no harm done.
+    // --- Stamp resolved campaign type onto booking_transcriptions (race-safe) ---
+    // Use UPSERT keyed on booking_id so the stamp lands whether or not the
+    // auto-transcription PG trigger has already created the row. Only the two
+    // routing columns are in the payload — PostgREST's generated
+    // ON CONFLICT DO UPDATE clause therefore only mutates those columns and
+    // preserves every other field on an existing row.
     if (resolvedCampaignType) {
-      const { error: updErr } = await adminClient
+      const { data: stampedRow, error: upsertErr } = await adminClient
         .from('booking_transcriptions')
-        .update({
-          research_campaign_type: resolvedCampaignType,
-          retag_source: 'script_id_route',
-        })
-        .eq('booking_id', booking.id);
-      if (updErr) {
-        console.warn('[submit] booking_transcriptions stamp skipped:', updErr.message);
+        .upsert(
+          {
+            booking_id: booking.id,
+            research_campaign_type: resolvedCampaignType,
+            retag_source: 'script_id_route',
+          },
+          { onConflict: 'booking_id', ignoreDuplicates: false },
+        )
+        .select('id, booking_id, research_campaign_type, retag_source')
+        .maybeSingle();
+      if (upsertErr) {
+        console.warn('[submit] booking_transcriptions stamp skipped:', upsertErr.message);
+      } else {
+        console.log('[submit] booking_transcriptions stamped:', JSON.stringify(stampedRow));
       }
     }
 
