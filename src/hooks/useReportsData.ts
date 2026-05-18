@@ -9,7 +9,7 @@ export interface DateRange {
   to: Date | undefined;
 }
 
-export type SortColumn = 'bookingDate' | 'moveInDate' | 'memberName' | 'agentName' | 'market' | 'bookingType' | 'status' | 'communicationMethod' | null;
+export type SortColumn = 'bookingDate' | 'moveInDate' | 'memberName' | 'agentName' | 'market' | 'bookingType' | 'status' | 'communicationMethod' | 'surveyProgress' | null;
 export type SortDirection = 'asc' | 'desc';
 
 export interface ImportBatch {
