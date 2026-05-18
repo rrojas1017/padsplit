@@ -996,7 +996,7 @@ export default function Reports() {
                     <SortableHeader column="memberName" label="Name" />
                     <th className="text-left py-3 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Email</th>
                     <th className="text-left py-3 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Duration</th>
-                    <th className="text-left py-3 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Progress</th>
+                    <SortableHeader column="surveyProgress" label="Progress" />
                     <th className="text-left py-3 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
                       <div className="flex items-center gap-1"><Video className="h-3.5 w-3.5" />Video</div>
                     </th>
