@@ -199,7 +199,7 @@ export default function Reports() {
 
   // Use the server-side pagination hook
   const { 
-    records, 
+    records: rawRecords, 
     totalCount, 
     researchSummary,
     isLoading, 
@@ -207,6 +207,24 @@ export default function Reports() {
     manualRecordCount,
     refetch 
   } = useReportsData(filters, pagination, sorting);
+
+  // Client-side sort for survey progress (page-scoped) — JSON field on embedded join can't be sorted server-side
+  const records = useMemo(() => {
+    if (sortColumn !== 'surveyProgress') return rawRecords;
+    const dir = sortDirection === 'asc' ? 1 : -1;
+    return [...rawRecords].sort((a, b) => {
+      const aTotal = a.questionsTotal ?? 0;
+      const bTotal = b.questionsTotal ?? 0;
+      const aValid = aTotal > 0;
+      const bValid = bTotal > 0;
+      if (!aValid && !bValid) return 0;
+      if (!aValid) return 1; // nulls last
+      if (!bValid) return -1;
+      const aRatio = (a.questionsAnswered ?? 0) / aTotal;
+      const bRatio = (b.questionsAnswered ?? 0) / bTotal;
+      return (aRatio - bRatio) * dir;
+    });
+  }, [rawRecords, sortColumn, sortDirection]);
 
   // Clear all filters
   const clearAllFilters = () => {
