@@ -257,7 +257,7 @@ export default function Reports() {
       setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc');
     } else {
       setSortColumn(column);
-      setSortDirection(column === 'bookingDate' || column === 'moveInDate' ? 'desc' : 'asc');
+      setSortDirection(column === 'bookingDate' || column === 'moveInDate' || column === 'surveyProgress' ? 'desc' : 'asc');
     }
     setCurrentPage(1);
   };
