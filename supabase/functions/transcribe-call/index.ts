@@ -1908,65 +1908,53 @@ async function processTranscription(bookingId: string, kixieUrl: string, skipTts
       try {
         console.log('[Background] Extracting survey progress for research record...');
         
-        // Look up campaign via conversation_submissions → campaign_key, fall back to notes regex
+        // DETERMINISTIC script resolution ONLY:
+        //   bookings.research_call_id
+        //   → research_calls.campaign_id
+        //   → research_campaigns.script_id
+        //   → research_scripts.questions
+        // No fallback to first-available script, Move-Out defaults, keyword
+        // inference, conversation_submissions.campaign, or notes regex.
+        // If any link is missing, leave survey_progress NULL.
         let questions: any[] | null = null;
-        let campaignName: string | null = null;
-        
-        // Try conversation_submissions campaign_key lookup first
-        const { data: submissionData } = await supabase
-          .from('conversation_submissions')
-          .select('campaign')
-          .eq('booking_id', bookingId)
+        let resolvedScriptId: string | null = null;
+
+        const { data: bookingRow } = await supabase
+          .from('bookings')
+          .select('research_call_id')
+          .eq('id', bookingId)
           .maybeSingle();
-        
-        if (submissionData?.campaign) {
-          campaignName = submissionData.campaign;
-          const { data: campaignData } = await supabase
-            .from('research_campaigns')
-            .select('script_id, research_scripts!research_campaigns_script_id_fkey(questions)')
-            .eq('campaign_key', campaignName)
+
+        const researchCallId = bookingRow?.research_call_id || null;
+        if (!researchCallId) {
+          console.log(`[Background] Survey progress skipped (deterministic): booking_id=${bookingId} has no research_call_id`);
+        } else {
+          const { data: callRow } = await supabase
+            .from('research_calls')
+            .select('campaign_id')
+            .eq('id', researchCallId)
             .maybeSingle();
-          questions = (campaignData as any)?.research_scripts?.questions || null;
-          if (questions) {
-            console.log(`[Background] Matched campaign_key "${campaignName}" → found script with ${questions.length} questions`);
-          }
-        }
-        
-        // Fallback: regex from notes
-        if (!Array.isArray(questions) || questions.length === 0) {
-          const bookingNotes = bookingData?.notes || '';
-          const campaignMatch = bookingNotes.match(/Campaign:\s*(.+?)\s*\|/);
-          campaignName = campaignMatch?.[1]?.trim() || null;
-          
-          if (campaignName) {
-            // Try campaign_key first, then name
-            const { data: campaignData } = await supabase
+
+          const campaignId = callRow?.campaign_id || null;
+          if (!campaignId) {
+            console.log(`[Background] Survey progress skipped (deterministic): booking_id=${bookingId} research_call ${researchCallId} has no campaign_id`);
+          } else {
+            const { data: campaignRow } = await supabase
               .from('research_campaigns')
               .select('script_id, research_scripts!research_campaigns_script_id_fkey(questions)')
-              .eq('campaign_key', campaignName)
+              .eq('id', campaignId)
               .maybeSingle();
-            questions = (campaignData as any)?.research_scripts?.questions || null;
-            
-            if (!questions) {
-              const { data: campaignByName } = await supabase
-                .from('research_campaigns')
-                .select('script_id, research_scripts!research_campaigns_script_id_fkey(questions)')
-                .eq('name', campaignName)
-                .maybeSingle();
-              questions = (campaignByName as any)?.research_scripts?.questions || null;
+
+            resolvedScriptId = (campaignRow as any)?.script_id || null;
+            const q = (campaignRow as any)?.research_scripts?.questions;
+            if (Array.isArray(q) && q.length > 0) {
+              questions = q;
             }
+
+            console.log(
+              `[Background] Deterministic script resolution: booking_id=${bookingId} resolved_script_id=${resolvedScriptId || 'null'} question_count=${questions ? questions.length : 0}`
+            );
           }
-        }
-        
-        // Final fallback: first available research script
-        if (!Array.isArray(questions) || questions.length === 0) {
-          console.log('[Background] Campaign lookup failed, falling back to first available script');
-          const { data: fallbackData } = await supabase
-            .from('research_campaigns')
-            .select('research_scripts!research_campaigns_script_id_fkey(questions)')
-            .limit(1)
-            .maybeSingle();
-          questions = (fallbackData as any)?.research_scripts?.questions || null;
         }
         
         if (Array.isArray(questions) && questions.length > 0) {
