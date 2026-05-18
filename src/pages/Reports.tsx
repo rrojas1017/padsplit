@@ -1076,6 +1076,11 @@ export default function Reports() {
                             </Tooltip>
                           )}
                         </span>
+                      ) : booking.researchCampaignType === 'payment_experience' ? (
+                        <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-500/15 text-emerald-600 dark:text-emerald-400">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                          Payment
+                        </span>
                       ) : (
                         <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium bg-purple-500/15 text-purple-600 dark:text-purple-400">
                           <span className="w-1.5 h-1.5 rounded-full bg-purple-500"></span>
