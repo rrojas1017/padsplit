@@ -365,6 +365,7 @@ export type Database = {
           application_name: string
           client_id: string
           client_secret_hash: string
+          client_secret_salt: string | null
           created_at: string
           created_by: string | null
           deleted_at: string | null
@@ -379,6 +380,7 @@ export type Database = {
           application_name: string
           client_id: string
           client_secret_hash: string
+          client_secret_salt?: string | null
           created_at?: string
           created_by?: string | null
           deleted_at?: string | null
@@ -393,6 +395,7 @@ export type Database = {
           application_name?: string
           client_id?: string
           client_secret_hash?: string
+          client_secret_salt?: string | null
           created_at?: string
           created_by?: string | null
           deleted_at?: string | null
