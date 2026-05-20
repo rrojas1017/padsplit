@@ -32,6 +32,9 @@ Deno.serve(async (req) => {
   const body = await req.json().catch(() => ({}));
   const dryRun: boolean = body?.dryRun === true;
   const auditMode: boolean = body?.audit === true; // verbose logs for the whole chunk
+  const explicitBookingIds: string[] | null = Array.isArray(body?.bookingIds) && body.bookingIds.length > 0
+    ? body.bookingIds.filter((x: unknown) => typeof x === 'string')
+    : null;
 
   // 1) Resolve PE script questions ONCE
   const { data: scriptRow, error: scriptErr } = await supabase
