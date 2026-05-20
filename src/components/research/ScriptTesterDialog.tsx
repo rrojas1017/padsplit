@@ -73,6 +73,7 @@ const END_DISPOSITIONS = [
 export function ScriptTesterDialog({ open, onOpenChange, script }: Props) {
   const [phase, setPhase] = useState<Phase>('start');
   const [questionIndex, setQuestionIndex] = useState(0);
+  const [visitedStack, setVisitedStack] = useState<number[]>([]);
   const [responses, setResponses] = useState<Record<number, unknown>>({});
   const [endCallOpen, setEndCallOpen] = useState(false);
   const [endedEarly, setEndedEarly] = useState(false);
