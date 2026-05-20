@@ -3,14 +3,28 @@ import { User, UserRole } from '@/types';
 import { supabase } from '@/integrations/supabase/client';
 import { Session, User as SupabaseUser } from '@supabase/supabase-js';
 
+export interface ImpersonatedUser {
+  id: string;
+  name: string;
+  email: string;
+  role: UserRole;
+  siteId?: string;
+}
+
 interface AuthContextType {
   user: User | null;
+  realUser: User | null;
+  isImpersonating: boolean;
+  startImpersonation: (u: ImpersonatedUser) => boolean;
+  stopImpersonation: () => void;
   isLoading: boolean;
   login: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
   signup: (email: string, password: string, name: string) => Promise<{ success: boolean; error?: string }>;
   logout: () => void;
   hasRole: (roles: UserRole[]) => boolean;
 }
+
+const IMPERSONATION_KEY = 'impersonated_user_v1';
 
 // Session management functions (defined outside component to avoid re-creation)
 const startAgentSession = async (userId: string, userRole: string) => {
