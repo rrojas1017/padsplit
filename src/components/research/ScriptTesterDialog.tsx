@@ -12,6 +12,7 @@ import { ArrowRight, ArrowLeft, MessageSquare, XCircle, ThumbsUp, ThumbsDown, Ro
 import { StepTracker, buildSteps } from '@/components/research/StepTracker';
 import type { ResearchScript, ScriptQuestion } from '@/hooks/useResearchScripts';
 import { useScriptTranslation, type SurveyLanguage } from '@/hooks/useScriptTranslation';
+import { resolveNextQuestionIndex } from '@/utils/scriptBranching';
 import {
   AlertDialog,
   AlertDialogContent,
