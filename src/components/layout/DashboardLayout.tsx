@@ -1,6 +1,7 @@
 import { ReactNode } from 'react';
 import { AlertTriangle } from 'lucide-react';
 import { AppSidebar } from './AppSidebar';
+import { ImpersonationBar } from './ImpersonationBar';
 import { Header } from './Header';
 import { useSidebar } from '@/contexts/SidebarContext';
 import { useAuth } from '@/contexts/AuthContext';
@@ -32,6 +33,7 @@ export function DashboardLayout({ children, title, subtitle, actions }: Dashboar
         collapsed ? "ml-16" : "ml-64"
       )}>
         <Header title={title} subtitle={subtitle} actions={actions} />
+        <ImpersonationBar />
         
         {/* Critical cost alert banner for super admins */}
         {showCriticalBanner && (

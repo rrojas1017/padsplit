@@ -1,5 +1,5 @@
-import { ReactNode } from 'react';
-import { Sun, Moon, Bell, Search } from 'lucide-react';
+import { ReactNode, useState } from 'react';
+import { Sun, Moon, Bell, Search, UserCog } from 'lucide-react';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { useAdminNotifications } from '@/hooks/useAdminNotifications';
@@ -7,6 +7,13 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { useNavigate } from 'react-router-dom';
+import { ImpersonationPickerDialog } from './ImpersonationPickerDialog';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 
 interface HeaderProps {
   title: string;
@@ -16,9 +23,12 @@ interface HeaderProps {
 
 export function Header({ title, subtitle, actions }: HeaderProps) {
   const { theme, toggleTheme } = useTheme();
-  const { user, hasRole } = useAuth();
+  const { user, hasRole, realUser } = useAuth();
   const navigate = useNavigate();
   const isSuperAdmin = hasRole(['super_admin']);
+  // Gate the "view as user" tool by REAL role, never impersonated role
+  const realIsSuperAdmin = realUser?.role === 'super_admin';
+  const [pickerOpen, setPickerOpen] = useState(false);
 
   const { unreadCount, criticalNotifications } = useAdminNotifications();
   const hasCritical = isSuperAdmin && criticalNotifications.length > 0;
