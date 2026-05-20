@@ -83,6 +83,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [impersonated, setImpersonated] = useState<ImpersonatedUser | null>(() => {
+    try {
+      const raw = sessionStorage.getItem(IMPERSONATION_KEY);
+      return raw ? JSON.parse(raw) as ImpersonatedUser : null;
+    } catch { return null; }
+  });
 
   // Exponential backoff delays: 500ms, 1s, 2s, 4s
   const getRetryDelay = (attempt: number): number => {
