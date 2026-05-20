@@ -60,6 +60,12 @@ Deno.serve(async (req) => {
   const TOTAL_Q = questions.length;
 
   // 2) Resolve PE cohort: campaign_ids → call_ids → booking_ids
+  //    Skipped when caller provided explicit bookingIds.
+  if (explicitBookingIds) {
+    console.log(`[BackfillPE] using ${explicitBookingIds.length} explicit booking IDs (skipping cohort resolver)`);
+  }
+  // Original cohort resolver (only runs when no explicit IDs)
+  if (!explicitBookingIds) {
   const { data: campaigns } = await supabase
     .from('research_campaigns')
     .select('id')
