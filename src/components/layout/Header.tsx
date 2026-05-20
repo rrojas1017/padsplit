@@ -1,5 +1,5 @@
-import { ReactNode } from 'react';
-import { Sun, Moon, Bell, Search } from 'lucide-react';
+import { ReactNode, useState } from 'react';
+import { Sun, Moon, Bell, Search, UserCog } from 'lucide-react';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { useAdminNotifications } from '@/hooks/useAdminNotifications';
@@ -7,6 +7,13 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { useNavigate } from 'react-router-dom';
+import { ImpersonationPickerDialog } from './ImpersonationPickerDialog';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 
 interface HeaderProps {
   title: string;
@@ -16,9 +23,12 @@ interface HeaderProps {
 
 export function Header({ title, subtitle, actions }: HeaderProps) {
   const { theme, toggleTheme } = useTheme();
-  const { user, hasRole } = useAuth();
+  const { user, hasRole, realUser } = useAuth();
   const navigate = useNavigate();
   const isSuperAdmin = hasRole(['super_admin']);
+  // Gate the "view as user" tool by REAL role, never impersonated role
+  const realIsSuperAdmin = realUser?.role === 'super_admin';
+  const [pickerOpen, setPickerOpen] = useState(false);
 
   const { unreadCount, criticalNotifications } = useAdminNotifications();
   const hasCritical = isSuperAdmin && criticalNotifications.length > 0;
@@ -72,12 +82,31 @@ export function Header({ title, subtitle, actions }: HeaderProps) {
           )}
         </Button>
 
-        {/* User avatar */}
-        <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center">
-          <span className="text-primary-foreground text-sm font-medium">
-            {user?.name?.charAt(0) || 'U'}
-          </span>
-        </div>
+        {/* User avatar / menu */}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button className="w-8 h-8 rounded-full bg-primary flex items-center justify-center hover:opacity-90 transition-opacity">
+              <span className="text-primary-foreground text-sm font-medium">
+                {user?.name?.charAt(0) || 'U'}
+              </span>
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-56">
+            <div className="px-2 py-1.5 text-xs text-muted-foreground">
+              {realUser?.email}
+            </div>
+            {realIsSuperAdmin && (
+              <DropdownMenuItem onSelect={() => setPickerOpen(true)}>
+                <UserCog className="w-4 h-4 mr-2" />
+                View as user…
+              </DropdownMenuItem>
+            )}
+          </DropdownMenuContent>
+        </DropdownMenu>
+
+        {realIsSuperAdmin && (
+          <ImpersonationPickerDialog open={pickerOpen} onOpenChange={setPickerOpen} />
+        )}
       </div>
     </header>
   );

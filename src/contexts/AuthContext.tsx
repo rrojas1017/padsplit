@@ -3,14 +3,28 @@ import { User, UserRole } from '@/types';
 import { supabase } from '@/integrations/supabase/client';
 import { Session, User as SupabaseUser } from '@supabase/supabase-js';
 
+export interface ImpersonatedUser {
+  id: string;
+  name: string;
+  email: string;
+  role: UserRole;
+  siteId?: string;
+}
+
 interface AuthContextType {
   user: User | null;
+  realUser: User | null;
+  isImpersonating: boolean;
+  startImpersonation: (u: ImpersonatedUser) => boolean;
+  stopImpersonation: () => void;
   isLoading: boolean;
   login: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
   signup: (email: string, password: string, name: string) => Promise<{ success: boolean; error?: string }>;
   logout: () => void;
   hasRole: (roles: UserRole[]) => boolean;
 }
+
+const IMPERSONATION_KEY = 'impersonated_user_v1';
 
 // Session management functions (defined outside component to avoid re-creation)
 const startAgentSession = async (userId: string, userRole: string) => {
@@ -69,6 +83,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [impersonated, setImpersonated] = useState<ImpersonatedUser | null>(() => {
+    try {
+      const raw = sessionStorage.getItem(IMPERSONATION_KEY);
+      return raw ? JSON.parse(raw) as ImpersonatedUser : null;
+    } catch { return null; }
+  });
 
   // Exponential backoff delays: 500ms, 1s, 2s, 4s
   const getRetryDelay = (attempt: number): number => {
@@ -423,13 +443,48 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setSession(null);
   };
 
+  const realUser = user;
+  const effectiveUser: User | null = impersonated && realUser?.role === 'super_admin'
+    ? {
+        id: impersonated.id,
+        name: impersonated.name,
+        email: impersonated.email,
+        role: impersonated.role,
+        siteId: impersonated.siteId,
+        status: 'active',
+      }
+    : realUser;
+
   const hasRole = (roles: UserRole[]): boolean => {
-    if (!user) return false;
-    return roles.includes(user.role);
+    if (!effectiveUser) return false;
+    return roles.includes(effectiveUser.role);
+  };
+
+  const startImpersonation = (u: ImpersonatedUser): boolean => {
+    if (realUser?.role !== 'super_admin') return false;
+    sessionStorage.setItem(IMPERSONATION_KEY, JSON.stringify(u));
+    setImpersonated(u);
+    return true;
+  };
+
+  const stopImpersonation = () => {
+    sessionStorage.removeItem(IMPERSONATION_KEY);
+    setImpersonated(null);
   };
 
   return (
-    <AuthContext.Provider value={{ user, isLoading, login, signup, logout, hasRole }}>
+    <AuthContext.Provider value={{
+      user: effectiveUser,
+      realUser,
+      isImpersonating: !!impersonated && realUser?.role === 'super_admin',
+      startImpersonation,
+      stopImpersonation,
+      isLoading,
+      login,
+      signup,
+      logout,
+      hasRole,
+    }}>
       {children}
     </AuthContext.Provider>
   );
