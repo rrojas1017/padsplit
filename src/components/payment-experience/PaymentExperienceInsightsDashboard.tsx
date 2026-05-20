@@ -123,8 +123,15 @@ export function PaymentExperienceInsightsDashboard() {
   const routedTotal = eligibilityStats.eligible + eligibilityStats.excluded;
 
   return (
-    <div className="space-y-4">
-      <AIInsightBanner insight={insight} />
+    <div className="space-y-3">
+      <ExecutiveSummaryBanner
+        insight={insight}
+        kpis={kpis}
+        topFrictionThemes={topFrictionThemes}
+        firstAction={analytics.suggestedActions[0]}
+      />
+
+
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
         <KPI
