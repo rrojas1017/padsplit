@@ -115,6 +115,7 @@ export function ScriptTesterDialog({ open, onOpenChange, script }: Props) {
   const restart = useCallback(() => {
     setPhase('start');
     setQuestionIndex(0);
+    setVisitedStack([]);
     setResponses({});
     setEndedEarly(false);
     setEarlyDisposition(null);
