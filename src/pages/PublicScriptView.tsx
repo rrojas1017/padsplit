@@ -25,6 +25,8 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
 import { cn } from '@/lib/utils';
+import { resolveNextQuestionIndex } from '@/utils/scriptBranching';
+import type { ScriptQuestion as CanonicalScriptQuestion } from '@/hooks/useResearchScripts';
 
 interface ScriptQuestion {
   id?: number;
@@ -40,7 +42,13 @@ interface ScriptQuestion {
     no_goto?: number;
     yes_probes?: string[];
     no_probes?: string[];
+    scale_threshold?: number;
+    scale_lte_goto?: number;
+    scale_gt_goto?: number;
+    option_gotos?: Record<string, number>;
   };
+  scale_min?: number;
+  scale_max?: number;
   section?: string;
   is_internal?: boolean;
   ai_extraction_hint?: string;
@@ -107,6 +115,7 @@ export default function PublicScriptView() {
 
   const [phase, setPhase] = useState<Phase>('start');
   const [questionIndex, setQuestionIndex] = useState(0);
+  const [visitedStack, setVisitedStack] = useState<number[]>([]);
   const [responses, setResponses] = useState<Record<number, unknown>>({});
   const [probeNotes, setProbeNotes] = useState<Record<string, Record<number, string>>>({});
   const [agentNotes, setAgentNotes] = useState<Record<string, string>>({});
@@ -146,6 +155,7 @@ export default function PublicScriptView() {
   const restart = useCallback(() => {
     setPhase('start');
     setQuestionIndex(0);
+    setVisitedStack([]);
     setResponses({});
     setProbeNotes({});
     setAgentNotes({});
@@ -202,18 +212,42 @@ export default function PublicScriptView() {
   const handleNext = () => {
     if (phase === 'intro') setPhase('consent');
     else if (phase === 'question') {
-      if (questionIndex < sortedQuestions.length - 1) setQuestionIndex(prev => prev + 1);
-      else if (closingScript) setPhase('closing');
-      else setPhase('done');
+      const currentQ = sortedQuestions[questionIndex] as unknown as CanonicalScriptQuestion;
+      const resolved = resolveNextQuestionIndex({
+        currentIndex: questionIndex,
+        question: currentQ,
+        answer: responses[questionIndex],
+        questionsLength: sortedQuestions.length,
+      });
+      if (resolved === 'closing') {
+        if (closingScript) setPhase('closing');
+        else setPhase('done');
+      } else {
+        setVisitedStack(prev => [...prev, questionIndex]);
+        setQuestionIndex(resolved);
+      }
     } else if (phase === 'closing' || phase === 'rebuttal') setPhase('done');
   };
 
+  const popVisited = (): number | null => {
+    if (visitedStack.length === 0) return null;
+    const prev = visitedStack[visitedStack.length - 1];
+    setVisitedStack(s => s.slice(0, -1));
+    return prev;
+  };
+
   const handleBack = () => {
-    if (phase === 'question' && questionIndex > 0) setQuestionIndex(prev => prev - 1);
-    else if (phase === 'question' && questionIndex === 0) setPhase('consent');
+    if (phase === 'question') {
+      const prev = popVisited();
+      if (prev !== null) { setQuestionIndex(prev); return; }
+      if (questionIndex > 0) { setQuestionIndex(p => p - 1); return; }
+      setPhase('consent');
+    }
     else if (phase === 'consent') { if (introScript) setPhase('intro'); else setPhase('start'); }
     else if (phase === 'intro') setPhase('start');
     else if (phase === 'closing') {
+      const prev = popVisited();
+      if (prev !== null) { setPhase('question'); setQuestionIndex(prev); return; }
       if (sortedQuestions.length > 0) { setPhase('question'); setQuestionIndex(sortedQuestions.length - 1); }
       else setPhase('consent');
     }
