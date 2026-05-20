@@ -61,68 +61,69 @@ Deno.serve(async (req) => {
 
   // 2) Resolve PE cohort: campaign_ids → call_ids → booking_ids
   //    Skipped when caller provided explicit bookingIds.
+  const bookingIds: string[] = [];
   if (explicitBookingIds) {
     console.log(`[BackfillPE] using ${explicitBookingIds.length} explicit booking IDs (skipping cohort resolver)`);
-  }
-  // Original cohort resolver (only runs when no explicit IDs)
-  if (!explicitBookingIds) {
-  const { data: campaigns } = await supabase
-    .from('research_campaigns')
-    .select('id')
-    .eq('script_id', PAYMENT_SCRIPT_ID);
-  const campaignIds = (campaigns || []).map((c: any) => c.id);
+    bookingIds.push(...explicitBookingIds);
+  } else {
+    const { data: campaigns } = await supabase
+      .from('research_campaigns')
+      .select('id')
+      .eq('script_id', PAYMENT_SCRIPT_ID);
+    const campaignIds = (campaigns || []).map((c: any) => c.id);
 
-  if (campaignIds.length === 0) {
-    return new Response(JSON.stringify({ message: 'No PE campaigns exist', processed: 0 }), {
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    });
-  }
+    if (campaignIds.length === 0) {
+      return new Response(JSON.stringify({ message: 'No PE campaigns exist', processed: 0 }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
 
-  // Paginate research_calls to avoid 1000-row cap
-  const callIds: string[] = [];
-  {
-    let from = 0;
-    const pageSize = 1000;
-    while (true) {
-      const { data, error } = await supabase
-        .from('research_calls')
-        .select('id')
-        .in('campaign_id', campaignIds)
-        .range(from, from + pageSize - 1);
-      if (error) throw error;
-      const ids = (data || []).map((r: any) => r.id);
-      callIds.push(...ids);
-      if (ids.length < pageSize) break;
-      from += pageSize;
+    // Paginate research_calls to avoid 1000-row cap
+    const callIds: string[] = [];
+    {
+      let from = 0;
+      const pageSize = 1000;
+      while (true) {
+        const { data, error } = await supabase
+          .from('research_calls')
+          .select('id')
+          .in('campaign_id', campaignIds)
+          .range(from, from + pageSize - 1);
+        if (error) throw error;
+        const ids = (data || []).map((r: any) => r.id);
+        callIds.push(...ids);
+        if (ids.length < pageSize) break;
+        from += pageSize;
+      }
+    }
+
+    if (callIds.length === 0) {
+      return new Response(JSON.stringify({ message: 'No PE research_calls', processed: 0 }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    // Paginate bookings — chunk callIds to keep URL length manageable
+    const inChunk = 100;
+    for (let i = 0; i < callIds.length; i += inChunk) {
+      const callSlice = callIds.slice(i, i + inChunk);
+      let from = 0;
+      const pageSize = 1000;
+      while (true) {
+        const { data, error } = await supabase
+          .from('bookings')
+          .select('id')
+          .in('research_call_id', callSlice)
+          .range(from, from + pageSize - 1);
+        if (error) throw error;
+        const ids = (data || []).map((r: any) => r.id);
+        bookingIds.push(...ids);
+        if (ids.length < pageSize) break;
+        from += pageSize;
+      }
     }
   }
 
-  if (callIds.length === 0) {
-    return new Response(JSON.stringify({ message: 'No PE research_calls', processed: 0 }), {
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    });
-  }
-
-  // Paginate bookings — chunk callIds to keep URL length manageable
-  const bookingIds: string[] = [];
-  const inChunk = 100;
-  for (let i = 0; i < callIds.length; i += inChunk) {
-    const callSlice = callIds.slice(i, i + inChunk);
-    let from = 0;
-    const pageSize = 1000;
-    while (true) {
-      const { data, error } = await supabase
-        .from('bookings')
-        .select('id')
-        .in('research_call_id', callSlice)
-        .range(from, from + pageSize - 1);
-      if (error) throw error;
-      const ids = (data || []).map((r: any) => r.id);
-      bookingIds.push(...ids);
-      if (ids.length < pageSize) break;
-      from += pageSize;
-    }
-  }
 
   // 3) Pull a chunk of candidate transcription rows.
   // Candidate = transcript present AND (survey_progress NULL OR total != TOTAL_Q)
