@@ -344,7 +344,7 @@ export function PaymentExperienceInsightsDashboard() {
 
       {analytics.emergingRisks.length > 0 && (
         <>
-          <SectionHeader title="Top Emerging Risks" />
+          <SectionHeader title="Top Emerging Risks" emphasis />
           <EmergingRisksSection risks={analytics.emergingRisks} />
         </>
       )}
