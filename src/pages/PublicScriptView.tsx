@@ -155,6 +155,7 @@ export default function PublicScriptView() {
   const restart = useCallback(() => {
     setPhase('start');
     setQuestionIndex(0);
+    setVisitedStack([]);
     setResponses({});
     setProbeNotes({});
     setAgentNotes({});
