@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
@@ -10,6 +11,19 @@ import {
   type KPIMetric,
 } from '@/hooks/usePaymentExperienceResponses';
 import { usePaymentExperienceAIInsight } from '@/hooks/usePaymentExperienceAIInsight';
+import {
+  computeSegmentedInsights,
+  computeKeyDrivers,
+  computeEmergingRisks,
+  computeSuggestedActions,
+  computeSurveyFunnel,
+} from '@/utils/paymentExperienceAnalytics';
+import { SectionHeader } from './insights/primitives/SectionHeader';
+import { SegmentedInsightsSection } from './insights/SegmentedInsightsSection';
+import { KeyDriversSection } from './insights/KeyDriversSection';
+import { EmergingRisksSection } from './insights/EmergingRisksSection';
+import { SuggestedActionsSection } from './insights/SuggestedActionsSection';
+import { SurveyFunnelSection } from './insights/SurveyFunnelSection';
 
 // ── KPI tile ────────────────────────────────────────────────────────────────
 
@@ -131,7 +145,7 @@ function AIInsightBanner({ insight }: { insight: ReturnType<typeof usePaymentExp
 
 export function PaymentExperienceInsightsDashboard() {
   const {
-    records, kpis, eligibilityStats,
+    records, eligibleRecords, kpis, eligibilityStats,
     topFrictionThemes, frictionSummary, autopayBarriers, isLoading,
   } = usePaymentExperienceResponses();
   const { insight } = usePaymentExperienceAIInsight({
@@ -139,6 +153,14 @@ export function PaymentExperienceInsightsDashboard() {
     topFriction: topFrictionThemes,
     topBarriers: autopayBarriers,
   });
+
+  const analytics = useMemo(() => ({
+    segmentedInsights: computeSegmentedInsights(eligibleRecords),
+    keyDrivers: computeKeyDrivers(eligibleRecords),
+    emergingRisks: computeEmergingRisks(eligibleRecords),
+    suggestedActions: computeSuggestedActions(eligibleRecords),
+    surveyFunnel: computeSurveyFunnel(records, eligibleRecords),
+  }), [records, eligibleRecords]);
 
   if (isLoading) {
     return (
@@ -354,6 +376,41 @@ export function PaymentExperienceInsightsDashboard() {
           </CardContent>
         </Card>
       </div>
+
+      {analytics.segmentedInsights.length > 0 && (
+        <>
+          <SectionHeader title="Segmented Insights" />
+          <SegmentedInsightsSection segments={analytics.segmentedInsights} />
+        </>
+      )}
+
+      {analytics.keyDrivers.length > 0 && (
+        <>
+          <SectionHeader title="Key Drivers" />
+          <KeyDriversSection drivers={analytics.keyDrivers} />
+        </>
+      )}
+
+      {analytics.emergingRisks.length > 0 && (
+        <>
+          <SectionHeader title="Top Emerging Risks" />
+          <EmergingRisksSection risks={analytics.emergingRisks} />
+        </>
+      )}
+
+      {analytics.suggestedActions.length > 0 && (
+        <>
+          <SectionHeader title="Suggested Actions" />
+          <SuggestedActionsSection actions={analytics.suggestedActions} />
+        </>
+      )}
+
+      {analytics.surveyFunnel.length >= 2 && (
+        <>
+          <SectionHeader title="Survey Funnel" />
+          <SurveyFunnelSection steps={analytics.surveyFunnel} />
+        </>
+      )}
     </div>
   );
 }
