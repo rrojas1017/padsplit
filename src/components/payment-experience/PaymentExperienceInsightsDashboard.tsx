@@ -376,6 +376,41 @@ export function PaymentExperienceInsightsDashboard() {
           </CardContent>
         </Card>
       </div>
+
+      {analytics.segmentedInsights.length > 0 && (
+        <>
+          <SectionHeader title="Segmented Insights" />
+          <SegmentedInsightsSection segments={analytics.segmentedInsights} />
+        </>
+      )}
+
+      {analytics.keyDrivers.length > 0 && (
+        <>
+          <SectionHeader title="Key Drivers" />
+          <KeyDriversSection drivers={analytics.keyDrivers} />
+        </>
+      )}
+
+      {analytics.emergingRisks.length > 0 && (
+        <>
+          <SectionHeader title="Top Emerging Risks" />
+          <EmergingRisksSection risks={analytics.emergingRisks} />
+        </>
+      )}
+
+      {analytics.suggestedActions.length > 0 && (
+        <>
+          <SectionHeader title="Suggested Actions" />
+          <SuggestedActionsSection actions={analytics.suggestedActions} />
+        </>
+      )}
+
+      {analytics.surveyFunnel.length >= 2 && (
+        <>
+          <SectionHeader title="Survey Funnel" />
+          <SurveyFunnelSection steps={analytics.surveyFunnel} />
+        </>
+      )}
     </div>
   );
 }
