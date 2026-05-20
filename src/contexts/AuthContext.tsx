@@ -443,13 +443,48 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setSession(null);
   };
 
+  const realUser = user;
+  const effectiveUser: User | null = impersonated && realUser?.role === 'super_admin'
+    ? {
+        id: impersonated.id,
+        name: impersonated.name,
+        email: impersonated.email,
+        role: impersonated.role,
+        siteId: impersonated.siteId,
+        status: 'active',
+      }
+    : realUser;
+
   const hasRole = (roles: UserRole[]): boolean => {
-    if (!user) return false;
-    return roles.includes(user.role);
+    if (!effectiveUser) return false;
+    return roles.includes(effectiveUser.role);
+  };
+
+  const startImpersonation = (u: ImpersonatedUser): boolean => {
+    if (realUser?.role !== 'super_admin') return false;
+    sessionStorage.setItem(IMPERSONATION_KEY, JSON.stringify(u));
+    setImpersonated(u);
+    return true;
+  };
+
+  const stopImpersonation = () => {
+    sessionStorage.removeItem(IMPERSONATION_KEY);
+    setImpersonated(null);
   };
 
   return (
-    <AuthContext.Provider value={{ user, isLoading, login, signup, logout, hasRole }}>
+    <AuthContext.Provider value={{
+      user: effectiveUser,
+      realUser,
+      isImpersonating: !!impersonated && realUser?.role === 'super_admin',
+      startImpersonation,
+      stopImpersonation,
+      isLoading,
+      login,
+      signup,
+      logout,
+      hasRole,
+    }}>
       {children}
     </AuthContext.Provider>
   );
