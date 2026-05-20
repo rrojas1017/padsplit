@@ -115,6 +115,7 @@ export default function PublicScriptView() {
 
   const [phase, setPhase] = useState<Phase>('start');
   const [questionIndex, setQuestionIndex] = useState(0);
+  const [visitedStack, setVisitedStack] = useState<number[]>([]);
   const [responses, setResponses] = useState<Record<number, unknown>>({});
   const [probeNotes, setProbeNotes] = useState<Record<string, Record<number, string>>>({});
   const [agentNotes, setAgentNotes] = useState<Record<string, string>>({});
