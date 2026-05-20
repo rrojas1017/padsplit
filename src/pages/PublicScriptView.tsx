@@ -549,19 +549,25 @@ export default function PublicScriptView() {
                   </RadioGroup>
                 )}
 
-                {currentQ.type === 'scale' && (
+                {currentQ.type === 'scale' && (() => {
+                  const sMin = (currentQ as any).scale_min ?? 1;
+                  const sMax = (currentQ as any).scale_max ?? 10;
+                  const raw = (currentResponse as number);
+                  const val = typeof raw === 'number' ? Math.min(Math.max(raw, sMin), sMax) : sMin;
+                  return (
                   <div className="space-y-3 px-1">
-                    <Label className="text-sm font-medium">Response: <span className="text-primary font-bold">{(currentResponse as number) || 5}</span></Label>
+                    <Label className="text-sm font-medium">Response: <span className="text-primary font-bold">{val}</span></Label>
                     <Slider
-                      min={1} max={10} step={1}
-                      value={[(currentResponse as number) || 5]}
+                      min={sMin} max={sMax} step={1}
+                      value={[val]}
                       onValueChange={([v]) => setResponses(prev => ({ ...prev, [questionIndex]: v }))}
                     />
                     <div className="flex justify-between text-xs text-muted-foreground">
-                      <span>1 — Low</span><span>10 — High</span>
+                      <span>{sMin} — Low</span><span>{sMax} — High</span>
                     </div>
                   </div>
-                )}
+                  );
+                })()}
 
                 {currentQ.type === 'open_ended' && (
                   <Textarea
