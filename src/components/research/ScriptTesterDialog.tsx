@@ -143,6 +143,7 @@ export function ScriptTesterDialog({ open, onOpenChange, script }: Props) {
       if (questions.length > 0) {
         setPhase('question');
         setQuestionIndex(0);
+        setVisitedStack([]);
       } else if (closingScript) {
         setPhase('closing');
       } else {
