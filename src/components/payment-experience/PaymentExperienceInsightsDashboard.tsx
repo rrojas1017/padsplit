@@ -4,7 +4,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
 import {
   Users, BookOpen, Repeat, FileQuestion, ShieldAlert, CalendarClock,
-  Sparkles, AlertTriangle, Zap, ShieldCheck,
+  AlertTriangle, Zap, ShieldCheck,
 } from 'lucide-react';
 import {
   usePaymentExperienceResponses,
@@ -19,6 +19,7 @@ import {
   computeSurveyFunnel,
 } from '@/utils/paymentExperienceAnalytics';
 import { SectionHeader } from './insights/primitives/SectionHeader';
+import { ExecutiveSummaryBanner } from './insights/ExecutiveSummaryBanner';
 import { SegmentedInsightsSection } from './insights/SegmentedInsightsSection';
 import { KeyDriversSection } from './insights/KeyDriversSection';
 import { EmergingRisksSection } from './insights/EmergingRisksSection';
