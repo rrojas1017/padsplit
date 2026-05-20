@@ -145,7 +145,7 @@ function AIInsightBanner({ insight }: { insight: ReturnType<typeof usePaymentExp
 
 export function PaymentExperienceInsightsDashboard() {
   const {
-    records, kpis, eligibilityStats,
+    records, eligibleRecords, kpis, eligibilityStats,
     topFrictionThemes, frictionSummary, autopayBarriers, isLoading,
   } = usePaymentExperienceResponses();
   const { insight } = usePaymentExperienceAIInsight({
@@ -153,6 +153,14 @@ export function PaymentExperienceInsightsDashboard() {
     topFriction: topFrictionThemes,
     topBarriers: autopayBarriers,
   });
+
+  const analytics = useMemo(() => ({
+    segmentedInsights: computeSegmentedInsights(eligibleRecords),
+    keyDrivers: computeKeyDrivers(eligibleRecords),
+    emergingRisks: computeEmergingRisks(eligibleRecords),
+    suggestedActions: computeSuggestedActions(eligibleRecords),
+    surveyFunnel: computeSurveyFunnel(records, eligibleRecords),
+  }), [records, eligibleRecords]);
 
   if (isLoading) {
     return (
