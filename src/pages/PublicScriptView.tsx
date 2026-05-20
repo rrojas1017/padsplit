@@ -40,7 +40,13 @@ interface ScriptQuestion {
     no_goto?: number;
     yes_probes?: string[];
     no_probes?: string[];
+    scale_threshold?: number;
+    scale_lte_goto?: number;
+    scale_gt_goto?: number;
+    option_gotos?: Record<string, number>;
   };
+  scale_min?: number;
+  scale_max?: number;
   section?: string;
   is_internal?: boolean;
   ai_extraction_hint?: string;
