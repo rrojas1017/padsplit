@@ -158,22 +158,37 @@ export function ScriptTesterDialog({ open, onOpenChange, script }: Props) {
     if (phase === 'intro') {
       setPhase('consent');
     } else if (phase === 'question') {
-      if (questionIndex < questions.length - 1) {
-        setQuestionIndex(prev => prev + 1);
-      } else if (closingScript) {
-        setPhase('closing');
+      const currentQ = questions[questionIndex];
+      const resolved = resolveNextQuestionIndex({
+        currentIndex: questionIndex,
+        question: currentQ,
+        answer: responses[questionIndex],
+        questionsLength: questions.length,
+      });
+      if (resolved === 'closing') {
+        if (closingScript) setPhase('closing');
+        else setPhase('done');
       } else {
-        setPhase('done');
+        setVisitedStack(prev => [...prev, questionIndex]);
+        setQuestionIndex(resolved);
       }
     } else if (phase === 'closing' || phase === 'rebuttal') {
       setPhase('done');
     }
   };
 
+  const popVisited = (): number | null => {
+    if (visitedStack.length === 0) return null;
+    const prev = visitedStack[visitedStack.length - 1];
+    setVisitedStack(s => s.slice(0, -1));
+    return prev;
+  };
+
   const handleBack = () => {
-    if (phase === 'question' && questionIndex > 0) {
-      setQuestionIndex(prev => prev - 1);
-    } else if (phase === 'question' && questionIndex === 0) {
+    if (phase === 'question') {
+      const prev = popVisited();
+      if (prev !== null) { setQuestionIndex(prev); return; }
+      if (questionIndex > 0) { setQuestionIndex(p => p - 1); return; }
       setPhase('consent');
     } else if (phase === 'consent') {
       if (introScript) setPhase('intro');
@@ -183,6 +198,8 @@ export function ScriptTesterDialog({ open, onOpenChange, script }: Props) {
     } else if (phase === 'verify') {
       setPhase('start');
     } else if (phase === 'closing') {
+      const prev = popVisited();
+      if (prev !== null) { setPhase('question'); setQuestionIndex(prev); return; }
       if (questions.length > 0) {
         setPhase('question');
         setQuestionIndex(questions.length - 1);
