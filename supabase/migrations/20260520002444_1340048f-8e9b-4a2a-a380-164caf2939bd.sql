@@ -1,0 +1,17 @@
+REVOKE EXECUTE ON FUNCTION public.archive_old_api_costs() FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION public.can_view_booking(uuid) FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION public.claim_booking_for_transcription(uuid) FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION public.generate_invoice_number() FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION public.get_agent_user_ids_for_site(uuid) FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION public.get_daily_coaching_gate() FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION public.get_import_batch_counts() FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION public.get_my_role() FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION public.get_my_site_id() FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION public.get_non_booking_stats(date) FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION public.get_non_booking_trends(date, boolean) FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION public.get_user_role(uuid) FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION public.get_user_site_id(uuid) FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION public.handle_new_user() FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION public.has_role(uuid, app_role) FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION public.is_agent(uuid) FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION public.set_invoice_defaults() FROM PUBLIC;
