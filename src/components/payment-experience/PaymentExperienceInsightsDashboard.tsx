@@ -240,6 +240,13 @@ export function PaymentExperienceInsightsDashboard() {
         />
       </div>
 
+      {analytics.surveyFunnel.length >= 2 && (
+        <>
+          <SectionHeader title="Survey Funnel" />
+          <SurveyFunnelSection steps={analytics.surveyFunnel} />
+        </>
+      )}
+
       <div className="pt-2">
         <h2 className="text-xs font-semibold tracking-[0.12em] text-muted-foreground uppercase">
           Member Insights
@@ -405,12 +412,6 @@ export function PaymentExperienceInsightsDashboard() {
         </>
       )}
 
-      {analytics.surveyFunnel.length >= 2 && (
-        <>
-          <SectionHeader title="Survey Funnel" />
-          <SurveyFunnelSection steps={analytics.surveyFunnel} />
-        </>
-      )}
     </div>
   );
 }
