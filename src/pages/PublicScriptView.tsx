@@ -25,6 +25,8 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
 import { cn } from '@/lib/utils';
+import { resolveNextQuestionIndex } from '@/utils/scriptBranching';
+import type { ScriptQuestion as CanonicalScriptQuestion } from '@/hooks/useResearchScripts';
 
 interface ScriptQuestion {
   id?: number;
