@@ -14,7 +14,7 @@ export function InsightCard({ title, icon, rightSlot, className, children }: Ins
   return (
     <Card className={cn('h-full', className)}>
       {(title || icon || rightSlot) && (
-        <CardHeader className="pb-2">
+        <CardHeader className="pb-1.5">
           <div className="flex items-center justify-between gap-3">
             <CardTitle className="text-sm flex items-center gap-2 min-w-0">
               {icon}
@@ -24,7 +24,7 @@ export function InsightCard({ title, icon, rightSlot, className, children }: Ins
           </div>
         </CardHeader>
       )}
-      <CardContent className={cn(title ? 'pt-0' : 'pt-6')}>{children}</CardContent>
+      <CardContent className={cn(title ? 'pt-0' : 'pt-5')}>{children}</CardContent>
     </Card>
   );
 }

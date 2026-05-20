@@ -4,7 +4,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
 import {
   Users, BookOpen, Repeat, FileQuestion, ShieldAlert, CalendarClock,
-  Sparkles, AlertTriangle, Zap, ShieldCheck,
+  AlertTriangle, Zap, ShieldCheck,
 } from 'lucide-react';
 import {
   usePaymentExperienceResponses,
@@ -19,6 +19,7 @@ import {
   computeSurveyFunnel,
 } from '@/utils/paymentExperienceAnalytics';
 import { SectionHeader } from './insights/primitives/SectionHeader';
+import { ExecutiveSummaryBanner } from './insights/ExecutiveSummaryBanner';
 import { SegmentedInsightsSection } from './insights/SegmentedInsightsSection';
 import { KeyDriversSection } from './insights/KeyDriversSection';
 import { EmergingRisksSection } from './insights/EmergingRisksSection';
@@ -77,70 +78,6 @@ const fmtScore = (m: KPIMetric, max: number) =>
 const denom = (m: KPIMetric) =>
   m.denominator ? `N=${m.numerator.toLocaleString()}/${m.denominator.toLocaleString()}` : 'N=0';
 
-// ── Insight copy polish (display-only; does not mutate hook output) ─────────
-
-function polishInsightText(text?: string | null): string {
-  if (!text) return '';
-  let out = text.trim();
-
-  // Targeted phrasing fixes (machine-generated → natural prose)
-  out = out.replace(
-    /mainly citing cash-flow constraint and prefers manual control/gi,
-    'primarily driven by cash-flow concerns and preference for manual control',
-  );
-  out = out.replace(
-    /(?:mainly|primarily)\s+due to cash-flow concerns and preference for manual control/gi,
-    'primarily driven by cash-flow concerns and preference for manual control',
-  );
-  // Drop dangling "with " preceding the rewritten clause (e.g. "...not enrolled), with primarily...")
-  out = out.replace(
-    /,?\s*with\s+(primarily driven by cash-flow concerns)/gi,
-    ', $1',
-  );
-  out = out.replace(
-    /members\s+(primarily|mainly)\s+due to/gi,
-    '$1 due to',
-  );
-  out = out.replace(/\bare on a non-weekly pay cadence\b/gi, 'report a non-weekly pay cadence');
-  out = out.replace(/\bavg move-in cost clarity\s+/gi, 'Avg. move-in cost clarity: ');
-  out = out.replace(/\bavg\.\s+/g, 'Avg. ');
-
-  // Collapse stray double spaces, duplicated commas, and trailing period duplication
-  out = out.replace(/\s{2,}/g, ' ').replace(/,\s*,/g, ',').replace(/\.\.+$/g, '.');
-  return out;
-}
-
-// ── AI banner ───────────────────────────────────────────────────────────────
-
-function AIInsightBanner({ insight }: { insight: ReturnType<typeof usePaymentExperienceAIInsight>['insight'] }) {
-  if (!insight?.headline) return null;
-  const dateStr = insight.generatedAt
-    ? new Date(insight.generatedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
-    : null;
-  const headline = polishInsightText(insight.headline);
-  const finding = polishInsightText(insight.finding);
-  return (
-    <Card className="bg-slate-900 border-slate-800 rounded-xl">
-      <CardContent className="p-4">
-        <div className="flex items-center gap-2 mb-1.5">
-          <Sparkles className="w-3.5 h-3.5 text-slate-400" />
-          <span className="text-[10px] uppercase tracking-wide text-slate-400 font-medium">
-            AI Insight {insight.source === 'derived' && '· derived'}
-          </span>
-        </div>
-        <p className="text-sm font-semibold leading-snug text-white break-words">{headline}</p>
-        {finding && (
-          <p className="text-xs text-slate-300 mt-1.5 leading-relaxed break-words">{finding}</p>
-        )}
-        <p className="text-[10px] text-slate-500 mt-2">
-          {insight.totalAnalyzed != null && `${insight.totalAnalyzed.toLocaleString()} eligible surveys`}
-          {dateStr && <> · Updated {dateStr}</>}
-        </p>
-      </CardContent>
-    </Card>
-  );
-}
-
 // ── Dashboard ───────────────────────────────────────────────────────────────
 
 export function PaymentExperienceInsightsDashboard() {
@@ -186,8 +123,15 @@ export function PaymentExperienceInsightsDashboard() {
   const routedTotal = eligibilityStats.eligible + eligibilityStats.excluded;
 
   return (
-    <div className="space-y-4">
-      <AIInsightBanner insight={insight} />
+    <div className="space-y-3">
+      <ExecutiveSummaryBanner
+        insight={insight}
+        kpis={kpis}
+        topFrictionThemes={topFrictionThemes}
+        firstAction={analytics.suggestedActions[0]}
+      />
+
+
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
         <KPI
@@ -247,7 +191,7 @@ export function PaymentExperienceInsightsDashboard() {
         </>
       )}
 
-      <div className="pt-2">
+      <div className="pt-1">
         <h2 className="text-xs font-semibold tracking-[0.12em] text-muted-foreground uppercase">
           Member Insights
         </h2>
@@ -400,7 +344,7 @@ export function PaymentExperienceInsightsDashboard() {
 
       {analytics.emergingRisks.length > 0 && (
         <>
-          <SectionHeader title="Top Emerging Risks" />
+          <SectionHeader title="Top Emerging Risks" emphasis />
           <EmergingRisksSection risks={analytics.emergingRisks} />
         </>
       )}
