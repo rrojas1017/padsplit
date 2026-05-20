@@ -32,6 +32,9 @@ Deno.serve(async (req) => {
   const body = await req.json().catch(() => ({}));
   const dryRun: boolean = body?.dryRun === true;
   const auditMode: boolean = body?.audit === true; // verbose logs for the whole chunk
+  const explicitBookingIds: string[] | null = Array.isArray(body?.bookingIds) && body.bookingIds.length > 0
+    ? body.bookingIds.filter((x: unknown) => typeof x === 'string')
+    : null;
 
   // 1) Resolve PE script questions ONCE
   const { data: scriptRow, error: scriptErr } = await supabase
@@ -57,63 +60,70 @@ Deno.serve(async (req) => {
   const TOTAL_Q = questions.length;
 
   // 2) Resolve PE cohort: campaign_ids → call_ids → booking_ids
-  const { data: campaigns } = await supabase
-    .from('research_campaigns')
-    .select('id')
-    .eq('script_id', PAYMENT_SCRIPT_ID);
-  const campaignIds = (campaigns || []).map((c: any) => c.id);
-
-  if (campaignIds.length === 0) {
-    return new Response(JSON.stringify({ message: 'No PE campaigns exist', processed: 0 }), {
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    });
-  }
-
-  // Paginate research_calls to avoid 1000-row cap
-  const callIds: string[] = [];
-  {
-    let from = 0;
-    const pageSize = 1000;
-    while (true) {
-      const { data, error } = await supabase
-        .from('research_calls')
-        .select('id')
-        .in('campaign_id', campaignIds)
-        .range(from, from + pageSize - 1);
-      if (error) throw error;
-      const ids = (data || []).map((r: any) => r.id);
-      callIds.push(...ids);
-      if (ids.length < pageSize) break;
-      from += pageSize;
-    }
-  }
-
-  if (callIds.length === 0) {
-    return new Response(JSON.stringify({ message: 'No PE research_calls', processed: 0 }), {
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    });
-  }
-
-  // Paginate bookings — chunk callIds to keep URL length manageable
+  //    Skipped when caller provided explicit bookingIds.
   const bookingIds: string[] = [];
-  const inChunk = 100;
-  for (let i = 0; i < callIds.length; i += inChunk) {
-    const callSlice = callIds.slice(i, i + inChunk);
-    let from = 0;
-    const pageSize = 1000;
-    while (true) {
-      const { data, error } = await supabase
-        .from('bookings')
-        .select('id')
-        .in('research_call_id', callSlice)
-        .range(from, from + pageSize - 1);
-      if (error) throw error;
-      const ids = (data || []).map((r: any) => r.id);
-      bookingIds.push(...ids);
-      if (ids.length < pageSize) break;
-      from += pageSize;
+  if (explicitBookingIds) {
+    console.log(`[BackfillPE] using ${explicitBookingIds.length} explicit booking IDs (skipping cohort resolver)`);
+    bookingIds.push(...explicitBookingIds);
+  } else {
+    const { data: campaigns } = await supabase
+      .from('research_campaigns')
+      .select('id')
+      .eq('script_id', PAYMENT_SCRIPT_ID);
+    const campaignIds = (campaigns || []).map((c: any) => c.id);
+
+    if (campaignIds.length === 0) {
+      return new Response(JSON.stringify({ message: 'No PE campaigns exist', processed: 0 }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    // Paginate research_calls to avoid 1000-row cap
+    const callIds: string[] = [];
+    {
+      let from = 0;
+      const pageSize = 1000;
+      while (true) {
+        const { data, error } = await supabase
+          .from('research_calls')
+          .select('id')
+          .in('campaign_id', campaignIds)
+          .range(from, from + pageSize - 1);
+        if (error) throw error;
+        const ids = (data || []).map((r: any) => r.id);
+        callIds.push(...ids);
+        if (ids.length < pageSize) break;
+        from += pageSize;
+      }
+    }
+
+    if (callIds.length === 0) {
+      return new Response(JSON.stringify({ message: 'No PE research_calls', processed: 0 }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    // Paginate bookings — chunk callIds to keep URL length manageable
+    const inChunk = 100;
+    for (let i = 0; i < callIds.length; i += inChunk) {
+      const callSlice = callIds.slice(i, i + inChunk);
+      let from = 0;
+      const pageSize = 1000;
+      while (true) {
+        const { data, error } = await supabase
+          .from('bookings')
+          .select('id')
+          .in('research_call_id', callSlice)
+          .range(from, from + pageSize - 1);
+        if (error) throw error;
+        const ids = (data || []).map((r: any) => r.id);
+        bookingIds.push(...ids);
+        if (ids.length < pageSize) break;
+        from += pageSize;
+      }
     }
   }
+
 
   // 3) Pull a chunk of candidate transcription rows.
   // Candidate = transcript present AND (survey_progress NULL OR total != TOTAL_Q)

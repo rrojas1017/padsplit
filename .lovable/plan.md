@@ -1,45 +1,49 @@
-# Retry transcription for 5/19 payment-experience calls
+# Backfill missing Progress for 5/19 Payment Experience calls
 
-## Diagnosis confirmed
+## What's wrong
 
-For `record_type = 'research'`, `booking_date = 2026-05-19`, `campaign_type = payment_experience`:
+For `booking_date = 2026-05-19`, `campaign = payment_experience`, **512 records have a transcript but `booking_transcriptions.survey_progress = NULL`** — so the Progress column in `/reports` renders `—`. Breakdown:
 
-| transcription_status | count | cause |
-|---|---|---|
-| completed | 288 | already transcribed |
-| failed (`AI summary error: 402`) | **245** | **Lovable AI credits exhausted — retryable now** |
-| failed (`STT returned empty transcript`) | 219 | silent/voicemail audio — NOT retryable, will just fail again |
-| failed (other: timeout / connection closed) | 2 | transient — could retry |
+- 51 long transcripts (avg ~2,873 chars) — real conversations, should yield meaningful 5–16/16 progress
+- 124 medium (200–500 chars) — partial conversations, likely 1–5/16
+- 337 short (<200 chars) — voicemails/early hang-ups, will resolve to 0/16 or 1/16 but at least stop showing `—`
+- 21 already have progress (won't be touched)
 
-The 245 with `402` are exactly your hypothesis: Deepgram STT succeeded, but the downstream Gemini summarization call returned HTTP 402 (out of credits), so the row was marked failed. With credits restored, re-running will populate transcript + summary + survey_progress and the Progress column will start showing values.
+The 219 STT-empty + 2 transient transcription failures are **out of scope** — they have no transcript to analyze.
 
-## What this plan does
+## What to do (no schema or code changes)
 
-1. **Scope**: only the 245 bookings on 5/19 where
-   - `record_type = 'research'`
-   - `transcription_status = 'failed'`
-   - `transcription_error_message = 'AI summary error: 402'`
-   - `campaign_type = 'payment_experience'`
+1. **One-time scoped invocation** of the existing edge function `backfill-payment-experience-progress` with a new `bookingIds` filter for the 5/19 PE cohort (512 IDs). The function already:
+   - Loads the PE script (16 questions) once
+   - Uses Gemini Flash to map transcript → `{ answered, total: 16, questions_covered: [] }`
+   - Updates **only** `booking_transcriptions.survey_progress` — nothing else
+   - Chunks 25 with self-retrigger
+   - Has dry-run mode
 
-2. **Re-run** by invoking the existing `batch-retry-transcriptions` edge function with these specific booking IDs (it already supports a `bookingIds` array input and chunked processing).
+2. **Minimal code edit (1 file):** `supabase/functions/backfill-payment-experience-progress/index.ts`
+   - Accept optional `bookingIds: string[]` in request body. When present, skip the campaign→calls→bookings resolver and use that list directly. All existing logic (candidate filter, AI call, update, self-chain) stays identical.
+   - This avoids the global PE backfill picking up unrelated rows first (it orders by `updated_at NULLS FIRST`, so 5/19 rows would be processed last).
 
-3. **Process in chunks of ~25** with the function's built-in pacing so we don't hammer Deepgram / Gemini in one burst (~10 invocations total).
+3. **Run it:**
+   - Build the 512-ID list (one query).
+   - Invoke with `{ bookingIds: [...], dryRun: true }` → confirm 512 candidates.
+   - Invoke with `{ bookingIds: [...] }` → it self-chains in chunks of 25 (~20 invocations, ~5–8 min total).
 
-4. **Monitor**: after the run, re-query for 5/19 payment_experience records to confirm `transcription_status = completed` and that `booking_transcriptions.survey_progress` / `research_extraction` are populated. Report counts back.
+4. **Verify:** Re-query 5/19 PE rows; expect `survey_progress` populated on all 512. Refresh `/reports` → Progress column shows values.
 
-5. **Out of scope** (will not touch):
-   - The 219 "STT returned empty" rows — these are genuinely silent audio; retrying wastes credits.
-   - The 2 transient connection errors — can be included optionally if you want; tell me and I'll add them.
-   - Move-out / audience-survey campaigns on 5/19.
-   - Any code, RLS, or function changes.
+## Out of scope
+
+- The 221 records with no transcript (silent audio / transient STT errors) — would need transcription retry, not progress backfill
+- Other campaigns or other dates
+- Any RLS, storage, signed URL, or auth changes
+- `research_extraction` / `research_classification` columns — only `survey_progress` is touched
+- Frontend changes — `Reports.tsx` already renders Progress correctly when `survey_progress` exists
+
+## Cost / time
+
+- ~512 Gemini Flash calls × ~$0.0003 ≈ **$0.15–$0.20 total**
+- Runtime ~5–8 minutes with built-in pacing
 
 ## Technical notes
 
-- Edge function: `batch-retry-transcriptions` (already deployed, accepts `{ bookingIds: string[] }`).
-- It calls the existing `transcribe-call` pipeline per booking, which re-stamps `booking_transcriptions` and triggers the downstream research processing (extraction + survey_progress) for research records.
-- Estimated cost: ~$0.005–0.01 per record × 245 ≈ **$1.20–$2.50** total (Deepgram is already paid for completed STT in some cases; mostly Gemini re-run cost).
-- Runtime estimate: ~5–10 minutes with chunked pacing.
-
-## Why the Progress column will start populating
-
-`Reports.tsx` reads `questionsAnswered / questionsTotal` from `booking_transcriptions.survey_progress`. That JSON is written by the post-transcription research pipeline. Today it's `null` because the pipeline died at the AI step. Once the retry completes successfully, `survey_progress` populates and the progress bar renders.
+The customer contact you offered isn't needed — the cohort is deterministically resolvable from `bookings.research_call_id → research_calls.campaign_id → research_campaigns.script_id = c701a243-1c66-425a-8f79-99a290ec5b6b` on `booking_date = 2026-05-19`. Keep the contact handy in case any specific record needs spot-checking after the run.
