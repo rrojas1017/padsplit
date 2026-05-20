@@ -82,12 +82,31 @@ export function Header({ title, subtitle, actions }: HeaderProps) {
           )}
         </Button>
 
-        {/* User avatar */}
-        <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center">
-          <span className="text-primary-foreground text-sm font-medium">
-            {user?.name?.charAt(0) || 'U'}
-          </span>
-        </div>
+        {/* User avatar / menu */}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button className="w-8 h-8 rounded-full bg-primary flex items-center justify-center hover:opacity-90 transition-opacity">
+              <span className="text-primary-foreground text-sm font-medium">
+                {user?.name?.charAt(0) || 'U'}
+              </span>
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-56">
+            <div className="px-2 py-1.5 text-xs text-muted-foreground">
+              {realUser?.email}
+            </div>
+            {realIsSuperAdmin && (
+              <DropdownMenuItem onSelect={() => setPickerOpen(true)}>
+                <UserCog className="w-4 h-4 mr-2" />
+                View as user…
+              </DropdownMenuItem>
+            )}
+          </DropdownMenuContent>
+        </DropdownMenu>
+
+        {realIsSuperAdmin && (
+          <ImpersonationPickerDialog open={pickerOpen} onOpenChange={setPickerOpen} />
+        )}
       </div>
     </header>
   );
