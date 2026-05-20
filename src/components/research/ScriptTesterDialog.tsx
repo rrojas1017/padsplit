@@ -409,19 +409,25 @@ export function ScriptTesterDialog({ open, onOpenChange, script }: Props) {
 
               {/* Response input simulation */}
               <div className="space-y-2">
-                {currentQ.type === 'scale' && (
+                {currentQ.type === 'scale' && (() => {
+                  const sMin = (currentQ as any).scale_min ?? 1;
+                  const sMax = (currentQ as any).scale_max ?? 10;
+                  const raw = responses[questionIndex] as number | undefined;
+                  const val = typeof raw === 'number' ? Math.min(Math.max(raw, sMin), sMax) : sMin;
+                  return (
                   <div className="space-y-2">
-                    <Label className="text-sm">Response: {(responses[questionIndex] as number) || 5}</Label>
+                    <Label className="text-sm">Response: {val}</Label>
                     <Slider
-                      min={1} max={10} step={1}
-                      value={[(responses[questionIndex] as number) || 5]}
+                      min={sMin} max={sMax} step={1}
+                      value={[val]}
                       onValueChange={([v]) => setResponses(prev => ({ ...prev, [questionIndex]: v }))}
                     />
                     <div className="flex justify-between text-xs text-muted-foreground">
-                      <span>1</span><span>10</span>
+                      <span>{sMin}</span><span>{sMax}</span>
                     </div>
                   </div>
-                )}
+                  );
+                })()}
                 {currentQ.type === 'yes_no' && (
                   <div className="space-y-2">
                     <RadioGroup
