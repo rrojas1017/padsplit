@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
@@ -10,6 +11,19 @@ import {
   type KPIMetric,
 } from '@/hooks/usePaymentExperienceResponses';
 import { usePaymentExperienceAIInsight } from '@/hooks/usePaymentExperienceAIInsight';
+import {
+  computeSegmentedInsights,
+  computeKeyDrivers,
+  computeEmergingRisks,
+  computeSuggestedActions,
+  computeSurveyFunnel,
+} from '@/utils/paymentExperienceAnalytics';
+import { SectionHeader } from './insights/primitives/SectionHeader';
+import { SegmentedInsightsSection } from './insights/SegmentedInsightsSection';
+import { KeyDriversSection } from './insights/KeyDriversSection';
+import { EmergingRisksSection } from './insights/EmergingRisksSection';
+import { SuggestedActionsSection } from './insights/SuggestedActionsSection';
+import { SurveyFunnelSection } from './insights/SurveyFunnelSection';
 
 // ── KPI tile ────────────────────────────────────────────────────────────────
 
