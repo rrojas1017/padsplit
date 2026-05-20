@@ -191,7 +191,7 @@ export function PaymentExperienceInsightsDashboard() {
         </>
       )}
 
-      <div className="pt-2">
+      <div className="pt-1">
         <h2 className="text-xs font-semibold tracking-[0.12em] text-muted-foreground uppercase">
           Member Insights
         </h2>
