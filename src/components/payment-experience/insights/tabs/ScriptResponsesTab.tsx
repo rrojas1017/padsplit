@@ -137,8 +137,10 @@ function YesNoPills({
 function ScaleDisplay({ summary }: { summary: PEQuestionSummary }) {
   const max = Math.max(1, ...summary.distribution.map((d) => d.count));
   // Square-root scaling so small buckets remain readable next to a dominant
-  // one (e.g. 2 vs 52 → ~20% height instead of ~4%), while order is preserved.
+  // one while order is preserved.
   const scale = (c: number) => (c <= 0 ? 0 : Math.sqrt(c) / Math.sqrt(max));
+  const CHART_PX = 112; // h-28
+  const MIN_BAR_PX = 12;
   const modalKey = summary.distribution.reduce<string | null>((acc, d) => {
     const accCount = acc == null ? -1 : (summary.distribution.find((x) => x.key === acc)?.count ?? 0);
     return d.count > accCount ? d.key : acc;
@@ -158,42 +160,47 @@ function ScaleDisplay({ summary }: { summary: PEQuestionSummary }) {
           avg · range {summary.min}–{summary.max}
         </span>
       </div>
-      <div className="flex items-end gap-2 h-28">
+
+      {/* Percentages */}
+      <div className="flex gap-2">
+        {summary.distribution.map((d) => (
+          <span
+            key={d.key}
+            className={cn(
+              'flex-1 text-center text-[11px] font-medium tabular-nums',
+              d.count > 0 ? 'text-foreground' : 'text-muted-foreground/60',
+            )}
+          >
+            {d.percentage}%
+          </span>
+        ))}
+      </div>
+
+      {/* Bars */}
+      <div className="flex items-end gap-2" style={{ height: CHART_PX }}>
         {summary.distribution.map((d) => {
           const isModal = d.count > 0 && d.key === modalKey;
-          const heightPct = scale(d.count) * 100;
+          const px =
+            d.count > 0 ? Math.max(MIN_BAR_PX, Math.round(scale(d.count) * CHART_PX)) : 2;
           return (
             <div
               key={d.key}
-              className="flex-1 flex flex-col items-end gap-1 min-w-0"
+              className={cn(
+                'flex-1 rounded-sm',
+                d.count > 0
+                  ? isModal
+                    ? 'bg-amber-500/80'
+                    : 'bg-foreground/70'
+                  : 'bg-muted',
+              )}
+              style={{ height: px }}
               title={`${d.label}: ${d.count} (${d.percentage}%)`}
-            >
-              <span
-                className={cn(
-                  'w-full text-center text-[11px] font-medium tabular-nums',
-                  d.count > 0 ? 'text-foreground' : 'text-muted-foreground/60',
-                )}
-              >
-                {d.percentage}%
-              </span>
-              <div
-                className={cn(
-                  'w-full rounded-sm',
-                  d.count > 0
-                    ? isModal
-                      ? 'bg-amber-500/80'
-                      : 'bg-foreground/70'
-                    : 'bg-muted',
-                )}
-                style={{
-                  height: d.count > 0 ? `${heightPct}%` : 2,
-                  minHeight: d.count > 0 ? 12 : 2,
-                }}
-              />
-            </div>
+            />
           );
         })}
       </div>
+
+      {/* Labels */}
       <div className="flex gap-2">
         {summary.distribution.map((d) => {
           const isModal = d.count > 0 && d.key === modalKey;
@@ -210,6 +217,7 @@ function ScaleDisplay({ summary }: { summary: PEQuestionSummary }) {
           );
         })}
       </div>
+
       {isClarity1to5 && (
         <div className="flex justify-between text-[10px] uppercase tracking-wide text-muted-foreground">
           <span>Not clear at all</span>
