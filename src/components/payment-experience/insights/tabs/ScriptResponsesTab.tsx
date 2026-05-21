@@ -426,10 +426,19 @@ export function ScriptResponsesTab({
             variant="outline"
             size="sm"
             className="gap-1.5 h-9 w-full sm:w-auto"
-            onClick={() => downloadPaymentExperienceScriptCsv(data)}
+            onClick={() => openPaymentExperienceScriptReport({ data })}
           >
             <Download className="w-3.5 h-3.5" />
             Download Report
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-9 px-2 text-xs text-muted-foreground hover:text-foreground"
+            onClick={() => downloadPaymentExperienceScriptCsv(data)}
+            title="Download raw CSV"
+          >
+            CSV
           </Button>
         </div>
       </div>
