@@ -1,52 +1,128 @@
-## Goal
 
-Let a super admin temporarily view the app (specifically Reports) through another user's role + site context, so we can reproduce what **Jack Avera** (`jack@padsplit.com`, role `admin`, no `site_id`) is missing without logging in as him.
+# Payment Experience Dashboard — Premium Polish Refinement
 
-Important constraint: Supabase auth session stays the super admin's. RLS still runs as super admin. This is a **UI-level simulation** of the `useAuth()` shape (role, site_id, name) — enough to expose what the frontend hides/filters, which is where most "I can't see X" issues live in this codebase (Reports filters by role/site in code, not just RLS).
+Scope: UI/UX cohesion + hierarchy only. No analytics formula changes, no new queries, no charts, no modals, no Executive Summary headline copy changes.
 
-## Scope
+## 1. KPI contextual microcopy
 
-Only the frontend. No DB schema, no RLS, no edge functions.
+File: `PaymentExperienceInsightsDashboard.tsx`
 
-### 1. New `ImpersonationContext` (`src/contexts/ImpersonationContext.tsx`)
-- Holds `impersonatedUser: { id, name, email, role, site_id } | null`.
-- `setImpersonatedUser`, `clearImpersonation`.
-- Persists in `sessionStorage` (cleared on tab close, never leaks across sessions).
-- Provider mounted in `src/App.tsx` inside `AuthProvider`.
+Add an optional `caption?: string` prop to the local `KPI` component, rendered as a third line in the existing `mt-auto pt-3` footer area (style: `text-[11px] text-muted-foreground/70 leading-snug break-words`). When absent, layout is unchanged.
 
-### 2. Patch `useAuth()` (`src/contexts/AuthContext.tsx`)
-- When an impersonation is active AND the real user is `super_admin`, override the returned `user` object and `hasRole(...)` to reflect the impersonated user.
-- Real `session`, `signOut`, etc. stay untouched.
-- Guard: non-super-admins can never trigger impersonation (defense in depth — the picker UI is also gated).
+Derive captions deterministically inside the existing `useMemo` (no new utility file) using `eligibleRecords` + `normalizeCadence`. New helper `computeKpiCaptions(eligibleRecords)` returns:
 
-### 3. Impersonation bar (`src/components/layout/ImpersonationBar.tsx`)
-- Sticky banner shown at top of `DashboardLayout` whenever impersonation is active.
-- Shows: "Viewing as **Jack Avera** (admin) — Exit".
-- Rendered above the existing critical-cost banner.
+- `payCycleCaption`: most common non-weekly cadence bucket among eligible records, e.g. `"Most common among bi-weekly earners"`. Requires ≥ 5 in that bucket; otherwise omit.
+- `autopayCaption`: cadence bucket with the lowest enrollment rate (min 10 in bucket, min 2 buckets compared), e.g. `"Enrollment lowest among semi-monthly members"`. Otherwise omit.
+- `hardshipCaption`: if `not_enrolled` hardship-unaware share is meaningfully higher than `enrolled` (≥ 10 pp gap, ≥ 10 per side), render `"Awareness lower among non-autopay members"`. Otherwise omit.
 
-### 4. "View as user" picker
-- New item in `Header.tsx` user dropdown (super_admin only): **View as user…**
-- Opens a dialog listing users from `profiles` joined with `user_roles` (searchable by name/email).
-- Selecting one sets impersonation and navigates to `/reports`.
+Captions are routed to the matching KPI cards. All other KPIs (Members Surveyed, Literacy, Move-in Clarity) get no caption to preserve restraint.
 
-### 5. Diagnostic dev panel inside Reports (super_admin only, collapsed by default)
-- Small "Why is this hidden?" panel at top of `Reports.tsx` that prints the effective `user.role`, `user.site_id`, active filters, and counts of rows excluded by role/site gates. Helps pinpoint Jack's issue immediately and stays useful afterward.
+Add helper to `src/utils/paymentExperienceAnalytics.ts` exporting `computeKpiCaptions(eligible): { payCycle?: string; autopay?: string; hardship?: string }`. This is a derivation utility, not a new analytics formula — reuses existing normalizers and `CADENCE_LABELS`.
 
-## Out of scope
+## 2. Survey Funnel — subtle visibility lift
 
-- Server-side impersonation / RLS bypass. We are not changing `auth.uid()`. Any data Jack can't see due to RLS (not frontend filters) will still not appear; the diagnostic panel will make that distinction explicit ("hidden by RLS vs hidden by UI").
-- Reports refactor or filter changes.
+File: `insights/SurveyFunnelSection.tsx`
 
-## Acceptance
+- `CardContent`: `p-3` → `p-4`.
+- Count: `text-xl` → `text-2xl`, keep `font-semibold tabular-nums`.
+- Label: `text-[11px] text-muted-foreground` → `text-[11px] font-medium text-muted-foreground/90 tracking-wide`.
+- Separator chevron: `text-muted-foreground/40` → `text-muted-foreground/60`.
+- Mobile divider: `border-border/60` → `border-border`.
 
-1. Super admin opens user menu → "View as user…" → picks Jack.
-2. Banner appears: "Viewing as Jack Avera (admin)".
-3. `/reports` re-renders using admin role + Jack's (empty) site_id.
-4. Diagnostic panel shows which rows/tabs/columns the UI is hiding for that role/site combo, exposing the root cause.
-5. "Exit" restores super admin view immediately.
+No height/structure change beyond the small padding bump. Stays single row at `md+`, stacked at mobile.
 
-## Security notes
+## 3. Analytics Eligibility → funnel footer metadata
 
-- Picker + context override are both gated on real `super_admin` role (checked from the real session, not the impersonated one).
-- Session-scoped storage, not localStorage.
-- No DB writes performed under impersonation context get a fake user_id — `auth.uid()` is unchanged.
+File: `PaymentExperienceInsightsDashboard.tsx` and `insights/SurveyFunnelSection.tsx`
+
+Remove the standalone `Analytics Eligibility` card from the Member Insights grid. Member Insights grid becomes 2 cards (Friction Summary, Auto-pay Barriers); `grid-cols-1 md:grid-cols-2` (drop `lg:grid-cols-3`).
+
+Re-render the same eligibility data as a compact muted footer line inside the Survey Funnel card. Extend `SurveyFunnelSection` with optional props:
+
+```ts
+interface FunnelEligibilityMeta {
+  eligible: number;
+  routedTotal: number;
+  excluded: number;
+  voicemail: number;
+  tooShort: number;
+  insufficientExtraction: number;
+}
+```
+
+Rendered below the funnel row as a single line of inline `·`-separated chips (collapsible to wrap on mobile):
+
+```
+{eligible}/{routedTotal} eligible · {excluded} excluded
+  · {voicemail} voicemail · {tooShort} too short · {insufficientExtraction} incomplete extraction
+```
+
+Each "excluded category" piece is suppressed when its count is 0. When `excluded === 0`, render `All routed responses eligible` instead. Style: `mt-3 pt-2 border-t border-border/60 text-[11px] text-muted-foreground/80 flex flex-wrap gap-x-3 gap-y-1`. Optional `ShieldCheck` icon at start (`w-3 h-3`) to retain the prior signal.
+
+This preserves every existing value, keeps it accessible and transparent, but stops it competing as a peer card.
+
+## 4. Suggested Actions — priority differentiation + single Top Priority
+
+File: `insights/SuggestedActionsSection.tsx`
+
+Existing priority mapping (rank 0 → High impact, 1 → Medium, 2+ → Quick win) stays. Visual treatment per rank:
+
+- **Rank 0 — Top Priority**:
+  - Add `border-amber-500/40` (replaces default border) and a slim left accent: `border-l-2 border-l-amber-500/70`.
+  - Add a small `"Top Priority"` chip rendered in the card header `rightSlot` ABOVE/before the `High impact` chip. Chip: outline, `text-amber-700 dark:text-amber-400 border-amber-500/40 bg-amber-500/5`, `text-[10px] uppercase tracking-wide h-5 px-1.5`.
+- **Rank 1 — Medium impact**:
+  - Subtle left edge `border-l-2 border-l-muted-foreground/30`. `Medium impact` chip unchanged.
+- **Rank 2+ — Quick win**:
+  - No left accent. `Quick win` chip unchanged.
+
+The `Top Priority` chip is the only "single top focus" treatment in the dashboard, derived deterministically from the existing impact-sorted order. It is suppressed when `actions.length === 0` (already the early-return path).
+
+Footer line (`High reach` / `Broad operational impact` / `Targeted improvement`) remains unchanged.
+
+`InsightCard` needs to accept and forward a `className` for the left-border variants — it already does.
+
+## 5. Section rhythm tightening
+
+File: `PaymentExperienceInsightsDashboard.tsx` + primitives
+
+- Outer wrapper stays `space-y-3`.
+- Collapse the double blank line between banner and KPI grid (lines 133–135) to a single break.
+- Member Insights wrapper: `<div className="pt-1">` → drop the wrapper entirely and use a `<SectionHeader title="Member Insights" />` for visual consistency with all other sections.
+- `SectionHeader`: change `pt-1` → `pt-0.5` to compress vertical rhythm between sections.
+- Grid gaps: keep `gap-3` (already tight, lower harms breathing).
+- `InsightCard` header `pb-1.5` stays.
+
+No mobile breakpoint changes.
+
+## 6. Mobile verification
+
+- KPI captions wrap with `break-words`; KPI footer min-height already accommodates an extra line.
+- Survey Funnel still stacks vertically at `< md`; eligibility footer wraps via `flex-wrap`.
+- Suggested Actions left-accent borders show identically across breakpoints; chips wrap via header `flex items-center gap-2`.
+- Verify at 375 / 390 / 414.
+
+## Files touched
+
+Modified:
+- `src/components/payment-experience/PaymentExperienceInsightsDashboard.tsx`
+- `src/components/payment-experience/insights/SurveyFunnelSection.tsx`
+- `src/components/payment-experience/insights/SuggestedActionsSection.tsx`
+- `src/components/payment-experience/insights/primitives/SectionHeader.tsx`
+- `src/utils/paymentExperienceAnalytics.ts` (add `computeKpiCaptions` derivation helper only — no existing formula changed)
+
+No changes:
+- Executive Summary banner copy/structure
+- `ExecutiveSummaryBanner.tsx`
+- `KeyDriversSection.tsx`, `EmergingRisksSection.tsx`, `SegmentedInsightsSection.tsx`
+- Hooks, queries, types
+
+## Acceptance checks
+
+- Three KPI cards (Pay-cycle, Auto-pay, Hardship) show a single muted caption line when data supports it; otherwise omit cleanly.
+- Survey Funnel reads as foundational context: slightly bolder counts, slightly stronger separators, eligibility metadata folded into its footer.
+- Member Insights grid no longer contains the Analytics Eligibility card.
+- The top Suggested Action shows a `Top Priority` chip + amber left accent; the second shows a subtle neutral left edge; the rest are unaccented.
+- Section vertical rhythm feels tighter, no cramped clusters.
+- Mobile (375/390/414): no overflow, chips/captions wrap cleanly.
+- `tsc` clean.
+- Executive Summary headline wording unchanged.
