@@ -115,6 +115,14 @@ const pct = (num: number, den: number) =>
 const titleCase = (s: string) =>
   s.replace(/[_-]+/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()).trim();
 
+const arrayToVerbatim = (arr: any[]): string | null => {
+  const joined = arr
+    .map((x) => String(x ?? '').trim())
+    .filter(Boolean)
+    .join('; ');
+  return joined || null;
+};
+
 const firstNonEmptyString = (...vals: any[]): string | null => {
   for (const v of vals) {
     if (v == null) continue;
