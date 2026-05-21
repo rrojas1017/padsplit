@@ -1,128 +1,87 @@
+# Payment Experience Insights — Tab Polish Pass
 
-# Payment Experience Dashboard — Premium Polish Refinement
+Premium-polish refinement of the existing analytical tab architecture. No new analytics, queries, charts, routes, or copy changes beyond a small Actions-tab intro line.
 
-Scope: UI/UX cohesion + hierarchy only. No analytics formula changes, no new queries, no charts, no modals, no Executive Summary headline copy changes.
+## 1. Tab strip hierarchy (`InsightTabs.tsx`)
 
-## 1. KPI contextual microcopy
+Refine the underline strip to feel more intentional without becoming loud.
 
-File: `PaymentExperienceInsightsDashboard.tsx`
+- `TRIGGER_CLASS` updates:
+  - Padding: `px-4 py-2.5` → `px-5 py-3`
+  - Inactive: keep `text-muted-foreground font-medium`
+  - Active: bump from `font-medium` to `font-semibold` and `text-foreground`
+  - Keep: `border-b-2 border-transparent`, `data-[state=active]:border-primary`, `bg-transparent`, `rounded-none`, `shadow-none`, `whitespace-nowrap`
+- `TabsList`: add `mb-1` and keep `border-b border-border bg-transparent p-0 h-auto overflow-x-auto rounded-none`
+- Outer wrapper around `<Tabs>` gets `mt-1` so the strip has a touch more breathing room from the funnel above without being floaty.
 
-Add an optional `caption?: string` prop to the local `KPI` component, rendered as a third line in the existing `mt-auto pt-3` footer area (style: `text-[11px] text-muted-foreground/70 leading-snug break-words`). When absent, layout is unchanged.
+## 2. Vertical rhythm tightening
 
-Derive captions deterministically inside the existing `useMemo` (no new utility file) using `eligibleRecords` + `normalizeCadence`. New helper `computeKpiCaptions(eligibleRecords)` returns:
+- `InsightTabs.tsx`: `<TabsContent className="mt-3">` → `mt-2` (4 places). Combined with the tab strip `mb-1`, this saves ~8–12px between strip and content while preserving readability.
+- Each tab body keeps `space-y-3`. No other spacing changes anywhere else in the dashboard.
 
-- `payCycleCaption`: most common non-weekly cadence bucket among eligible records, e.g. `"Most common among bi-weekly earners"`. Requires ≥ 5 in that bucket; otherwise omit.
-- `autopayCaption`: cadence bucket with the lowest enrollment rate (min 10 in bucket, min 2 buckets compared), e.g. `"Enrollment lowest among semi-monthly members"`. Otherwise omit.
-- `hardshipCaption`: if `not_enrolled` hardship-unaware share is meaningfully higher than `enrolled` (≥ 10 pp gap, ≥ 10 per side), render `"Awareness lower among non-autopay members"`. Otherwise omit.
+## 3. Overview tab — Insight Snapshot strip (`OverviewTab.tsx`)
 
-Captions are routed to the matching KPI cards. All other KPIs (Members Surveyed, Literacy, Move-in Clarity) get no caption to preserve restraint.
+Add a compact 3-column "Insight Snapshot" row between the `Member Insights` header and `Top Emerging Risks`. Reuses already-derived data only.
 
-Add helper to `src/utils/paymentExperienceAnalytics.ts` exporting `computeKpiCaptions(eligible): { payCycle?: string; autopay?: string; hardship?: string }`. This is a derivation utility, not a new analytics formula — reuses existing normalizers and `CADENCE_LABELS`.
+- New component co-located in the tab file: `InsightSnapshot` (small, presentational).
+- Props extended on `OverviewTab`: add `autopayBarriers`, `segments`, `keyDrivers` (all already computed upstream — wire them through `InsightTabs.tsx`).
+- Three muted snapshot cells, each `rounded-md border border-border/60 bg-muted/30 px-3 py-2`:
+  - **Top Barrier** — `autopayBarriers[0]?.label` + `count · share%` muted helper. Fallback: "Not enough data."
+  - **Top At-Risk Segment** — from `segments.find(s => s.id === 'autopay-by-cadence')`: pick the row with the lowest `percent` (auto-pay enrollment) — label = `row.label`, helper = `row.display`. Fallback: "Not enough data."
+  - **Top Driver** — `keyDrivers[0]?.headline` truncated to 2 lines (`line-clamp-2`); helper = `N={keyDrivers[0].n}`. Fallback: "Not enough data."
+- Layout: `grid grid-cols-1 sm:grid-cols-3 gap-2`. Each cell uses uppercase muted label (`text-[10px] tracking-wide text-muted-foreground/80 uppercase`), then `text-sm font-medium text-foreground line-clamp-2`, then `text-[11px] text-muted-foreground/70 tabular-nums`.
+- Hidden entirely if all three sources are empty (no strip rendered at all).
+- Reuses existing analytics outputs — no new computation, no new types, no new utils.
 
-## 2. Survey Funnel — subtle visibility lift
+## 4. Drivers & Friction density (`DriversTab.tsx` + `visuals/RankedBarList.tsx`)
 
-File: `insights/SurveyFunnelSection.tsx`
+Lighten the visual footprint without shrinking type.
 
-- `CardContent`: `p-3` → `p-4`.
-- Count: `text-xl` → `text-2xl`, keep `font-semibold tabular-nums`.
-- Label: `text-[11px] text-muted-foreground` → `text-[11px] font-medium text-muted-foreground/90 tracking-wide`.
-- Separator chevron: `text-muted-foreground/40` → `text-muted-foreground/60`.
-- Mobile divider: `border-border/60` → `border-border`.
+- `RankedBarList.tsx` (already used by Auto-pay Barriers):
+  - Reduce row vertical spacing: `space-y-3` → `space-y-2` on the list root
+  - Tighten detail text: `leading-snug` → `leading-tight` on the optional `detail` line, and reduce its top margin (e.g. `mt-1` → `mt-0.5`)
+  - Keep bar thickness, label size, count size, and quote/detail separation unchanged
+- No edits to the Payment Friction Summary card or `KeyDriversSection`.
 
-No height/structure change beyond the small padding bump. Stays single row at `md+`, stacked at mobile.
+If `RankedBarList` is also used inside Overview Insight Snapshot data, it isn't — snapshot reads raw barrier objects only, so the spacing change is isolated to Drivers tab visually.
 
-## 3. Analytics Eligibility → funnel footer metadata
+## 5. Actions tab framing (`ActionsTab.tsx`)
 
-File: `PaymentExperienceInsightsDashboard.tsx` and `insights/SurveyFunnelSection.tsx`
+Add a single muted intro line under the section header, before `SuggestedActionsSection`.
 
-Remove the standalone `Analytics Eligibility` card from the Member Insights grid. Member Insights grid becomes 2 cards (Friction Summary, Auto-pay Barriers); `grid-cols-1 md:grid-cols-2` (drop `lg:grid-cols-3`).
+- Rendered only when `actions.length > 0` (don't double up with empty state).
+- Markup: `<p className="text-xs text-muted-foreground leading-snug max-w-prose">Recommended operational actions prioritized by estimated reach, member impact, and friction severity.</p>`
+- No card, no callout, no icon, no border.
 
-Re-render the same eligibility data as a compact muted footer line inside the Survey Funnel card. Extend `SurveyFunnelSection` with optional props:
+## 6. Wiring
 
-```ts
-interface FunnelEligibilityMeta {
-  eligible: number;
-  routedTotal: number;
-  excluded: number;
-  voicemail: number;
-  tooShort: number;
-  insufficientExtraction: number;
-}
-```
+- `InsightTabs.tsx`: pass `autopayBarriers`, `segments`, `keyDrivers` to `<OverviewTab />` in addition to current props. No new derivations — all already received as props from the dashboard.
 
-Rendered below the funnel row as a single line of inline `·`-separated chips (collapsible to wrap on mobile):
+## Mobile (375 / 390 / 414)
 
-```
-{eligible}/{routedTotal} eligible · {excluded} excluded
-  · {voicemail} voicemail · {tooShort} too short · {insufficientExtraction} incomplete extraction
-```
+- Tab strip still horizontally scrolls; new padding stays within row.
+- Insight Snapshot collapses to single column via `grid-cols-1 sm:grid-cols-3`.
+- `mt-2` content spacing remains readable on small screens.
+- No new overflow risks.
 
-Each "excluded category" piece is suppressed when its count is 0. When `excluded === 0`, render `All routed responses eligible` instead. Style: `mt-3 pt-2 border-t border-border/60 text-[11px] text-muted-foreground/80 flex flex-wrap gap-x-3 gap-y-1`. Optional `ShieldCheck` icon at start (`w-3 h-3`) to retain the prior signal.
+## Out of scope
 
-This preserves every existing value, keeps it accessible and transparent, but stops it competing as a peer card.
-
-## 4. Suggested Actions — priority differentiation + single Top Priority
-
-File: `insights/SuggestedActionsSection.tsx`
-
-Existing priority mapping (rank 0 → High impact, 1 → Medium, 2+ → Quick win) stays. Visual treatment per rank:
-
-- **Rank 0 — Top Priority**:
-  - Add `border-amber-500/40` (replaces default border) and a slim left accent: `border-l-2 border-l-amber-500/70`.
-  - Add a small `"Top Priority"` chip rendered in the card header `rightSlot` ABOVE/before the `High impact` chip. Chip: outline, `text-amber-700 dark:text-amber-400 border-amber-500/40 bg-amber-500/5`, `text-[10px] uppercase tracking-wide h-5 px-1.5`.
-- **Rank 1 — Medium impact**:
-  - Subtle left edge `border-l-2 border-l-muted-foreground/30`. `Medium impact` chip unchanged.
-- **Rank 2+ — Quick win**:
-  - No left accent. `Quick win` chip unchanged.
-
-The `Top Priority` chip is the only "single top focus" treatment in the dashboard, derived deterministically from the existing impact-sorted order. It is suppressed when `actions.length === 0` (already the early-return path).
-
-Footer line (`High reach` / `Broad operational impact` / `Targeted improvement`) remains unchanged.
-
-`InsightCard` needs to accept and forward a `className` for the left-border variants — it already does.
-
-## 5. Section rhythm tightening
-
-File: `PaymentExperienceInsightsDashboard.tsx` + primitives
-
-- Outer wrapper stays `space-y-3`.
-- Collapse the double blank line between banner and KPI grid (lines 133–135) to a single break.
-- Member Insights wrapper: `<div className="pt-1">` → drop the wrapper entirely and use a `<SectionHeader title="Member Insights" />` for visual consistency with all other sections.
-- `SectionHeader`: change `pt-1` → `pt-0.5` to compress vertical rhythm between sections.
-- Grid gaps: keep `gap-3` (already tight, lower harms breathing).
-- `InsightCard` header `pb-1.5` stays.
-
-No mobile breakpoint changes.
-
-## 6. Mobile verification
-
-- KPI captions wrap with `break-words`; KPI footer min-height already accommodates an extra line.
-- Survey Funnel still stacks vertically at `< md`; eligibility footer wraps via `flex-wrap`.
-- Suggested Actions left-accent borders show identically across breakpoints; chips wrap via header `flex items-center gap-2`.
-- Verify at 375 / 390 / 414.
+- No new analytics, queries, charts, or chart libraries
+- No routing or URL state
+- No Executive Summary, KPI, or Funnel changes
+- No new primitives
+- No motion/animation
+- No changes to `EmergingRisksSection`, `KeyDriversSection`, `SegmentedInsightsSection`, `SuggestedActionsSection` internals
+- No copy changes other than the single Actions intro sentence and snapshot labels
 
 ## Files touched
 
-Modified:
-- `src/components/payment-experience/PaymentExperienceInsightsDashboard.tsx`
-- `src/components/payment-experience/insights/SurveyFunnelSection.tsx`
-- `src/components/payment-experience/insights/SuggestedActionsSection.tsx`
-- `src/components/payment-experience/insights/primitives/SectionHeader.tsx`
-- `src/utils/paymentExperienceAnalytics.ts` (add `computeKpiCaptions` derivation helper only — no existing formula changed)
+- `src/components/payment-experience/insights/InsightTabs.tsx` — trigger styling, content spacing, wire new Overview props
+- `src/components/payment-experience/insights/tabs/OverviewTab.tsx` — add Insight Snapshot, extend props
+- `src/components/payment-experience/insights/tabs/DriversTab.tsx` — none (changes happen in shared visual)
+- `src/components/payment-experience/insights/tabs/ActionsTab.tsx` — add muted intro line
+- `src/components/payment-experience/insights/visuals/RankedBarList.tsx` — tighten row + detail spacing
 
-No changes:
-- Executive Summary banner copy/structure
-- `ExecutiveSummaryBanner.tsx`
-- `KeyDriversSection.tsx`, `EmergingRisksSection.tsx`, `SegmentedInsightsSection.tsx`
-- Hooks, queries, types
+## Acceptance check
 
-## Acceptance checks
-
-- Three KPI cards (Pay-cycle, Auto-pay, Hardship) show a single muted caption line when data supports it; otherwise omit cleanly.
-- Survey Funnel reads as foundational context: slightly bolder counts, slightly stronger separators, eligibility metadata folded into its footer.
-- Member Insights grid no longer contains the Analytics Eligibility card.
-- The top Suggested Action shows a `Top Priority` chip + amber left accent; the second shows a subtle neutral left edge; the rest are unaccented.
-- Section vertical rhythm feels tighter, no cramped clusters.
-- Mobile (375/390/414): no overflow, chips/captions wrap cleanly.
-- `tsc` clean.
-- Executive Summary headline wording unchanged.
+Tab strip reads as more authoritative (semibold active + roomier padding) but still restrained; spacing between funnel/tabs/content feels ~8–12px tighter; Overview gains a 3-up snapshot strip that uses only existing data; Drivers' Auto-pay Barriers list is visibly lighter; Actions tab has a short muted framing sentence; no TS errors; no analytics regression; mobile layouts stack cleanly with no overflow.
