@@ -166,7 +166,7 @@ function ScaleDisplay({ summary }: { summary: PEQuestionSummary }) {
 
       {/* Bars with percentage labels sitting on top of each bar */}
       <div className="flex items-end gap-2" style={{ height: CHART_PX + 18 }}>
-        {summary.distribution.map((d) => {
+        {distribution.map((d) => {
           const isModal = d.count > 0 && d.key === modalKey;
           const px =
             d.count > 0 ? Math.max(MIN_BAR_PX, Math.round(scale(d.count) * CHART_PX)) : 2;
