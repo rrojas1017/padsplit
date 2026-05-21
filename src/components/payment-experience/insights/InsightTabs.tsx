@@ -1,9 +1,11 @@
 import { useState } from 'react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Badge } from '@/components/ui/badge';
 import { OverviewTab } from './tabs/OverviewTab';
 import { DriversTab } from './tabs/DriversTab';
 import { SegmentsTab } from './tabs/SegmentsTab';
 import { ActionsTab } from './tabs/ActionsTab';
+import { ScriptResponsesTab } from './tabs/ScriptResponsesTab';
 import type {
   DriverInsight,
   EmergingRisk,
@@ -14,10 +16,11 @@ import type {
   AutopayBarrierAgg,
   FrictionSummary,
   FrictionThemeAgg,
+  PaymentExperienceRecord,
   PaymentKPIs,
 } from '@/hooks/usePaymentExperienceResponses';
 
-type TabKey = 'overview' | 'drivers' | 'segments' | 'actions';
+type TabKey = 'overview' | 'drivers' | 'segments' | 'actions' | 'script-responses';
 
 interface InsightTabsProps {
   kpis: PaymentKPIs;
@@ -28,6 +31,8 @@ interface InsightTabsProps {
   keyDrivers: DriverInsight[];
   segments: SegmentCard[];
   suggestedActions: SuggestedAction[];
+  records: PaymentExperienceRecord[];
+  eligibleRecords: PaymentExperienceRecord[];
 }
 
 const TRIGGER_CLASS =
@@ -42,6 +47,8 @@ export function InsightTabs({
   keyDrivers,
   segments,
   suggestedActions,
+  records,
+  eligibleRecords,
 }: InsightTabsProps) {
   const [tab, setTab] = useState<TabKey>('overview');
 
@@ -59,6 +66,12 @@ export function InsightTabs({
         </TabsTrigger>
         <TabsTrigger value="actions" className={TRIGGER_CLASS}>
           Actions
+        </TabsTrigger>
+        <TabsTrigger value="script-responses" className={TRIGGER_CLASS}>
+          Script Responses
+          <Badge variant="secondary" className="ml-1 h-5 px-1.5 text-[10px] font-medium tabular-nums">
+            {eligibleRecords.length}
+          </Badge>
         </TabsTrigger>
       </TabsList>
 
@@ -88,6 +101,10 @@ export function InsightTabs({
 
       <TabsContent value="actions" className="mt-2">
         <ActionsTab actions={suggestedActions} />
+      </TabsContent>
+
+      <TabsContent value="script-responses" className="mt-2">
+        <ScriptResponsesTab eligibleRecords={eligibleRecords} totalRouted={records.length} />
       </TabsContent>
     </Tabs>
   );
