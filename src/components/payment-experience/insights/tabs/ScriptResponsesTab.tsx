@@ -15,6 +15,7 @@ import {
   downloadPaymentExperienceScriptCsv,
   type PEQuestionSummary,
 } from '@/utils/paymentExperienceScriptResponses';
+import { openPaymentExperienceScriptReport } from '@/utils/paymentExperienceReportExport';
 
 interface ScriptResponsesTabProps {
   eligibleRecords: PaymentExperienceRecord[];
