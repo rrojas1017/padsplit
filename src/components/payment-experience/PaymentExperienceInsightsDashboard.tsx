@@ -137,8 +137,6 @@ export function PaymentExperienceInsightsDashboard() {
         firstAction={analytics.suggestedActions[0]}
       />
 
-
-
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
         <KPI
           label="Members Surveyed"
@@ -160,6 +158,7 @@ export function PaymentExperienceInsightsDashboard() {
           label="Auto-pay Enrolled"
           value={fmtPct(kpis.autopayEnrolled)}
           denominator={`${kpis.autopayEnrolled.numerator.toLocaleString()} enrolled members`}
+          caption={analytics.kpiCaptions.autopay}
           icon={<Repeat className="h-4 w-4" />}
           iconBg="bg-green-50"
           iconColor="text-green-600"
@@ -176,6 +175,7 @@ export function PaymentExperienceInsightsDashboard() {
           label="Hardship-Aware"
           value={fmtPct(kpis.hardshipAware)}
           denominator={`${kpis.hardshipAware.numerator.toLocaleString()} of ${kpis.hardshipAware.denominator.toLocaleString()} aware`}
+          caption={analytics.kpiCaptions.hardship}
           icon={<ShieldAlert className="h-4 w-4" />}
           iconBg="bg-rose-50"
           iconColor="text-rose-600"
@@ -184,6 +184,7 @@ export function PaymentExperienceInsightsDashboard() {
           label="Pay-cycle Misalignment"
           value={fmtPct(kpis.payCycleMisalignment)}
           denominator={`${kpis.payCycleMisalignment.numerator.toLocaleString()} non-weekly schedules`}
+          caption={analytics.kpiCaptions.payCycle}
           icon={<CalendarClock className="h-4 w-4" />}
           iconBg="bg-orange-50"
           iconColor="text-orange-600"
@@ -193,17 +194,23 @@ export function PaymentExperienceInsightsDashboard() {
       {analytics.surveyFunnel.length >= 2 && (
         <>
           <SectionHeader title="Survey Funnel" />
-          <SurveyFunnelSection steps={analytics.surveyFunnel} />
+          <SurveyFunnelSection
+            steps={analytics.surveyFunnel}
+            eligibility={{
+              eligible: eligibilityStats.eligible,
+              routedTotal,
+              excluded: eligibilityStats.excluded,
+              voicemail: eligibilityStats.voicemail,
+              tooShort: eligibilityStats.tooShort,
+              insufficientExtraction: eligibilityStats.insufficientExtraction,
+            }}
+          />
         </>
       )}
 
-      <div className="pt-1">
-        <h2 className="text-xs font-semibold tracking-[0.12em] text-muted-foreground uppercase">
-          Member Insights
-        </h2>
-      </div>
+      <SectionHeader title="Member Insights" />
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         {/* Payment Friction Summary */}
         <Card className="h-full">
           <CardHeader className="pb-2">
