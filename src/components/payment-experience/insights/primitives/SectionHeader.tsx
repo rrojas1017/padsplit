@@ -9,7 +9,7 @@ interface SectionHeaderProps {
 
 export function SectionHeader({ title, hint, emphasis }: SectionHeaderProps) {
   return (
-    <div className="flex items-end justify-between gap-3 pt-1">
+    <div className="flex items-end justify-between gap-3 pt-0.5">
       <h2
         className={cn(
           emphasis
