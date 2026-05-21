@@ -192,8 +192,10 @@ export function PaymentExperienceInsightsDashboard() {
           denominator={`${kpis.autopayEnrolled.numerator.toLocaleString()} enrolled members`}
           caption={analytics.kpiCaptions.autopay}
           icon={<Repeat className="h-4 w-4" />}
-          iconBg="bg-green-50"
+          iconBg="bg-green-50 dark:bg-green-950/20"
           iconColor="text-green-600"
+          variant="primary"
+          accent="green"
         />
         <KPI
           label="Move-in Cost Clarity"
