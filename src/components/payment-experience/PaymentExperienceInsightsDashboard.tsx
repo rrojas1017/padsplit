@@ -4,7 +4,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
 import {
   Users, BookOpen, Repeat, FileQuestion, ShieldAlert, CalendarClock,
-  AlertTriangle, Zap, ShieldCheck,
+  AlertTriangle, Zap,
 } from 'lucide-react';
 import {
   usePaymentExperienceResponses,
@@ -17,6 +17,7 @@ import {
   computeEmergingRisks,
   computeSuggestedActions,
   computeSurveyFunnel,
+  computeKpiCaptions,
 } from '@/utils/paymentExperienceAnalytics';
 import { SectionHeader } from './insights/primitives/SectionHeader';
 import { ExecutiveSummaryBanner } from './insights/ExecutiveSummaryBanner';
@@ -33,12 +34,13 @@ interface KPIProps {
   value: string;
   denominator?: string;
   meta?: string;
+  caption?: string;
   icon: React.ReactNode;
   iconBg?: string;
   iconColor?: string;
 }
 
-function KPI({ label, value, denominator, meta, icon, iconBg, iconColor }: KPIProps) {
+function KPI({ label, value, denominator, meta, caption, icon, iconBg, iconColor }: KPIProps) {
   return (
     <Card className="h-full">
       <CardContent className="p-4 h-full flex flex-col">
@@ -63,6 +65,9 @@ function KPI({ label, value, denominator, meta, icon, iconBg, iconColor }: KPIPr
           )}
           {meta && (
             <p className="text-[11px] text-muted-foreground/70 leading-snug break-words">{meta}</p>
+          )}
+          {caption && (
+            <p className="text-[11px] text-muted-foreground/70 leading-snug break-words italic">{caption}</p>
           )}
         </div>
       </CardContent>
@@ -97,6 +102,7 @@ export function PaymentExperienceInsightsDashboard() {
     emergingRisks: computeEmergingRisks(eligibleRecords),
     suggestedActions: computeSuggestedActions(eligibleRecords),
     surveyFunnel: computeSurveyFunnel(records, eligibleRecords),
+    kpiCaptions: computeKpiCaptions(eligibleRecords),
   }), [records, eligibleRecords]);
 
   if (isLoading) {
