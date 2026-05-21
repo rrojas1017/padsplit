@@ -192,10 +192,16 @@ function getAnswer(rec: PaymentExperienceRecord, q: PEQuestionDef): any {
       const n = Number(v);
       return isFinite(n) && v != null && String(v).trim() !== '' ? n : null;
     }
-    case 'hardship_padsplit':
-      return firstNonEmptyString(ext.hardship_awareness_padsplit, ext.hardship_details);
-    case 'hardship_host':
-      return firstNonEmptyString(ext.hardship_awareness_host);
+    case 'hardship_padsplit': {
+      const p = ext.hardship_awareness_padsplit;
+      if (Array.isArray(p)) return arrayToVerbatim(p) ?? firstNonEmptyString(ext.hardship_details);
+      return firstNonEmptyString(p, ext.hardship_details);
+    }
+    case 'hardship_host': {
+      const h = ext.hardship_awareness_host;
+      if (Array.isArray(h)) return arrayToVerbatim(h);
+      return firstNonEmptyString(h);
+    }
     case 'desired_payment_methods': {
       const dpm = ext.desired_payment_methods;
       if (!dpm) return null;
