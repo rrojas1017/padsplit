@@ -26,6 +26,7 @@ import { KeyDriversSection } from './insights/KeyDriversSection';
 import { EmergingRisksSection } from './insights/EmergingRisksSection';
 import { SuggestedActionsSection } from './insights/SuggestedActionsSection';
 import { SurveyFunnelSection } from './insights/SurveyFunnelSection';
+import { RankedBarList } from './insights/visuals/RankedBarList';
 
 // ── KPI tile ────────────────────────────────────────────────────────────────
 
@@ -266,23 +267,20 @@ export function PaymentExperienceInsightsDashboard() {
               <p className="text-xs text-muted-foreground mb-3">
                 Among {kpis.autopayEnrolled.denominator - kpis.autopayEnrolled.numerator} not-enrolled members
               </p>
-              <ul className="space-y-3">
-                {autopayBarriers.map((b) => (
-                  <li key={b.key} className="border-b border-border last:border-0 pb-2 last:pb-0">
-                    <div className="flex items-baseline justify-between gap-4">
-                      <span className="text-sm font-medium text-foreground min-w-0 truncate">{b.label}</span>
-                      <span className="text-xs text-muted-foreground tabular-nums shrink-0">
-                        {b.count} · {Math.round(b.share * 100)}%
-                      </span>
-                    </div>
-                    {b.topUnlock && (
-                      <p className="text-xs text-muted-foreground mt-1 line-clamp-3 leading-relaxed break-words">
-                        <span className="text-foreground/70 font-medium">Unlock:</span> {b.topUnlock}
-                      </p>
-                    )}
-                  </li>
-                ))}
-              </ul>
+              <RankedBarList
+                tone="blue"
+                rows={autopayBarriers.map((b) => ({
+                  label: b.label,
+                  count: b.count,
+                  share: b.share,
+                  detail: b.topUnlock ? (
+                    <>
+                      <span className="text-foreground/70 font-medium">Unlock:</span> {b.topUnlock}
+                    </>
+                  ) : undefined,
+                }))}
+              />
+
             </CardContent>
           </Card>
         )}
