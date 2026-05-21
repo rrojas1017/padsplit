@@ -100,6 +100,8 @@ export interface SegmentRow {
   label: string;
   display: string;
   value: number | null;
+  /** Optional 0–100 percent for visualizations. Populated only for percent-based segments. */
+  percent?: number;
   n: number;
   confidence: ConfidenceLevel;
 }
