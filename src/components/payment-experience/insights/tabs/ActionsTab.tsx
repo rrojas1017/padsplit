@@ -11,7 +11,12 @@ export function ActionsTab({ actions }: ActionsTabProps) {
     <div className="space-y-3">
       <SectionHeader title="Suggested Actions" />
       {actions.length > 0 ? (
-        <SuggestedActionsSection actions={actions} />
+        <>
+          <p className="text-xs text-muted-foreground leading-snug max-w-prose">
+            Recommended operational actions prioritized by estimated reach, member impact, and friction severity.
+          </p>
+          <SuggestedActionsSection actions={actions} />
+        </>
       ) : (
         <p className="text-xs text-muted-foreground py-2">No suggested actions yet.</p>
       )}
