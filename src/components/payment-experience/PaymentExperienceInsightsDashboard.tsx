@@ -220,8 +220,10 @@ export function PaymentExperienceInsightsDashboard() {
           denominator={`${kpis.payCycleMisalignment.numerator.toLocaleString()} non-weekly schedules`}
           caption={analytics.kpiCaptions.payCycle}
           icon={<CalendarClock className="h-4 w-4" />}
-          iconBg="bg-orange-50"
+          iconBg="bg-orange-50 dark:bg-orange-950/20"
           iconColor="text-orange-600"
+          variant="primary"
+          accent="orange"
         />
       </div>
 
