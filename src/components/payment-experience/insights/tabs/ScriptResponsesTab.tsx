@@ -199,7 +199,7 @@ function ScaleDisplay({ summary }: { summary: PEQuestionSummary }) {
 
       {/* Labels */}
       <div className="flex gap-2">
-        {summary.distribution.map((d) => {
+        {distribution.map((d) => {
           const isModal = d.count > 0 && d.key === modalKey;
           return (
             <span
