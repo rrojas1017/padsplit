@@ -136,10 +136,13 @@ function YesNoPills({
 
 function ScaleDisplay({ summary }: { summary: PEQuestionSummary }) {
   const max = Math.max(1, ...summary.distribution.map((d) => d.count));
-  const modalKey = summary.distribution.reduce<string | null>(
-    (acc, d) => (acc == null || d.count > (summary.distribution.find((x) => x.key === acc)?.count ?? 0) ? d.key : acc),
-    null,
-  );
+  // Square-root scaling so small buckets remain readable next to a dominant
+  // one (e.g. 2 vs 52 → ~20% height instead of ~4%), while order is preserved.
+  const scale = (c: number) => (c <= 0 ? 0 : Math.sqrt(c) / Math.sqrt(max));
+  const modalKey = summary.distribution.reduce<string | null>((acc, d) => {
+    const accCount = acc == null ? -1 : (summary.distribution.find((x) => x.key === acc)?.count ?? 0);
+    return d.count > accCount ? d.key : acc;
+  }, null);
   const isClarity1to5 =
     summary.question.id === 'move_in_cost_clarity' &&
     summary.min === 1 &&
@@ -158,44 +161,52 @@ function ScaleDisplay({ summary }: { summary: PEQuestionSummary }) {
       <div className="flex items-end gap-2 h-28">
         {summary.distribution.map((d) => {
           const isModal = d.count > 0 && d.key === modalKey;
-          const heightPct = (d.count / max) * 100;
+          const heightPct = scale(d.count) * 100;
           return (
             <div
               key={d.key}
-              className="flex-1 flex flex-col items-center gap-1 min-w-0"
+              className="flex-1 flex flex-col items-end gap-1 min-w-0"
               title={`${d.label}: ${d.count} (${d.percentage}%)`}
             >
               <span
                 className={cn(
-                  'text-[11px] font-medium tabular-nums',
+                  'w-full text-center text-[11px] font-medium tabular-nums',
                   d.count > 0 ? 'text-foreground' : 'text-muted-foreground/60',
                 )}
               >
-                {d.count}
-              </span>
-              <div className="relative w-full flex-1 rounded-sm bg-muted/40 overflow-hidden">
-                {d.count > 0 && (
-                  <div
-                    className={cn(
-                      'absolute inset-x-0 bottom-0 rounded-sm',
-                      isModal ? 'bg-amber-500/80' : 'bg-foreground/70',
-                    )}
-                    style={{ height: `${heightPct}%`, minHeight: 8 }}
-                  />
-                )}
-              </div>
-              <span className="text-[10px] text-muted-foreground tabular-nums">
                 {d.percentage}%
               </span>
-              <span
+              <div
                 className={cn(
-                  'text-[11px] font-medium truncate w-full text-center',
-                  isModal ? 'text-amber-700 dark:text-amber-300' : 'text-foreground/80',
+                  'w-full rounded-sm',
+                  d.count > 0
+                    ? isModal
+                      ? 'bg-amber-500/80'
+                      : 'bg-foreground/70'
+                    : 'bg-muted',
                 )}
-              >
-                {d.label}
-              </span>
+                style={{
+                  height: d.count > 0 ? `${heightPct}%` : 2,
+                  minHeight: d.count > 0 ? 12 : 2,
+                }}
+              />
             </div>
+          );
+        })}
+      </div>
+      <div className="flex gap-2">
+        {summary.distribution.map((d) => {
+          const isModal = d.count > 0 && d.key === modalKey;
+          return (
+            <span
+              key={d.key}
+              className={cn(
+                'flex-1 text-center text-[11px] font-medium truncate',
+                isModal ? 'text-amber-700 dark:text-amber-300' : 'text-foreground/80',
+              )}
+            >
+              {d.label}
+            </span>
           );
         })}
       </div>
