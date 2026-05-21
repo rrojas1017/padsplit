@@ -100,6 +100,8 @@ export interface SegmentRow {
   label: string;
   display: string;
   value: number | null;
+  /** Optional 0–100 percent for visualizations. Populated only for percent-based segments. */
+  percent?: number;
   n: number;
   confidence: ConfidenceLevel;
 }
@@ -136,6 +138,7 @@ export function computeSegmentedInsights(eligible: PaymentExperienceRecord[]): S
           label: CADENCE_LABELS[b] ?? b,
           display: v == null ? '—' : `${Math.round(v)}% enrolled`,
           value: v,
+          percent: v ?? undefined,
           n: answered,
           confidence: confidenceLevel(answered),
         };
@@ -210,6 +213,7 @@ export function computeSegmentedInsights(eligible: PaymentExperienceRecord[]): S
           label,
           display: v == null ? '—' : `${Math.round(v)}% aware`,
           value: v,
+          percent: v ?? undefined,
           n: answered,
           confidence: confidenceLevel(answered),
         };
