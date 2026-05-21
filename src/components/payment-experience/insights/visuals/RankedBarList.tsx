@@ -26,7 +26,7 @@ export function RankedBarList({ rows, maxRows, tone = 'blue' }: RankedBarListPro
   const visible = maxRows ? rows.slice(0, maxRows) : rows;
   const maxShare = visible.reduce((m, r) => Math.max(m, r.share || 0), 0) || 1;
   return (
-    <ul className="space-y-3">
+    <ul className="space-y-2">
       {visible.map((r) => {
         const pct = Math.round((r.share || 0) * 100);
         const width = Math.max(0, Math.min(100, ((r.share || 0) / maxShare) * 100));
@@ -35,7 +35,7 @@ export function RankedBarList({ rows, maxRows, tone = 'blue' }: RankedBarListPro
             key={r.label}
             role="group"
             aria-label={`${r.label}: ${r.count} responses, ${pct}%`}
-            className="border-b border-border last:border-0 pb-2 last:pb-0 space-y-1"
+            className="border-b border-border last:border-0 pb-1.5 last:pb-0 space-y-1"
           >
             <div className="flex items-baseline justify-between gap-3">
               <span className="text-sm font-medium text-foreground min-w-0 truncate">{r.label}</span>
@@ -50,7 +50,7 @@ export function RankedBarList({ rows, maxRows, tone = 'blue' }: RankedBarListPro
               />
             </div>
             {r.detail && (
-              <div className="text-xs text-muted-foreground leading-relaxed break-words">
+              <div className="text-xs text-muted-foreground leading-tight break-words mt-0.5">
                 {r.detail}
               </div>
             )}

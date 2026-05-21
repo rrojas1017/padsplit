@@ -31,7 +31,7 @@ interface InsightTabsProps {
 }
 
 const TRIGGER_CLASS =
-  'gap-1.5 whitespace-nowrap rounded-none border-b-2 border-transparent bg-transparent px-4 py-2.5 text-sm font-medium text-muted-foreground shadow-none data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:text-foreground data-[state=active]:shadow-none';
+  'gap-1.5 whitespace-nowrap rounded-none border-b-2 border-transparent bg-transparent px-5 py-3 text-sm font-medium text-muted-foreground shadow-none data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:text-foreground data-[state=active]:font-semibold data-[state=active]:shadow-none';
 
 export function InsightTabs({
   kpis,
@@ -46,8 +46,8 @@ export function InsightTabs({
   const [tab, setTab] = useState<TabKey>('overview');
 
   return (
-    <Tabs value={tab} onValueChange={(v) => setTab(v as TabKey)} className="w-full">
-      <TabsList className="h-auto w-full justify-start rounded-none border-b border-border bg-transparent p-0 overflow-x-auto">
+    <Tabs value={tab} onValueChange={(v) => setTab(v as TabKey)} className="w-full mt-1">
+      <TabsList className="h-auto w-full justify-start rounded-none border-b border-border bg-transparent p-0 mb-1 overflow-x-auto">
         <TabsTrigger value="overview" className={TRIGGER_CLASS}>
           Overview
         </TabsTrigger>
@@ -62,11 +62,17 @@ export function InsightTabs({
         </TabsTrigger>
       </TabsList>
 
-      <TabsContent value="overview" className="mt-3">
-        <OverviewTab emergingRisks={emergingRisks} suggestedActions={suggestedActions} />
+      <TabsContent value="overview" className="mt-2">
+        <OverviewTab
+          emergingRisks={emergingRisks}
+          suggestedActions={suggestedActions}
+          autopayBarriers={autopayBarriers}
+          segments={segments}
+          keyDrivers={keyDrivers}
+        />
       </TabsContent>
 
-      <TabsContent value="drivers" className="mt-3">
+      <TabsContent value="drivers" className="mt-2">
         <DriversTab
           kpis={kpis}
           topFrictionThemes={topFrictionThemes}
@@ -76,11 +82,11 @@ export function InsightTabs({
         />
       </TabsContent>
 
-      <TabsContent value="segments" className="mt-3">
+      <TabsContent value="segments" className="mt-2">
         <SegmentsTab segments={segments} />
       </TabsContent>
 
-      <TabsContent value="actions" className="mt-3">
+      <TabsContent value="actions" className="mt-2">
         <ActionsTab actions={suggestedActions} />
       </TabsContent>
     </Tabs>
