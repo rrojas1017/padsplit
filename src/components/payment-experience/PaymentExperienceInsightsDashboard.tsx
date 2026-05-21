@@ -253,6 +253,8 @@ export function PaymentExperienceInsightsDashboard() {
         keyDrivers={analytics.keyDrivers}
         segments={analytics.segmentedInsights}
         suggestedActions={analytics.suggestedActions}
+        records={records}
+        eligibleRecords={eligibleRecords}
       />
     </div>
   );
