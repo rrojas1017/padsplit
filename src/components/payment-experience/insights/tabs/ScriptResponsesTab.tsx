@@ -135,20 +135,23 @@ function YesNoPills({
 }
 
 function ScaleDisplay({ summary }: { summary: PEQuestionSummary }) {
-  const max = Math.max(1, ...summary.distribution.map((d) => d.count));
-  // Square-root scaling so small buckets remain readable next to a dominant
-  // one while order is preserved.
-  const scale = (c: number) => (c <= 0 ? 0 : Math.sqrt(c) / Math.sqrt(max));
-  const CHART_PX = 112; // h-28
-  const MIN_BAR_PX = 12;
-  const modalKey = summary.distribution.reduce<string | null>((acc, d) => {
-    const accCount = acc == null ? -1 : (summary.distribution.find((x) => x.key === acc)?.count ?? 0);
-    return d.count > accCount ? d.key : acc;
-  }, null);
   const isClarity1to5 =
     summary.question.id === 'move_in_cost_clarity' &&
     summary.min === 1 &&
     summary.max === 5;
+  // For bucketed scales (e.g. overdue_threshold 0–2000), only show buckets
+  // that actually have responses. Keep all 1–5 ticks for the clarity scale.
+  const distribution = isClarity1to5
+    ? summary.distribution
+    : summary.distribution.filter((d) => d.count > 0);
+  const max = Math.max(1, ...distribution.map((d) => d.count));
+  const scale = (c: number) => (c <= 0 ? 0 : Math.sqrt(c) / Math.sqrt(max));
+  const CHART_PX = 112; // h-28
+  const MIN_BAR_PX = 12;
+  const modalKey = distribution.reduce<string | null>((acc, d) => {
+    const accCount = acc == null ? -1 : (distribution.find((x) => x.key === acc)?.count ?? 0);
+    return d.count > accCount ? d.key : acc;
+  }, null);
 
   return (
     <div className="space-y-3">
