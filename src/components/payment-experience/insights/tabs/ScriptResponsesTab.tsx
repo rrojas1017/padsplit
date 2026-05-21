@@ -136,6 +136,15 @@ function YesNoPills({
 
 function ScaleDisplay({ summary }: { summary: PEQuestionSummary }) {
   const max = Math.max(1, ...summary.distribution.map((d) => d.count));
+  const modalKey = summary.distribution.reduce<string | null>(
+    (acc, d) => (acc == null || d.count > (summary.distribution.find((x) => x.key === acc)?.count ?? 0) ? d.key : acc),
+    null,
+  );
+  const isClarity1to5 =
+    summary.question.id === 'move_in_cost_clarity' &&
+    summary.min === 1 &&
+    summary.max === 5;
+
   return (
     <div className="space-y-3">
       <div className="flex items-baseline gap-2">
@@ -146,23 +155,56 @@ function ScaleDisplay({ summary }: { summary: PEQuestionSummary }) {
           avg · range {summary.min}–{summary.max}
         </span>
       </div>
-      <div className="flex items-end gap-1 h-20">
-        {summary.distribution.map((d) => (
-          <div
-            key={d.key}
-            className="flex-1 flex flex-col items-center gap-1 min-w-0"
-            title={`${d.label}: ${d.count} (${d.percentage}%)`}
-          >
+      <div className="flex items-end gap-2 h-28">
+        {summary.distribution.map((d) => {
+          const isModal = d.count > 0 && d.key === modalKey;
+          const heightPct = (d.count / max) * 100;
+          return (
             <div
-              className="w-full rounded-sm bg-foreground/70"
-              style={{ height: `${(d.count / max) * 100}%`, minHeight: d.count > 0 ? 2 : 0 }}
-            />
-            <span className="text-[10px] text-muted-foreground truncate w-full text-center">
-              {d.label}
-            </span>
-          </div>
-        ))}
+              key={d.key}
+              className="flex-1 flex flex-col items-center gap-1 min-w-0"
+              title={`${d.label}: ${d.count} (${d.percentage}%)`}
+            >
+              <span
+                className={cn(
+                  'text-[11px] font-medium tabular-nums',
+                  d.count > 0 ? 'text-foreground' : 'text-muted-foreground/60',
+                )}
+              >
+                {d.count}
+              </span>
+              <div className="relative w-full flex-1 rounded-sm bg-muted/40 overflow-hidden">
+                {d.count > 0 && (
+                  <div
+                    className={cn(
+                      'absolute inset-x-0 bottom-0 rounded-sm',
+                      isModal ? 'bg-amber-500/80' : 'bg-foreground/70',
+                    )}
+                    style={{ height: `${heightPct}%`, minHeight: 8 }}
+                  />
+                )}
+              </div>
+              <span className="text-[10px] text-muted-foreground tabular-nums">
+                {d.percentage}%
+              </span>
+              <span
+                className={cn(
+                  'text-[11px] font-medium truncate w-full text-center',
+                  isModal ? 'text-amber-700 dark:text-amber-300' : 'text-foreground/80',
+                )}
+              >
+                {d.label}
+              </span>
+            </div>
+          );
+        })}
       </div>
+      {isClarity1to5 && (
+        <div className="flex justify-between text-[10px] uppercase tracking-wide text-muted-foreground">
+          <span>Not clear at all</span>
+          <span>Crystal clear</span>
+        </div>
+      )}
     </div>
   );
 }
