@@ -70,7 +70,7 @@ function KPI({
             <p
               className={cn(
                 'font-bold tracking-tight text-foreground leading-none',
-                isPrimary ? 'text-4xl md:text-[3.4rem] md:leading-none' : 'text-4xl',
+                isPrimary ? 'text-4xl md:text-[3rem] md:leading-none' : 'text-4xl',
               )}
             >
               {value}
