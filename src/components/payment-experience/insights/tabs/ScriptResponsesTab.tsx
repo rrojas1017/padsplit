@@ -161,41 +161,35 @@ function ScaleDisplay({ summary }: { summary: PEQuestionSummary }) {
         </span>
       </div>
 
-      {/* Percentages */}
-      <div className="flex gap-2">
-        {summary.distribution.map((d) => (
-          <span
-            key={d.key}
-            className={cn(
-              'flex-1 text-center text-[11px] font-medium tabular-nums',
-              d.count > 0 ? 'text-foreground' : 'text-muted-foreground/60',
-            )}
-          >
-            {d.percentage}%
-          </span>
-        ))}
-      </div>
-
-      {/* Bars */}
-      <div className="flex items-end gap-2" style={{ height: CHART_PX }}>
+      {/* Bars with percentage labels sitting on top of each bar */}
+      <div className="flex items-end gap-2" style={{ height: CHART_PX + 18 }}>
         {summary.distribution.map((d) => {
           const isModal = d.count > 0 && d.key === modalKey;
           const px =
             d.count > 0 ? Math.max(MIN_BAR_PX, Math.round(scale(d.count) * CHART_PX)) : 2;
           return (
-            <div
-              key={d.key}
-              className={cn(
-                'flex-1 rounded-sm',
-                d.count > 0
-                  ? isModal
-                    ? 'bg-amber-500/80'
-                    : 'bg-foreground/70'
-                  : 'bg-muted',
-              )}
-              style={{ height: px }}
-              title={`${d.label}: ${d.count} (${d.percentage}%)`}
-            />
+            <div key={d.key} className="flex-1 flex flex-col items-stretch justify-end">
+              <span
+                className={cn(
+                  'text-center text-[11px] font-medium tabular-nums leading-none mb-1',
+                  d.count > 0 ? 'text-foreground' : 'text-muted-foreground/60',
+                )}
+              >
+                {d.percentage}%
+              </span>
+              <div
+                className={cn(
+                  'rounded-sm',
+                  d.count > 0
+                    ? isModal
+                      ? 'bg-amber-500/80'
+                      : 'bg-foreground/70'
+                    : 'bg-muted',
+                )}
+                style={{ height: px }}
+                title={`${d.label}: ${d.count} (${d.percentage}%)`}
+              />
+            </div>
           );
         })}
       </div>
