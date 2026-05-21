@@ -138,6 +138,7 @@ export function computeSegmentedInsights(eligible: PaymentExperienceRecord[]): S
           label: CADENCE_LABELS[b] ?? b,
           display: v == null ? '—' : `${Math.round(v)}% enrolled`,
           value: v,
+          percent: v ?? undefined,
           n: answered,
           confidence: confidenceLevel(answered),
         };
@@ -212,6 +213,7 @@ export function computeSegmentedInsights(eligible: PaymentExperienceRecord[]): S
           label,
           display: v == null ? '—' : `${Math.round(v)}% aware`,
           value: v,
+          percent: v ?? undefined,
           n: answered,
           confidence: confidenceLevel(answered),
         };
