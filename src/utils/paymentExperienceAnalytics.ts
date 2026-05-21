@@ -609,3 +609,75 @@ export function computeSurveyFunnel(
 }
 
 export { AUTOPAY_BARRIER_LABELS, FRICTION_THEME_LABELS, CADENCE_LABELS };
+
+// ── KPI Contextual Captions ─────────────────────────────────────────────────
+// Deterministic, suppressed when sample is too small. Pure derivation helper.
+
+export interface KpiCaptions {
+  payCycle?: string;
+  autopay?: string;
+  hardship?: string;
+}
+
+export function computeKpiCaptions(eligible: PaymentExperienceRecord[]): KpiCaptions {
+  const out: KpiCaptions = {};
+
+  // payCycle: most common non-weekly cadence
+  {
+    const counts: Partial<Record<CadenceBucket, number>> = {};
+    for (const r of eligible) {
+      const c = normalizeCadence(r.extraction?.pay_cadence);
+      if (c === 'unknown' || c === 'other' || c === 'weekly') continue;
+      counts[c] = (counts[c] ?? 0) + 1;
+    }
+    const top = (Object.entries(counts) as [CadenceBucket, number][])
+      .sort((a, b) => b[1] - a[1])[0];
+    if (top && top[1] >= 5) {
+      const label = (CADENCE_LABELS[top[0]] ?? top[0]).toLowerCase();
+      out.payCycle = `Most common among ${label} earners`;
+    }
+  }
+
+  // autopay: cadence bucket with lowest enrollment rate
+  {
+    const groups: Partial<Record<CadenceBucket, { enrolled: number; n: number }>> = {};
+    for (const r of eligible) {
+      const c = normalizeCadence(r.extraction?.pay_cadence);
+      if (c === 'unknown' || c === 'other') continue;
+      const s = r.extraction?.autopay_status;
+      if (!s) continue;
+      const g = (groups[c] ||= { enrolled: 0, n: 0 });
+      g.n++;
+      if (s === 'enrolled') g.enrolled++;
+    }
+    const rows = (Object.entries(groups) as [CadenceBucket, { enrolled: number; n: number }][])
+      .filter(([, v]) => v.n >= 10)
+      .map(([k, v]) => ({ k, rate: v.enrolled / v.n }));
+    if (rows.length >= 2) {
+      rows.sort((a, b) => a.rate - b.rate);
+      const label = (CADENCE_LABELS[rows[0].k] ?? rows[0].k).toLowerCase();
+      out.autopay = `Enrollment lowest among ${label} members`;
+    }
+  }
+
+  // hardship: awareness lower among non-autopay (≥10pp gap, ≥10 per side)
+  {
+    let eA = 0, eAware = 0, nA = 0, nAware = 0;
+    for (const r of eligible) {
+      const s = r.extraction?.autopay_status;
+      const gap = r.extraction?.hardship_awareness_gap;
+      if (typeof gap !== 'boolean') continue;
+      if (s === 'enrolled') { eA++; if (gap === false) eAware++; }
+      else if (s === 'not_enrolled') { nA++; if (gap === false) nAware++; }
+    }
+    if (eA >= 10 && nA >= 10) {
+      const eRate = (eAware / eA) * 100;
+      const nRate = (nAware / nA) * 100;
+      if (eRate - nRate >= 10) {
+        out.hardship = 'Awareness lower among non-autopay members';
+      }
+    }
+  }
+
+  return out;
+}

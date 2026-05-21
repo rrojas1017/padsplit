@@ -4,7 +4,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
 import {
   Users, BookOpen, Repeat, FileQuestion, ShieldAlert, CalendarClock,
-  AlertTriangle, Zap, ShieldCheck,
+  AlertTriangle, Zap,
 } from 'lucide-react';
 import {
   usePaymentExperienceResponses,
@@ -17,6 +17,7 @@ import {
   computeEmergingRisks,
   computeSuggestedActions,
   computeSurveyFunnel,
+  computeKpiCaptions,
 } from '@/utils/paymentExperienceAnalytics';
 import { SectionHeader } from './insights/primitives/SectionHeader';
 import { ExecutiveSummaryBanner } from './insights/ExecutiveSummaryBanner';
@@ -33,12 +34,13 @@ interface KPIProps {
   value: string;
   denominator?: string;
   meta?: string;
+  caption?: string;
   icon: React.ReactNode;
   iconBg?: string;
   iconColor?: string;
 }
 
-function KPI({ label, value, denominator, meta, icon, iconBg, iconColor }: KPIProps) {
+function KPI({ label, value, denominator, meta, caption, icon, iconBg, iconColor }: KPIProps) {
   return (
     <Card className="h-full">
       <CardContent className="p-4 h-full flex flex-col">
@@ -63,6 +65,9 @@ function KPI({ label, value, denominator, meta, icon, iconBg, iconColor }: KPIPr
           )}
           {meta && (
             <p className="text-[11px] text-muted-foreground/70 leading-snug break-words">{meta}</p>
+          )}
+          {caption && (
+            <p className="text-[11px] text-muted-foreground/70 leading-snug break-words italic">{caption}</p>
           )}
         </div>
       </CardContent>
@@ -97,6 +102,7 @@ export function PaymentExperienceInsightsDashboard() {
     emergingRisks: computeEmergingRisks(eligibleRecords),
     suggestedActions: computeSuggestedActions(eligibleRecords),
     surveyFunnel: computeSurveyFunnel(records, eligibleRecords),
+    kpiCaptions: computeKpiCaptions(eligibleRecords),
   }), [records, eligibleRecords]);
 
   if (isLoading) {
@@ -131,8 +137,6 @@ export function PaymentExperienceInsightsDashboard() {
         firstAction={analytics.suggestedActions[0]}
       />
 
-
-
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
         <KPI
           label="Members Surveyed"
@@ -154,6 +158,7 @@ export function PaymentExperienceInsightsDashboard() {
           label="Auto-pay Enrolled"
           value={fmtPct(kpis.autopayEnrolled)}
           denominator={`${kpis.autopayEnrolled.numerator.toLocaleString()} enrolled members`}
+          caption={analytics.kpiCaptions.autopay}
           icon={<Repeat className="h-4 w-4" />}
           iconBg="bg-green-50"
           iconColor="text-green-600"
@@ -170,6 +175,7 @@ export function PaymentExperienceInsightsDashboard() {
           label="Hardship-Aware"
           value={fmtPct(kpis.hardshipAware)}
           denominator={`${kpis.hardshipAware.numerator.toLocaleString()} of ${kpis.hardshipAware.denominator.toLocaleString()} aware`}
+          caption={analytics.kpiCaptions.hardship}
           icon={<ShieldAlert className="h-4 w-4" />}
           iconBg="bg-rose-50"
           iconColor="text-rose-600"
@@ -178,6 +184,7 @@ export function PaymentExperienceInsightsDashboard() {
           label="Pay-cycle Misalignment"
           value={fmtPct(kpis.payCycleMisalignment)}
           denominator={`${kpis.payCycleMisalignment.numerator.toLocaleString()} non-weekly schedules`}
+          caption={analytics.kpiCaptions.payCycle}
           icon={<CalendarClock className="h-4 w-4" />}
           iconBg="bg-orange-50"
           iconColor="text-orange-600"
@@ -187,17 +194,23 @@ export function PaymentExperienceInsightsDashboard() {
       {analytics.surveyFunnel.length >= 2 && (
         <>
           <SectionHeader title="Survey Funnel" />
-          <SurveyFunnelSection steps={analytics.surveyFunnel} />
+          <SurveyFunnelSection
+            steps={analytics.surveyFunnel}
+            eligibility={{
+              eligible: eligibilityStats.eligible,
+              routedTotal,
+              excluded: eligibilityStats.excluded,
+              voicemail: eligibilityStats.voicemail,
+              tooShort: eligibilityStats.tooShort,
+              insufficientExtraction: eligibilityStats.insufficientExtraction,
+            }}
+          />
         </>
       )}
 
-      <div className="pt-1">
-        <h2 className="text-xs font-semibold tracking-[0.12em] text-muted-foreground uppercase">
-          Member Insights
-        </h2>
-      </div>
+      <SectionHeader title="Member Insights" />
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         {/* Payment Friction Summary */}
         <Card className="h-full">
           <CardHeader className="pb-2">
@@ -273,59 +286,6 @@ export function PaymentExperienceInsightsDashboard() {
             </CardContent>
           </Card>
         )}
-
-        {/* Analytics Eligibility */}
-        <Card className="h-full bg-muted/30">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm flex items-center gap-2">
-              <ShieldCheck className="w-4 h-4 text-emerald-500" />
-              Analytics Eligibility
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="pt-0">
-            <ul className="divide-y divide-border">
-              <li className="flex items-baseline justify-between gap-4 py-2">
-                <span className="text-xs text-muted-foreground">Eligible responses</span>
-                <span className="text-sm tabular-nums text-foreground shrink-0">
-                  {eligibilityStats.eligible.toLocaleString()} / {routedTotal.toLocaleString()}
-                </span>
-              </li>
-              <li className="flex items-baseline justify-between gap-4 py-2">
-                <span className="text-xs text-muted-foreground">Excluded responses</span>
-                <span className="text-sm tabular-nums text-foreground shrink-0">
-                  {eligibilityStats.excluded.toLocaleString()}
-                </span>
-              </li>
-              {eligibilityStats.voicemail > 0 && (
-                <li className="flex items-baseline justify-between gap-4 py-2">
-                  <span className="text-xs text-muted-foreground">Voicemail / invalid conversation</span>
-                  <span className="text-sm tabular-nums text-foreground shrink-0">
-                    {eligibilityStats.voicemail.toLocaleString()}
-                  </span>
-                </li>
-              )}
-              {eligibilityStats.tooShort > 0 && (
-                <li className="flex items-baseline justify-between gap-4 py-2">
-                  <span className="text-xs text-muted-foreground">Too short (&lt;120s)</span>
-                  <span className="text-sm tabular-nums text-foreground shrink-0">
-                    {eligibilityStats.tooShort.toLocaleString()}
-                  </span>
-                </li>
-              )}
-              {eligibilityStats.insufficientExtraction > 0 && (
-                <li className="flex items-baseline justify-between gap-4 py-2">
-                  <span className="text-xs text-muted-foreground">Incomplete extraction</span>
-                  <span className="text-sm tabular-nums text-foreground shrink-0">
-                    {eligibilityStats.insufficientExtraction.toLocaleString()}
-                  </span>
-                </li>
-              )}
-              {eligibilityStats.excluded === 0 && (
-                <li className="py-2 text-xs text-muted-foreground">All routed responses are eligible.</li>
-              )}
-            </ul>
-          </CardContent>
-        </Card>
       </div>
 
       {analytics.segmentedInsights.length > 0 && (
