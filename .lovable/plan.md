@@ -1,87 +1,79 @@
-# Payment Experience Insights — Tab Polish Pass
+# KPI Hierarchy Refinement — Primary Metrics
 
-Premium-polish refinement of the existing analytical tab architecture. No new analytics, queries, charts, routes, or copy changes beyond a small Actions-tab intro line.
+## Goal
+Introduce a subtle `variant` prop on the inline KPI component so "Auto-pay Enrolled" and "Pay-cycle Misalignment" read as primary operational metrics without breaking the restrained PadSplit visual system.
 
-## 1. Tab strip hierarchy (`InsightTabs.tsx`)
+## Scope
+**Single file:** `src/components/payment-experience/PaymentExperienceInsightsDashboard.tsx`  
+**No logic, analytics, hooks, queries, or routing changes.**
 
-Refine the underline strip to feel more intentional without becoming loud.
+---
 
-- `TRIGGER_CLASS` updates:
-  - Padding: `px-4 py-2.5` → `px-5 py-3`
-  - Inactive: keep `text-muted-foreground font-medium`
-  - Active: bump from `font-medium` to `font-semibold` and `text-foreground`
-  - Keep: `border-b-2 border-transparent`, `data-[state=active]:border-primary`, `bg-transparent`, `rounded-none`, `shadow-none`, `whitespace-nowrap`
-- `TabsList`: add `mb-1` and keep `border-b border-border bg-transparent p-0 h-auto overflow-x-auto rounded-none`
-- Outer wrapper around `<Tabs>` gets `mt-1` so the strip has a touch more breathing room from the funnel above without being floaty.
+## Changes
 
-## 2. Vertical rhythm tightening
+### 1. KPI component — add `variant` prop
+```ts
+interface KPIProps {
+  // existing fields…
+  variant?: 'default' | 'primary';
+}
+```
+- `variant = 'default'` keeps existing rendering exactly.
+- `variant = 'primary'` applies the emphasis treatments below.
 
-- `InsightTabs.tsx`: `<TabsContent className="mt-3">` → `mt-2` (4 places). Combined with the tab strip `mb-1`, this saves ~8–12px between strip and content while preserving readability.
-- Each tab body keeps `space-y-3`. No other spacing changes anywhere else in the dashboard.
+### 2. Primary variant styling (`variant === 'primary'`)
 
-## 3. Overview tab — Insight Snapshot strip (`OverviewTab.tsx`)
+**Card wrapper**
+- Add `relative` + `overflow-hidden` for the `::before` accent line.
+- Add subtle border emphasis: `border-slate-300/80 dark:border-slate-700`.
+- Add faint top accent line:
+  ```
+  before:absolute before:top-0 before:left-0 before:right-0 before:h-[2px] before:rounded-t-xl
+  ```
+- Accent tint on `::before`:
+  - Auto-pay Enrollment → `before:bg-green-500/60`
+  - Pay-cycle Misalignment → `before:bg-orange-500/60`
 
-Add a compact 3-column "Insight Snapshot" row between the `Member Insights` header and `Top Emerging Risks`. Reuses already-derived data only.
+**Value typography**
+- Desktop only (`md:`): `text-[3.4rem] leading-none`.
+- Mobile stays unchanged.
 
-- New component co-located in the tab file: `InsightSnapshot` (small, presentational).
-- Props extended on `OverviewTab`: add `autopayBarriers`, `segments`, `keyDrivers` (all already computed upstream — wire them through `InsightTabs.tsx`).
-- Three muted snapshot cells, each `rounded-md border border-border/60 bg-muted/30 px-3 py-2`:
-  - **Top Barrier** — `autopayBarriers[0]?.label` + `count · share%` muted helper. Fallback: "Not enough data."
-  - **Top At-Risk Segment** — from `segments.find(s => s.id === 'autopay-by-cadence')`: pick the row with the lowest `percent` (auto-pay enrollment) — label = `row.label`, helper = `row.display`. Fallback: "Not enough data."
-  - **Top Driver** — `keyDrivers[0]?.headline` truncated to 2 lines (`line-clamp-2`); helper = `N={keyDrivers[0].n}`. Fallback: "Not enough data."
-- Layout: `grid grid-cols-1 sm:grid-cols-3 gap-2`. Each cell uses uppercase muted label (`text-[10px] tracking-wide text-muted-foreground/80 uppercase`), then `text-sm font-medium text-foreground line-clamp-2`, then `text-[11px] text-muted-foreground/70 tabular-nums`.
-- Hidden entirely if all three sources are empty (no strip rendered at all).
-- Reuses existing analytics outputs — no new computation, no new types, no new utils.
+**Label**
+- `text-foreground/80` instead of `text-muted-foreground uppercase`.
 
-## 4. Drivers & Friction density (`DriversTab.tsx` + `visuals/RankedBarList.tsx`)
+**Caption / meta insight line**
+- Convert to intentional operational annotation style:
+  ```
+  text-[12px] italic text-muted-foreground/90
+  ```
+  (applies only when `caption` is present).
 
-Lighten the visual footprint without shrinking type.
+**Icon container**
+- Slightly stronger background tint (no size change):
+  - Auto-pay Enrollment → `bg-green-50 dark:bg-green-950/20`
+  - Pay-cycle Misalignment → `bg-orange-50 dark:bg-orange-950/20`
 
-- `RankedBarList.tsx` (already used by Auto-pay Barriers):
-  - Reduce row vertical spacing: `space-y-3` → `space-y-2` on the list root
-  - Tighten detail text: `leading-snug` → `leading-tight` on the optional `detail` line, and reduce its top margin (e.g. `mt-1` → `mt-0.5`)
-  - Keep bar thickness, label size, count size, and quote/detail separation unchanged
-- No edits to the Payment Friction Summary card or `KeyDriversSection`.
+### 3. Grid update
+- Update the KPI grid class to exactly:
+  ```
+  grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3
+  ```
+- No masonry, no asymmetric layout, no card reordering.
 
-If `RankedBarList` is also used inside Overview Insight Snapshot data, it isn't — snapshot reads raw barrier objects only, so the spacing change is isolated to Drivers tab visually.
+### 4. Instance wiring
+- Wire `Auto-pay Enrolled` instance with `variant="primary"` and green accent classes.
+- Wire `Pay-cycle Misalignment` instance with `variant="primary"` and orange accent classes.
 
-## 5. Actions tab framing (`ActionsTab.tsx`)
+---
 
-Add a single muted intro line under the section header, before `SuggestedActionsSection`.
+## Guardrails
+- No new dependencies.
+- No changes to analytics, formulas, hooks, or data flow.
+- Maintain AA contrast and semantic structure.
+- No meaning conveyed by color alone (accent line + label/value changes provide hierarchy).
+- All existing spacing and padding rhythm preserved.
 
-- Rendered only when `actions.length > 0` (don't double up with empty state).
-- Markup: `<p className="text-xs text-muted-foreground leading-snug max-w-prose">Recommended operational actions prioritized by estimated reach, member impact, and friction severity.</p>`
-- No card, no callout, no icon, no border.
-
-## 6. Wiring
-
-- `InsightTabs.tsx`: pass `autopayBarriers`, `segments`, `keyDrivers` to `<OverviewTab />` in addition to current props. No new derivations — all already received as props from the dashboard.
-
-## Mobile (375 / 390 / 414)
-
-- Tab strip still horizontally scrolls; new padding stays within row.
-- Insight Snapshot collapses to single column via `grid-cols-1 sm:grid-cols-3`.
-- `mt-2` content spacing remains readable on small screens.
-- No new overflow risks.
-
-## Out of scope
-
-- No new analytics, queries, charts, or chart libraries
-- No routing or URL state
-- No Executive Summary, KPI, or Funnel changes
-- No new primitives
-- No motion/animation
-- No changes to `EmergingRisksSection`, `KeyDriversSection`, `SegmentedInsightsSection`, `SuggestedActionsSection` internals
-- No copy changes other than the single Actions intro sentence and snapshot labels
-
-## Files touched
-
-- `src/components/payment-experience/insights/InsightTabs.tsx` — trigger styling, content spacing, wire new Overview props
-- `src/components/payment-experience/insights/tabs/OverviewTab.tsx` — add Insight Snapshot, extend props
-- `src/components/payment-experience/insights/tabs/DriversTab.tsx` — none (changes happen in shared visual)
-- `src/components/payment-experience/insights/tabs/ActionsTab.tsx` — add muted intro line
-- `src/components/payment-experience/insights/visuals/RankedBarList.tsx` — tighten row + detail spacing
-
-## Acceptance check
-
-Tab strip reads as more authoritative (semibold active + roomier padding) but still restrained; spacing between funnel/tabs/content feels ~8–12px tighter; Overview gains a 3-up snapshot strip that uses only existing data; Drivers' Auto-pay Barriers list is visibly lighter; Actions tab has a short muted framing sentence; no TS errors; no analytics regression; mobile layouts stack cleanly with no overflow.
+## Acceptance
+- Auto-pay Enrolled and Pay-cycle Misalignment feel subtly more prominent.
+- Dashboard remains restrained, executive-friendly, and mobile-stable.
+- No TypeScript errors. No layout shift on resize.
