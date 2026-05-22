@@ -87,6 +87,8 @@ export interface CallSubmission {
   agent_notes?: Record<string, string>;
   researcher_notes?: string;
   language?: string;
+  /** When provided, used to derive durable raw_script_answers persisted server-side. */
+  script_questions?: ScriptQuestion[];
 }
 
 export function useResearchCalls() {
