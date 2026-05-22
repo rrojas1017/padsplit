@@ -1,64 +1,124 @@
+# Capture Actual Dues Day for Q2 — Implementation Plan
 
-# Refactor Payment Experience Tabs into Survey Topic Tabs
+Approved as specified. Below is the concrete execution plan.
 
-Replace the four analytical tabs (Overview, Drivers & Friction, Segments, Actions) below the persistent dashboard tiles with topic tabs aligned to the underlying survey questions. The existing Script Responses tab stays untouched and remains the final tab.
+## 1. Type extension — no DB migration
 
-## Final tab order
+**File:** `src/types/research-insights.ts` (`PaymentExperienceExtraction.payment_literacy_breakdown`)
 
-1. Overview
-2. Payment Schedule
-3. Method of Payment
-4. Autopay
-5. Sentiment / Frustration
-6. Payment Options
-7. Script Responses (unchanged)
+Add to the existing object type, alongside the current four booleans:
 
-## Files
+```ts
+dues_day_stated?:
+  | 'monday' | 'tuesday' | 'wednesday' | 'thursday'
+  | 'friday' | 'saturday' | 'sunday' | 'unknown' | null;
+dues_day_stated_raw?: string | null;
+```
 
-**Edit**
-- `src/components/payment-experience/insights/InsightTabs.tsx` — swap tab triggers/content, update `TabKey`, drop unused props passed to old tabs (KPIs, drivers, segments, actions, friction summary, autopay barriers, etc.). Keep underline styling and overflow scroll. Pass `eligibleRecords` (and `totalRouted` where needed) into the new topic tabs and existing Script Responses tab.
+Keep `pay_cadence_known`, `dues_day_correct`, `dues_amount_correct`, `commitment_understood` untouched.
 
-**Create** (new topic tabs)
-- `src/components/payment-experience/insights/tabs/PaymentExperienceOverviewTab.tsx`
-- `src/components/payment-experience/insights/tabs/PaymentScheduleTab.tsx`
-- `src/components/payment-experience/insights/tabs/MethodOfPaymentTab.tsx`
-- `src/components/payment-experience/insights/tabs/AutopayTab.tsx`
-- `src/components/payment-experience/insights/tabs/SentimentFrustrationTab.tsx`
-- `src/components/payment-experience/insights/tabs/PaymentOptionsTab.tsx`
+## 2. Extraction prompt updates (no model change)
 
-**Create** (shared)
-- `src/components/payment-experience/insights/ScriptQuestionGraphCard.tsx` — extracted reusable card that renders a single `PEQuestionSummary` using the existing visual grammar (`MultiBars`, `YesNoPills`, `ScaleDisplay`, `OpenEndedDisplay`, footer line). Source rendering primitives are duplicated from `ScriptResponsesTab.tsx` so that file is not modified. Accepts `summary`, `total`, and an optional `compact` prop that hides the footer/section badge for the Overview grid.
+### A. Fallback prompt
+**File:** `supabase/functions/process-research-record/index.ts` → `PAYMENT_EXPERIENCE_FALLBACK_PROMPT`.
 
-**Do NOT touch**
-- `src/components/payment-experience/insights/tabs/ScriptResponsesTab.tsx`
-- `src/utils/paymentExperienceScriptResponses.ts`
-- `src/utils/paymentExperienceReportExport.ts`
-- Executive Summary, KPI Grid, Survey Funnel components
-- The old tab files (`OverviewTab.tsx`, `DriversTab.tsx`, `SegmentsTab.tsx`, `ActionsTab.tsx`) — leave them on disk; they simply become unimported.
+The current fallback prompt does not emit `payment_literacy_breakdown` at all. Add the breakdown object to the JSON shape so fallbacks produce the same structure as the live script, including the two new fields. Existing keys (`pay_cadence_known`, `dues_day_correct`, `dues_amount_correct`, `commitment_understood`) included for parity.
 
-## Data flow
+### B. Live script prompt
+**Table:** `research_scripts`, row `c701a243-1c66-425a-8f79-99a290ec5b6b` (PadSplit Member Payment Experience Survey).
 
-Each topic tab receives `eligibleRecords` and calls `derivePaymentExperienceScriptData(eligibleRecords, totalRouted)` once via `useMemo`, then picks the relevant `PEQuestionSummary` by `question.id` (or `question.order`):
+Update `ai_prompt` via `supabase--insert` (UPDATE) to extend `payment_literacy_breakdown` with:
 
-- Overview → orders 2, 7, 8, 15 in a 2-col grid (`md:grid-cols-2`, single col on mobile), `compact` mode.
-- Payment Schedule → orders 1, 2, stacked.
-- Method of Payment → order 7.
-- Autopay → orders 8, 9, stacked.
-- Sentiment / Frustration → order 11. Since Q11 is typed `multi` (friction theme buckets) in `PE_QUESTIONS`, the tab shows the existing horizontal-bar theme distribution at top, then a verbatims block built from `friction_verbatim` / `friction_examples` strings on eligible records (capped at 25, collapsed by default — same `OpenEndedDisplay` pattern).
-- Payment Options → order 15.
+```
+"dues_day_stated": "monday|tuesday|wednesday|thursday|friday|saturday|sunday|unknown|null",
+"dues_day_stated_raw": "raw phrase from transcript or null"
+```
 
-No new queries, no formula changes, no new charts.
+Plus normalization rules in the Rules section:
+- "every Monday" / "Mondays" / "on Monday" / "Monday morning" → `monday` (and similar for other weekdays).
+- Member unsure / can't identify / doesn't know → `unknown`.
+- Q2 not present in transcript → `unknown`.
+- `null` only when extraction cannot be performed at all.
+- `dues_day_stated_raw` preserves the verbatim phrase.
+- Continue producing `dues_day_correct` exactly as today.
 
-## Visual & responsive
+Model stays `google/gemini-2.5-flash`.
 
-- Cards use the same `Card` + `CardContent` + spacing as existing question cards.
-- Bars: muted gray; yes/no: amber-50/border + slate; scale: foreground bars with amber modal; open: collapsible verbatim list.
-- Mobile (≤414px): tabs scroll horizontally (existing `overflow-x-auto`), cards stack, bar rows wrap labels, yes/no pills stack via `flex-col sm:flex-row`.
+## 3. Historical backfill edge function
 
-## Acceptance check
+**New function:** `supabase/functions/backfill-payment-experience-dues-day/index.ts`
 
-- Tabs below the persistent dashboard switch to the new topic set with Script Responses last.
-- Overview shows compact graphs for Q2/Q7/Q8/Q15.
-- Each topic tab renders the specified questions with Script-Responses visual parity.
-- Script Responses tab behavior, dropdown, and report/CSV exports unchanged.
-- No TS errors; persistent top dashboard untouched.
+Behavior:
+- Self-retriggering chunked job (~25 records/chunk, ~10s pause between chunks).
+- Idempotent and resumable.
+- Uses `SUPABASE_SERVICE_ROLE_KEY` and `LOVABLE_API_KEY`.
+- Selection (run against `booking_transcriptions`):
+
+```sql
+research_campaign_type = 'payment_experience'
+AND call_transcription IS NOT NULL
+AND length(trim(call_transcription)) > 0
+AND (
+  research_extraction->'payment_literacy_breakdown'->>'dues_day_stated' IS NULL
+  OR research_extraction->'payment_literacy_breakdown'->>'dues_day_stated' = ''
+)
+```
+
+Per row:
+- Call `google/gemini-2.5-flash-lite` via Lovable AI Gateway, temperature 0, with a tiny single-purpose prompt that takes the transcript and returns strictly:
+
+```json
+{ "dues_day_stated": "...", "dues_day_stated_raw": "..." }
+```
+
+- Validate the returned `dues_day_stated` against the allowed enum; coerce invalid values to `unknown`.
+- Merge into `research_extraction.payment_literacy_breakdown`, preserving every other key. Skip the row if `dues_day_stated` is already present and non-empty (race-safe).
+- Log to `api_costs` with `service_type = 'research_payment_experience_backfill_duesday'`, `service_provider = 'lovable_ai'`, `is_internal = true`, plus token counts and `booking_id`.
+
+Trigger: one-shot manual `supabase--curl_edge_functions` POST. No UI button.
+
+## 4. Frontend rendering
+
+**File:** `src/utils/paymentExperienceScriptResponses.ts`
+
+- In `PE_QUESTIONS`, replace the Q2 entry:
+  ```ts
+  { order: 2, id: 'dues_day_stated',
+    text: 'What is your payment schedule for your PadSplit room?',
+    section: 'Payment literacy baseline', type: 'multi' },
+  ```
+- In `getAnswer()`, replace the `dues_day_awareness` case with a `dues_day_stated` case:
+  - Read `breakdown.dues_day_stated`.
+  - Missing/null/empty → `null`.
+  - Valid day or `'unknown'` → `[value]`.
+- Add a `DAY_LABELS` map for monday…sunday + unknown.
+- Update `labelFor()` so `qId === 'dues_day_stated'` uses `DAY_LABELS`.
+- Force fixed display order for Q2 only: Monday → Tuesday → Wednesday → Thursday → Friday → Saturday → Sunday → Unknown. Implement by post-sorting the `distribution` array when `q.id === 'dues_day_stated'`, keeping zero-count days out (only render days that occurred + Unknown if present), but never sort by count for this question.
+- Remove `'dues_day_awareness'` from the yes/no branch in `labelFor()`.
+
+`ScriptQuestionGraphCard` then renders Q2 automatically through the existing multi-bar path. The Overview tab keeps Q2 in its current slot, now showing day-of-week distribution.
+
+`dues_day_correct` remains in the schema and may continue to be used by other internal logic — it's just no longer surfaced as Q2.
+
+## 5. Validation steps
+
+After deploying and running the backfill once:
+
+1. SQL spot-check (10 rows) of `dues_day_stated` + `dues_day_stated_raw`.
+2. SQL grouped distribution by `dues_day_stated`.
+3. Visit `/research/insights?campaign=payment_experience` and confirm Q2 renders as a Monday→Sunday + Unknown horizontal bar distribution; the old Yes/No bars are gone for Q2.
+4. Confirm `api_costs` rows exist with `service_type = 'research_payment_experience_backfill_duesday'`.
+
+## Guardrails
+
+No DB migration. No removal of `dues_day_correct`. No overwrite of populated values. No Bulk Processing UI button. No changes to KPIs, Script Responses layout, other extraction fields, or formulas.
+
+## Execution order
+
+1. Update `src/types/research-insights.ts`.
+2. Update fallback prompt in `process-research-record/index.ts`.
+3. UPDATE `research_scripts.ai_prompt` for the Payment Experience row.
+4. Create `backfill-payment-experience-dues-day` edge function.
+5. Update `src/utils/paymentExperienceScriptResponses.ts` (Q2 swap + DAY_LABELS + fixed order).
+6. Deploy the new edge function and trigger it once via curl.
+7. Run SQL validation queries and verify dashboard.
