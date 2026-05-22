@@ -463,18 +463,23 @@ function computeRetagCounts(records: PaymentExperienceRecord[]): RetagSourceCoun
 
 export function usePaymentExperienceResponses() {
   const query = useQuery({
-    queryKey: ['payment-experience-responses', 'v2-eligibility'],
+    queryKey: ['payment-experience-responses', 'v3-paginated'],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from('booking_transcriptions')
-        .select(
-          'id, booking_id, retag_source, research_extraction, ' +
-          'bookings!inner(member_name, contact_phone, booking_date, has_valid_conversation, call_duration_seconds)'
-        )
-        .eq('research_campaign_type', 'payment_experience')
-        .not('research_extraction', 'is', null);
-
-      if (error) throw error;
+      // Paginate to bypass PostgREST's default 1000-row cap. Without this,
+      // visible "responses" counts swing as the backfill writes extractions
+      // into more rows than the first 1000 returned by the unpaginated query.
+      const data = await fetchAllPages((from, to) =>
+        supabase
+          .from('booking_transcriptions')
+          .select(
+            'id, booking_id, retag_source, research_extraction, ' +
+            'bookings!inner(member_name, contact_phone, booking_date, has_valid_conversation, call_duration_seconds)'
+          )
+          .eq('research_campaign_type', 'payment_experience')
+          .not('research_extraction', 'is', null)
+          .order('id', { ascending: true })
+          .range(from, to)
+      );
 
       return (data || []).map((row: any) => {
         const ext = (row.research_extraction || {}) as PaymentExperienceExtraction;
