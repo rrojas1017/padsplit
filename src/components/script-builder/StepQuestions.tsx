@@ -45,7 +45,7 @@ export function StepQuestions({ data, onChange }: Props) {
   };
 
   const duplicateQuestion = (idx: number) => {
-    const q = { ...questions[idx], order: questions.length + 1 };
+    const q = { ...questions[idx], id: generateQuestionId(), order: questions.length + 1 };
     const updated = [...questions];
     updated.splice(idx + 1, 0, q);
     onChange({ questions: updated.map((q, i) => ({ ...q, order: i + 1 })) });
