@@ -818,7 +818,20 @@ Deno.serve(async (req) => {
       extraction = parsed.extraction || parsed;
       classification = parsed.classification || { human_review_recommended: false };
 
-      console.log(`[Research] Payment Experience complete. Literacy: ${extraction?.payment_literacy_score}, Autopay: ${extraction?.autopay_status}`);
+      // Durable per-question answer persistence. If the AI prompt did not
+      // emit raw_script_answers (e.g. older script-stored prompt), derive a
+      // normalized version from the existing extraction fields so the
+      // dashboard always has a single preferred source going forward.
+      try {
+        extraction.raw_script_answers = mergeRawScriptAnswers(
+          extraction.raw_script_answers,
+          derivePaymentExperienceRawAnswers(extraction)
+        );
+      } catch (e) {
+        console.warn(`[Research] raw_script_answers derivation failed for ${bookingId}:`, e);
+      }
+
+      console.log(`[Research] Payment Experience complete. Literacy: ${extraction?.payment_literacy_score}, Autopay: ${extraction?.autopay_status}, raw_answers: ${Object.keys(extraction.raw_script_answers || {}).length}`);
 
       await logApiCost(supabase, {
         service_provider: 'lovable_ai',
