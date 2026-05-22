@@ -470,6 +470,7 @@ export type CampaignType = 'move_out_survey' | 'audience_survey' | 'payment_expe
  * the answer came from the live agent runtime or from AI extraction.
  */
 export interface RawScriptAnswer {
+  question_id?: string;
   question_text: string;
   ai_hint?: string | null;
   question_type:
