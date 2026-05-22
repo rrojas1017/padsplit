@@ -481,6 +481,27 @@ export interface PaymentExperienceExtraction {
       | 'unknown'
       | null;
     dues_day_stated_raw?: string | null;
+    // Q3 stated weekly dues (USD) and amenities mentioned. Captured as the
+    // member's actual answer instead of the dues_amount_correct boolean.
+    dues_amount_stated_usd?: number | null;
+    dues_amount_stated_raw?: string | null;
+    amenities_mentioned?: string[] | null;
+    // Q4 stated commitment length. Captured as the member's actual answer
+    // instead of the commitment_understood boolean.
+    commitment_stated?:
+      | 'week_to_week'
+      | 'month_to_month'
+      | '30_days'
+      | '60_days'
+      | '90_days'
+      | '6_months'
+      | '12_months'
+      | 'open_ended'
+      | 'other_specific'
+      | 'unsure'
+      | 'unknown'
+      | null;
+    commitment_stated_raw?: string | null;
   };
   easy_payment_benchmark?: string | null;
   channel_method?: { device?: string; method?: string };
