@@ -307,6 +307,30 @@ export function useResearchCalls() {
       console.error('Error creating/updating booking record for research call:', bookingErr);
     }
 
+    // Step 3 (best-effort): persist durable raw_script_answers via edge function.
+    // This merges the normalized answers onto the linked booking_transcriptions
+    // row. Non-fatal — research_calls.responses remains the source of truth.
+    try {
+      if (submission.script_questions && submission.script_questions.length > 0) {
+        const rawAnswers = buildRawScriptAnswers(
+          submission.script_questions as any,
+          (submission.responses || {}) as any,
+          { source: 'agent_runtime' },
+        );
+        if (Object.keys(rawAnswers).length > 0) {
+          await supabase.functions.invoke('persist-research-raw-answers', {
+            body: {
+              research_call_id: researchCallData.id,
+              raw_script_answers: rawAnswers,
+            },
+          });
+        }
+      }
+    } catch (rawErr) {
+      console.error('Non-fatal: failed to persist raw_script_answers:', rawErr);
+    }
+
+
     setIsSubmitting(false);
     toast.success('Call logged successfully');
     await Promise.all([fetchMyCampaigns(), fetchMyCalls()]);
