@@ -166,13 +166,24 @@ Deno.serve(async (req) => {
   const url = new URL(req.url);
   const dryRun = url.searchParams.get('dry_run') === '1';
 
-  // Overfetch then client-filter for resumability.
+  // Server-side filter: a row needs work if ANY of the three target fields is
+  // still missing. Because Postgres ->/->> returns NULL when intermediate keys
+  // are absent, these .is.null checks also cover missing breakdown / extraction.
+  const orFilter = [
+    'research_extraction->payment_literacy_breakdown->>dues_amount_stated_usd.is.null',
+    'research_extraction->payment_literacy_breakdown->>commitment_stated.is.null',
+    'research_extraction->payment_literacy_breakdown->amenities_mentioned.is.null',
+  ].join(',');
+
   const { data: rows, error } = await supabase
     .from('booking_transcriptions')
     .select('id, booking_id, call_transcription, research_extraction')
     .eq('research_campaign_type', 'payment_experience')
     .not('call_transcription', 'is', null)
-    .limit(CHUNK_SIZE * 4);
+    .gt('call_transcription', '')
+    .or(orFilter)
+    .order('id', { ascending: true })
+    .limit(CHUNK_SIZE);
 
   if (error) {
     return new Response(JSON.stringify({ error: error.message }), {
@@ -181,20 +192,9 @@ Deno.serve(async (req) => {
     });
   }
 
-  const eligible: Row[] = [];
-  for (const r of (rows ?? []) as Row[]) {
-    if (eligible.length >= CHUNK_SIZE) break;
-    const t = (r.call_transcription || '').trim();
-    if (!t) continue;
-    const b = r.research_extraction?.payment_literacy_breakdown ?? {};
-    const needsAmount = isMissing(b.dues_amount_stated_usd) && isMissing(b.dues_amount_stated_raw);
-    const needsAmenities = b.amenities_mentioned == null;
-    const needsCommitment = isMissing(b.commitment_stated);
-    if (!needsAmount && !needsAmenities && !needsCommitment) continue;
-    eligible.push(r);
-  }
+  const fetched = (rows ?? []) as Row[];
 
-  if (eligible.length === 0) {
+  if (fetched.length === 0) {
     return new Response(JSON.stringify({ done: true, processed: 0 }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
@@ -202,7 +202,7 @@ Deno.serve(async (req) => {
 
   if (dryRun) {
     return new Response(
-      JSON.stringify({ would_process: eligible.length, sample_ids: eligible.slice(0, 3).map((r) => r.id) }),
+      JSON.stringify({ would_process: fetched.length, sample_ids: fetched.slice(0, 3).map((r) => r.id) }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
     );
   }
