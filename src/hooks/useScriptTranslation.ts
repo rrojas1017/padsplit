@@ -99,11 +99,23 @@ export function useScriptTranslation() {
       }
 
       const translated = data as TranslatedContent;
+      // Copy stable question ids + ai_extraction_hint from source onto translated questions
+      // so raw_script_answers and downstream lookups stay aligned across languages.
+      const sourceQs = Array.isArray(script.questions) ? script.questions : [];
+      const translatedQs = Array.isArray(translated.questions) ? translated.questions : [];
+      const alignedQs = translatedQs.map((tq: any, idx: number) => {
+        const sq: any = sourceQs[idx] || {};
+        return {
+          ...tq,
+          id: sq.id ?? tq.id,
+          ai_extraction_hint: tq.ai_extraction_hint ?? sq.ai_extraction_hint,
+        };
+      });
       await supabase.from('research_scripts').update({
         intro_script_es: translated.intro || null,
         closing_script_es: translated.closing || null,
         rebuttal_script_es: translated.rebuttal || null,
-        questions_es: translated.questions || null,
+        questions_es: alignedQs as any,
         translation_status: 'completed',
       } as any).eq('id', scriptId);
 
