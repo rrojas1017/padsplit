@@ -141,7 +141,7 @@ export function useResearchScripts() {
         intro_script: script.intro_script || null,
         closing_script: script.closing_script || null,
         rebuttal_script: script.rebuttal_script || null,
-        questions: script.questions,
+        questions: questionsWithIds,
       });
     }
   };
