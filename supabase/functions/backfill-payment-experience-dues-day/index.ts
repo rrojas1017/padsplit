@@ -1,6 +1,6 @@
 // supabase/functions/backfill-payment-experience-dues-day/index.ts
-// Self-retriggering chunked backfill for payment_literacy_breakdown.dues_day_stated
-// across existing Payment Experience records. Idempotent and resumable.
+// Self-retriggering chunked backfill for payment_literacy_breakdown.dues_day_stated.
+// Server-side filter ensures only rows that still need work are fetched.
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
 
 const corsHeaders = {
@@ -75,7 +75,6 @@ async function callModel(transcript: string): Promise<{
   const content: string = json?.choices?.[0]?.message?.content ?? '';
   const inputTokens = json?.usage?.prompt_tokens ?? 0;
   const outputTokens = json?.usage?.completion_tokens ?? 0;
-  // Best-effort JSON extraction
   let parsed: any = null;
   try {
     parsed = JSON.parse(content);
@@ -107,14 +106,19 @@ Deno.serve(async (req) => {
   const url = new URL(req.url);
   const dryRun = url.searchParams.get('dry_run') === '1';
 
-  // Fetch next chunk of eligible rows.
-  // Selection criteria match the approved plan.
+  // Server-side filter: a single .is(..., null) on the nested JSON path covers
+  // all three "missing" cases — missing research_extraction, missing breakdown,
+  // and missing dues_day_stated — because Postgres returns NULL for any of them
+  // via the ->/->> operator chain.
   const { data: rows, error } = await supabase
     .from('booking_transcriptions')
     .select('id, booking_id, call_transcription, research_extraction')
     .eq('research_campaign_type', 'payment_experience')
     .not('call_transcription', 'is', null)
-    .limit(CHUNK_SIZE * 4); // overfetch; filter client-side
+    .gt('call_transcription', '')
+    .is('research_extraction->payment_literacy_breakdown->>dues_day_stated' as any, null)
+    .order('id', { ascending: true })
+    .limit(CHUNK_SIZE);
 
   if (error) {
     return new Response(JSON.stringify({ error: error.message }), {
@@ -123,17 +127,9 @@ Deno.serve(async (req) => {
     });
   }
 
-  const eligible: Row[] = [];
-  for (const r of (rows ?? []) as Row[]) {
-    if (eligible.length >= CHUNK_SIZE) break;
-    const t = (r.call_transcription || '').trim();
-    if (!t) continue;
-    const existing = r.research_extraction?.payment_literacy_breakdown?.dues_day_stated;
-    if (existing != null && String(existing).trim() !== '') continue;
-    eligible.push(r);
-  }
+  const fetched = (rows ?? []) as Row[];
 
-  if (eligible.length === 0) {
+  if (fetched.length === 0) {
     return new Response(JSON.stringify({ done: true, processed: 0 }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
@@ -141,16 +137,20 @@ Deno.serve(async (req) => {
 
   if (dryRun) {
     return new Response(
-      JSON.stringify({ would_process: eligible.length, sample_ids: eligible.slice(0, 3).map((r) => r.id) }),
+      JSON.stringify({ would_process: fetched.length, sample_ids: fetched.slice(0, 3).map((r) => r.id) }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
     );
   }
 
   let processed = 0;
   let failed = 0;
+  let skipped = 0;
   const errors: Array<{ id: string; error: string }> = [];
 
-  for (const row of eligible) {
+  for (const row of fetched) {
+    // Defensive: skip rows with blank transcripts (shouldn't happen after .gt filter).
+    const t = (row.call_transcription || '').trim();
+    if (!t) { skipped++; continue; }
     try {
       const { parsed, inputTokens, outputTokens } = await callModel(row.call_transcription);
       if (!parsed) {
@@ -175,7 +175,6 @@ Deno.serve(async (req) => {
           continue;
         }
       }
-      // Log cost (best-effort; ignore errors)
       const estimated_cost_usd =
         (inputTokens / 1_000_000) * 0.10 + (outputTokens / 1_000_000) * 0.40;
       await supabase.from('api_costs').insert({
@@ -196,9 +195,9 @@ Deno.serve(async (req) => {
     }
   }
 
-  // Self-retrigger after pacing delay if we filled the chunk (more work likely remains).
-  if (eligible.length >= CHUNK_SIZE) {
-    // Fire-and-forget; do NOT await.
+  // Chain decision based on server-returned row count (not client filtering).
+  const willChain = fetched.length >= CHUNK_SIZE;
+  if (willChain) {
     queueMicrotask(() => {
       setTimeout(() => {
         fetch(`${SUPABASE_URL}/functions/v1/backfill-payment-experience-dues-day`, {
@@ -217,8 +216,9 @@ Deno.serve(async (req) => {
     JSON.stringify({
       processed,
       failed,
-      chunk_size: eligible.length,
-      will_chain: eligible.length >= CHUNK_SIZE,
+      skipped,
+      fetched: fetched.length,
+      will_chain: willChain,
       errors: errors.slice(0, 10),
     }),
     { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
