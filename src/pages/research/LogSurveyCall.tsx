@@ -165,14 +165,8 @@ export default function LogSurveyCall() {
   const setAgentNote = (qId: string | number, note: string) => {
     setAgentNotes(prev => ({ ...prev, [String(qId)]: note }));
   };
-      ...prev,
-      [String(qId)]: { ...(prev[String(qId)] || {}), [probeIndex]: note }
-    }));
-  };
 
-  const setAgentNote = (qId: number, note: string) => {
-    setAgentNotes(prev => ({ ...prev, [String(qId)]: note }));
-  };
+
 
   // End Call dialog
   const [endCallDialogOpen, setEndCallDialogOpen] = useState(false);
