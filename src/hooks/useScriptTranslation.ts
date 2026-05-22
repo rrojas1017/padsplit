@@ -58,7 +58,19 @@ export function useScriptTranslation() {
         return null;
       }
 
-      return data as TranslatedContent;
+      const result = data as TranslatedContent;
+      // Carry stable ids + ai hints from source onto translated questions
+      const sourceQs = Array.isArray(script.questions) ? script.questions : [];
+      const translatedQs = Array.isArray(result.questions) ? result.questions : [];
+      result.questions = translatedQs.map((tq: any, idx: number) => {
+        const sq: any = sourceQs[idx] || {};
+        return {
+          ...tq,
+          id: sq.id ?? tq.id,
+          ai_extraction_hint: tq.ai_extraction_hint ?? sq.ai_extraction_hint,
+        };
+      });
+      return result;
     } catch (err) {
       console.error('Translation error:', err);
       toast.error('Translation service unavailable. Proceeding in English.');
