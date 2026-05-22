@@ -6,6 +6,7 @@ import { Plus } from 'lucide-react';
 import { QuestionCard } from './QuestionCard';
 import type { ScriptQuestion } from '@/hooks/useResearchScripts';
 import type { WizardData } from './StepUpload';
+import { generateQuestionId } from '@/utils/rawScriptAnswers';
 
 interface Props {
   data: WizardData;
@@ -13,6 +14,7 @@ interface Props {
 }
 
 const emptyQuestion = (order: number): ScriptQuestion => ({
+  id: generateQuestionId(),
   order,
   question: '',
   type: 'open_ended',
