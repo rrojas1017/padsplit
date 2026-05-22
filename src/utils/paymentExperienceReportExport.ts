@@ -15,6 +15,7 @@ const TYPE_LABELS: Record<string, string> = {
   yesno: 'Yes / No',
   scale: 'Scale',
   open: 'Open Ended',
+  compound: 'Compound',
 };
 
 const escapeHtml = (s: unknown): string =>
@@ -180,12 +181,35 @@ function renderFooter(qs: PEQuestionSummary, total: number): string {
   return `<div class="card-footer">${qs.count} written responses</div>`;
 }
 
+function renderCompound(qs: PEQuestionSummary): string {
+  const subs = qs.subQuestions || [];
+  if (subs.length === 0) return `<p class="muted">No responses.</p>`;
+  return subs.map((sub) => {
+    const subBody = sub.count === 0
+      ? `<p class="muted">No responses.</p>`
+      : sub.question.type === 'multi'
+        ? renderMulti(sub)
+        : sub.question.type === 'scale'
+          ? renderScale(sub)
+          : '';
+    return `
+      <div class="sub-q">
+        <div class="sub-q-head">
+          <span class="sub-q-title">${escapeHtml(sub.question.text)}</span>
+          <span class="sub-q-count">${sub.count} responses</span>
+        </div>
+        <div class="sub-q-body">${subBody}</div>
+      </div>`;
+  }).join('');
+}
+
 function renderQuestion(qs: PEQuestionSummary, total: number): string {
   const q = qs.question;
   let body = '';
   if (qs.count === 0) {
     body = `<p class="muted">No responses for this question.</p>`;
-  } else if (q.type === 'multi') body = renderMulti(qs);
+  } else if (q.type === 'compound') body = renderCompound(qs);
+  else if (q.type === 'multi') body = renderMulti(qs);
   else if (q.type === 'yesno') body = renderYesNo(qs);
   else if (q.type === 'scale') body = renderScale(qs);
   else if (q.type === 'open') body = renderOpen(qs);

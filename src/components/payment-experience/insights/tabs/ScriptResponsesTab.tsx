@@ -27,6 +27,7 @@ const TYPE_LABELS: Record<string, string> = {
   yesno: 'Yes / No',
   scale: 'Scale',
   open: 'Open Ended',
+  compound: 'Compound',
 };
 
 function formatDate(iso: string | null): string {
@@ -309,6 +310,28 @@ function QuestionCard({
 
         {summary.count === 0 ? (
           <p className="text-sm text-muted-foreground">No responses for this question.</p>
+        ) : q.type === 'compound' ? (
+          <div className="space-y-5">
+            {(summary.subQuestions || []).map((sub) => (
+              <div key={sub.question.id} className="space-y-2">
+                <div className="flex items-baseline justify-between gap-2">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                    {sub.question.text}
+                  </p>
+                  <span className="text-xs text-muted-foreground tabular-nums">
+                    {sub.count} responses
+                  </span>
+                </div>
+                {sub.count === 0 ? (
+                  <p className="text-sm text-muted-foreground">No responses.</p>
+                ) : sub.question.type === 'multi' ? (
+                  <MultiBars summary={sub} />
+                ) : sub.question.type === 'scale' ? (
+                  <ScaleDisplay summary={sub} />
+                ) : null}
+              </div>
+            ))}
+          </div>
         ) : (
           <>
             {q.type === 'multi' && <MultiBars summary={summary} />}
