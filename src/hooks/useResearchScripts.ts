@@ -2,8 +2,11 @@ import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { useScriptTranslation } from './useScriptTranslation';
+import { ensureQuestionIds as ensureIds } from '@/utils/rawScriptAnswers';
 
 export interface ScriptQuestion {
+  /** Stable string id, assigned on create. Existing numeric ids are accepted. */
+  id?: string | number;
   order: number;
   question: string;
   type: 'scale' | 'open_ended' | 'multiple_choice' | 'yes_no';
