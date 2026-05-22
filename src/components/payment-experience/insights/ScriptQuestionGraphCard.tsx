@@ -260,7 +260,8 @@ export function ScriptQuestionGraphCard({
           <p className="text-sm text-muted-foreground">No responses for this question.</p>
         ) : (
           <>
-            {q.type === 'multi' && <MultiBars summary={summary} />}
+            {q.type === 'multi' && q.id === 'payment_channel' && <PieChart summary={summary} />}
+            {q.type === 'multi' && q.id !== 'payment_channel' && <MultiBars summary={summary} />}
             {q.type === 'yesno' && <YesNoPills summary={summary} />}
             {q.type === 'scale' && <ScaleDisplay summary={summary} />}
             {q.type === 'open' && <OpenEndedDisplay summary={summary} />}
