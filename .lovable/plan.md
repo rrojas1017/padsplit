@@ -1,34 +1,64 @@
-## Problem
 
-Q10 ("Move-in cost clarity 1–5") renders a tiny histogram where buckets 1–4 look identical because one bucket (5) dominates the data. Today's distribution is **1: 2 · 2: 2 · 3: 4 · 4: 7 · 5: 52**, so when the largest bar fills the column, the four smaller bars compress to a near-invisible sliver and the only label shown is the bucket number.
+# Refactor Payment Experience Tabs into Survey Topic Tabs
 
-The visual is correct but unreadable. This is a presentation-only fix in `ScaleDisplay`.
+Replace the four analytical tabs (Overview, Drivers & Friction, Segments, Actions) below the persistent dashboard tiles with topic tabs aligned to the underlying survey questions. The existing Script Responses tab stays untouched and remains the final tab.
 
-## Approach
+## Final tab order
 
-Tighten `ScaleDisplay` in `src/components/payment-experience/insights/tabs/ScriptResponsesTab.tsx` so every bucket communicates its value at a glance, even when one bucket dominates.
+1. Overview
+2. Payment Schedule
+3. Method of Payment
+4. Autopay
+5. Sentiment / Frustration
+6. Payment Options
+7. Script Responses (unchanged)
 
-### Changes
+## Files
 
-1. **Show counts above every bar.** Render the bucket count just above the bar in tabular numerals. When `count === 0`, render a muted "0" so empty buckets are explicitly readable. Render the percentage in a smaller muted line beneath.
-2. **Guarantee minimum bar visibility.** Bars with `count > 0` get a minimum height (e.g. `minHeight: 8px`) so 1–2 responses are still distinguishable from 0. Zero-count buckets render an empty track of fixed full height in `bg-muted/40`, so all five columns share the same baseline footprint.
-3. **Use a fixed track per bucket.** Each bucket gets a full-height background track (`bg-muted/40`) with the filled portion painted on top using `bg-foreground/70`. This makes the comparison clearly proportional and gives small values a readable backdrop.
-4. **Highlight the modal bucket.** The bucket with the highest count gets `bg-amber-500/80` (consistent with the existing amber accent used in `YesNoPills`) so the user immediately sees which rating dominates.
-5. **Taller chart.** Bump the histogram height from `h-20` to `h-28` so micro-bars have more vertical space to register.
-6. **Keep legend simple.** Below the bars, keep the existing numeric label (1–5) but render in a slightly stronger color and add a left/right caption pair: "Not clear at all" on 1, "Crystal clear" on 5, only when the question is `move_in_cost_clarity` (scaleMin=1, scaleMax=5).
+**Edit**
+- `src/components/payment-experience/insights/InsightTabs.tsx` — swap tab triggers/content, update `TabKey`, drop unused props passed to old tabs (KPIs, drivers, segments, actions, friction summary, autopay barriers, etc.). Keep underline styling and overflow scroll. Pass `eligibleRecords` (and `totalRouted` where needed) into the new topic tabs and existing Script Responses tab.
 
-No changes to derivation, CSV, or any other tab. Pure UI in one component.
+**Create** (new topic tabs)
+- `src/components/payment-experience/insights/tabs/PaymentExperienceOverviewTab.tsx`
+- `src/components/payment-experience/insights/tabs/PaymentScheduleTab.tsx`
+- `src/components/payment-experience/insights/tabs/MethodOfPaymentTab.tsx`
+- `src/components/payment-experience/insights/tabs/AutopayTab.tsx`
+- `src/components/payment-experience/insights/tabs/SentimentFrustrationTab.tsx`
+- `src/components/payment-experience/insights/tabs/PaymentOptionsTab.tsx`
 
-### Out of scope
+**Create** (shared)
+- `src/components/payment-experience/insights/ScriptQuestionGraphCard.tsx` — extracted reusable card that renders a single `PEQuestionSummary` using the existing visual grammar (`MultiBars`, `YesNoPills`, `ScaleDisplay`, `OpenEndedDisplay`, footer line). Source rendering primitives are duplicated from `ScriptResponsesTab.tsx` so that file is not modified. Accepts `summary`, `total`, and an optional `compact` prop that hides the footer/section badge for the Overview grid.
 
-- No changes to `paymentExperienceScriptResponses.ts`, hooks, queries, or other questions.
-- No new charting library — CSS-only as today.
-- No layout/grid changes outside `ScaleDisplay`.
+**Do NOT touch**
+- `src/components/payment-experience/insights/tabs/ScriptResponsesTab.tsx`
+- `src/utils/paymentExperienceScriptResponses.ts`
+- `src/utils/paymentExperienceReportExport.ts`
+- Executive Summary, KPI Grid, Survey Funnel components
+- The old tab files (`OverviewTab.tsx`, `DriversTab.tsx`, `SegmentsTab.tsx`, `ActionsTab.tsx`) — leave them on disk; they simply become unimported.
 
-## Acceptance criteria
+## Data flow
 
-- For Q10, each of the five buckets displays its count and percentage clearly, even when buckets 1–4 are tiny relative to bucket 5.
-- All five bucket columns share the same full-height track baseline.
-- The modal bucket is visually emphasized.
-- Q12 (overdue threshold, 0–2000 deciles) renders the same way without regression.
-- No TypeScript errors. No regressions to other tabs.
+Each topic tab receives `eligibleRecords` and calls `derivePaymentExperienceScriptData(eligibleRecords, totalRouted)` once via `useMemo`, then picks the relevant `PEQuestionSummary` by `question.id` (or `question.order`):
+
+- Overview → orders 2, 7, 8, 15 in a 2-col grid (`md:grid-cols-2`, single col on mobile), `compact` mode.
+- Payment Schedule → orders 1, 2, stacked.
+- Method of Payment → order 7.
+- Autopay → orders 8, 9, stacked.
+- Sentiment / Frustration → order 11. Since Q11 is typed `multi` (friction theme buckets) in `PE_QUESTIONS`, the tab shows the existing horizontal-bar theme distribution at top, then a verbatims block built from `friction_verbatim` / `friction_examples` strings on eligible records (capped at 25, collapsed by default — same `OpenEndedDisplay` pattern).
+- Payment Options → order 15.
+
+No new queries, no formula changes, no new charts.
+
+## Visual & responsive
+
+- Cards use the same `Card` + `CardContent` + spacing as existing question cards.
+- Bars: muted gray; yes/no: amber-50/border + slate; scale: foreground bars with amber modal; open: collapsible verbatim list.
+- Mobile (≤414px): tabs scroll horizontally (existing `overflow-x-auto`), cards stack, bar rows wrap labels, yes/no pills stack via `flex-col sm:flex-row`.
+
+## Acceptance check
+
+- Tabs below the persistent dashboard switch to the new topic set with Script Responses last.
+- Overview shows compact graphs for Q2/Q7/Q8/Q15.
+- Each topic tab renders the specified questions with Script-Responses visual parity.
+- Script Responses tab behavior, dropdown, and report/CSV exports unchanged.
+- No TS errors; persistent top dashboard untouched.
