@@ -539,6 +539,13 @@ export function derivePaymentExperienceScriptData(
   let totalAnswered = 0;
   for (const r of eligible) {
     for (const q of PE_QUESTIONS) {
+      if (q.type === 'compound') {
+        for (const sub of compoundSubDefs(q)) {
+          const a = getAnswer(r, sub);
+          if (a !== null && a !== undefined && a !== '') { totalAnswered++; break; }
+        }
+        continue;
+      }
       const a = getAnswer(r, q);
       if (a !== null && a !== undefined && a !== '') totalAnswered++;
     }
@@ -589,6 +596,33 @@ export function buildPaymentExperienceScriptCsv(data: PEScriptData): string {
   const rows: string[] = [header.join(',')];
   for (const qs of data.questions) {
     const q = qs.question;
+    if (q.type === 'compound') {
+      const subs = qs.subQuestions || [];
+      if (subs.length === 0) {
+        rows.push(
+          [q.order, q.section || '', q.text, q.type, '(no responses)', 0, '', qs.count]
+            .map(csvEscape).join(','),
+        );
+        continue;
+      }
+      for (const sub of subs) {
+        const subText = `${q.text} — ${sub.question.text}`;
+        if (sub.distribution.length === 0) {
+          rows.push(
+            [q.order, q.section || '', subText, sub.question.type, '(no responses)', 0, '', sub.count]
+              .map(csvEscape).join(','),
+          );
+          continue;
+        }
+        for (const d of sub.distribution) {
+          rows.push(
+            [q.order, q.section || '', subText, sub.question.type, d.label, d.count, d.percentage, sub.count]
+              .map(csvEscape).join(','),
+          );
+        }
+      }
+      continue;
+    }
     if (q.type === 'open') {
       rows.push(
         [q.order, q.section || '', q.text, q.type, '(open-ended)', qs.count, '', qs.count]
