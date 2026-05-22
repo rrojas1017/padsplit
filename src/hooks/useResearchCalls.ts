@@ -35,10 +35,12 @@ export interface ScriptQuestionBranch {
 }
 
 export interface ScriptQuestion {
-  id: number;
+  /** Stable string id (post-migration). Existing numeric ids continue to work. */
+  id: string | number;
   order?: number;
-  text: string;
-  type: 'scale' | 'open_ended' | 'multiple_choice' | 'yes_no';
+  text?: string;
+  question?: string;
+  type: 'scale' | 'open_ended' | 'multiple_choice' | 'multiple_select' | 'yes_no';
   required?: boolean;
   options?: string[];
   probes?: string[];
