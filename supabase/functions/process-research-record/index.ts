@@ -307,7 +307,20 @@ Respond with ONLY a JSON object containing two top-level keys: "extraction" and 
     "friction_themes": ["short phrases describing payment-related friction the member raised"],
     "wish_capabilities": ["short phrases describing payment features the member wishes existed"],
     "key_quotes": ["1-4 direct quotes from the member about payment experience"],
-    "confidence_flags": ["short notes if any field is low-confidence"]
+    "confidence_flags": ["short notes if any field is low-confidence"],
+
+    "raw_script_answers": {
+      "<question_id>": {
+        "question_text": "the script question text",
+        "ai_hint": "matching ai_hint or extraction field name",
+        "question_type": "multiple_choice | multiple_select | yes_no | scale | open_ended",
+        "selected_option_labels": ["normalized option label(s) the member chose, e.g. 'Friday' or 'Yes'"],
+        "raw_text_answer": "verbatim member phrase, or null",
+        "scale_value": null,
+        "answered_at": null,
+        "source": "ai_extraction"
+      }
+    }
   },
   "classification": {
     "primary_segment": "autopay_advocate | autopay_blocked | payment_struggling | payment_confused | well_informed | other",
