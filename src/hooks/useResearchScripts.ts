@@ -2,8 +2,11 @@ import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { useScriptTranslation } from './useScriptTranslation';
+import { ensureQuestionIds as ensureIds } from '@/utils/rawScriptAnswers';
 
 export interface ScriptQuestion {
+  /** Stable string id, assigned on create. Existing numeric ids are accepted. */
+  id?: string | number;
   order: number;
   question: string;
   type: 'scale' | 'open_ended' | 'multiple_choice' | 'yes_no';
@@ -112,12 +115,13 @@ export function useResearchScripts() {
 
   const createScript = async (script: Omit<ResearchScript, 'id' | 'created_at' | 'updated_at' | 'created_by'> & { intro_script_es?: string | null; closing_script_es?: string | null; rebuttal_script_es?: string | null; questions_es?: ScriptQuestion[] | null; translation_status?: string | null }) => {
     const { data: { user } } = await supabase.auth.getUser();
+    const questionsWithIds = ensureIds(script.questions) as ScriptQuestion[];
     const { data, error } = await supabase.from('research_scripts').insert({
       name: script.name,
       description: script.description,
       campaign_type: script.campaign_type,
       target_audience: script.target_audience,
-      questions: script.questions as any,
+      questions: questionsWithIds as any,
       intro_script: script.intro_script || null,
       rebuttal_script: script.rebuttal_script || null,
       closing_script: script.closing_script || null,
@@ -137,14 +141,14 @@ export function useResearchScripts() {
         intro_script: script.intro_script || null,
         closing_script: script.closing_script || null,
         rebuttal_script: script.rebuttal_script || null,
-        questions: script.questions,
+        questions: questionsWithIds,
       });
     }
   };
 
   const updateScript = async (id: string, updates: Partial<Omit<ResearchScript, 'id' | 'created_at' | 'updated_at' | 'created_by'>>) => {
     const payload: any = { ...updates };
-    if (updates.questions) payload.questions = updates.questions as any;
+    if (updates.questions) payload.questions = ensureIds(updates.questions) as any;
     const { error } = await supabase.from('research_scripts').update(payload).eq('id', id);
     if (error) {
       toast.error('Failed to update script');

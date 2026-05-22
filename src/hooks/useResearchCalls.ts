@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import type { Json } from '@/integrations/supabase/types';
+import { buildRawScriptAnswers } from '@/utils/rawScriptAnswers';
 
 export interface ResearchCallCampaign {
   id: string;
@@ -35,10 +36,12 @@ export interface ScriptQuestionBranch {
 }
 
 export interface ScriptQuestion {
-  id: number;
+  /** Stable string id (post-migration). Existing numeric ids continue to work. */
+  id: string | number;
   order?: number;
-  text: string;
-  type: 'scale' | 'open_ended' | 'multiple_choice' | 'yes_no';
+  text?: string;
+  question?: string;
+  type: 'scale' | 'open_ended' | 'multiple_choice' | 'multiple_select' | 'yes_no';
   required?: boolean;
   options?: string[];
   probes?: string[];
@@ -85,6 +88,8 @@ export interface CallSubmission {
   agent_notes?: Record<string, string>;
   researcher_notes?: string;
   language?: string;
+  /** When provided, used to derive durable raw_script_answers persisted server-side. */
+  script_questions?: ScriptQuestion[];
 }
 
 export function useResearchCalls() {
@@ -301,6 +306,30 @@ export function useResearchCalls() {
       // Non-fatal: research call was saved, just log the booking insert failure
       console.error('Error creating/updating booking record for research call:', bookingErr);
     }
+
+    // Step 3 (best-effort): persist durable raw_script_answers via edge function.
+    // This merges the normalized answers onto the linked booking_transcriptions
+    // row. Non-fatal — research_calls.responses remains the source of truth.
+    try {
+      if (submission.script_questions && submission.script_questions.length > 0) {
+        const rawAnswers = buildRawScriptAnswers(
+          submission.script_questions as any,
+          (submission.responses || {}) as any,
+          { source: 'agent_runtime' },
+        );
+        if (Object.keys(rawAnswers).length > 0) {
+          await supabase.functions.invoke('persist-research-raw-answers', {
+            body: {
+              research_call_id: researchCallData.id,
+              raw_script_answers: rawAnswers,
+            },
+          });
+        }
+      }
+    } catch (rawErr) {
+      console.error('Non-fatal: failed to persist raw_script_answers:', rawErr);
+    }
+
 
     setIsSubmitting(false);
     toast.success('Call logged successfully');

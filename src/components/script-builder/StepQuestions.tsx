@@ -6,6 +6,7 @@ import { Plus } from 'lucide-react';
 import { QuestionCard } from './QuestionCard';
 import type { ScriptQuestion } from '@/hooks/useResearchScripts';
 import type { WizardData } from './StepUpload';
+import { generateQuestionId } from '@/utils/rawScriptAnswers';
 
 interface Props {
   data: WizardData;
@@ -13,6 +14,7 @@ interface Props {
 }
 
 const emptyQuestion = (order: number): ScriptQuestion => ({
+  id: generateQuestionId(),
   order,
   question: '',
   type: 'open_ended',
@@ -43,7 +45,7 @@ export function StepQuestions({ data, onChange }: Props) {
   };
 
   const duplicateQuestion = (idx: number) => {
-    const q = { ...questions[idx], order: questions.length + 1 };
+    const q = { ...questions[idx], id: generateQuestionId(), order: questions.length + 1 };
     const updated = [...questions];
     updated.splice(idx + 1, 0, q);
     onChange({ questions: updated.map((q, i) => ({ ...q, order: i + 1 })) });

@@ -155,16 +155,18 @@ export default function LogSurveyCall() {
   const [probeNotes, setProbeNotes] = useState<Record<string, Record<number, string>>>({});
   const [agentNotes, setAgentNotes] = useState<Record<string, string>>({});
 
-  const setProbeNote = (qId: number, probeIndex: number, note: string) => {
+  const setProbeNote = (qId: string | number, probeIndex: number, note: string) => {
     setProbeNotes(prev => ({
       ...prev,
-      [String(qId)]: { ...(prev[String(qId)] || {}), [probeIndex]: note }
+      [String(qId)]: { ...(prev[String(qId)] || {}), [probeIndex]: note },
     }));
   };
 
-  const setAgentNote = (qId: number, note: string) => {
+  const setAgentNote = (qId: string | number, note: string) => {
     setAgentNotes(prev => ({ ...prev, [String(qId)]: note }));
   };
+
+
 
   // End Call dialog
   const [endCallDialogOpen, setEndCallDialogOpen] = useState(false);
@@ -241,7 +243,7 @@ export default function LogSurveyCall() {
     return () => window.removeEventListener('keydown', handler);
   }, [phase, questionIndex, questions.length]);
 
-  const setResponse = (qId: number, value: unknown) => {
+  const setResponse = (qId: string | number, value: unknown) => {
     setResponses(prev => ({ ...prev, [String(qId)]: value }));
   };
 
@@ -442,6 +444,7 @@ export default function LogSurveyCall() {
       researcher_notes: researcherNotes.trim() || undefined,
       researcher_name: agentName,
       language: surveyLanguage,
+      script_questions: questions,
     };
 
     const success = await submitCall(submission);

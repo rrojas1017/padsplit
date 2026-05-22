@@ -150,7 +150,47 @@ export default function PublicScriptView() {
     setEarlyDisposition(label);
     setEndedEarly(true);
     setPhase('done');
+    void submitPublic({ endedEarly: true, earlyDisposition: label });
   };
+
+  const [submitState, setSubmitState] = useState<'idle' | 'saving' | 'saved' | 'failed'>('idle');
+
+
+  const submitPublic = useCallback(async (opts: { endedEarly?: boolean; earlyDisposition?: string } = {}) => {
+    if (!token || !script) return;
+    if (submitState === 'saving' || submitState === 'saved') return;
+    setSubmitState('saving');
+    try {
+      const { error: fnError } = await supabase.functions.invoke('submit-public-script', {
+        body: {
+          token,
+          responses,
+          probeNotes,
+          agentNotes,
+          endedEarly: !!opts.endedEarly,
+          earlyDisposition: opts.earlyDisposition || null,
+          language: surveyLanguage,
+        },
+      });
+      if (fnError) {
+        console.error('submit-public-script failed', fnError);
+        setSubmitState('failed');
+      } else {
+        setSubmitState('saved');
+      }
+    } catch (e) {
+      console.error('submit-public-script error', e);
+      setSubmitState('failed');
+    }
+  }, [token, script, responses, probeNotes, agentNotes, surveyLanguage, submitState]);
+
+  // Auto-submit when the script naturally completes (phase === 'done', not early).
+  useEffect(() => {
+    if (phase === 'done' && !endedEarly && submitState === 'idle') {
+      void submitPublic();
+    }
+  }, [phase, endedEarly, submitState, submitPublic]);
+
 
   const restart = useCallback(() => {
     setPhase('start');
@@ -164,6 +204,7 @@ export default function PublicScriptView() {
     setSelectedEndDisposition('caller_hung_up');
     setSurveyLanguage('en');
     setTranslatedContent(null);
+    setSubmitState('idle');
   }, []);
 
   if (isLoading) {
