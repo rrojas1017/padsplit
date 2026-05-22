@@ -204,6 +204,7 @@ export default function PublicScriptView() {
     setSelectedEndDisposition('caller_hung_up');
     setSurveyLanguage('en');
     setTranslatedContent(null);
+    setSubmitState('idle');
   }, []);
 
   if (isLoading) {
