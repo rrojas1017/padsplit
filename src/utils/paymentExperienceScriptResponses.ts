@@ -136,12 +136,88 @@ const firstNonEmptyString = (...vals: any[]): string | null => {
   return null;
 };
 
+// Convert a durable `raw_script_answers[<id>]` entry back into the internal
+// shape used by `getAnswer` (string[] for multi, string for yesno/open,
+// number for scale). Returns null when the entry is missing or doesn't
+// carry usable data, so callers fall back to legacy extraction fields.
+function extractFromRawScriptAnswers(raw: Record<string, any>, q: PEQuestionDef): any {
+  // The compound Q3 has two sub-question ids; their sub-summaries fetch
+  // 'dues_amount_stated_usd' and 'amenities_mentioned' directly. The
+  // parent compound id itself has no single raw answer.
+  if (q.type === 'compound') return null;
+
+  const lookupIds: string[] = [q.id];
+  // Tolerate light id drift between dashboard and extractor.
+  if (q.id === 'dues_amount_stated_usd') lookupIds.push('dues_amount', 'weekly_dues');
+  if (q.id === 'amenities_mentioned') lookupIds.push('amenities');
+
+  let entry: any = null;
+  for (const id of lookupIds) {
+    if (raw[id] && typeof raw[id] === 'object') { entry = raw[id]; break; }
+  }
+  if (!entry) return null;
+
+  const selected: string[] = Array.isArray(entry.selected_option_labels)
+    ? entry.selected_option_labels.map((x: any) => String(x ?? '').trim()).filter(Boolean)
+    : [];
+  const rawText: string | null = typeof entry.raw_text_answer === 'string' && entry.raw_text_answer.trim()
+    ? entry.raw_text_answer.trim()
+    : null;
+  const scaleVal: number | null = typeof entry.scale_value === 'number' && isFinite(entry.scale_value)
+    ? entry.scale_value
+    : null;
+
+  // Map normalized labels back to the internal keys getAnswer would return,
+  // so downstream label/order logic keeps working unchanged.
+  const toKey = (label: string): string => {
+    const k = label.toLowerCase().trim().replace(/[^\w]+/g, '_').replace(/^_+|_+$/g, '');
+    return k;
+  };
+
+  switch (q.type) {
+    case 'yesno': {
+      if (selected.length > 0) {
+        const v = selected[0].toLowerCase();
+        if (v.startsWith('y')) return 'yes';
+        if (v.startsWith('n')) return 'no';
+      }
+      return null;
+    }
+    case 'scale': {
+      if (scaleVal !== null) return scaleVal;
+      // "Unsure" bucket for Q3 dues amount
+      if (q.id === 'dues_amount_stated_usd' && selected.some((s) => /unsure/i.test(s))) return 'unsure';
+      return null;
+    }
+    case 'open': {
+      return rawText || (selected.length > 0 ? selected.join('; ') : null);
+    }
+    case 'multi': {
+      if (selected.length === 0) return null;
+      return selected.map(toKey);
+    }
+    default:
+      return null;
+  }
+}
+
 // Returns the answer for this question. For `multi` questions returns
 // string[] (one or more keys). For `yesno`/`open` returns string. For
 // `scale` returns number. Null/undefined means the record didn't answer.
 function getAnswer(rec: PaymentExperienceRecord, q: PEQuestionDef): any {
   const ext: any = rec.extraction || {};
   const breakdown: any = ext.payment_literacy_breakdown || {};
+
+  // Preferred source: durable raw_script_answers persisted by the AI
+  // extraction (or, in the future, by the agent runtime). Falls through to
+  // legacy *_stated / payment_literacy_breakdown.* fields below when the
+  // record was extracted before this field existed.
+  const raw: any = ext.raw_script_answers && typeof ext.raw_script_answers === 'object'
+    ? ext.raw_script_answers
+    : null;
+  const fromRaw = raw ? extractFromRawScriptAnswers(raw, q) : null;
+  if (fromRaw !== null && fromRaw !== undefined) return fromRaw;
+
   switch (q.id) {
     case 'pay_cadence': {
       if (ext.pay_cadence == null || String(ext.pay_cadence).trim() === '') return null;
