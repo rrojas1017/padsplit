@@ -155,12 +155,48 @@ function getAnswer(rec: PaymentExperienceRecord, q: PEQuestionDef): any {
       const allowed = new Set(['monday','tuesday','wednesday','thursday','friday','saturday','sunday','unknown']);
       return [allowed.has(s) ? s : 'unknown'];
     }
-    case 'dues_amount_understanding':
-      if (typeof breakdown.dues_amount_correct !== 'boolean') return null;
-      return breakdown.dues_amount_correct ? 'yes' : 'no';
-    case 'commitment_understanding':
-      if (typeof breakdown.commitment_understood !== 'boolean') return null;
-      return breakdown.commitment_understood ? 'yes' : 'no';
+    case 'dues_amount_stated_usd': {
+      const v = breakdown.dues_amount_stated_usd;
+      if (typeof v === 'number' && isFinite(v) && v >= 0) return v;
+      const n = Number(v);
+      if (isFinite(n) && v != null && String(v).trim() !== '' && n >= 0) return n;
+      // Fallback: member said "unsure" — counted as a respondent in the
+      // 'unsure' bucket via the wrapper question handler.
+      const raw = breakdown.dues_amount_stated_raw;
+      if (typeof raw === 'string' && raw.trim().toLowerCase() === 'unsure') return 'unsure';
+      return null;
+    }
+    case 'amenities_mentioned': {
+      const arr = breakdown.amenities_mentioned;
+      if (!Array.isArray(arr) || arr.length === 0) return null;
+      const ALLOWED = new Set([
+        'utilities','wifi','furniture','cleaning','laundry',
+        'parking','trash','water','electric','gas',
+        'none_mentioned','other',
+      ]);
+      const out: string[] = [];
+      const seen = new Set<string>();
+      for (const item of arr) {
+        const s = String(item ?? '').toLowerCase().trim();
+        if (!s) continue;
+        const tok = ALLOWED.has(s) ? s : 'other';
+        if (!seen.has(tok)) { seen.add(tok); out.push(tok); }
+      }
+      return out.length ? out : null;
+    }
+    case 'commitment_stated': {
+      const v = breakdown.commitment_stated;
+      if (v == null || v === '') return null;
+      const s = String(v).toLowerCase().trim();
+      const allowed = new Set([
+        'week_to_week','month_to_month',
+        '30_days','60_days','90_days',
+        '6_months','12_months',
+        'open_ended','other_specific',
+        'unsure','unknown',
+      ]);
+      return [allowed.has(s) ? s : 'unknown'];
+    }
     case 'reminder_system': {
       // No dedicated extraction field; surface payment_literacy_notes verbatims
       // when present.
