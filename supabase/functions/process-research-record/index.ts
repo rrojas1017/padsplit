@@ -336,6 +336,296 @@ Rules:
 - For "raw_script_answers": use these stable question_ids (one entry per question that was actually addressed in the call) — pay_cadence, dues_day_stated, dues_amount_stated_usd, amenities_mentioned, commitment_stated, reminder_system, easy_payment_benchmark, payment_channel, autopay_enrolled, autopay_barrier, move_in_cost_clarity, top_friction_theme, overdue_threshold, hardship_padsplit, hardship_host, desired_payment_methods, wish_capability. Omit the entry if the question was not addressed. For yes/no questions, selected_option_labels must be ["Yes"] or ["No"]. For scale questions, set scale_value (number). For open-ended, set raw_text_answer. For multi-choice/select, set selected_option_labels.
 - Output ONLY the JSON object — no markdown fences, no commentary.`;
 
+// ── Payment Experience: durable per-question answer derivation ──
+//
+// Builds a normalized raw_script_answers map from existing extraction
+// fields so the dashboard has a stable source even when the script's
+// AI prompt didn't emit the new block. Question ids must match
+// PE_QUESTIONS in src/utils/paymentExperienceScriptResponses.ts.
+
+const PE_DAY_LABELS: Record<string, string> = {
+  monday: 'Monday', tuesday: 'Tuesday', wednesday: 'Wednesday',
+  thursday: 'Thursday', friday: 'Friday', saturday: 'Saturday',
+  sunday: 'Sunday', unknown: 'Unknown',
+};
+
+const PE_COMMITMENT_LABELS: Record<string, string> = {
+  week_to_week: 'Week-to-week', month_to_month: 'Month-to-month',
+  '30_days': '30 days', '60_days': '60 days', '90_days': '90 days',
+  '6_months': '6 months', '12_months': '12 months',
+  open_ended: 'Open-ended', other_specific: 'Other (specific)',
+  unsure: 'Unsure', unknown: 'Unknown',
+};
+
+function titleCase(s: string): string {
+  return String(s || '').replace(/[_-]+/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()).trim();
+}
+
+function nonEmptyString(v: any): string | null {
+  if (v == null) return null;
+  const s = String(v).trim();
+  return s ? s : null;
+}
+
+function derivePaymentExperienceRawAnswers(ext: any): Record<string, any> {
+  if (!ext || typeof ext !== 'object') return {};
+  const breakdown: any = ext.payment_literacy_breakdown || {};
+  const out: Record<string, any> = {};
+  const now = new Date().toISOString();
+
+  const put = (id: string, partial: any) => {
+    out[id] = {
+      ai_hint: id,
+      answered_at: now,
+      source: 'ai_extraction',
+      ...partial,
+    };
+  };
+
+  // Q1 pay cadence
+  if (nonEmptyString(ext.pay_cadence)) {
+    put('pay_cadence', {
+      question_text: 'When do you typically get paid?',
+      question_type: 'multiple_choice',
+      selected_option_labels: [titleCase(String(ext.pay_cadence))],
+      raw_text_answer: null,
+    });
+  }
+
+  // Q2 dues day
+  const day = nonEmptyString(breakdown.dues_day_stated);
+  if (day) {
+    const k = day.toLowerCase();
+    put('dues_day_stated', {
+      question_text: 'What is your payment schedule for your PadSplit room?',
+      question_type: 'multiple_choice',
+      selected_option_labels: [PE_DAY_LABELS[k] || titleCase(k)],
+      raw_text_answer: nonEmptyString(breakdown.dues_day_stated_raw),
+    });
+  }
+
+  // Q3a dues amount
+  const duesUsd = breakdown.dues_amount_stated_usd;
+  if (typeof duesUsd === 'number' && isFinite(duesUsd)) {
+    put('dues_amount_stated_usd', {
+      question_text: 'What is your weekly dues amount?',
+      question_type: 'scale',
+      scale_value: duesUsd,
+      raw_text_answer: nonEmptyString(breakdown.dues_amount_stated_raw),
+    });
+  } else if (typeof breakdown.dues_amount_stated_raw === 'string'
+    && breakdown.dues_amount_stated_raw.trim().toLowerCase() === 'unsure') {
+    put('dues_amount_stated_usd', {
+      question_text: 'What is your weekly dues amount?',
+      question_type: 'scale',
+      scale_value: null,
+      selected_option_labels: ['Unsure'],
+      raw_text_answer: 'unsure',
+    });
+  }
+
+  // Q3b amenities
+  if (Array.isArray(breakdown.amenities_mentioned) && breakdown.amenities_mentioned.length > 0) {
+    const labels = breakdown.amenities_mentioned
+      .map((x: any) => nonEmptyString(x))
+      .filter(Boolean) as string[];
+    if (labels.length > 0) {
+      put('amenities_mentioned', {
+        question_text: 'What amenities or services are included in your dues?',
+        question_type: 'multiple_select',
+        selected_option_labels: labels.map(titleCase),
+        raw_text_answer: null,
+      });
+    }
+  }
+
+  // Q4 commitment
+  const commitment = nonEmptyString(breakdown.commitment_stated);
+  if (commitment) {
+    const k = commitment.toLowerCase();
+    put('commitment_stated', {
+      question_text: 'In your own words, what is your PadSplit stay commitment — and when does it end?',
+      question_type: 'multiple_choice',
+      selected_option_labels: [PE_COMMITMENT_LABELS[k] || titleCase(k)],
+      raw_text_answer: nonEmptyString(breakdown.commitment_stated_raw),
+    });
+  }
+
+  // Q5 reminder system (open) — only if a notes verbatim exists
+  const reminder = nonEmptyString(ext.payment_literacy_notes);
+  if (reminder) {
+    put('reminder_system', {
+      question_text: 'How do you remember to pay your PadSplit dues each week?',
+      question_type: 'open_ended',
+      raw_text_answer: reminder,
+    });
+  }
+
+  // Q6 easy payment benchmark (open)
+  if (nonEmptyString(ext.easy_payment_benchmark)) {
+    put('easy_payment_benchmark', {
+      question_text: 'What makes a payment feel easy to you?',
+      question_type: 'open_ended',
+      raw_text_answer: String(ext.easy_payment_benchmark).trim(),
+    });
+  }
+
+  // Q7 payment channel
+  const cm = ext.channel_method;
+  if (cm) {
+    let method: string | null = null;
+    if (typeof cm === 'string') method = nonEmptyString(cm);
+    else method = nonEmptyString(cm.method);
+    if (method) {
+      put('payment_channel', {
+        question_text: 'Where and how do you typically make your PadSplit payment?',
+        question_type: 'multiple_choice',
+        selected_option_labels: [titleCase(method)],
+        raw_text_answer: null,
+      });
+    }
+  }
+
+  // Q8 autopay yes/no
+  if (ext.autopay_status === 'enrolled' || ext.autopay_status === 'not_enrolled') {
+    put('autopay_enrolled', {
+      question_text: 'Are you enrolled in auto-pay?',
+      question_type: 'yes_no',
+      selected_option_labels: [ext.autopay_status === 'enrolled' ? 'Yes' : 'No'],
+      raw_text_answer: null,
+    });
+  }
+
+  // Q9 autopay barrier
+  if (ext.autopay_status === 'not_enrolled' && nonEmptyString(ext.autopay_barrier_category)) {
+    put('autopay_barrier', {
+      question_text: 'What is the primary reason for not enrolling in auto-pay?',
+      question_type: 'multiple_choice',
+      selected_option_labels: [titleCase(String(ext.autopay_barrier_category))],
+      raw_text_answer: nonEmptyString(ext.autopay_unlock_condition),
+    });
+  }
+
+  // Q10 move-in cost clarity (scale 1-5)
+  if (typeof ext.move_in_cost_clarity_1to5 === 'number' && isFinite(ext.move_in_cost_clarity_1to5)) {
+    put('move_in_cost_clarity', {
+      question_text: 'How clear was the total cost to move in? (1–5)',
+      question_type: 'scale',
+      scale_value: ext.move_in_cost_clarity_1to5,
+      raw_text_answer: null,
+    });
+  }
+
+  // Q11 top friction theme
+  if (nonEmptyString(ext.top_friction_theme)) {
+    put('top_friction_theme', {
+      question_text: 'What part of the payment process causes the most confusion or frustration?',
+      question_type: 'multiple_choice',
+      selected_option_labels: [titleCase(String(ext.top_friction_theme))],
+      raw_text_answer: nonEmptyString(ext.friction_verbatim),
+    });
+  }
+
+  // Q12 overdue threshold (USD scale)
+  const overdue = ext.overdue_threshold_belief_usd;
+  if (typeof overdue === 'number' && isFinite(overdue)) {
+    put('overdue_threshold', {
+      question_text: "If behind on dues, what's the max overdue amount before PadSplit takes action? (USD)",
+      question_type: 'scale',
+      scale_value: overdue,
+      raw_text_answer: null,
+    });
+  }
+
+  // Q13 hardship padsplit
+  const arrayToText = (v: any): string | null => {
+    if (Array.isArray(v)) {
+      const joined = v.map((x: any) => nonEmptyString(x)).filter(Boolean).join('; ');
+      return joined || null;
+    }
+    return nonEmptyString(v);
+  };
+  const hpPadsplit = arrayToText(ext.hardship_awareness_padsplit) || nonEmptyString(ext.hardship_details);
+  if (hpPadsplit) {
+    put('hardship_padsplit', {
+      question_text: "If you couldn't pay on time, what options do you think PadSplit offers?",
+      question_type: 'open_ended',
+      raw_text_answer: hpPadsplit,
+    });
+  }
+
+  // Q14 hardship host
+  const hpHost = arrayToText(ext.hardship_awareness_host);
+  if (hpHost) {
+    put('hardship_host', {
+      question_text: "What options do you think your host offers if you can't pay on time?",
+      question_type: 'open_ended',
+      raw_text_answer: hpHost,
+    });
+  }
+
+  // Q15 desired payment methods
+  if (Array.isArray(ext.desired_payment_methods) && ext.desired_payment_methods.length > 0) {
+    const labels = ext.desired_payment_methods
+      .map((x: any) => nonEmptyString(x))
+      .filter(Boolean) as string[];
+    if (labels.length > 0) {
+      put('desired_payment_methods', {
+        question_text: 'Are there any payment methods you wish PadSplit accepted?',
+        question_type: 'multiple_select',
+        selected_option_labels: labels.map(titleCase),
+        raw_text_answer: null,
+      });
+    }
+  } else if (nonEmptyString(ext.desired_payment_methods)) {
+    put('desired_payment_methods', {
+      question_text: 'Are there any payment methods you wish PadSplit accepted?',
+      question_type: 'multiple_select',
+      selected_option_labels: [titleCase(String(ext.desired_payment_methods))],
+      raw_text_answer: null,
+    });
+  }
+
+  // Q16 wish capability (open)
+  const wish = nonEmptyString(ext.wish_capability)
+    || nonEmptyString(ext.wish_verbatim)
+    || arrayToText(ext.wish_capabilities);
+  if (wish) {
+    put('wish_capability', {
+      question_text: 'If you could change one thing about how PadSplit payments work, what would it be?',
+      question_type: 'open_ended',
+      raw_text_answer: wish,
+    });
+  }
+
+  return out;
+}
+
+/**
+ * Merge AI-emitted raw_script_answers (if any) with the deterministically
+ * derived map. AI-provided entries win when present (they may carry richer
+ * verbatim text or scale values), derived entries fill the gaps.
+ */
+function mergeRawScriptAnswers(
+  aiProvided: any,
+  derived: Record<string, any>,
+): Record<string, any> {
+  const merged: Record<string, any> = { ...derived };
+  if (aiProvided && typeof aiProvided === 'object' && !Array.isArray(aiProvided)) {
+    for (const [k, v] of Object.entries(aiProvided)) {
+      if (v && typeof v === 'object') {
+        merged[k] = {
+          source: 'ai_extraction',
+          answered_at: new Date().toISOString(),
+          ...(merged[k] || {}),
+          ...(v as any),
+        };
+      }
+    }
+  }
+  return merged;
+}
+
 // ── Audience Survey Extraction Prompt ──
 
 const AUDIENCE_SURVEY_PROMPT = `You are a market research analyst at PadSplit. You are processing a transcribed audience survey call between a PadSplit agent and a current or prospective member. The transcript is from automated speech-to-text — expect false starts, crosstalk, filler words, tangents, and garbled text. Focus on substance.
