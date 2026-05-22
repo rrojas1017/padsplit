@@ -211,7 +211,7 @@ Deno.serve(async (req) => {
   let failed = 0;
   const errors: Array<{ id: string; error: string }> = [];
 
-  for (const row of eligible) {
+  for (const row of fetched) {
     try {
       const { parsed, inputTokens, outputTokens } = await callModel(row.call_transcription);
       if (!parsed) {
