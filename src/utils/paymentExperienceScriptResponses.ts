@@ -345,12 +345,39 @@ function summarizeQuestion(
   q: PEQuestionDef,
   eligible: PaymentExperienceRecord[],
 ): PEQuestionSummary {
+  // Compound questions render N sub-questions stacked under one parent card.
+  // The parent count = records that answered ANY sub-question, so the card
+  // header still has a meaningful response total.
+  if (q.type === 'compound') {
+    const subDefs = compoundSubDefs(q);
+    const subSummaries = subDefs.map((sub) => summarizeQuestion(sub, eligible));
+    let parentCount = 0;
+    for (const r of eligible) {
+      let answeredAny = false;
+      for (const sub of subDefs) {
+        const a = getAnswer(r, sub);
+        if (a !== null && a !== undefined && a !== '') {
+          answeredAny = true;
+          break;
+        }
+      }
+      if (answeredAny) parentCount++;
+    }
+    return {
+      question: q,
+      count: parentCount,
+      distribution: [],
+      subQuestions: subSummaries,
+    };
+  }
+
   // Track per-record whether they answered (for `count`) separately from
   // multi-select totals (a record may contribute multiple option-counts).
   let answeredRecords = 0;
   const numericAnswers: number[] = [];
   const openAnswers: string[] = [];
   const buckets = new Map<string, number>();
+  let unsureCount = 0; // for dues_amount_stated_usd
 
   for (const r of eligible) {
     const a = getAnswer(r, q);
@@ -360,6 +387,7 @@ function summarizeQuestion(
       openAnswers.push(String(a));
     } else if (q.type === 'scale') {
       if (typeof a === 'number' && isFinite(a)) numericAnswers.push(a);
+      else if (q.id === 'dues_amount_stated_usd' && a === 'unsure') unsureCount++;
     } else if (q.type === 'multi') {
       const arr = Array.isArray(a) ? a : [a];
       for (const v of arr) {
@@ -388,28 +416,50 @@ function summarizeQuestion(
     const min = q.scaleMin ?? 0;
     const max = q.scaleMax ?? 100;
     const avg = nums.length ? nums.reduce((a, b) => a + b, 0) / nums.length : 0;
+    // For dues_amount, percentage denominator includes "unsure" so numeric
+    // shares + unsure share sum to 100%. For other scales, denominator is
+    // numeric responses only (legacy behavior).
+    const denom = q.id === 'dues_amount_stated_usd'
+      ? nums.length + unsureCount
+      : nums.length;
     const distribution: PEDistributionItem[] = [];
     if (max - min <= 10) {
       for (let v = min; v <= max; v++) {
         const c = nums.filter((n) => Math.round(n) === v).length;
-        distribution.push({ key: String(v), label: String(v), count: c, percentage: pct(c, nums.length) });
+        distribution.push({ key: String(v), label: String(v), count: c, percentage: pct(c, denom) });
       }
     } else {
       const bucketsCount = 10;
       const span = (max - min + 1) / bucketsCount;
+      const isUsd = q.id === 'dues_amount_stated_usd';
       for (let i = 0; i < bucketsCount; i++) {
         const lo = Math.round(min + i * span);
         const hi = i === bucketsCount - 1 ? max : Math.round(min + (i + 1) * span) - 1;
         const c = nums.filter((n) => n >= lo && n <= hi).length;
         distribution.push({
           key: `${lo}-${hi}`,
-          label: `${lo}–${hi}`,
+          label: isUsd ? `$${lo}–$${hi}` : `${lo}–${hi}`,
           count: c,
-          percentage: pct(c, nums.length),
+          percentage: pct(c, denom),
         });
       }
     }
-    return { question: q, count: nums.length, distribution, avg, min, max };
+    if (q.id === 'dues_amount_stated_usd' && unsureCount > 0) {
+      distribution.push({
+        key: 'unsure',
+        label: 'Unsure',
+        count: unsureCount,
+        percentage: pct(unsureCount, denom),
+      });
+    }
+    return {
+      question: q,
+      count: q.id === 'dues_amount_stated_usd' ? answeredRecords : nums.length,
+      distribution,
+      avg,
+      min,
+      max,
+    };
   }
 
   // multi / yesno
@@ -422,6 +472,11 @@ function summarizeQuestion(
   } else if (q.id === 'dues_day_stated') {
     // Force fixed Mon→Sun→Unknown order; only include days that occurred.
     entries = DAY_ORDER
+      .filter((d) => (buckets.get(d) || 0) > 0)
+      .map((d) => [d, buckets.get(d) || 0] as [string, number]);
+  } else if (q.id === 'commitment_stated') {
+    // Force fixed commitment order; only include buckets that occurred.
+    entries = COMMITMENT_ORDER
       .filter((d) => (buckets.get(d) || 0) > 0)
       .map((d) => [d, buckets.get(d) || 0] as [string, number]);
   } else {
@@ -446,6 +501,32 @@ function summarizeQuestion(
     topCount: top?.count,
     topPct: top?.percentage,
   };
+}
+
+// Sub-question definitions for compound parents. Each sub-question is a
+// regular PEQuestionDef and is summarized via the same summarizeQuestion path.
+function compoundSubDefs(parent: PEQuestionDef): PEQuestionDef[] {
+  if (parent.id === 'dues_amount_and_amenities') {
+    return [
+      {
+        order: parent.order,
+        id: 'dues_amount_stated_usd',
+        text: 'Stated weekly dues',
+        section: parent.section,
+        type: 'scale',
+        scaleMin: 50,
+        scaleMax: 300,
+      },
+      {
+        order: parent.order,
+        id: 'amenities_mentioned',
+        text: 'Amenities mentioned as included',
+        section: parent.section,
+        type: 'multi',
+      },
+    ];
+  }
+  return [];
 }
 
 export function derivePaymentExperienceScriptData(
