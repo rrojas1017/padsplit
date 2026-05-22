@@ -155,8 +155,16 @@ export default function LogSurveyCall() {
   const [probeNotes, setProbeNotes] = useState<Record<string, Record<number, string>>>({});
   const [agentNotes, setAgentNotes] = useState<Record<string, string>>({});
 
-  const setProbeNote = (qId: number, probeIndex: number, note: string) => {
+  const setProbeNote = (qId: string | number, probeIndex: number, note: string) => {
     setProbeNotes(prev => ({
+      ...prev,
+      [String(qId)]: { ...(prev[String(qId)] || {}), [probeIndex]: note },
+    }));
+  };
+
+  const setAgentNote = (qId: string | number, note: string) => {
+    setAgentNotes(prev => ({ ...prev, [String(qId)]: note }));
+  };
       ...prev,
       [String(qId)]: { ...(prev[String(qId)] || {}), [probeIndex]: note }
     }));
