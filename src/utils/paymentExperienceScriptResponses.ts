@@ -14,7 +14,7 @@ import {
   AUTOPAY_BARRIER_LABELS,
 } from '@/hooks/usePaymentExperienceResponses';
 
-export type PEQuestionType = 'multi' | 'yesno' | 'scale' | 'open';
+export type PEQuestionType = 'multi' | 'yesno' | 'scale' | 'open' | 'compound';
 
 export interface PEQuestionDef {
   order: number;
@@ -33,8 +33,8 @@ export interface PEQuestionDef {
 export const PE_QUESTIONS: PEQuestionDef[] = [
   { order: 1,  id: 'pay_cadence',            text: 'When do you typically get paid?',                                     section: 'Payment literacy baseline',     type: 'multi' },
   { order: 2,  id: 'dues_day_stated',        text: 'What is your payment schedule for your PadSplit room?',               section: 'Payment literacy baseline',     type: 'multi' },
-  { order: 3,  id: 'dues_amount_understanding', text: 'What is your weekly dues and what amenities or services are included?', section: 'Payment literacy baseline', type: 'yesno' },
-  { order: 4,  id: 'commitment_understanding', text: 'In your own words, what is your PadSplit stay commitment — and when does it end?', section: 'Payment literacy baseline', type: 'yesno' },
+  { order: 3,  id: 'dues_amount_and_amenities', text: 'What is your weekly dues and what amenities or services are included?', section: 'Payment literacy baseline', type: 'compound' },
+  { order: 4,  id: 'commitment_stated',       text: 'In your own words, what is your PadSplit stay commitment — and when does it end?', section: 'Payment literacy baseline', type: 'multi' },
   { order: 5,  id: 'reminder_system',        text: 'How do you remember to pay your PadSplit dues each week?',            section: 'Payment habits & behavior',     type: 'open' },
   { order: 6,  id: 'easy_payment_benchmark', text: 'What makes a payment feel easy to you?',                              section: 'Payment habits & behavior',     type: 'open' },
   { order: 7,  id: 'payment_channel',        text: 'Where and how do you typically make your PadSplit payment?',          section: 'Payment habits & behavior',     type: 'multi' },
@@ -69,6 +69,10 @@ export interface PEQuestionSummary {
   topPct?: number;
   samples?: string[];
   totalSamples?: number;
+  // Compound-question only: child summaries rendered under one parent card.
+  // Each sub-summary is itself a regular PEQuestionSummary with its own type
+  // (typically 'scale' for the dues amount and 'multi' for amenities).
+  subQuestions?: PEQuestionSummary[];
 }
 
 export interface PEScriptStats {
