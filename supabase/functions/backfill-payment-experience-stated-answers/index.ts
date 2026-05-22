@@ -279,7 +279,8 @@ Deno.serve(async (req) => {
     }
   }
 
-  if (eligible.length >= CHUNK_SIZE) {
+  const willChain = fetched.length >= CHUNK_SIZE;
+  if (willChain) {
     queueMicrotask(() => {
       setTimeout(() => {
         fetch(`${SUPABASE_URL}/functions/v1/backfill-payment-experience-stated-answers`, {
@@ -298,8 +299,8 @@ Deno.serve(async (req) => {
     JSON.stringify({
       processed,
       failed,
-      chunk_size: eligible.length,
-      will_chain: eligible.length >= CHUNK_SIZE,
+      fetched: fetched.length,
+      will_chain: willChain,
       errors: errors.slice(0, 10),
     }),
     { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
