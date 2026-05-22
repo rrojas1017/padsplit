@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import type { Json } from '@/integrations/supabase/types';
+import { buildRawScriptAnswers } from '@/utils/rawScriptAnswers';
 
 export interface ResearchCallCampaign {
   id: string;
