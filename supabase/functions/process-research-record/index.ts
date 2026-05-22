@@ -311,12 +311,16 @@ Respond with ONLY a JSON object containing two top-level keys: "extraction" and 
 
     "raw_script_answers": {
       "<question_id>": {
+        "question_id": "<id>",
         "question_text": "the script question text",
         "ai_hint": "matching ai_hint or extraction field name",
         "question_type": "multiple_choice | multiple_select | yes_no | scale | open_ended",
         "selected_option_labels": ["normalized option label(s) the member chose, e.g. 'Friday' or 'Yes'"],
         "raw_text_answer": "verbatim member phrase, or null",
         "scale_value": null,
+        "supporting_quote": "short verbatim transcript excerpt (≤240 chars) supporting this answer, or null",
+        "status": "answered | not_discussed | unclear",
+        "confidence": "high | medium | low",
         "answered_at": null,
         "source": "ai_extraction"
       }
@@ -333,7 +337,19 @@ Rules:
 - Use null (not empty strings) when a field cannot be inferred.
 - Numeric scores must be integers in the stated range.
 - Quotes must be verbatim from the transcript.
-- For "raw_script_answers": use these stable question_ids (one entry per question that was actually addressed in the call) — pay_cadence, dues_day_stated, dues_amount_stated_usd, amenities_mentioned, commitment_stated, reminder_system, easy_payment_benchmark, payment_channel, autopay_enrolled, autopay_barrier, move_in_cost_clarity, top_friction_theme, overdue_threshold, hardship_padsplit, hardship_host, desired_payment_methods, wish_capability. Omit the entry if the question was not addressed. For yes/no questions, selected_option_labels must be ["Yes"] or ["No"]. For scale questions, set scale_value (number). For open-ended, set raw_text_answer. For multi-choice/select, set selected_option_labels.
+- "raw_script_answers" is MANDATORY and must contain ALL 17 of these question_ids — pay_cadence, dues_day_stated, dues_amount_stated_usd, amenities_mentioned, commitment_stated, reminder_system, easy_payment_benchmark, payment_channel, autopay_enrolled, autopay_barrier, move_in_cost_clarity, top_friction_theme, overdue_threshold, hardship_padsplit, hardship_host, desired_payment_methods, wish_capability. For any question the call did not cover, still emit the entry with status="not_discussed", empty selected_option_labels, raw_text_answer=null, scale_value=null, supporting_quote=null, confidence="high". Use status="unclear" when the topic is touched but the answer can't be determined. Only use status="answered" when the transcript clearly supports the answer. NEVER fabricate.
+- For yes/no questions, selected_option_labels must be ["Yes"] or ["No"]. For scale questions, set scale_value (number). For open-ended, set raw_text_answer. For multi-choice/select, set selected_option_labels using normalized labels.
+- Normalized label vocabularies (use EXACT strings):
+  - pay_cadence: "Weekly","Bi-weekly","Semi-monthly","Monthly","Other","Unknown"
+  - dues_day_stated: "Monday".."Sunday","Unknown"
+  - amenities_mentioned: "Utilities","Wi-Fi","Furniture","Cleaning","Laundry","Parking","Trash","Water","Electric","Gas","None mentioned","Other"
+  - commitment_stated: "Week to week","Month to month","30 days","60 days","90 days","6 months","12 months","Open ended","Other specific","Unsure"
+  - payment_channel (multi-select, methods+devices): "Debit card","Credit card","Cash","Bank transfer / ACH","Money order","Other","App","Mobile browser","Desktop","Phone support"
+  - autopay_barrier: "Distrust of recurring charges","Irregular income","Prefers manual control","Cash-flow constraint","No eligible payment method","Unaware auto-pay exists","Other"
+  - top_friction_theme: "Auto-pay distrust","Late-fee confusion","Payment method failures","Move-in cost surprise","Pay-cycle mismatch","App / website UX","No friction reported","Other"
+  - desired_payment_methods: "Cash App","Venmo","Zelle","PayPal","Apple Pay","Google Pay","Cryptocurrency","Money order","Prepaid card","None / Satisfied","Other"
+  - move_in_cost_clarity: scale_value integer 1..5
+  - dues_amount_stated_usd and overdue_threshold: scale_value numeric USD
 - Output ONLY the JSON object — no markdown fences, no commentary.`;
 
 // ── Payment Experience: durable per-question answer derivation ──
