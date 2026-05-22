@@ -142,6 +142,17 @@ const firstNonEmptyString = (...vals: any[]): string | null => {
 function getAnswer(rec: PaymentExperienceRecord, q: PEQuestionDef): any {
   const ext: any = rec.extraction || {};
   const breakdown: any = ext.payment_literacy_breakdown || {};
+
+  // Preferred source: durable raw_script_answers persisted by the AI
+  // extraction (or, in the future, by the agent runtime). Falls through to
+  // legacy *_stated / payment_literacy_breakdown.* fields below when the
+  // record was extracted before this field existed.
+  const raw: any = ext.raw_script_answers && typeof ext.raw_script_answers === 'object'
+    ? ext.raw_script_answers
+    : null;
+  const fromRaw = raw ? extractFromRawScriptAnswers(raw, q) : null;
+  if (fromRaw !== null && fromRaw !== undefined) return fromRaw;
+
   switch (q.id) {
     case 'pay_cadence': {
       if (ext.pay_cadence == null || String(ext.pay_cadence).trim() === '') return null;
