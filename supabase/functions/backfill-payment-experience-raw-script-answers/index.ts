@@ -409,20 +409,26 @@ Deno.serve(async (req) => {
   }
 
   // Chain while the server still returns a full page of unstamped rows.
-  const willChain = all.length >= CHUNK_SIZE;
+  // Use EdgeRuntime.waitUntil so the background fetch survives client disconnects.
+  const willChain = all.length > 0;
   if (willChain) {
-    queueMicrotask(() => {
-      setTimeout(() => {
-        fetch(`${SUPABASE_URL}/functions/v1/${EDGE_FUNCTION}`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${SERVICE_ROLE}`,
-          },
-          body: JSON.stringify({ chained: true }),
-        }).catch(() => { /* ignore */ });
+    const chainPromise = new Promise<void>((resolve) => {
+      setTimeout(async () => {
+        try {
+          await fetch(`${SUPABASE_URL}/functions/v1/${EDGE_FUNCTION}`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${SERVICE_ROLE}`,
+            },
+            body: JSON.stringify({ chained: true }),
+          });
+        } catch (_e) { /* ignore */ }
+        resolve();
       }, PACE_MS);
     });
+    // @ts-ignore - EdgeRuntime is available in Supabase edge runtime
+    try { (globalThis as any).EdgeRuntime?.waitUntil?.(chainPromise); } catch (_e) { /* ignore */ }
   }
 
   return new Response(
