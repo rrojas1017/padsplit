@@ -154,7 +154,7 @@ export default function PublicScriptView() {
   };
 
   const [submitState, setSubmitState] = useState<'idle' | 'saving' | 'saved' | 'failed'>('idle');
-  const submittedRef = (typeof window !== 'undefined') ? (window as any) : {};
+
 
   const submitPublic = useCallback(async (opts: { endedEarly?: boolean; earlyDisposition?: string } = {}) => {
     if (!token || !script) return;
