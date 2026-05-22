@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import type { PaymentExperienceExtraction } from '@/types/research-insights';
+import { fetchAllPages } from '@/utils/fetchAllPages';
 
 /**
  * Vocabulary for booking_transcriptions.retag_source on Payment Experience records.
