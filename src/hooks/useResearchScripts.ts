@@ -148,7 +148,7 @@ export function useResearchScripts() {
 
   const updateScript = async (id: string, updates: Partial<Omit<ResearchScript, 'id' | 'created_at' | 'updated_at' | 'created_by'>>) => {
     const payload: any = { ...updates };
-    if (updates.questions) payload.questions = updates.questions as any;
+    if (updates.questions) payload.questions = ensureIds(updates.questions) as any;
     const { error } = await supabase.from('research_scripts').update(payload).eq('id', id);
     if (error) {
       toast.error('Failed to update script');
