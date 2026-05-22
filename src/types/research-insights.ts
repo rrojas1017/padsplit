@@ -463,7 +463,35 @@ export type CampaignType = 'move_out_survey' | 'audience_survey' | 'payment_expe
 
 // ── Payment Experience Survey Data (per-record extraction) ──
 
+/**
+ * Durable, normalized per-question answer record. Persisted under
+ * `research_extraction.raw_script_answers[<question_id>]` so the dashboard
+ * can prefer this source over re-derived fields. `source` indicates whether
+ * the answer came from the live agent runtime or from AI extraction.
+ */
+export interface RawScriptAnswer {
+  question_text: string;
+  ai_hint?: string | null;
+  question_type:
+    | 'multiple_choice'
+    | 'multiple_select'
+    | 'yes_no'
+    | 'scale'
+    | 'open_ended';
+  selected_option_labels?: string[];
+  raw_text_answer?: string | null;
+  scale_value?: number | null;
+  answered_at?: string | null;
+  source: 'ai_extraction' | 'agent_runtime';
+}
+
 export interface PaymentExperienceExtraction {
+  /**
+   * Durable per-question answers keyed by stable question id (matching the
+   * ids in `PE_QUESTIONS` in paymentExperienceScriptResponses.ts).
+   * Preferred dashboard source when present.
+   */
+  raw_script_answers?: Record<string, RawScriptAnswer>;
   payment_literacy_score?: number | null;
   payment_literacy_breakdown?: {
     pay_cadence_known?: boolean;
