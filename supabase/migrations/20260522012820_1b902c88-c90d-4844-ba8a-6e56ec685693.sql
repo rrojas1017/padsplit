@@ -1,0 +1,1 @@
+UPDATE public.admin_notifications SET is_resolved = true, is_read = true, resolved_at = now() WHERE is_resolved = false AND severity = 'critical';
