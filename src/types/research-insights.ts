@@ -470,6 +470,17 @@ export interface PaymentExperienceExtraction {
     dues_day_correct?: boolean;
     dues_amount_correct?: boolean;
     commitment_understood?: boolean;
+    dues_day_stated?:
+      | 'monday'
+      | 'tuesday'
+      | 'wednesday'
+      | 'thursday'
+      | 'friday'
+      | 'saturday'
+      | 'sunday'
+      | 'unknown'
+      | null;
+    dues_day_stated_raw?: string | null;
   };
   easy_payment_benchmark?: string | null;
   channel_method?: { device?: string; method?: string };
