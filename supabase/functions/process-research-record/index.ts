@@ -279,6 +279,14 @@ Respond with ONLY a JSON object containing two top-level keys: "extraction" and 
 
     "payment_literacy_score": 0-100 integer estimating how well the member understands PadSplit's payment system (dues cadence, autopay, due dates, late fees). Use null only if no payment topic discussed.,
     "payment_literacy_notes": "1-2 sentence rationale for the score",
+    "payment_literacy_breakdown": {
+      "pay_cadence_known": "true if member correctly stated their own pay cadence, else false. null if not discussed.",
+      "dues_day_correct": "true if member correctly identified their PadSplit dues day, else false. null if not discussed.",
+      "dues_amount_correct": "true if member correctly identified their weekly dues amount, else false. null if not discussed.",
+      "commitment_understood": "true if member understood their PadSplit stay commitment, else false. null if not discussed.",
+      "dues_day_stated": "monday|tuesday|wednesday|thursday|friday|saturday|sunday|unknown|null — the day of the week the member stated as their PadSplit payment schedule. Normalize phrases like 'every Monday', 'Mondays', 'on Monday morning' → monday (and likewise for other weekdays). If the member does not know, is unsure, or cannot identify the day → unknown. If Q2 was not addressed in the transcript → unknown. Use null only when extraction itself is impossible.",
+      "dues_day_stated_raw": "raw verbatim phrase from the transcript that contained the answer, or null"
+    },
 
     "autopay_status": "enrolled | not_enrolled | declined | unknown",
     "autopay_blocker": "string describing what's preventing enrollment, or null",

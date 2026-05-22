@@ -32,7 +32,7 @@ export interface PEQuestionDef {
 // simply show a lower response count — no re-extraction is required.
 export const PE_QUESTIONS: PEQuestionDef[] = [
   { order: 1,  id: 'pay_cadence',            text: 'When do you typically get paid?',                                     section: 'Payment literacy baseline',     type: 'multi' },
-  { order: 2,  id: 'dues_day_awareness',     text: 'What is your payment schedule for your PadSplit room?',               section: 'Payment literacy baseline',     type: 'yesno' },
+  { order: 2,  id: 'dues_day_stated',        text: 'What is your payment schedule for your PadSplit room?',               section: 'Payment literacy baseline',     type: 'multi' },
   { order: 3,  id: 'dues_amount_understanding', text: 'What is your weekly dues and what amenities or services are included?', section: 'Payment literacy baseline', type: 'yesno' },
   { order: 4,  id: 'commitment_understanding', text: 'In your own words, what is your PadSplit stay commitment — and when does it end?', section: 'Payment literacy baseline', type: 'yesno' },
   { order: 5,  id: 'reminder_system',        text: 'How do you remember to pay your PadSplit dues each week?',            section: 'Payment habits & behavior',     type: 'open' },
@@ -144,9 +144,13 @@ function getAnswer(rec: PaymentExperienceRecord, q: PEQuestionDef): any {
       const norm = lookupNormalized(CADENCE_NORMALIZATION_MAP, ext.pay_cadence);
       return [norm || 'other'];
     }
-    case 'dues_day_awareness':
-      if (typeof breakdown.dues_day_correct !== 'boolean') return null;
-      return breakdown.dues_day_correct ? 'yes' : 'no';
+    case 'dues_day_stated': {
+      const v = breakdown.dues_day_stated;
+      if (v == null || v === '') return null;
+      const s = String(v).toLowerCase().trim();
+      const allowed = new Set(['monday','tuesday','wednesday','thursday','friday','saturday','sunday','unknown']);
+      return [allowed.has(s) ? s : 'unknown'];
+    }
     case 'dues_amount_understanding':
       if (typeof breakdown.dues_amount_correct !== 'boolean') return null;
       return breakdown.dues_amount_correct ? 'yes' : 'no';
@@ -233,11 +237,25 @@ function getAnswer(rec: PaymentExperienceRecord, q: PEQuestionDef): any {
   }
 }
 
+const DAY_LABELS: Record<string, string> = {
+  monday: 'Monday',
+  tuesday: 'Tuesday',
+  wednesday: 'Wednesday',
+  thursday: 'Thursday',
+  friday: 'Friday',
+  saturday: 'Saturday',
+  sunday: 'Sunday',
+  unknown: 'Unknown',
+};
+
+const DAY_ORDER = ['monday','tuesday','wednesday','thursday','friday','saturday','sunday','unknown'];
+
 function labelFor(qId: string, key: string): string {
   if (qId === 'autopay_barrier') return AUTOPAY_BARRIER_LABELS[key] || titleCase(key);
   if (qId === 'pay_cadence') return CADENCE_LABELS[key as keyof typeof CADENCE_LABELS] || titleCase(key);
   if (qId === 'top_friction_theme') return FRICTION_THEME_LABELS[key] || titleCase(key);
-  if (qId === 'autopay_enrolled' || qId === 'dues_day_awareness' || qId === 'dues_amount_understanding' || qId === 'commitment_understanding') {
+  if (qId === 'dues_day_stated') return DAY_LABELS[key] || titleCase(key);
+  if (qId === 'autopay_enrolled' || qId === 'dues_amount_understanding' || qId === 'commitment_understanding') {
     return key === 'yes' ? 'Yes' : 'No';
   }
   return titleCase(key);
@@ -321,6 +339,11 @@ function summarizeQuestion(
       ['yes', buckets.get('yes') || 0],
       ['no', buckets.get('no') || 0],
     ];
+  } else if (q.id === 'dues_day_stated') {
+    // Force fixed Mon→Sun→Unknown order; only include days that occurred.
+    entries = DAY_ORDER
+      .filter((d) => (buckets.get(d) || 0) > 0)
+      .map((d) => [d, buckets.get(d) || 0] as [string, number]);
   } else {
     entries.sort((a, b) => b[1] - a[1]);
   }
