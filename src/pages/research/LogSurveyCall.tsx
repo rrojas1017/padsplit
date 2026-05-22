@@ -243,7 +243,7 @@ export default function LogSurveyCall() {
     return () => window.removeEventListener('keydown', handler);
   }, [phase, questionIndex, questions.length]);
 
-  const setResponse = (qId: number, value: unknown) => {
+  const setResponse = (qId: string | number, value: unknown) => {
     setResponses(prev => ({ ...prev, [String(qId)]: value }));
   };
 
