@@ -14,7 +14,7 @@ import {
   AUTOPAY_BARRIER_LABELS,
 } from '@/hooks/usePaymentExperienceResponses';
 
-export type PEQuestionType = 'multi' | 'yesno' | 'scale' | 'open';
+export type PEQuestionType = 'multi' | 'yesno' | 'scale' | 'open' | 'compound';
 
 export interface PEQuestionDef {
   order: number;
@@ -33,8 +33,8 @@ export interface PEQuestionDef {
 export const PE_QUESTIONS: PEQuestionDef[] = [
   { order: 1,  id: 'pay_cadence',            text: 'When do you typically get paid?',                                     section: 'Payment literacy baseline',     type: 'multi' },
   { order: 2,  id: 'dues_day_stated',        text: 'What is your payment schedule for your PadSplit room?',               section: 'Payment literacy baseline',     type: 'multi' },
-  { order: 3,  id: 'dues_amount_understanding', text: 'What is your weekly dues and what amenities or services are included?', section: 'Payment literacy baseline', type: 'yesno' },
-  { order: 4,  id: 'commitment_understanding', text: 'In your own words, what is your PadSplit stay commitment — and when does it end?', section: 'Payment literacy baseline', type: 'yesno' },
+  { order: 3,  id: 'dues_amount_and_amenities', text: 'What is your weekly dues and what amenities or services are included?', section: 'Payment literacy baseline', type: 'compound' },
+  { order: 4,  id: 'commitment_stated',       text: 'In your own words, what is your PadSplit stay commitment — and when does it end?', section: 'Payment literacy baseline', type: 'multi' },
   { order: 5,  id: 'reminder_system',        text: 'How do you remember to pay your PadSplit dues each week?',            section: 'Payment habits & behavior',     type: 'open' },
   { order: 6,  id: 'easy_payment_benchmark', text: 'What makes a payment feel easy to you?',                              section: 'Payment habits & behavior',     type: 'open' },
   { order: 7,  id: 'payment_channel',        text: 'Where and how do you typically make your PadSplit payment?',          section: 'Payment habits & behavior',     type: 'multi' },
@@ -69,6 +69,10 @@ export interface PEQuestionSummary {
   topPct?: number;
   samples?: string[];
   totalSamples?: number;
+  // Compound-question only: child summaries rendered under one parent card.
+  // Each sub-summary is itself a regular PEQuestionSummary with its own type
+  // (typically 'scale' for the dues amount and 'multi' for amenities).
+  subQuestions?: PEQuestionSummary[];
 }
 
 export interface PEScriptStats {
@@ -151,12 +155,48 @@ function getAnswer(rec: PaymentExperienceRecord, q: PEQuestionDef): any {
       const allowed = new Set(['monday','tuesday','wednesday','thursday','friday','saturday','sunday','unknown']);
       return [allowed.has(s) ? s : 'unknown'];
     }
-    case 'dues_amount_understanding':
-      if (typeof breakdown.dues_amount_correct !== 'boolean') return null;
-      return breakdown.dues_amount_correct ? 'yes' : 'no';
-    case 'commitment_understanding':
-      if (typeof breakdown.commitment_understood !== 'boolean') return null;
-      return breakdown.commitment_understood ? 'yes' : 'no';
+    case 'dues_amount_stated_usd': {
+      const v = breakdown.dues_amount_stated_usd;
+      if (typeof v === 'number' && isFinite(v) && v >= 0) return v;
+      const n = Number(v);
+      if (isFinite(n) && v != null && String(v).trim() !== '' && n >= 0) return n;
+      // Fallback: member said "unsure" — counted as a respondent in the
+      // 'unsure' bucket via the wrapper question handler.
+      const raw = breakdown.dues_amount_stated_raw;
+      if (typeof raw === 'string' && raw.trim().toLowerCase() === 'unsure') return 'unsure';
+      return null;
+    }
+    case 'amenities_mentioned': {
+      const arr = breakdown.amenities_mentioned;
+      if (!Array.isArray(arr) || arr.length === 0) return null;
+      const ALLOWED = new Set([
+        'utilities','wifi','furniture','cleaning','laundry',
+        'parking','trash','water','electric','gas',
+        'none_mentioned','other',
+      ]);
+      const out: string[] = [];
+      const seen = new Set<string>();
+      for (const item of arr) {
+        const s = String(item ?? '').toLowerCase().trim();
+        if (!s) continue;
+        const tok = ALLOWED.has(s) ? s : 'other';
+        if (!seen.has(tok)) { seen.add(tok); out.push(tok); }
+      }
+      return out.length ? out : null;
+    }
+    case 'commitment_stated': {
+      const v = breakdown.commitment_stated;
+      if (v == null || v === '') return null;
+      const s = String(v).toLowerCase().trim();
+      const allowed = new Set([
+        'week_to_week','month_to_month',
+        '30_days','60_days','90_days',
+        '6_months','12_months',
+        'open_ended','other_specific',
+        'unsure','unknown',
+      ]);
+      return [allowed.has(s) ? s : 'unknown'];
+    }
     case 'reminder_system': {
       // No dedicated extraction field; surface payment_literacy_notes verbatims
       // when present.
@@ -250,12 +290,52 @@ const DAY_LABELS: Record<string, string> = {
 
 const DAY_ORDER = ['monday','tuesday','wednesday','thursday','friday','saturday','sunday','unknown'];
 
+const COMMITMENT_LABELS: Record<string, string> = {
+  week_to_week: 'Week-to-week',
+  month_to_month: 'Month-to-month',
+  '30_days': '30 days',
+  '60_days': '60 days',
+  '90_days': '90 days',
+  '6_months': '6 months',
+  '12_months': '12 months',
+  open_ended: 'Open-ended',
+  other_specific: 'Other (specific)',
+  unsure: 'Unsure',
+  unknown: 'Unknown',
+};
+
+const COMMITMENT_ORDER = [
+  'week_to_week','month_to_month',
+  '30_days','60_days','90_days',
+  '6_months','12_months',
+  'open_ended','other_specific',
+  'unsure','unknown',
+];
+
+const AMENITY_LABELS: Record<string, string> = {
+  utilities: 'Utilities (general)',
+  wifi: 'Wi-Fi / Internet',
+  furniture: 'Furniture',
+  cleaning: 'Cleaning',
+  laundry: 'Laundry',
+  parking: 'Parking',
+  trash: 'Trash',
+  water: 'Water',
+  electric: 'Electric',
+  gas: 'Gas',
+  none_mentioned: 'None mentioned',
+  other: 'Other',
+};
+
 function labelFor(qId: string, key: string): string {
   if (qId === 'autopay_barrier') return AUTOPAY_BARRIER_LABELS[key] || titleCase(key);
   if (qId === 'pay_cadence') return CADENCE_LABELS[key as keyof typeof CADENCE_LABELS] || titleCase(key);
   if (qId === 'top_friction_theme') return FRICTION_THEME_LABELS[key] || titleCase(key);
   if (qId === 'dues_day_stated') return DAY_LABELS[key] || titleCase(key);
-  if (qId === 'autopay_enrolled' || qId === 'dues_amount_understanding' || qId === 'commitment_understanding') {
+  if (qId === 'commitment_stated') return COMMITMENT_LABELS[key] || titleCase(key);
+  if (qId === 'amenities_mentioned') return AMENITY_LABELS[key] || titleCase(key);
+  if (qId === 'dues_amount_stated_usd' && key === 'unsure') return 'Unsure';
+  if (qId === 'autopay_enrolled') {
     return key === 'yes' ? 'Yes' : 'No';
   }
   return titleCase(key);
@@ -265,12 +345,39 @@ function summarizeQuestion(
   q: PEQuestionDef,
   eligible: PaymentExperienceRecord[],
 ): PEQuestionSummary {
+  // Compound questions render N sub-questions stacked under one parent card.
+  // The parent count = records that answered ANY sub-question, so the card
+  // header still has a meaningful response total.
+  if (q.type === 'compound') {
+    const subDefs = compoundSubDefs(q);
+    const subSummaries = subDefs.map((sub) => summarizeQuestion(sub, eligible));
+    let parentCount = 0;
+    for (const r of eligible) {
+      let answeredAny = false;
+      for (const sub of subDefs) {
+        const a = getAnswer(r, sub);
+        if (a !== null && a !== undefined && a !== '') {
+          answeredAny = true;
+          break;
+        }
+      }
+      if (answeredAny) parentCount++;
+    }
+    return {
+      question: q,
+      count: parentCount,
+      distribution: [],
+      subQuestions: subSummaries,
+    };
+  }
+
   // Track per-record whether they answered (for `count`) separately from
   // multi-select totals (a record may contribute multiple option-counts).
   let answeredRecords = 0;
   const numericAnswers: number[] = [];
   const openAnswers: string[] = [];
   const buckets = new Map<string, number>();
+  let unsureCount = 0; // for dues_amount_stated_usd
 
   for (const r of eligible) {
     const a = getAnswer(r, q);
@@ -280,6 +387,7 @@ function summarizeQuestion(
       openAnswers.push(String(a));
     } else if (q.type === 'scale') {
       if (typeof a === 'number' && isFinite(a)) numericAnswers.push(a);
+      else if (q.id === 'dues_amount_stated_usd' && a === 'unsure') unsureCount++;
     } else if (q.type === 'multi') {
       const arr = Array.isArray(a) ? a : [a];
       for (const v of arr) {
@@ -308,28 +416,50 @@ function summarizeQuestion(
     const min = q.scaleMin ?? 0;
     const max = q.scaleMax ?? 100;
     const avg = nums.length ? nums.reduce((a, b) => a + b, 0) / nums.length : 0;
+    // For dues_amount, percentage denominator includes "unsure" so numeric
+    // shares + unsure share sum to 100%. For other scales, denominator is
+    // numeric responses only (legacy behavior).
+    const denom = q.id === 'dues_amount_stated_usd'
+      ? nums.length + unsureCount
+      : nums.length;
     const distribution: PEDistributionItem[] = [];
     if (max - min <= 10) {
       for (let v = min; v <= max; v++) {
         const c = nums.filter((n) => Math.round(n) === v).length;
-        distribution.push({ key: String(v), label: String(v), count: c, percentage: pct(c, nums.length) });
+        distribution.push({ key: String(v), label: String(v), count: c, percentage: pct(c, denom) });
       }
     } else {
       const bucketsCount = 10;
       const span = (max - min + 1) / bucketsCount;
+      const isUsd = q.id === 'dues_amount_stated_usd';
       for (let i = 0; i < bucketsCount; i++) {
         const lo = Math.round(min + i * span);
         const hi = i === bucketsCount - 1 ? max : Math.round(min + (i + 1) * span) - 1;
         const c = nums.filter((n) => n >= lo && n <= hi).length;
         distribution.push({
           key: `${lo}-${hi}`,
-          label: `${lo}–${hi}`,
+          label: isUsd ? `$${lo}–$${hi}` : `${lo}–${hi}`,
           count: c,
-          percentage: pct(c, nums.length),
+          percentage: pct(c, denom),
         });
       }
     }
-    return { question: q, count: nums.length, distribution, avg, min, max };
+    if (q.id === 'dues_amount_stated_usd' && unsureCount > 0) {
+      distribution.push({
+        key: 'unsure',
+        label: 'Unsure',
+        count: unsureCount,
+        percentage: pct(unsureCount, denom),
+      });
+    }
+    return {
+      question: q,
+      count: q.id === 'dues_amount_stated_usd' ? answeredRecords : nums.length,
+      distribution,
+      avg,
+      min,
+      max,
+    };
   }
 
   // multi / yesno
@@ -342,6 +472,11 @@ function summarizeQuestion(
   } else if (q.id === 'dues_day_stated') {
     // Force fixed Mon→Sun→Unknown order; only include days that occurred.
     entries = DAY_ORDER
+      .filter((d) => (buckets.get(d) || 0) > 0)
+      .map((d) => [d, buckets.get(d) || 0] as [string, number]);
+  } else if (q.id === 'commitment_stated') {
+    // Force fixed commitment order; only include buckets that occurred.
+    entries = COMMITMENT_ORDER
       .filter((d) => (buckets.get(d) || 0) > 0)
       .map((d) => [d, buckets.get(d) || 0] as [string, number]);
   } else {
@@ -368,6 +503,32 @@ function summarizeQuestion(
   };
 }
 
+// Sub-question definitions for compound parents. Each sub-question is a
+// regular PEQuestionDef and is summarized via the same summarizeQuestion path.
+function compoundSubDefs(parent: PEQuestionDef): PEQuestionDef[] {
+  if (parent.id === 'dues_amount_and_amenities') {
+    return [
+      {
+        order: parent.order,
+        id: 'dues_amount_stated_usd',
+        text: 'Stated weekly dues',
+        section: parent.section,
+        type: 'scale',
+        scaleMin: 50,
+        scaleMax: 300,
+      },
+      {
+        order: parent.order,
+        id: 'amenities_mentioned',
+        text: 'Amenities mentioned as included',
+        section: parent.section,
+        type: 'multi',
+      },
+    ];
+  }
+  return [];
+}
+
 export function derivePaymentExperienceScriptData(
   eligible: PaymentExperienceRecord[],
   _totalRouted: number,
@@ -378,6 +539,13 @@ export function derivePaymentExperienceScriptData(
   let totalAnswered = 0;
   for (const r of eligible) {
     for (const q of PE_QUESTIONS) {
+      if (q.type === 'compound') {
+        for (const sub of compoundSubDefs(q)) {
+          const a = getAnswer(r, sub);
+          if (a !== null && a !== undefined && a !== '') { totalAnswered++; break; }
+        }
+        continue;
+      }
       const a = getAnswer(r, q);
       if (a !== null && a !== undefined && a !== '') totalAnswered++;
     }
@@ -428,6 +596,33 @@ export function buildPaymentExperienceScriptCsv(data: PEScriptData): string {
   const rows: string[] = [header.join(',')];
   for (const qs of data.questions) {
     const q = qs.question;
+    if (q.type === 'compound') {
+      const subs = qs.subQuestions || [];
+      if (subs.length === 0) {
+        rows.push(
+          [q.order, q.section || '', q.text, q.type, '(no responses)', 0, '', qs.count]
+            .map(csvEscape).join(','),
+        );
+        continue;
+      }
+      for (const sub of subs) {
+        const subText = `${q.text} — ${sub.question.text}`;
+        if (sub.distribution.length === 0) {
+          rows.push(
+            [q.order, q.section || '', subText, sub.question.type, '(no responses)', 0, '', sub.count]
+              .map(csvEscape).join(','),
+          );
+          continue;
+        }
+        for (const d of sub.distribution) {
+          rows.push(
+            [q.order, q.section || '', subText, sub.question.type, d.label, d.count, d.percentage, sub.count]
+              .map(csvEscape).join(','),
+          );
+        }
+      }
+      continue;
+    }
     if (q.type === 'open') {
       rows.push(
         [q.order, q.section || '', q.text, q.type, '(open-ended)', qs.count, '', qs.count]

@@ -285,7 +285,12 @@ Respond with ONLY a JSON object containing two top-level keys: "extraction" and 
       "dues_amount_correct": "true if member correctly identified their weekly dues amount, else false. null if not discussed.",
       "commitment_understood": "true if member understood their PadSplit stay commitment, else false. null if not discussed.",
       "dues_day_stated": "monday|tuesday|wednesday|thursday|friday|saturday|sunday|unknown|null — the day of the week the member stated as their PadSplit payment schedule. Normalize phrases like 'every Monday', 'Mondays', 'on Monday morning' → monday (and likewise for other weekdays). If the member does not know, is unsure, or cannot identify the day → unknown. If Q2 was not addressed in the transcript → unknown. Use null only when extraction itself is impossible.",
-      "dues_day_stated_raw": "raw verbatim phrase from the transcript that contained the answer, or null"
+      "dues_day_stated_raw": "raw verbatim phrase from the transcript that contained the answer, or null",
+      "dues_amount_stated_usd": "number — the weekly dues amount in USD that the member states (e.g. 165). null if member did not state a numeric amount or said they were unsure.",
+      "dues_amount_stated_raw": "raw verbatim phrase from the transcript containing the dues amount answer, or 'unsure' if the member said they did not know, or null if Q3 not addressed.",
+      "amenities_mentioned": "array of normalized amenity tokens the member says are included in their dues. Use only these tokens: utilities, wifi, furniture, cleaning, laundry, parking, trash, water, electric, gas, none_mentioned, other. Map common phrasings: internet/Wi-Fi → wifi; power/lights → electric; bills → utilities. If the member explicitly says nothing is included or doesn't mention any amenities, return [\"none_mentioned\"]. Empty array only if Q3 was not addressed.",
+      "commitment_stated": "week_to_week|month_to_month|30_days|60_days|90_days|6_months|12_months|open_ended|other_specific|unsure|unknown|null — the stated PadSplit stay commitment. Normalize: 'week to week / no commitment / as long as I want' → week_to_week; '30/60/90 days' or '3 months' → 30_days/60_days/90_days; '6 months' → 6_months; 'a year / 12 months' → 12_months; 'month to month' → month_to_month; specific dates or other concrete durations not in the list → other_specific; 'I don't know / not sure' → unsure; Q4 not present → unknown. Use null only when extraction is impossible.",
+      "commitment_stated_raw": "raw verbatim phrase from the transcript that contained the commitment answer, or null"
     },
 
     "autopay_status": "enrolled | not_enrolled | declined | unknown",
