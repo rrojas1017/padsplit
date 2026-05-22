@@ -1,124 +1,123 @@
-# Capture Actual Dues Day for Q2 — Implementation Plan
+# Durable Raw Answer Persistence — Phase 1 (Runtime Only)
 
-Approved as specified. Below is the concrete execution plan.
+Persist actual selected answers for every Script Builder survey at submission time. AI-extraction reconstruction is deferred to a later phase.
 
-## 1. Type extension — no DB migration
+## 1. Shared helper — `src/utils/rawScriptAnswers.ts` (new)
 
-**File:** `src/types/research-insights.ts` (`PaymentExperienceExtraction.payment_literacy_breakdown`)
+Exports:
 
-Add to the existing object type, alongside the current four booleans:
+- `RawScriptAnswer` — `{ question_id, question_text, ai_hint, question_type, selected_option_labels, raw_text_answer, scale_value, answered_at, source }`
+- `RawScriptAnswerSource = 'agent_runtime' | 'ai_extraction'`
+- `buildRawScriptAnswers(questions, responses, opts?: { source?, answeredAt?, optionGetter? })`
+  - Walks questions, looks up response by stable `String(q.id)` and falls back to array-index key for legacy runtimes.
+  - Skips unanswered (null/undefined/empty-string/empty-array).
+  - Per type:
+    - `multiple_choice` → `selected_option_labels: [label]`
+    - `multiple_select` → `selected_option_labels: labels[]`
+    - `yes_no` → `selected_option_labels: ['Yes' | 'No']`
+    - `scale` → `scale_value: number`
+    - `open_ended` → `raw_text_answer: string`
+  - Always includes `question_id`, `question_text`, `ai_hint` (from `ai_extraction_hint`), `question_type`, `answered_at` (default `new Date().toISOString()`), `source` (default `'agent_runtime'`).
+- `getRawScriptAnswer(extraction, questionId)` — safe lookup into `extraction?.raw_script_answers?.[questionId]`.
 
-```ts
-dues_day_stated?:
-  | 'monday' | 'tuesday' | 'wednesday' | 'thursday'
-  | 'friday' | 'saturday' | 'sunday' | 'unknown' | null;
-dues_day_stated_raw?: string | null;
-```
+Pure utility, no Supabase imports.
 
-Keep `pay_cadence_known`, `dues_day_correct`, `dues_amount_correct`, `commitment_understood` untouched.
+## 2. Stable question IDs
 
-## 2. Extraction prompt updates (no model change)
+Update `ScriptQuestion.id` to accept `string | number` (kept loose to avoid breaking existing rows).
 
-### A. Fallback prompt
-**File:** `supabase/functions/process-research-record/index.ts` → `PAYMENT_EXPERIENCE_FALLBACK_PROMPT`.
+- `src/components/script-builder/QuestionCard.tsx` / `StepQuestions.tsx`:
+  - `emptyQuestion` and any add/duplicate paths assign `id: 'q_' + crypto.randomUUID().slice(0, 8)` immediately.
+  - Duplicate generates a fresh id; never reuses the source id.
+- `src/hooks/useResearchScripts.ts`:
+  - Add a small `ensureQuestionIds(questions)` that fills missing ids (stringifies numeric ids only when used as a map key — do not rewrite the stored value). Called in `createScript` and `updateScript` before write.
+  - IDs already present (number or string) are preserved as-is.
+- `src/hooks/useScriptTranslation.ts`:
+  - After receiving translated questions, copy `id` (and `ai_extraction_hint`) from the source question at the same index onto the translated question before persisting. Guarantees `questions_es` matches `questions` id-for-id.
 
-The current fallback prompt does not emit `payment_literacy_breakdown` at all. Add the breakdown object to the JSON shape so fallbacks produce the same structure as the live script, including the two new fields. Existing keys (`pay_cadence_known`, `dues_day_correct`, `dues_amount_correct`, `commitment_understood`) included for parity.
+No DB migration (JSONB).
 
-### B. Live script prompt
-**Table:** `research_scripts`, row `c701a243-1c66-425a-8f79-99a290ec5b6b` (PadSplit Member Payment Experience Survey).
+## 3. Live-agent runtime — `src/hooks/useResearchCalls.ts`
 
-Update `ai_prompt` via `supabase--insert` (UPDATE) to extend `payment_literacy_breakdown` with:
+- Extend `CallSubmission` with `script_questions?: ScriptQuestion[]`.
+- `LogSurveyCall` passes the active campaign's `script.questions` into `submitCall`.
+- In `submitCall`:
+  - Continue inserting `responses` into `research_calls.responses` exactly as today.
+  - If `script_questions` is provided, build `rawAnswers = buildRawScriptAnswers(script_questions, submission.responses)`.
+  - Persist `rawAnswers` via a new edge function `persist-research-raw-answers` (see §5) — fire after the `research_calls` insert, non-blocking on failure (toast warning, never block the submit success path).
 
-```
-"dues_day_stated": "monday|tuesday|wednesday|thursday|friday|saturday|sunday|unknown|null",
-"dues_day_stated_raw": "raw phrase from transcript or null"
-```
+Guardrail: no frontend read-then-update merges into `booking_transcriptions`. All merging happens server-side in the edge function with service role.
 
-Plus normalization rules in the Rules section:
-- "every Monday" / "Mondays" / "on Monday" / "Monday morning" → `monday` (and similar for other weekdays).
-- Member unsure / can't identify / doesn't know → `unknown`.
-- Q2 not present in transcript → `unknown`.
-- `null` only when extraction cannot be performed at all.
-- `dues_day_stated_raw` preserves the verbatim phrase.
-- Continue producing `dues_day_correct` exactly as today.
+## 4. Public script runtime
 
-Model stays `google/gemini-2.5-flash`.
+- `src/pages/PublicScriptView.tsx`:
+  - On `phase === 'done'` (non-early-end completion), POST to new edge function `submit-public-script` with `{ token, responses, probeNotes, agentNotes, endedEarly, earlyDisposition, durationSeconds }`.
+  - Fire once; show a small "saved" indicator; failure → toast but keep the existing thank-you UI.
+- `supabase/functions/submit-public-script/index.ts` (new):
+  - CORS (`npm:@supabase/supabase-js@2/cors`).
+  - Validate token via the same logic as `validate-script-token` (duplicated here per the no-`src/` import rule).
+  - Resolve script server-side (fetch `research_scripts` row).
+  - Build normalized `raw_script_answers` inline (duplicate the small builder; trivial code, no `src/` import).
+  - Service-role insert into `research_calls` with `responses` (legacy shape) AND create/find the linked research booking + `booking_transcriptions` row, writing `research_extraction.raw_script_answers` (merging onto any existing `research_extraction` JSON in a single atomic SQL via `update ... set research_extraction = coalesce(research_extraction,'{}'::jsonb) || jsonb_build_object('raw_script_answers', ...)`).
+  - Never overwrites an existing `raw_script_answers` block — uses `jsonb_object_agg` style merge so individual question keys union with existing keys, with existing keys winning.
 
-## 3. Historical backfill edge function
+## 5. Server-side merge helper — `supabase/functions/persist-research-raw-answers/index.ts` (new)
 
-**New function:** `supabase/functions/backfill-payment-experience-dues-day/index.ts`
+Used by §3 (and reusable later).
 
-Behavior:
-- Self-retriggering chunked job (~25 records/chunk, ~10s pause between chunks).
-- Idempotent and resumable.
-- Uses `SUPABASE_SERVICE_ROLE_KEY` and `LOVABLE_API_KEY`.
-- Selection (run against `booking_transcriptions`):
+- Auth: verify caller JWT (service-role client + `auth.getUser(token)`); reject anon.
+- Input: `{ research_call_id, raw_script_answers }`.
+- Looks up linked booking via `bookings.research_call_id = research_call_id`.
+- If `booking_transcriptions` row exists for that booking, merges `raw_script_answers` into `research_extraction` (existing keys win); if not, no-op (live agent path may not have a transcription row, and that's fine — `research_calls.responses` is still the source of truth for live-agent dashboards).
+- Logs to `api_costs` as `is_internal = true` is unnecessary here (no AI call); skip.
 
-```sql
-research_campaign_type = 'payment_experience'
-AND call_transcription IS NOT NULL
-AND length(trim(call_transcription)) > 0
-AND (
-  research_extraction->'payment_literacy_breakdown'->>'dues_day_stated' IS NULL
-  OR research_extraction->'payment_literacy_breakdown'->>'dues_day_stated' = ''
-)
-```
+## 6. Payment Experience compatibility — `src/utils/paymentExperienceScriptResponses.ts`
 
-Per row:
-- Call `google/gemini-2.5-flash-lite` via Lovable AI Gateway, temperature 0, with a tiny single-purpose prompt that takes the transcript and returns strictly:
+Only change: import `getRawScriptAnswer` from the new helper and use it in `getAnswer` in place of the current inline `extraction?.raw_script_answers?.[questionId]` lookup. Identical behavior, identical precedence chain:
 
-```json
-{ "dues_day_stated": "...", "dues_day_stated_raw": "..." }
-```
+1. `raw_script_answers[qid]` (now via shared helper)
+2. `payment_literacy_breakdown.*` / `*_stated` fields
+3. legacy AI-derived fields
 
-- Validate the returned `dues_day_stated` against the allowed enum; coerce invalid values to `unknown`.
-- Merge into `research_extraction.payment_literacy_breakdown`, preserving every other key. Skip the row if `dues_day_stated` is already present and non-empty (race-safe).
-- Log to `api_costs` with `service_type = 'research_payment_experience_backfill_duesday'`, `service_provider = 'lovable_ai'`, `is_internal = true`, plus token counts and `booking_id`.
+No other changes. Existing PE backfills and `process-research-record` PE logic untouched.
 
-Trigger: one-shot manual `supabase--curl_edge_functions` POST. No UI button.
+## 7. Types — `src/types/research-insights.ts`
 
-## 4. Frontend rendering
+- Re-export `RawScriptAnswer` from the new helper (single source of truth) or widen the existing `RawScriptAnswer` interface to drop PE-specific fields and match the new shape exactly.
+- Keep `PaymentExperienceExtraction.raw_script_answers` typed as `Record<string, RawScriptAnswer> | undefined`.
 
-**File:** `src/utils/paymentExperienceScriptResponses.ts`
+## 8. Deferred (NOT in this phase)
 
-- In `PE_QUESTIONS`, replace the Q2 entry:
-  ```ts
-  { order: 2, id: 'dues_day_stated',
-    text: 'What is your payment schedule for your PadSplit room?',
-    section: 'Payment literacy baseline', type: 'multi' },
-  ```
-- In `getAnswer()`, replace the `dues_day_awareness` case with a `dues_day_stated` case:
-  - Read `breakdown.dues_day_stated`.
-  - Missing/null/empty → `null`.
-  - Valid day or `'unknown'` → `[value]`.
-- Add a `DAY_LABELS` map for monday…sunday + unknown.
-- Update `labelFor()` so `qId === 'dues_day_stated'` uses `DAY_LABELS`.
-- Force fixed display order for Q2 only: Monday → Tuesday → Wednesday → Thursday → Friday → Saturday → Sunday → Unknown. Implement by post-sorting the `distribution` array when `q.id === 'dues_day_stated'`, keeping zero-count days out (only render days that occurred + Unknown if present), but never sort by count for this question.
-- Remove `'dues_day_awareness'` from the yes/no branch in `labelFor()`.
+- Generic `process-research-record` raw-answer reconstruction.
+- Campaign-wide AI extraction strategy registry.
+- Broad audio/API extraction path changes.
+- Normalized answer table.
+- Dashboard UI changes.
 
-`ScriptQuestionGraphCard` then renders Q2 automatically through the existing multi-bar path. The Overview tab keeps Q2 in its current slot, now showing day-of-week distribution.
+## 9. Files
 
-`dues_day_correct` remains in the schema and may continue to be used by other internal logic — it's just no longer surfaced as Q2.
+New:
+- `src/utils/rawScriptAnswers.ts`
+- `supabase/functions/submit-public-script/index.ts`
+- `supabase/functions/persist-research-raw-answers/index.ts`
 
-## 5. Validation steps
+Edit:
+- `src/types/research-insights.ts`
+- `src/hooks/useResearchScripts.ts`
+- `src/hooks/useResearchCalls.ts`
+- `src/hooks/useScriptTranslation.ts`
+- `src/components/script-builder/QuestionCard.tsx`
+- `src/components/script-builder/StepQuestions.tsx`
+- `src/pages/research/LogSurveyCall.tsx` (pass `script.questions` into `submitCall`)
+- `src/pages/PublicScriptView.tsx`
+- `src/utils/paymentExperienceScriptResponses.ts`
 
-After deploying and running the backfill once:
+## 10. Acceptance verification
 
-1. SQL spot-check (10 rows) of `dues_day_stated` + `dues_day_stated_raw`.
-2. SQL grouped distribution by `dues_day_stated`.
-3. Visit `/research/insights?campaign=payment_experience` and confirm Q2 renders as a Monday→Sunday + Unknown horizontal bar distribution; the old Yes/No bars are gone for Q2.
-4. Confirm `api_costs` rows exist with `service_type = 'research_payment_experience_backfill_duesday'`.
-
-## Guardrails
-
-No DB migration. No removal of `dues_day_correct`. No overwrite of populated values. No Bulk Processing UI button. No changes to KPIs, Script Responses layout, other extraction fields, or formulas.
-
-## Execution order
-
-1. Update `src/types/research-insights.ts`.
-2. Update fallback prompt in `process-research-record/index.ts`.
-3. UPDATE `research_scripts.ai_prompt` for the Payment Experience row.
-4. Create `backfill-payment-experience-dues-day` edge function.
-5. Update `src/utils/paymentExperienceScriptResponses.ts` (Q2 swap + DAY_LABELS + fixed order).
-6. Deploy the new edge function and trigger it once via curl.
-7. Run SQL validation queries and verify dashboard.
+- Create a new Script Builder question → inspect saved row → `id` is `q_xxxxxxxx`.
+- Edit and re-save → `id` unchanged.
+- Translate → `questions_es[i].id === questions[i].id`.
+- Run a Public Script via a token → new `research_calls` row exists with `responses` populated AND linked `booking_transcriptions.research_extraction.raw_script_answers` populated.
+- Submit a LogSurveyCall → `research_calls.responses` populated; if the linked booking already has a transcription row, `raw_script_answers` merged in; if not, submit still succeeds.
+- PE dashboard renders identically.
+- No TS errors.
