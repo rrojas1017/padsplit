@@ -290,12 +290,52 @@ const DAY_LABELS: Record<string, string> = {
 
 const DAY_ORDER = ['monday','tuesday','wednesday','thursday','friday','saturday','sunday','unknown'];
 
+const COMMITMENT_LABELS: Record<string, string> = {
+  week_to_week: 'Week-to-week',
+  month_to_month: 'Month-to-month',
+  '30_days': '30 days',
+  '60_days': '60 days',
+  '90_days': '90 days',
+  '6_months': '6 months',
+  '12_months': '12 months',
+  open_ended: 'Open-ended',
+  other_specific: 'Other (specific)',
+  unsure: 'Unsure',
+  unknown: 'Unknown',
+};
+
+const COMMITMENT_ORDER = [
+  'week_to_week','month_to_month',
+  '30_days','60_days','90_days',
+  '6_months','12_months',
+  'open_ended','other_specific',
+  'unsure','unknown',
+];
+
+const AMENITY_LABELS: Record<string, string> = {
+  utilities: 'Utilities (general)',
+  wifi: 'Wi-Fi / Internet',
+  furniture: 'Furniture',
+  cleaning: 'Cleaning',
+  laundry: 'Laundry',
+  parking: 'Parking',
+  trash: 'Trash',
+  water: 'Water',
+  electric: 'Electric',
+  gas: 'Gas',
+  none_mentioned: 'None mentioned',
+  other: 'Other',
+};
+
 function labelFor(qId: string, key: string): string {
   if (qId === 'autopay_barrier') return AUTOPAY_BARRIER_LABELS[key] || titleCase(key);
   if (qId === 'pay_cadence') return CADENCE_LABELS[key as keyof typeof CADENCE_LABELS] || titleCase(key);
   if (qId === 'top_friction_theme') return FRICTION_THEME_LABELS[key] || titleCase(key);
   if (qId === 'dues_day_stated') return DAY_LABELS[key] || titleCase(key);
-  if (qId === 'autopay_enrolled' || qId === 'dues_amount_understanding' || qId === 'commitment_understanding') {
+  if (qId === 'commitment_stated') return COMMITMENT_LABELS[key] || titleCase(key);
+  if (qId === 'amenities_mentioned') return AMENITY_LABELS[key] || titleCase(key);
+  if (qId === 'dues_amount_stated_usd' && key === 'unsure') return 'Unsure';
+  if (qId === 'autopay_enrolled') {
     return key === 'yes' ? 'Yes' : 'No';
   }
   return titleCase(key);
