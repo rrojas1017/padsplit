@@ -630,6 +630,37 @@ function buildHtml(data: PEScriptData, generatedAt: Date): string {
   }
   .verbatim-text { color: var(--text); }
 
+  /* Compound sub-questions */
+  .sub-q {
+    border-top: 1px solid var(--border);
+    padding-top: 14px;
+    margin-top: 14px;
+  }
+  .sub-q:first-child {
+    border-top: none;
+    padding-top: 0;
+    margin-top: 0;
+  }
+  .sub-q-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 12px;
+    margin-bottom: 10px;
+  }
+  .sub-q-title {
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--text);
+  }
+  .sub-q-count {
+    font-size: 11px;
+    color: var(--text-soft);
+    font-variant-numeric: tabular-nums;
+    flex-shrink: 0;
+  }
+
+
   .footer {
     margin-top: 28px;
     padding-top: 16px;
