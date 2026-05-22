@@ -333,6 +333,7 @@ Rules:
 - Use null (not empty strings) when a field cannot be inferred.
 - Numeric scores must be integers in the stated range.
 - Quotes must be verbatim from the transcript.
+- For "raw_script_answers": use these stable question_ids (one entry per question that was actually addressed in the call) — pay_cadence, dues_day_stated, dues_amount_stated_usd, amenities_mentioned, commitment_stated, reminder_system, easy_payment_benchmark, payment_channel, autopay_enrolled, autopay_barrier, move_in_cost_clarity, top_friction_theme, overdue_threshold, hardship_padsplit, hardship_host, desired_payment_methods, wish_capability. Omit the entry if the question was not addressed. For yes/no questions, selected_option_labels must be ["Yes"] or ["No"]. For scale questions, set scale_value (number). For open-ended, set raw_text_answer. For multi-choice/select, set selected_option_labels.
 - Output ONLY the JSON object — no markdown fences, no commentary.`;
 
 // ── Audience Survey Extraction Prompt ──
