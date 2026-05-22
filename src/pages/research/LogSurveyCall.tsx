@@ -444,6 +444,7 @@ export default function LogSurveyCall() {
       researcher_notes: researcherNotes.trim() || undefined,
       researcher_name: agentName,
       language: surveyLanguage,
+      script_questions: questions,
     };
 
     const success = await submitCall(submission);
