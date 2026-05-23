@@ -601,13 +601,15 @@ export function computeSurveyFunnel(
     if (b === 'cashflow_constraint' || b === 'income_irregularity') cashflow++;
     else if (b === 'distrust_recurring_charges' || b === 'wants_manual_control') trust++;
   }
+  // "Surveyed" now means members with a usable, eligible survey — voicemails
+  // and incomplete extractions are no longer counted as surveyed.
   const steps: FunnelStep[] = [
-    { id: 'surveyed', label: 'Surveyed', count: allRecords.length },
-    { id: 'eligible', label: 'Eligible', count: eligible.length },
+    { id: 'surveyed', label: 'Surveyed', count: eligible.length },
     { id: 'non-autopay', label: 'Not on auto-pay', count: notEnrolled.length },
     { id: 'cashflow', label: 'Cash-flow constraints', count: cashflow },
     { id: 'trust', label: 'Trust / control concerns', count: trust },
   ];
+
   while (steps.length > 2 && steps[steps.length - 1].count === 0) steps.pop();
   return steps;
 }

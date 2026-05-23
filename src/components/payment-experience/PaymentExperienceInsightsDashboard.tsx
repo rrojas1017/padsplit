@@ -172,12 +172,13 @@ export function PaymentExperienceInsightsDashboard() {
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
         <KPI
           label="Members Surveyed"
-          value={records.length.toLocaleString()}
-          denominator={`${records.length.toLocaleString()} surveyed`}
+          value={eligibleRecords.length.toLocaleString()}
+          denominator={`${eligibleRecords.length.toLocaleString()} eligible of ${records.length.toLocaleString()} routed`}
           icon={<Users className="h-4 w-4" />}
           iconBg="bg-blue-50"
           iconColor="text-blue-600"
         />
+
         <KPI
           label="Avg Payment Literacy"
           value={fmtScore(kpis.literacy, 100)}
