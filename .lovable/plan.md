@@ -1,132 +1,94 @@
-# Payment Experience `raw_script_answers` Reconstruction Backfill
+## Goal
 
-Approved scope. One unified chunked backfill plus a prompt hardening pass — no frontend changes.
+Stop the broad Payment Experience `raw_script_answers` backfill and instead reconstruct the 17-question map only for the **248 dashboard-eligible** calls. Cuts remaining cost from ~$20+ to ~$1.50 and finishes in 10–20 min.
 
-## Files
+## 1. Hard-stop the broad backfill (no concurrent writers)
 
-- **Create:** `supabase/functions/backfill-payment-experience-raw-script-answers/index.ts`
-- **Edit:** `supabase/functions/process-research-record/index.ts`
+Two layers:
 
-## 1. New edge function: `backfill-payment-experience-raw-script-answers`
+- **Unschedule** the `pe-backfill-watchdog` `pg_cron` job so nothing re-kicks it.
+- **Kill switch in code:** add `const BROAD_BACKFILL_DISABLED = true` at the top of `supabase/functions/backfill-payment-experience-raw-script-answers/index.ts`. Early-return at the start of the handler with `{ disabled: true }` and a log line. Comment explains why and forbids re-enabling without owner approval. Already-stamped rows are left untouched.
 
-Mirrors the proven `backfill-payment-experience-dues-day` pattern (chunked, self-retriggering, server-side filter, `api_costs` logging).
+## 2. New targeted edge function
 
-### Constants
-- `CHUNK_SIZE = 25`
-- `PACE_MS = 10_000`
-- `MODEL = 'google/gemini-2.5-flash'`
-- `SERVICE_TYPE = 'research_payment_experience_backfill_raw_answers'`
-- `EDGE_FUNCTION = 'backfill-payment-experience-raw-script-answers'`
-- `BACKFILL_VERSION = 1`
-- `EXPECTED_QUESTION_IDS` — canonical 17 ids pulled from `paymentExperienceScriptResponses.ts` (Q1 `pay_cadence` … Q16 `wish_capability`, including Q3a/Q3b split).
+`supabase/functions/backfill-payment-experience-eligible-only/index.ts` — same 17-question prompt, same canonical schema, same merge logic, same chunked self-chain pattern (chunk size 25, 10s pacing, `EdgeRuntime.waitUntil`).
 
-### Eligibility (server-side filter)
-`booking_transcriptions` rows where:
-- `research_campaign_type = 'payment_experience'`
-- `call_transcription IS NOT NULL` AND length > 0
-- AND either:
-  - `research_extraction->'raw_script_answers' IS NULL`, OR
-  - `jsonb_object_keys` count on `raw_script_answers` < expected canonical count
+New accounting:
+- `service_type = 'research_payment_experience_backfill_eligible_only'`
+- `edge_function = 'backfill-payment-experience-eligible-only'`
 
-Implementation: fetch with the same `.is(...'raw_script_answers', null)` shortcut plus a fallback in-memory key-count check for partially populated rows (the `jsonb_object_keys` count predicate isn't expressible cleanly in PostgREST, so we over-fetch and skip rows already at full canonical coverage). Ordered by `id` for stable paging.
+### Eligibility (must match `evaluateEligibility` in `src/hooks/usePaymentExperienceResponses.ts`)
 
-### Prompt
-Asks for the canonical `raw_script_answers` map keyed by the 17 question ids. Per-entry shape:
+A `booking_transcriptions` row with `research_campaign_type = 'payment_experience'`, joined to `bookings`, where:
 
-```
-{
-  question_id, question_text, question_type,
-  selected_option_labels: string[],
-  raw_text_answer: string | null,
-  scale_value: number | null,
-  source: "ai_backfill_v1",
-  confidence: "high" | "medium" | "low",
-  status: "answered" | "not_discussed" | "unclear",
-  supporting_quote: string | null   // ≤ 240 chars
+- `bookings.has_valid_conversation` IS NULL or TRUE
+- `bookings.call_duration_seconds` IS NULL, 0, or ≥ 120
+- `research_extraction` has ≥ 3 of: `payment_literacy_score`, `autopay_status`, `move_in_cost_clarity_1to5`, `pay_cadence`, `top_friction_theme`
+
+Implementation: server-side PostgREST filter on the `bookings!inner` join for the duration/voicemail rules; in-memory ≥3-of-5 JSON check; overfetch to find 25 eligible per chunk. Already-stamped rows skipped via the new marker.
+
+### Dry-run guardrail (first non-chained invocation)
+
+Counts uncompleted eligible candidates. If the count is **<200 or >300** the function aborts with `{ aborted: true, eligible_count }` and logs a mismatch. Otherwise it proceeds. Verified expected count = **248**.
+
+### Per-row marker
+
+```json
+"raw_script_answers_eligible_backfill_version": 1,
+"raw_script_answers_eligible_backfill_meta": {
+  "version": 1,
+  "last_backfilled_at": "<ISO>",
+  "model": "google/gemini-2.5-flash",
+  "source": "ai_backfill_eligible_v1",
+  "service_type": "research_payment_experience_backfill_eligible_only"
 }
 ```
 
-Rules inlined in the system prompt:
-- Never fabricate. If a question isn't discussed → `status: "not_discussed"`, empty labels, null text/scale.
-- Ambiguous → `status: "unclear"`.
-- `status: "answered"` only when supported by the transcript.
-- Per-question normalized vocabularies inlined from `paymentExperienceScriptResponses.ts`:
-  - **Q2** weekday enum (`monday`…`sunday`, `unknown`)
-  - **Q3a** USD number (or `unsure`)
-  - **Q3b** allowed amenity tokens
-  - **Q4** commitment enum
-  - **Q7** payment method + device label sets
-  - **Q9** autopay-barrier enum
-  - **Q10** numeric 1–5 `scale_value`
-  - **Q11** friction theme enum
-  - **Q12** USD overdue threshold (numeric)
-  - **Q15** desired payment method enum (array)
-  - **Q16** wish capability single label
+`raw_script_answers_meta` and all other extraction fields are preserved verbatim.
 
-### Critical merge rule (source-priority preserving)
+### Merge policy (per question entry)
 
-```
-priority: agent_runtime > ai_extraction > ai_backfill_v1
-```
+Trust order (highest → lowest):
+1. `agent_runtime`
+2. valid `ai_extraction`
+3. `ai_backfill_eligible_v1`
+4. `ai_backfill_v1`
 
-For each question id in the model output:
-- If existing entry exists AND its `source` is `agent_runtime` or `ai_extraction` AND it's well-formed → **keep existing, skip**.
-- If existing entry is missing, null, or malformed (no `question_id`, no `status`, or shape invalid) → write new `ai_backfill_v1` entry.
-- Never delete keys present in existing `raw_script_answers`.
+The eligible-only run may overwrite:
+- missing or malformed entries
+- entries with `source: "ai_backfill_v1"`
+- prior `ai_backfill_eligible_v1` entries with `status: "not_discussed"` or `"unclear"` when the new pass produces a transcript-supported `"answered"` entry
 
-Patch via `jsonb_set` on `research_extraction.raw_script_answers` (merged object), and also set:
+It must never overwrite:
+- `agent_runtime`
+- well-formed `ai_extraction`
+- any entry marked with a manual-correction flag (forward-compatible check)
 
-```
-research_extraction.raw_script_answers_meta = {
-  backfill_version: 1,
-  last_backfilled_at: <ISO>,
-  model: "google/gemini-2.5-flash",
-  source: "ai_backfill_v1"
-}
-```
-
-`payment_literacy_breakdown` and all other extraction fields are untouched.
-
-### Cost logging
-Insert into `api_costs` per row: `service_type`, `edge_function`, `is_internal: true`, `booking_id`, token counts, `estimated_cost_usd` computed from gemini-2.5-flash rates, `metadata: { model }`.
-
-### Self-retrigger
-Same `queueMicrotask` + `setTimeout(PACE_MS)` POST back to self with `{ chained: true }` whenever `fetched.length >= CHUNK_SIZE`.
-
-## 2. Prompt update: `process-research-record/index.ts`
-
-Strengthen the Payment Experience extraction prompt so new records emit a complete `raw_script_answers` map:
-- Make `raw_script_answers` **mandatory** for every question discussed.
-- Require per-entry `status`, `confidence`, `supporting_quote`, `selected_option_labels`, `raw_text_answer`, `scale_value` where applicable.
-- Inline the same normalized vocabularies as the backfill prompt (single source of truth — pulled from `paymentExperienceScriptResponses.ts` mappings).
-- Keep all existing extraction fields untouched (no schema breakage).
+Each written entry includes: `question_id`, `question_text`, `question_type`, `selected_option_labels`, `raw_text_answer`, `scale_value`, `status`, `confidence`, `supporting_quote`, `source: "ai_backfill_eligible_v1"`.
 
 ## 3. Execution
 
-1. Deploy both edge functions.
-2. Trigger backfill once via `curl_edge_functions` POST `/backfill-payment-experience-raw-script-answers` with `{ chained: false }`.
-3. Let it self-chain to completion.
-4. Monitor `api_costs` and edge logs.
+1. Deploy both functions.
+2. Unschedule `pe-backfill-watchdog`.
+3. Confirm broad function returns `disabled: true` via one curl.
+4. Trigger eligible-only once: `POST /backfill-payment-experience-eligible-only` with `{ chained: false }`.
+5. Monitor via `api_costs` and edge logs.
 
-## 4. Validation queries (post-run)
+Expected: ~10 chunks, ~10–20 min runtime, ~$1.50 cost.
 
-Re-run the per-question coverage query. Expected:
-- Q2 stays ~100%.
-- Q8 (autopay) reaches natural high coverage (asked of most members).
-- Q3a/Q3b/Q4/Q7/Q9/Q10/Q11/Q12/Q15 increase substantially where actually discussed.
-- `not_discussed` count visible for optional questions — no inflation.
-- All backfill-written entries carry `status` + `confidence` + `source: "ai_backfill_v1"`.
-- `raw_script_answers_meta` populated on every backfilled row.
+## 4. Validation
 
-## Acceptance criteria
+- Stamped count: rows with `raw_script_answers_eligible_backfill_version = 1` ≈ 248 minus failures
+- Cost rows under new `service_type`
+- Sample 5 rows: status/confidence/supporting_quote present, `not_discussed` used instead of hallucinations, key questions populated where discussed
+- Dashboard at `/research/insights` continues to read `raw_script_answers` unchanged; eligible-call charts improve
 
-- Historical coverage rises substantially across all 17 PE questions.
-- Zero overwrites of `agent_runtime` or valid `ai_extraction` entries.
-- `ai_backfill_v1` entries always include `status` + `confidence`.
-- `raw_script_answers_meta` present on processed rows.
-- `api_costs` logs the run under `research_payment_experience_backfill_raw_answers`.
-- No frontend changes, no TS errors, no dashboard regressions.
+## Guardrails (no-ops)
 
-## Cost estimate
+No dashboard logic, frontend, KPI, prompt-outside-target, UI button, or DB-migration changes. No deletion of broad-backfill rows. No concurrent broad+targeted runs.
 
-~3,546 rows × gemini-2.5-flash ≈ **$3–6 total**, auditable in `api_costs`.
+## Files changed
+
+- `supabase/functions/backfill-payment-experience-raw-script-answers/index.ts` — add `BROAD_BACKFILL_DISABLED = true` kill switch + early-return guard
+- `supabase/functions/backfill-payment-experience-eligible-only/index.ts` — new
+- Unschedule `pe-backfill-watchdog` cron job (data change, not a migration)

@@ -3,6 +3,13 @@
 // raw_script_answers map for Payment Experience records from the call
 // transcript. Merge-safe: never overwrites agent_runtime answers or existing
 // well-formed ai_extraction entries.
+//
+// ⚠️ HARD STOP: this broad backfill is permanently disabled in favor of
+// `backfill-payment-experience-eligible-only`. Do NOT re-enable without
+// owner approval — it would re-spend on voicemails / too-short calls and
+// can race with the eligible-only run. See .lovable/plan.md.
+const BROAD_BACKFILL_DISABLED = true;
+
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
 
 const corsHeaders = {
