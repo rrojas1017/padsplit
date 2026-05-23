@@ -744,3 +744,156 @@ export function downloadPaymentExperienceScriptCsv(data: PEScriptData) {
   document.body.removeChild(a);
   setTimeout(() => URL.revokeObjectURL(url), 0);
 }
+
+// ── Topic-tab display helpers (presentation-only) ──────────────────────────
+// Used exclusively by the polished topic-tab cards (TopicQuestionCard). The
+// Script Responses tab continues to render `summary.distribution` directly.
+
+export const PE_TOPIC_TITLES: Record<number, string> = {
+  1: 'Member Pay Cadence',
+  2: 'Room Payment Schedule',
+  7: 'Payment Method & Channel',
+  8: 'Auto-pay Enrollment',
+  9: 'Auto-pay Barriers',
+  11: 'Payment Friction Themes',
+  15: 'Requested Payment Options',
+};
+
+export const PE_WEEKDAY_ORDER = [
+  'monday', 'tuesday', 'wednesday', 'thursday',
+  'friday', 'saturday', 'sunday', 'unknown',
+];
+
+// Canonical display label rewrites keyed by question id, then by either the
+// raw distribution key OR the lower-cased label. Display-only — does not
+// touch stored data or Script Responses output.
+const TOPIC_LABEL_REWRITES: Record<string, Record<string, string>> = {
+  payment_channel: {
+    'bank transfer ach': 'Bank Transfer / ACH',
+    'bank_transfer_ach': 'Bank Transfer / ACH',
+    'ach': 'Bank Transfer / ACH',
+    'cash app': 'Cash App',
+    'cashapp': 'Cash App',
+    'apple pay': 'Apple Pay',
+    'applepay': 'Apple Pay',
+    'google pay': 'Google Pay',
+    'googlepay': 'Google Pay',
+    'zelle': 'Zelle',
+    'paypal': 'PayPal',
+    'pay pal': 'PayPal',
+    'debit card': 'Debit Card',
+    'credit card': 'Credit Card',
+    'money order': 'Money Order',
+  },
+  desired_payment_methods: {
+    'bank transfer ach': 'Bank Transfer / ACH',
+    'cash app': 'Cash App',
+    'cashapp': 'Cash App',
+    'apple pay': 'Apple Pay',
+    'google pay': 'Google Pay',
+    'paypal': 'PayPal',
+    'money order': 'Money Order',
+    'debit card': 'Debit Card',
+    'credit card': 'Credit Card',
+    'zelle': 'Zelle',
+  },
+  pay_cadence: {
+    'bi weekly': 'Bi-weekly',
+    'biweekly': 'Bi-weekly',
+    'bi-weekly': 'Bi-weekly',
+  },
+  top_friction_theme: {
+    'no friction reported': 'No friction reported',
+  },
+};
+
+// Hide noisy keys from topic-tab visuals only.
+const TOPIC_HIDDEN_KEYS: Record<string, Set<string>> = {
+  payment_channel: new Set(['smartphone', 'phone', 'device', 'null', '', 'unknown']),
+  desired_payment_methods: new Set(['null', '']),
+};
+
+export function normalizeTopicLabel(qId: string, key: string, label: string): string {
+  const rewrites = TOPIC_LABEL_REWRITES[qId];
+  if (rewrites) {
+    const k = String(key).toLowerCase().replace(/[_-]+/g, ' ').trim();
+    if (rewrites[k]) return rewrites[k];
+    const l = String(label).toLowerCase().trim();
+    if (rewrites[l]) return rewrites[l];
+  }
+  // Generic cleanup: collapse repeated whitespace, fix "Bi Weekly" style
+  return label
+    .replace(/\bBi Weekly\b/gi, 'Bi-weekly')
+    .replace(/\bAch\b/g, 'ACH')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+// Merge duplicate buckets (case/whitespace variants, normalized rewrites)
+// and recompute percentages. Drops hidden keys. Display-only.
+export function normalizeAndMergeDistribution(
+  qId: string,
+  dist: PEDistributionItem[],
+): PEDistributionItem[] {
+  const hidden = TOPIC_HIDDEN_KEYS[qId];
+  const merged = new Map<string, { key: string; label: string; count: number }>();
+  let total = 0;
+  for (const d of dist) {
+    const lowerKey = String(d.key).toLowerCase().trim();
+    if (hidden && hidden.has(lowerKey)) continue;
+    const newLabel = normalizeTopicLabel(qId, d.key, d.label);
+    const mergeKey = newLabel.toLowerCase();
+    const existing = merged.get(mergeKey);
+    if (existing) {
+      existing.count += d.count;
+    } else {
+      merged.set(mergeKey, { key: d.key, label: newLabel, count: d.count });
+    }
+    total += d.count;
+  }
+  const result: PEDistributionItem[] = [];
+  for (const m of merged.values()) {
+    result.push({
+      key: m.key,
+      label: m.label,
+      count: m.count,
+      percentage: total > 0 ? Math.round((m.count / total) * 1000) / 10 : 0,
+    });
+  }
+  return result;
+}
+
+// Sort by count desc; collapse long tail into a single "Other responses" row.
+export function applyLongTail(
+  dist: PEDistributionItem[],
+  maxRows: number,
+): PEDistributionItem[] {
+  const sorted = [...dist].filter((d) => d.count > 0).sort((a, b) => b.count - a.count);
+  if (sorted.length <= maxRows) return sorted;
+  const head = sorted.slice(0, maxRows - 1);
+  const tail = sorted.slice(maxRows - 1);
+  const tailCount = tail.reduce((a, d) => a + d.count, 0);
+  const tailPct = Math.round(tail.reduce((a, d) => a + d.percentage, 0) * 10) / 10;
+  head.push({
+    key: '__other__',
+    label: 'Other responses',
+    count: tailCount,
+    percentage: tailPct,
+  });
+  return head;
+}
+
+// Sort distribution by a fixed key order, keeping any unknown keys at the end.
+export function applyFixedOrder(
+  dist: PEDistributionItem[],
+  order: string[],
+): PEDistributionItem[] {
+  const idx = new Map(order.map((k, i) => [k, i]));
+  return [...dist].sort((a, b) => {
+    const ai = idx.has(a.key) ? (idx.get(a.key) as number) : 999;
+    const bi = idx.has(b.key) ? (idx.get(b.key) as number) : 999;
+    if (ai !== bi) return ai - bi;
+    return b.count - a.count;
+  });
+}
+
