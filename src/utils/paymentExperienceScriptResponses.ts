@@ -403,6 +403,10 @@ const AMENITY_LABELS: Record<string, string> = {
   other: 'Other',
 };
 
+const DESIRED_PAYMENT_METHOD_LABELS: Record<string, string> = {
+  none_satisfied: 'None, satisfied with current options',
+};
+
 function labelFor(qId: string, key: string): string {
   if (qId === 'autopay_barrier') return AUTOPAY_BARRIER_LABELS[key] || titleCase(key);
   if (qId === 'pay_cadence') return CADENCE_LABELS[key as keyof typeof CADENCE_LABELS] || titleCase(key);
@@ -410,6 +414,7 @@ function labelFor(qId: string, key: string): string {
   if (qId === 'dues_day_stated') return DAY_LABELS[key] || titleCase(key);
   if (qId === 'commitment_stated') return COMMITMENT_LABELS[key] || titleCase(key);
   if (qId === 'amenities_mentioned') return AMENITY_LABELS[key] || titleCase(key);
+  if (qId === 'desired_payment_methods') return DESIRED_PAYMENT_METHOD_LABELS[key] || titleCase(key);
   if (qId === 'dues_amount_stated_usd' && key === 'unsure') return 'Unsure';
   if (qId === 'autopay_enrolled') {
     return key === 'yes' ? 'Yes' : 'No';
