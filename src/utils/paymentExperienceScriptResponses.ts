@@ -361,7 +361,7 @@ const DAY_LABELS: Record<string, string> = {
   friday: 'Friday',
   saturday: 'Saturday',
   sunday: 'Sunday',
-  unknown: 'Unknown',
+  unknown: "Doesn't Know",
 };
 
 const DAY_ORDER = ['monday','tuesday','wednesday','thursday','friday','saturday','sunday','unknown'];
