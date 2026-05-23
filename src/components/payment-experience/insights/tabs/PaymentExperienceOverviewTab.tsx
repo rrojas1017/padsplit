@@ -1,15 +1,17 @@
 import { useMemo } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import type { PaymentExperienceRecord } from '@/hooks/usePaymentExperienceResponses';
-import { derivePaymentExperienceScriptData } from '@/utils/paymentExperienceScriptResponses';
-import { ScriptQuestionGraphCard } from '../ScriptQuestionGraphCard';
+import {
+  derivePaymentExperienceScriptData,
+  PE_TOPIC_TITLES,
+  PE_WEEKDAY_ORDER,
+} from '@/utils/paymentExperienceScriptResponses';
+import { TopicQuestionCard } from '../TopicQuestionCard';
 
 interface Props {
   eligibleRecords: PaymentExperienceRecord[];
   totalRouted: number;
 }
-
-const OVERVIEW_ORDERS = [2, 7, 8, 15];
 
 export function PaymentExperienceOverviewTab({ eligibleRecords, totalRouted }: Props) {
   const data = useMemo(
@@ -27,20 +29,44 @@ export function PaymentExperienceOverviewTab({ eligibleRecords, totalRouted }: P
     );
   }
 
-  const cards = OVERVIEW_ORDERS
-    .map((order) => data.questions.find((q) => q.question.order === order))
-    .filter((q): q is NonNullable<typeof q> => Boolean(q));
+  const q2 = data.questions.find((q) => q.question.order === 2);
+  const q8 = data.questions.find((q) => q.question.order === 8);
+  const q7 = data.questions.find((q) => q.question.order === 7);
+  const q15 = data.questions.find((q) => q.question.order === 15);
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-      {cards.map((qs) => (
-        <ScriptQuestionGraphCard
-          key={qs.question.order}
-          summary={qs}
-          total={data.stats.respondents}
-          compact
+      {q2 && (
+        <TopicQuestionCard
+          summary={q2}
+          title={PE_TOPIC_TITLES[2]}
+          chart="bars"
+          fixedOrder={PE_WEEKDAY_ORDER}
         />
-      ))}
+      )}
+      {q8 && (
+        <TopicQuestionCard
+          summary={q8}
+          title={PE_TOPIC_TITLES[8]}
+          chart="split-pill"
+        />
+      )}
+      {q7 && (
+        <TopicQuestionCard
+          summary={q7}
+          title={PE_TOPIC_TITLES[7]}
+          chart="donut"
+          maxRows={7}
+        />
+      )}
+      {q15 && (
+        <TopicQuestionCard
+          summary={q15}
+          title={PE_TOPIC_TITLES[15]}
+          chart="ranked-bars"
+          maxRows={6}
+        />
+      )}
     </div>
   );
 }

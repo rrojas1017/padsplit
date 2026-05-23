@@ -1,8 +1,12 @@
 import { useMemo } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import type { PaymentExperienceRecord } from '@/hooks/usePaymentExperienceResponses';
-import { derivePaymentExperienceScriptData } from '@/utils/paymentExperienceScriptResponses';
-import { ScriptQuestionGraphCard } from '../ScriptQuestionGraphCard';
+import {
+  derivePaymentExperienceScriptData,
+  PE_TOPIC_TITLES,
+  PE_WEEKDAY_ORDER,
+} from '@/utils/paymentExperienceScriptResponses';
+import { TopicQuestionCard } from '../TopicQuestionCard';
 
 interface Props {
   eligibleRecords: PaymentExperienceRecord[];
@@ -25,19 +29,27 @@ export function PaymentScheduleTab({ eligibleRecords, totalRouted }: Props) {
     );
   }
 
-  const cards = [1, 2]
-    .map((order) => data.questions.find((q) => q.question.order === order))
-    .filter((q): q is NonNullable<typeof q> => Boolean(q));
+  const q1 = data.questions.find((q) => q.question.order === 1);
+  const q2 = data.questions.find((q) => q.question.order === 2);
 
   return (
     <div className="space-y-3">
-      {cards.map((qs) => (
-        <ScriptQuestionGraphCard
-          key={qs.question.order}
-          summary={qs}
-          total={data.stats.respondents}
+      {q1 && (
+        <TopicQuestionCard
+          summary={q1}
+          title={PE_TOPIC_TITLES[1]}
+          chart="ranked-bars"
+          maxRows={8}
         />
-      ))}
+      )}
+      {q2 && (
+        <TopicQuestionCard
+          summary={q2}
+          title={PE_TOPIC_TITLES[2]}
+          chart="bars"
+          fixedOrder={PE_WEEKDAY_ORDER}
+        />
+      )}
     </div>
   );
 }

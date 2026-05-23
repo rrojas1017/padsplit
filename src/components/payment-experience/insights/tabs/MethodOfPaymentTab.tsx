@@ -1,8 +1,11 @@
 import { useMemo } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import type { PaymentExperienceRecord } from '@/hooks/usePaymentExperienceResponses';
-import { derivePaymentExperienceScriptData } from '@/utils/paymentExperienceScriptResponses';
-import { ScriptQuestionGraphCard } from '../ScriptQuestionGraphCard';
+import {
+  derivePaymentExperienceScriptData,
+  PE_TOPIC_TITLES,
+} from '@/utils/paymentExperienceScriptResponses';
+import { TopicQuestionCard } from '../TopicQuestionCard';
 
 interface Props {
   eligibleRecords: PaymentExperienceRecord[];
@@ -27,5 +30,12 @@ export function MethodOfPaymentTab({ eligibleRecords, totalRouted }: Props) {
     );
   }
 
-  return <ScriptQuestionGraphCard summary={qs} total={data.stats.respondents} />;
+  return (
+    <TopicQuestionCard
+      summary={qs}
+      title={PE_TOPIC_TITLES[7]}
+      chart="donut"
+      maxRows={7}
+    />
+  );
 }
