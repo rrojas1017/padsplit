@@ -1,8 +1,11 @@
 import { useMemo } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import type { PaymentExperienceRecord } from '@/hooks/usePaymentExperienceResponses';
-import { derivePaymentExperienceScriptData } from '@/utils/paymentExperienceScriptResponses';
-import { ScriptQuestionGraphCard } from '../ScriptQuestionGraphCard';
+import {
+  derivePaymentExperienceScriptData,
+  PE_TOPIC_TITLES,
+} from '@/utils/paymentExperienceScriptResponses';
+import { TopicQuestionCard } from '../TopicQuestionCard';
 
 interface Props {
   eligibleRecords: PaymentExperienceRecord[];
@@ -25,19 +28,26 @@ export function AutopayTab({ eligibleRecords, totalRouted }: Props) {
     );
   }
 
-  const cards = [8, 9]
-    .map((order) => data.questions.find((q) => q.question.order === order))
-    .filter((q): q is NonNullable<typeof q> => Boolean(q));
+  const q8 = data.questions.find((q) => q.question.order === 8);
+  const q9 = data.questions.find((q) => q.question.order === 9);
 
   return (
     <div className="space-y-3">
-      {cards.map((qs) => (
-        <ScriptQuestionGraphCard
-          key={qs.question.order}
-          summary={qs}
-          total={data.stats.respondents}
+      {q8 && (
+        <TopicQuestionCard
+          summary={q8}
+          title={PE_TOPIC_TITLES[8]}
+          chart="split-pill"
         />
-      ))}
+      )}
+      {q9 && (
+        <TopicQuestionCard
+          summary={q9}
+          title={PE_TOPIC_TITLES[9]}
+          chart="ranked-bars"
+          maxRows={8}
+        />
+      )}
     </div>
   );
 }
