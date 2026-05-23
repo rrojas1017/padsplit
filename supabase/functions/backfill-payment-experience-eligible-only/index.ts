@@ -1,14 +1,16 @@
-// supabase/functions/backfill-payment-experience-raw-script-answers/index.ts
-// Unified, chunked, self-retriggering backfill that reconstructs the canonical
-// raw_script_answers map for Payment Experience records from the call
-// transcript. Merge-safe: never overwrites agent_runtime answers or existing
-// well-formed ai_extraction entries.
+// supabase/functions/backfill-payment-experience-eligible-only/index.ts
+// Targeted, chunked, self-retriggering backfill that reconstructs the
+// canonical raw_script_answers map ONLY for Payment Experience calls
+// the dashboard considers eligible. Mirrors evaluateEligibility in
+// src/hooks/usePaymentExperienceResponses.ts:
+//   - bookings.has_valid_conversation IS NULL or TRUE
+//   - bookings.call_duration_seconds IS NULL, 0, or >= 120
+//   - research_extraction has >= 3 of 5 required fields
 //
-// ⚠️ HARD STOP: this broad backfill is permanently disabled in favor of
-// `backfill-payment-experience-eligible-only`. Do NOT re-enable without
-// owner approval — it would re-spend on voicemails / too-short calls and
-// can race with the eligible-only run. See .lovable/plan.md.
-const BROAD_BACKFILL_DISABLED = true;
+// Merge-safe: never overwrites agent_runtime or well-formed ai_extraction.
+// May overwrite broad-backfill (ai_backfill_v1) entries and prior
+// eligible-only entries with status not_discussed / unclear when the
+// new pass finds a transcript-supported answer.
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
 
@@ -25,16 +27,15 @@ const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY')!;
 const CHUNK_SIZE = 25;
 const PACE_MS = 10_000;
 const MODEL = 'google/gemini-2.5-flash';
-const SERVICE_TYPE = 'research_payment_experience_backfill_raw_answers';
-const EDGE_FUNCTION = 'backfill-payment-experience-raw-script-answers';
-const BACKFILL_VERSION = 1;
-const BACKFILL_SOURCE = 'ai_backfill_v1';
+const SERVICE_TYPE = 'research_payment_experience_backfill_eligible_only';
+const EDGE_FUNCTION = 'backfill-payment-experience-eligible-only';
+const ELIGIBLE_VERSION = 1;
+const ELIGIBLE_SOURCE = 'ai_backfill_eligible_v1';
 
 // gemini-2.5-flash pricing (USD per 1M tokens)
 const PRICE_IN_PER_M = 0.30;
 const PRICE_OUT_PER_M = 2.50;
 
-// Canonical 17 question ids from src/utils/paymentExperienceScriptResponses.ts
 const EXPECTED_IDS = [
   'pay_cadence',
   'dues_day_stated',
@@ -55,7 +56,15 @@ const EXPECTED_IDS = [
   'wish_capability',
 ] as const;
 
-const EXPECTED_COUNT = EXPECTED_IDS.length;
+const REQUIRED_EXTRACTION_FIELDS = [
+  'payment_literacy_score',
+  'autopay_status',
+  'move_in_cost_clarity_1to5',
+  'pay_cadence',
+  'top_friction_theme',
+] as const;
+const MIN_EXTRACTION_FIELDS = 3;
+const MIN_CALL_SECONDS = 120;
 
 const PROTECTED_SOURCES = new Set(['agent_runtime', 'ai_extraction']);
 
@@ -76,7 +85,7 @@ Every one of the 17 keys MUST be present. Each value is an object with this exac
   "supporting_quote": "<short verbatim transcript excerpt (≤240 chars) or null>",
   "status": "answered | not_discussed | unclear",
   "confidence": "high | medium | low",
-  "source": "ai_backfill_v1"
+  "source": "ai_backfill_eligible_v1"
 }
 
 Rules:
@@ -143,6 +152,10 @@ interface Row {
   booking_id: string;
   call_transcription: string;
   research_extraction: any;
+  bookings: {
+    has_valid_conversation: boolean | null;
+    call_duration_seconds: number | null;
+  } | null;
 }
 
 function isWellFormedEntry(e: any): boolean {
@@ -155,16 +168,20 @@ function isWellFormedEntry(e: any): boolean {
   );
 }
 
-function needsBackfill(ext: any): boolean {
-  if (!ext) return true;
-  const rsa = ext.raw_script_answers;
-  if (!rsa || typeof rsa !== 'object') return true;
-  // Count canonical ids that are present AND well-formed.
-  let good = 0;
-  for (const id of EXPECTED_IDS) {
-    if (isWellFormedEntry(rsa[id])) good++;
+function isEligible(row: Row): boolean {
+  const b = row.bookings;
+  if (!b) return false;
+  if (b.has_valid_conversation === false) return false;
+  const dur = b.call_duration_seconds;
+  if (dur != null && dur > 0 && dur < MIN_CALL_SECONDS) return false;
+  const ext = row.research_extraction;
+  if (!ext || typeof ext !== 'object') return false;
+  let present = 0;
+  for (const k of REQUIRED_EXTRACTION_FIELDS) {
+    const v = (ext as any)[k];
+    if (v !== null && v !== undefined && v !== '') present++;
   }
-  return good < EXPECTED_COUNT;
+  return present >= MIN_EXTRACTION_FIELDS;
 }
 
 async function callModel(transcript: string): Promise<{
@@ -249,7 +266,7 @@ function normalizeEntry(id: string, raw: any): any | null {
     supporting_quote: quote,
     status: validStatus,
     confidence,
-    source: BACKFILL_SOURCE,
+    source: ELIGIBLE_SOURCE,
     answered_at: null,
   };
 }
@@ -264,21 +281,31 @@ function mergePreservePriority(
   let wrote = 0;
   for (const id of EXPECTED_IDS) {
     const current = merged[id];
-    // Preserve protected, well-formed entries.
+
+    // Never overwrite agent_runtime or well-formed ai_extraction.
     if (isWellFormedEntry(current) && PROTECTED_SOURCES.has(String(current.source ?? ''))) {
       continue;
     }
-    // Preserve an existing well-formed backfill entry from a newer version (defensive).
+    // Never overwrite a manual correction (forward-compatible).
+    if (isWellFormedEntry(current) && (current.manually_corrected === true || current.manual_override === true)) {
+      continue;
+    }
+
+    const candidate = normalizeEntry(id, modelMap[id]);
+    if (!candidate) continue;
+
+    // If the existing entry is already eligible-only and "answered", don't
+    // downgrade it to not_discussed/unclear.
     if (
       isWellFormedEntry(current) &&
-      current.source === BACKFILL_SOURCE &&
-      Number(current.backfill_version ?? 0) > BACKFILL_VERSION
+      String(current.source ?? '') === ELIGIBLE_SOURCE &&
+      String(current.status ?? '') === 'answered' &&
+      candidate.status !== 'answered'
     ) {
       continue;
     }
-    const candidate = normalizeEntry(id, modelMap[id]);
-    if (!candidate) continue;
-    merged[id] = { ...candidate, backfill_version: BACKFILL_VERSION };
+
+    merged[id] = { ...candidate, eligible_backfill_version: ELIGIBLE_VERSION };
     wrote++;
   }
   return { merged, wrote };
@@ -287,50 +314,84 @@ function mergePreservePriority(
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
 
-  if (BROAD_BACKFILL_DISABLED) {
-    console.log('[backfill-pe-broad] DISABLED — superseded by backfill-payment-experience-eligible-only');
-    return new Response(
-      JSON.stringify({
-        disabled: true,
-        reason: 'Broad PE backfill permanently disabled. Use backfill-payment-experience-eligible-only.',
-      }),
-      { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
-    );
-  }
-
   const supabase = createClient(SUPABASE_URL, SERVICE_ROLE);
   const url = new URL(req.url);
   const dryRun = url.searchParams.get('dry_run') === '1';
+  let isChained = false;
+  try {
+    if (req.method !== 'GET') {
+      const body = await req.json().catch(() => ({}));
+      isChained = body?.chained === true;
+    }
+  } catch (_e) { /* ignore */ }
 
-  // Server-side filter: anything that hasn't been stamped with this backfill's
-  // meta is eligible. We further filter in-memory using needsBackfill().
-  // Overfetch a bit to compensate for skips.
-  const FETCH_LIMIT = CHUNK_SIZE * 3;
+  // Overfetch candidates: server-side filter for campaign, transcript,
+  // duration/voicemail eligibility, and "not yet stamped". 3-of-5
+  // extraction check is applied in-memory.
+  const FETCH_LIMIT = 200;
   const { data: rows, error } = await supabase
     .from('booking_transcriptions')
-    .select('id, booking_id, call_transcription, research_extraction')
+    .select(
+      'id, booking_id, call_transcription, research_extraction, bookings!inner(has_valid_conversation, call_duration_seconds)'
+    )
     .eq('research_campaign_type', 'payment_experience')
     .not('call_transcription', 'is', null)
     .gt('call_transcription', '')
-    .is('research_extraction->raw_script_answers_meta->>backfill_version' as any, null)
+    .or('has_valid_conversation.is.null,has_valid_conversation.eq.true', { foreignTable: 'bookings' })
+    .or('call_duration_seconds.is.null,call_duration_seconds.eq.0,call_duration_seconds.gte.120', { foreignTable: 'bookings' })
+    .is('research_extraction->>raw_script_answers_eligible_backfill_version' as any, null)
     .order('id', { ascending: true })
     .limit(FETCH_LIMIT);
 
   if (error) {
+    console.error('[backfill-pe-eligible] fetch error', error);
     return new Response(JSON.stringify({ error: error.message }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   }
 
-  const all = (rows ?? []) as Row[];
-  const eligible = all.filter((r) => needsBackfill(r.research_extraction)).slice(0, CHUNK_SIZE);
-  const skippedAlreadyComplete = all.length - eligible.length;
+  const all = (rows ?? []) as unknown as Row[];
+  const eligibleAll = all.filter(isEligible);
+  const eligible = eligibleAll.slice(0, CHUNK_SIZE);
 
-  if (eligible.length === 0 && all.length === 0) {
-    return new Response(JSON.stringify({ done: true, processed: 0 }), {
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    });
+  // First non-chained invocation: dry-run guardrail.
+  if (!isChained && !dryRun) {
+    // Count total uncompleted eligible candidates to sanity-check the population.
+    const { data: countRows, error: countErr } = await supabase
+      .from('booking_transcriptions')
+      .select(
+        'id, research_extraction, bookings!inner(has_valid_conversation, call_duration_seconds)'
+      )
+      .eq('research_campaign_type', 'payment_experience')
+      .not('call_transcription', 'is', null)
+      .gt('call_transcription', '')
+      .or('has_valid_conversation.is.null,has_valid_conversation.eq.true', { foreignTable: 'bookings' })
+      .or('call_duration_seconds.is.null,call_duration_seconds.eq.0,call_duration_seconds.gte.120', { foreignTable: 'bookings' })
+      .is('research_extraction->>raw_script_answers_eligible_backfill_version' as any, null)
+      .limit(1000);
+
+    if (countErr) {
+      return new Response(JSON.stringify({ error: countErr.message }), {
+        status: 500,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    const totalEligible = (countRows ?? []).filter((r: any) => isEligible(r as Row)).length;
+    console.log(`[backfill-pe-eligible] dry-run guardrail: total uncompleted eligible = ${totalEligible}`);
+    if (totalEligible < 200 || totalEligible > 350) {
+      console.error(`[backfill-pe-eligible] ABORT — eligible count ${totalEligible} outside guardrail [200, 350]`);
+      return new Response(
+        JSON.stringify({
+          aborted: true,
+          reason: 'eligible_count_out_of_guardrail',
+          eligible_count: totalEligible,
+          guardrail: { min: 200, max: 350 },
+        }),
+        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+      );
+    }
   }
 
   if (dryRun) {
@@ -338,46 +399,47 @@ Deno.serve(async (req) => {
       JSON.stringify({
         would_process: eligible.length,
         fetched: all.length,
+        eligible_in_page: eligibleAll.length,
         sample_ids: eligible.slice(0, 3).map((r) => r.id),
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
     );
   }
 
+  if (eligible.length === 0) {
+    return new Response(JSON.stringify({ done: true, processed: 0, fetched: all.length }), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
+  }
+
   let processed = 0;
   let failed = 0;
-  let stamped = 0;
   const errors: Array<{ id: string; error: string }> = [];
 
-  // Even rows that don't need model work need their meta stamped so they're
-  // excluded from future server-side filters.
-  for (const row of all) {
-    if (!eligible.includes(row)) {
-      // Stamp meta only (no model call).
-      const ext = row.research_extraction || {};
-      const newExt = {
-        ...ext,
-        raw_script_answers_meta: {
-          backfill_version: BACKFILL_VERSION,
-          last_backfilled_at: new Date().toISOString(),
-          model: MODEL,
-          source: BACKFILL_SOURCE,
-          note: 'skipped: already complete',
-        },
-      };
-      const { error: upErr } = await supabase
-        .from('booking_transcriptions')
-        .update({ research_extraction: newExt })
-        .eq('id', row.id);
-      if (!upErr) stamped++;
-      continue;
-    }
-
+  for (const row of eligible) {
     try {
       const { parsed, inputTokens, outputTokens } = await callModel(row.call_transcription);
       if (!parsed) {
         failed++;
         errors.push({ id: row.id, error: 'unparseable model output' });
+        // Still stamp so we don't loop forever; mark as failed.
+        const ext = row.research_extraction || {};
+        const newExt = {
+          ...ext,
+          raw_script_answers_eligible_backfill_version: ELIGIBLE_VERSION,
+          raw_script_answers_eligible_backfill_meta: {
+            version: ELIGIBLE_VERSION,
+            last_backfilled_at: new Date().toISOString(),
+            model: MODEL,
+            source: ELIGIBLE_SOURCE,
+            service_type: SERVICE_TYPE,
+            note: 'failed: unparseable model output',
+          },
+        };
+        await supabase
+          .from('booking_transcriptions')
+          .update({ research_extraction: newExt })
+          .eq('id', row.id);
         continue;
       }
 
@@ -387,11 +449,13 @@ Deno.serve(async (req) => {
       const newExt = {
         ...ext,
         raw_script_answers: merged,
-        raw_script_answers_meta: {
-          backfill_version: BACKFILL_VERSION,
+        raw_script_answers_eligible_backfill_version: ELIGIBLE_VERSION,
+        raw_script_answers_eligible_backfill_meta: {
+          version: ELIGIBLE_VERSION,
           last_backfilled_at: new Date().toISOString(),
           model: MODEL,
-          source: BACKFILL_SOURCE,
+          source: ELIGIBLE_SOURCE,
+          service_type: SERVICE_TYPE,
         },
       };
 
@@ -417,7 +481,7 @@ Deno.serve(async (req) => {
         input_tokens: inputTokens,
         output_tokens: outputTokens,
         estimated_cost_usd,
-        metadata: { model: MODEL, backfill_version: BACKFILL_VERSION },
+        metadata: { model: MODEL, eligible_backfill_version: ELIGIBLE_VERSION },
       });
       processed++;
     } catch (e: any) {
@@ -426,9 +490,8 @@ Deno.serve(async (req) => {
     }
   }
 
-  // Chain while the server still returns a full page of unstamped rows.
-  // Use EdgeRuntime.waitUntil so the background fetch survives client disconnects.
-  const willChain = all.length > 0;
+  // Chain only if there are more eligible candidates remaining.
+  const willChain = eligibleAll.length > CHUNK_SIZE || all.length >= FETCH_LIMIT;
   if (willChain) {
     const chainPromise = new Promise<void>((resolve) => {
       setTimeout(async () => {
@@ -449,12 +512,16 @@ Deno.serve(async (req) => {
     try { (globalThis as any).EdgeRuntime?.waitUntil?.(chainPromise); } catch (_e) { /* ignore */ }
   }
 
+  console.log(
+    `[backfill-pe-eligible] chunk done: processed=${processed} failed=${failed} ` +
+    `eligible_in_page=${eligibleAll.length} fetched=${all.length} will_chain=${willChain}`
+  );
+
   return new Response(
     JSON.stringify({
       processed,
       failed,
-      stamped_only: stamped,
-      skipped_already_complete: skippedAlreadyComplete,
+      eligible_in_page: eligibleAll.length,
       fetched: all.length,
       will_chain: willChain,
       errors: errors.slice(0, 10),
