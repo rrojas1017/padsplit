@@ -4,6 +4,7 @@
 // display-only normalization, and renders one of four chart variants in
 // PadSplit's muted visual language.
 
+import { useEffect, useState } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
 import {
@@ -13,6 +14,20 @@ import {
   type PEDistributionItem,
   type PEQuestionSummary,
 } from '@/utils/paymentExperienceScriptResponses';
+
+// Trigger one-shot mount animations (bars grow from 0 → target width, etc.).
+// Returns true on the next frame after mount so initial render uses width 0.
+function useMountAnimated(deps: unknown[] = []) {
+  const [ready, setReady] = useState(false);
+  useEffect(() => {
+    setReady(false);
+    const id = requestAnimationFrame(() => setReady(true));
+    return () => cancelAnimationFrame(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, deps);
+  return ready;
+}
+
 
 type ChartKind = 'bars' | 'donut' | 'split-pill' | 'ranked-bars';
 
