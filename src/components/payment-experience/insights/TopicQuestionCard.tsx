@@ -297,8 +297,15 @@ export function TopicQuestionCard({
 
   const isEmpty = summary.count === 0 || items.length === 0;
 
+  const animKey = `${summary.question.id}:${items.map((d) => `${d.key}=${d.count}`).join('|')}`;
+
   return (
-    <Card className={cn('h-full border-border/70 bg-card shadow-sm', className)}>
+    <Card
+      className={cn(
+        'h-full border-border/70 bg-card shadow-sm animate-fade-in',
+        className,
+      )}
+    >
       <CardContent className="p-5 space-y-4">
         <header className="space-y-1">
           {summary.question.section && (
@@ -317,15 +324,16 @@ export function TopicQuestionCard({
         {isEmpty ? (
           <p className="text-sm text-muted-foreground">No responses for this question.</p>
         ) : effectiveChart === 'split-pill' ? (
-          <SplitPill items={items} />
+          <SplitPill items={items} animKey={animKey} />
         ) : effectiveChart === 'donut' ? (
-          <Donut items={items} />
+          <Donut items={items} animKey={animKey} />
         ) : effectiveChart === 'ranked-bars' ? (
-          <HorizontalBars items={items} highlightTop />
+          <HorizontalBars items={items} highlightTop animKey={animKey} />
         ) : (
-          <HorizontalBars items={items} />
+          <HorizontalBars items={items} animKey={animKey} />
         )}
       </CardContent>
     </Card>
   );
+
 }
