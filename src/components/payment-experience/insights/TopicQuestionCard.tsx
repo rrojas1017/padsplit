@@ -67,19 +67,24 @@ function ariaFor(d: PEDistributionItem) {
 function HorizontalBars({
   items,
   highlightTop = false,
+  animKey,
 }: {
   items: PEDistributionItem[];
   highlightTop?: boolean;
+  animKey: string;
 }) {
+  const ready = useMountAnimated([animKey]);
   const max = Math.max(1, ...items.map((d) => d.percentage));
   return (
     <ul className="space-y-2.5">
       {items.map((d, i) => {
         const isTop = highlightTop && i === 0;
+        const targetWidth = (d.percentage / max) * 100;
         return (
           <li
             key={d.key}
-            className="space-y-1"
+            className="space-y-1 animate-fade-in"
+            style={{ animationDelay: `${i * 40}ms`, animationFillMode: 'both' }}
             aria-label={ariaFor(d)}
             title={`${d.count} responses`}
           >
@@ -99,10 +104,13 @@ function HorizontalBars({
             <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted/60">
               <div
                 className={cn(
-                  'h-full rounded-full',
+                  'h-full rounded-full transition-[width] duration-700 ease-out',
                   isTop ? 'bg-foreground/80' : 'bg-foreground/55',
                 )}
-                style={{ width: `${(d.percentage / max) * 100}%` }}
+                style={{
+                  width: ready ? `${targetWidth}%` : '0%',
+                  transitionDelay: `${i * 50}ms`,
+                }}
               />
             </div>
           </li>
@@ -112,13 +120,14 @@ function HorizontalBars({
   );
 }
 
-function SplitPill({ items }: { items: PEDistributionItem[] }) {
+function SplitPill({ items, animKey }: { items: PEDistributionItem[]; animKey: string }) {
+  const ready = useMountAnimated([animKey]);
   const yes = items.find((d) => d.key.toLowerCase() === 'yes');
   const no = items.find((d) => d.key.toLowerCase() === 'no');
   const yesPct = yes?.percentage ?? 0;
   const noPct = no?.percentage ?? 0;
   return (
-    <div className="space-y-3">
+    <div className="space-y-3 animate-fade-in">
       <div
         className="flex h-9 w-full overflow-hidden rounded-full border border-border bg-muted/40"
         role="img"
@@ -126,20 +135,20 @@ function SplitPill({ items }: { items: PEDistributionItem[] }) {
       >
         {yesPct > 0 && (
           <div
-            className="flex items-center justify-center bg-amber-500/80 text-[11px] font-semibold text-white"
-            style={{ width: `${yesPct}%` }}
+            className="flex items-center justify-center bg-amber-500/80 text-[11px] font-semibold text-white transition-[width] duration-700 ease-out"
+            style={{ width: ready ? `${yesPct}%` : '0%' }}
             title={yes ? `Yes: ${yes.count} (${formatPct(yesPct)})` : undefined}
           >
-            {yesPct >= 8 && formatPct(yesPct)}
+            {ready && yesPct >= 8 && formatPct(yesPct)}
           </div>
         )}
         {noPct > 0 && (
           <div
-            className="flex items-center justify-center bg-slate-500/70 text-[11px] font-semibold text-white"
-            style={{ width: `${noPct}%` }}
+            className="flex items-center justify-center bg-slate-500/70 text-[11px] font-semibold text-white transition-[width] duration-700 ease-out"
+            style={{ width: ready ? `${noPct}%` : '0%', transitionDelay: '120ms' }}
             title={no ? `No: ${no.count} (${formatPct(noPct)})` : undefined}
           >
-            {noPct >= 8 && formatPct(noPct)}
+            {ready && noPct >= 8 && formatPct(noPct)}
           </div>
         )}
       </div>
@@ -159,7 +168,8 @@ function SplitPill({ items }: { items: PEDistributionItem[] }) {
   );
 }
 
-function Donut({ items }: { items: PEDistributionItem[] }) {
+function Donut({ items, animKey }: { items: PEDistributionItem[]; animKey: string }) {
+  const ready = useMountAnimated([animKey]);
   const total = items.reduce((a, d) => a + d.count, 0);
   if (total === 0) return <p className="text-sm text-muted-foreground">No responses.</p>;
 
@@ -197,7 +207,10 @@ function Donut({ items }: { items: PEDistributionItem[] }) {
         width={size}
         height={size}
         viewBox={`0 0 ${size} ${size}`}
-        className="shrink-0"
+        className={cn(
+          'shrink-0 origin-center transition-all duration-700 ease-out',
+          ready ? 'opacity-100 scale-100 rotate-0' : 'opacity-0 scale-90 -rotate-12',
+        )}
         role="img"
         aria-label="Payment method distribution"
       >
@@ -208,6 +221,11 @@ function Donut({ items }: { items: PEDistributionItem[] }) {
             fill={s.color}
             stroke="hsl(var(--background))"
             strokeWidth={1.5}
+            className="transition-opacity duration-500"
+            style={{
+              opacity: ready ? 1 : 0,
+              transitionDelay: `${200 + i * 60}ms`,
+            }}
           >
             <title>{`${s.d.label}: ${s.d.count} (${formatPct(s.d.percentage)})`}</title>
           </path>
@@ -217,7 +235,8 @@ function Donut({ items }: { items: PEDistributionItem[] }) {
         {slices.map((s, i) => (
           <li
             key={i}
-            className="flex items-center gap-2 text-sm"
+            className="flex items-center gap-2 text-sm animate-fade-in"
+            style={{ animationDelay: `${200 + i * 60}ms`, animationFillMode: 'both' }}
             aria-label={ariaFor(s.d)}
           >
             <span
@@ -236,6 +255,7 @@ function Donut({ items }: { items: PEDistributionItem[] }) {
     </div>
   );
 }
+
 
 export function TopicQuestionCard({
   summary,
