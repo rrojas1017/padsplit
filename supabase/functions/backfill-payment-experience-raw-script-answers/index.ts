@@ -287,6 +287,17 @@ function mergePreservePriority(
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
 
+  if (BROAD_BACKFILL_DISABLED) {
+    console.log('[backfill-pe-broad] DISABLED — superseded by backfill-payment-experience-eligible-only');
+    return new Response(
+      JSON.stringify({
+        disabled: true,
+        reason: 'Broad PE backfill permanently disabled. Use backfill-payment-experience-eligible-only.',
+      }),
+      { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+    );
+  }
+
   const supabase = createClient(SUPABASE_URL, SERVICE_ROLE);
   const url = new URL(req.url);
   const dryRun = url.searchParams.get('dry_run') === '1';
