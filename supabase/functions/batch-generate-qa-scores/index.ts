@@ -97,12 +97,13 @@ serve(async (req) => {
       const categories: QACategory[] = qaSettings.categories;
       const maxTotal = categories.reduce((sum, cat) => sum + cat.maxPoints, 0);
 
-      // Find all transcriptions without QA scores
+      // Find all transcriptions without QA scores (exclude research records — not applicable for survey calls)
       const { data: transcriptions, error: fetchError } = await supabase
         .from('booking_transcriptions')
-        .select('booking_id, call_transcription')
+        .select('booking_id, call_transcription, bookings!inner(record_type)')
         .is('qa_scores', null)
         .not('call_transcription', 'is', null)
+        .neq('bookings.record_type', 'research')
         .limit(100);
 
       if (fetchError) {
