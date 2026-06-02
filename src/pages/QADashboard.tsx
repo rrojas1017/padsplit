@@ -231,7 +231,7 @@ export default function QADashboard() {
 
   if (isLoading) {
     return (
-      <DashboardLayout title="QA Dashboard" subtitle="Loading quality scores...">
+      <DashboardLayout title="Katty's Hub" subtitle="Loading quality scores...">
         <div className="flex items-center justify-center h-64">
           <div className="animate-pulse text-muted-foreground">Loading QA data...</div>
         </div>
@@ -241,7 +241,7 @@ export default function QADashboard() {
 
   return (
     <DashboardLayout 
-      title="QA Dashboard" 
+      title="Katty's Hub" 
       subtitle="Team quality assurance performance"
     >
       <div className="space-y-6">

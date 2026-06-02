@@ -159,7 +159,7 @@ export default function CoachingHub() {
   };
 
   return (
-    <DashboardLayout title="Coaching Hub" subtitle="AI-powered coaching insights for your team">
+    <DashboardLayout title="Jeff's Hub" subtitle="AI-powered coaching insights for your team">
       <div className="space-y-6">
 
         {/* Header with Date Filter */}
