@@ -271,7 +271,7 @@ export function QARubricSettings() {
         <p className="text-sm text-muted-foreground">
           <strong>Note:</strong> Changes to the rubric will only affect future QA scores. 
           Previously scored calls will retain their original scores. 
-          Use the "Score All Calls" button on the QA Dashboard to re-score existing calls with the updated rubric.
+          Use the "Score All Calls" button on Katty's Hub to re-score existing calls with the updated rubric.
         </p>
       </div>
     </div>

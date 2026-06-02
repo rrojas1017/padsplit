@@ -48,7 +48,7 @@ const ACTION_CONFIG: Record<string, { icon: React.ReactNode; label: string; colo
   view_reports: { icon: <FileText className="w-4 h-4" />, label: 'Reports', colorClass: 'bg-purple-500/20 text-purple-500' },
   view_member_insights: { icon: <Brain className="w-4 h-4" />, label: 'Member Insights', colorClass: 'bg-purple-500/20 text-purple-500' },
   view_leaderboard: { icon: <Trophy className="w-4 h-4" />, label: 'Leaderboard', colorClass: 'bg-primary/20 text-primary' },
-  view_coaching_hub: { icon: <Brain className="w-4 h-4" />, label: 'Coaching Hub', colorClass: 'bg-success/20 text-success' },
+  view_coaching_hub: { icon: <Brain className="w-4 h-4" />, label: "Jeff's Hub", colorClass: 'bg-success/20 text-success' },
   view_wallboard: { icon: <Tv className="w-4 h-4" />, label: 'Wallboard', colorClass: 'bg-primary/20 text-primary' },
   view_my_performance: { icon: <ChartBar className="w-4 h-4" />, label: 'My Performance', colorClass: 'bg-success/20 text-success' },
   view_agent_status: { icon: <Users className="w-4 h-4" />, label: 'Agent Status', colorClass: 'bg-warning/20 text-warning' },

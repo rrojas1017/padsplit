@@ -261,7 +261,7 @@ export const generateQADocumentationPDF = () => {
 
   addTitle('5. Dashboard Calculations', 16);
   addSpace(5);
-  addText('The QA Dashboard displays aggregated metrics calculated from stored scores:');
+  addText("Katty's Hub displays aggregated metrics calculated from stored scores:");
   addSpace(10);
 
   addSubtitle('Team QA Score');
