@@ -831,13 +831,22 @@ export function normalizeTopicLabel(qId: string, key: string, label: string): st
 
 // Merge duplicate buckets (case/whitespace variants, normalized rewrites)
 // and recompute percentages. Drops hidden keys. Display-only.
+//
+// `denom` should be the answered-respondent count from the parent
+// PEQuestionSummary (i.e. `summary.count`). Using it keeps topic-tab
+// percentages identical to the Script Responses tab even when hidden keys
+// are filtered out — the dropped buckets stay in the denominator so the
+// remaining slices still reflect "% of respondents who picked X".
+//
+// When `denom` is omitted, falls back to the sum of remaining counts
+// (legacy behavior, kept for safety).
 export function normalizeAndMergeDistribution(
   qId: string,
   dist: PEDistributionItem[],
+  denom?: number,
 ): PEDistributionItem[] {
   const hidden = TOPIC_HIDDEN_KEYS[qId];
   const merged = new Map<string, { key: string; label: string; count: number }>();
-  let total = 0;
   for (const d of dist) {
     const lowerKey = String(d.key).toLowerCase().trim();
     if (hidden && hidden.has(lowerKey)) continue;
@@ -849,31 +858,38 @@ export function normalizeAndMergeDistribution(
     } else {
       merged.set(mergeKey, { key: d.key, label: newLabel, count: d.count });
     }
-    total += d.count;
   }
+  const fallbackTotal = Array.from(merged.values()).reduce((a, m) => a + m.count, 0);
+  const effectiveDenom = denom && denom > 0 ? denom : fallbackTotal;
   const result: PEDistributionItem[] = [];
   for (const m of merged.values()) {
     result.push({
       key: m.key,
       label: m.label,
       count: m.count,
-      percentage: total > 0 ? Math.round((m.count / total) * 1000) / 10 : 0,
+      percentage: effectiveDenom > 0 ? Math.round((m.count / effectiveDenom) * 1000) / 10 : 0,
     });
   }
   return result;
 }
 
 // Sort by count desc; collapse long tail into a single "Other responses" row.
+// `denom` (parent answered-respondent count) is used to compute the Other
+// slice's percentage exactly, avoiding the rounding drift that comes from
+// summing already-rounded child percentages.
 export function applyLongTail(
   dist: PEDistributionItem[],
   maxRows: number,
+  denom?: number,
 ): PEDistributionItem[] {
   const sorted = [...dist].filter((d) => d.count > 0).sort((a, b) => b.count - a.count);
   if (sorted.length <= maxRows) return sorted;
   const head = sorted.slice(0, maxRows - 1);
   const tail = sorted.slice(maxRows - 1);
   const tailCount = tail.reduce((a, d) => a + d.count, 0);
-  const tailPct = Math.round(tail.reduce((a, d) => a + d.percentage, 0) * 10) / 10;
+  const tailPct = denom && denom > 0
+    ? Math.round((tailCount / denom) * 1000) / 10
+    : Math.round(tail.reduce((a, d) => a + d.percentage, 0) * 10) / 10;
   head.push({
     key: '__other__',
     label: 'Other responses',

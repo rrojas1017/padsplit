@@ -270,13 +270,14 @@ export function TopicQuestionCard({
   const normalized = normalizeAndMergeDistribution(
     summary.question.id,
     summary.distribution,
+    summary.count,
   );
 
   let items: PEDistributionItem[] = normalized;
   if (chart === 'bars' && fixedOrder) {
     items = applyFixedOrder(normalized, fixedOrder).filter((d) => d.count > 0);
   } else if (chart === 'ranked-bars' || chart === 'donut') {
-    items = applyLongTail(normalized, maxRows ?? 8);
+    items = applyLongTail(normalized, maxRows ?? 8, summary.count);
   } else if (chart === 'bars') {
     items = [...normalized].filter((d) => d.count > 0).sort((a, b) => b.count - a.count);
   }
