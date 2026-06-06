@@ -10,6 +10,7 @@ import { Badge } from '@/components/ui/badge';
 import { ChevronDown, ChevronUp } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { PEQuestionSummary } from '@/utils/paymentExperienceScriptResponses';
+import { OpenEndedClusters } from '@/components/payment-experience/insights/OpenEndedClusters';
 
 const TYPE_LABELS: Record<string, string> = {
   multi: 'Multiple Choice',
@@ -366,7 +367,12 @@ export function ScriptQuestionGraphCard({
             {q.type === 'multi' && q.id !== 'payment_channel' && <MultiBars summary={summary} />}
             {q.type === 'yesno' && <YesNoPills summary={summary} />}
             {q.type === 'scale' && <ScaleDisplay summary={summary} />}
-            {q.type === 'open' && <OpenEndedDisplay summary={summary} />}
+            {q.type === 'open' && (
+              <OpenEndedClusters
+                responses={summary.samples ?? []}
+                totalSamples={summary.totalSamples ?? summary.count}
+              />
+            )}
           </>
         )}
 
