@@ -2,7 +2,7 @@
 // Experience Script Responses tab. Visually mirrors the Move-Out Issue
 // Clusters pattern but uses neutral/amber styling rather than red.
 
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { Quote } from 'lucide-react';
 import {
   Accordion,
@@ -11,12 +11,19 @@ import {
   AccordionTrigger,
 } from '@/components/ui/accordion';
 import { Badge } from '@/components/ui/badge';
-import { clusterOpenEndedResponses } from '@/utils/openEndedResponseClusters';
+import { Button } from '@/components/ui/button';
+import {
+  clusterOpenEndedResponses,
+  normalizeOpenEndedResponses,
+} from '@/utils/openEndedResponseClusters';
 
 interface OpenEndedClustersProps {
   responses: string[];
   totalSamples?: number;
 }
+
+const DEFAULT_VISIBLE_NAMED_CLUSTERS = 5;
+const OTHER_ID = 'other';
 
 function SimpleVerbatimList({ responses }: { responses: string[] }) {
   const cleaned = responses.map((r) => String(r ?? '').trim()).filter(Boolean);
@@ -30,7 +37,7 @@ function SimpleVerbatimList({ responses }: { responses: string[] }) {
           key={i}
           className="bg-muted/40 border-l-[3px] border-amber-300/60 rounded-r-md p-3"
         >
-          <p className="text-sm italic text-muted-foreground leading-relaxed break-words">
+          <p className="text-sm italic text-muted-foreground leading-relaxed break-words whitespace-pre-wrap">
             &ldquo;{s}&rdquo;
           </p>
         </div>
@@ -44,7 +51,7 @@ export function OpenEndedClusters({
   totalSamples,
 }: OpenEndedClustersProps) {
   const validResponses = useMemo(
-    () => (responses || []).map((r) => String(r ?? '').trim()).filter(Boolean),
+    () => normalizeOpenEndedResponses(responses || []),
     [responses],
   );
 
@@ -53,40 +60,69 @@ export function OpenEndedClusters({
     [validResponses],
   );
 
+  const [showAllClusters, setShowAllClusters] = useState(false);
+  const [showAllResponses, setShowAllResponses] = useState(false);
+
   if (validResponses.length < 3 || clusters.length === 0) {
     return <SimpleVerbatimList responses={validResponses} />;
   }
 
-  const sampleCount = validResponses.length;
-  const showSampleContext =
-    typeof totalSamples === 'number' && totalSamples > sampleCount;
+  const validTotal = validResponses.length;
+  const isSampleOnly =
+    typeof totalSamples === 'number' && totalSamples > validTotal;
+
+  const headerTitle = isSampleOnly
+    ? 'Representative Response Clusters'
+    : 'Response Clusters';
+
+  // Split named vs Other; Other is always rendered last.
+  const namedClusters = clusters.filter((c) => c.id !== OTHER_ID);
+  const otherCluster = clusters.find((c) => c.id === OTHER_ID);
+
+  const visibleNamed = showAllClusters
+    ? namedClusters
+    : namedClusters.slice(0, DEFAULT_VISIBLE_NAMED_CLUSTERS);
+
+  const visibleClusters = otherCluster
+    ? [...visibleNamed, otherCluster]
+    : visibleNamed;
+
+  const hasMoreNamed = namedClusters.length > DEFAULT_VISIBLE_NAMED_CLUSTERS;
+
+  // Default-open: first non-Other cluster, else Other.
+  const defaultOpenIndex = visibleClusters.findIndex((c) => c.id !== OTHER_ID);
+  const defaultOpenValue = `cluster-${defaultOpenIndex >= 0 ? defaultOpenIndex : 0}`;
+
+  const allResponsesButtonLabel = isSampleOnly
+    ? 'Show all available sample responses'
+    : `Show all ${validTotal} responses`;
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-4">
       <div className="flex items-center justify-between gap-2 flex-wrap">
         <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-          Representative Response Clusters
+          {headerTitle}
         </p>
         <span className="text-xs text-muted-foreground tabular-nums">
-          {showSampleContext
-            ? `sample of ${sampleCount} of ${totalSamples}`
-            : `${sampleCount} responses`}
+          {isSampleOnly
+            ? `sample of ${validTotal} of ${totalSamples}`
+            : `${validTotal} responses`}
         </span>
       </div>
 
       <Accordion
         type="multiple"
-        defaultValue={['cluster-0']}
+        defaultValue={[defaultOpenValue]}
         className="space-y-2"
       >
-        {clusters.map((cluster, index) => (
+        {visibleClusters.map((cluster, index) => (
           <AccordionItem
             key={cluster.id}
             value={`cluster-${index}`}
             className="border rounded-lg px-1 border-b"
           >
             <AccordionTrigger className="hover:no-underline py-3 px-3">
-              <div className="flex items-center justify-between gap-3 w-full pr-2">
+              <div className="flex items-center justify-between gap-3 w-full pr-2 flex-wrap">
                 <span className="text-sm font-medium text-foreground text-left break-words">
                   {cluster.label}
                 </span>
@@ -115,7 +151,7 @@ export function OpenEndedClusters({
                       key={i}
                       className="bg-muted/40 border-l-[3px] border-amber-300/60 rounded-r-md p-3"
                     >
-                      <p className="text-sm italic text-muted-foreground leading-relaxed break-words">
+                      <p className="text-sm italic text-muted-foreground leading-relaxed break-words whitespace-pre-wrap">
                         &ldquo;{q}&rdquo;
                       </p>
                     </div>
@@ -126,6 +162,54 @@ export function OpenEndedClusters({
           </AccordionItem>
         ))}
       </Accordion>
+
+      {hasMoreNamed && (
+        <div className="flex justify-center">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setShowAllClusters((v) => !v)}
+            className="text-xs text-muted-foreground hover:text-foreground"
+          >
+            {showAllClusters
+              ? 'Show fewer clusters'
+              : `Show all ${namedClusters.length} clusters`}
+          </Button>
+        </div>
+      )}
+
+      <div className="pt-2 border-t border-border/60 space-y-2">
+        <div className="flex justify-center">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setShowAllResponses((v) => !v)}
+            className="text-xs text-muted-foreground hover:text-foreground"
+          >
+            {showAllResponses ? 'Hide responses' : allResponsesButtonLabel}
+          </Button>
+        </div>
+
+        {showAllResponses && (
+          <div className="bg-muted/30 border rounded-lg p-3 max-h-80 overflow-y-auto overflow-x-hidden">
+            <ol className="space-y-2 list-none">
+              {validResponses.map((r, i) => (
+                <li
+                  key={i}
+                  className="flex gap-2 text-sm text-muted-foreground break-words whitespace-pre-wrap"
+                >
+                  <span className="tabular-nums shrink-0 text-muted-foreground/70">
+                    {i + 1}.
+                  </span>
+                  <span className="italic break-words min-w-0">
+                    &ldquo;{r}&rdquo;
+                  </span>
+                </li>
+              ))}
+            </ol>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

@@ -31,7 +31,7 @@ const NO_ISSUE_EXACT = new Set([
   'no issues',
   'no issue',
   'nothing really',
-  "no, nothing",
+  'no, nothing',
 ]);
 
 const RULES: ClusterRule[] = [
@@ -88,7 +88,6 @@ const OTHER_LABEL = 'Other responses';
 
 function classify(response: string): string {
   const lower = response.toLowerCase().trim();
-  // exact matches first (the no_issue cluster has only exactMatches)
   for (const rule of RULES) {
     if (rule.exactMatches && rule.exactMatches.includes(lower)) {
       return rule.id;
@@ -102,40 +101,41 @@ function classify(response: string): string {
   return OTHER_ID;
 }
 
-export function clusterOpenEndedResponses(
-  responses: string[],
-  options?: {
-    maxExamplesPerCluster?: number;
-    maxClusters?: number;
-  },
-): OpenEndedCluster[] {
-  const maxExamples = options?.maxExamplesPerCluster ?? 5;
-  const maxClusters = options?.maxClusters ?? 8;
-
-  // 1. Trim + drop truly empty.
-  const trimmed: string[] = [];
+/**
+ * Shared trim + case-insensitive dedupe for open-ended responses.
+ * Preserves first-seen casing and order.
+ */
+export function normalizeOpenEndedResponses(responses: string[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
   for (const raw of responses || []) {
     if (raw == null) continue;
     const s = String(raw).trim();
     if (!s) continue;
-    trimmed.push(s);
-  }
-
-  // 2. Case-insensitive dedupe, preserving first-seen casing.
-  const seen = new Set<string>();
-  const deduped: string[] = [];
-  for (const s of trimmed) {
     const key = s.toLowerCase();
     if (seen.has(key)) continue;
     seen.add(key);
-    deduped.push(s);
+    out.push(s);
   }
+  return out;
+}
 
+export function clusterOpenEndedResponses(
+  responses: string[],
+  options?: {
+    maxExamplesPerCluster?: number;
+  },
+): OpenEndedCluster[] {
+  const maxExamples = options?.maxExamplesPerCluster ?? 5;
+
+  const deduped = normalizeOpenEndedResponses(responses);
   const total = deduped.length;
   if (total === 0) return [];
 
-  // 3. Bucket.
-  const buckets = new Map<string, { label: string; summary?: string; examples: string[]; count: number }>();
+  const buckets = new Map<
+    string,
+    { label: string; summary?: string; examples: string[]; count: number }
+  >();
   for (const resp of deduped) {
     const id = classify(resp);
     const rule = RULES.find((r) => r.id === id);
@@ -150,45 +150,26 @@ export function clusterOpenEndedResponses(
     if (bucket.examples.length < maxExamples) bucket.examples.push(resp);
   }
 
-  // 4. To list, sort by count desc (stable-ish), tie-break by label.
-  let clusters: OpenEndedCluster[] = Array.from(buckets.entries()).map(([id, b]) => ({
-    id,
-    label: b.label,
-    summary: b.summary,
-    examples: b.examples,
-    count: b.count,
-    percentage: 0,
-  }));
-  clusters.sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
+  const clusters: OpenEndedCluster[] = Array.from(buckets.entries()).map(
+    ([id, b]) => ({
+      id,
+      label: b.label,
+      summary: b.summary,
+      examples: b.examples,
+      count: b.count,
+      percentage: 0,
+    }),
+  );
 
-  // 5. Cap and merge tail into "Other responses".
-  if (clusters.length > maxClusters) {
-    const head = clusters.slice(0, maxClusters - 1);
-    const tail = clusters.slice(maxClusters - 1);
-    const existingOther = head.find((c) => c.id === OTHER_ID);
-    const tailCount = tail.reduce((acc, c) => acc + c.count, 0);
-    const tailExamples = tail.flatMap((c) => c.examples).slice(0, maxExamples);
-    if (existingOther) {
-      existingOther.count += tailCount;
-      const merged = [...existingOther.examples, ...tailExamples].slice(0, maxExamples);
-      existingOther.examples = merged;
-      clusters = head;
-    } else {
-      clusters = [
-        ...head,
-        {
-          id: OTHER_ID,
-          label: OTHER_LABEL,
-          examples: tailExamples,
-          count: tailCount,
-          percentage: 0,
-        },
-      ];
-    }
-    clusters.sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
-  }
+  // Sort: named clusters by count desc (tie-break label asc); Other always last.
+  clusters.sort((a, b) => {
+    const aOther = a.id === OTHER_ID;
+    const bOther = b.id === OTHER_ID;
+    if (aOther && !bOther) return 1;
+    if (!aOther && bOther) return -1;
+    return b.count - a.count || a.label.localeCompare(b.label);
+  });
 
-  // 6. Percentages — guarantee >=1% when count > 0.
   for (const c of clusters) {
     if (c.count <= 0) {
       c.percentage = 0;
