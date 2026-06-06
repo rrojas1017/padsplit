@@ -109,9 +109,6 @@ export function OpenEndedClusters({
   const defaultOpenIndex = visibleClusters.findIndex((c) => c.id !== OTHER_ID);
   const defaultOpenValue = `cluster-${defaultOpenIndex >= 0 ? defaultOpenIndex : 0}`;
 
-  const allResponsesButtonLabel = isSampleOnly
-    ? 'Show all available sample responses'
-    : `Show all ${validTotal} responses`;
 
   return (
     <div className="space-y-4">
