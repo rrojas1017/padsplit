@@ -121,8 +121,8 @@ export function OpenEndedClusters({
         </p>
         <span className="text-xs text-muted-foreground tabular-nums">
           {isSampleOnly
-            ? `sample of ${validTotal} of ${totalResponses}`
-            : `${validTotal} responses`}
+            ? `Based on ${validTotal} available sample responses`
+            : `Based on ${validTotal} written responses`}
         </span>
       </div>
 
