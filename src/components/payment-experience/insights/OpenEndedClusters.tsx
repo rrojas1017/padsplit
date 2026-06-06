@@ -75,7 +75,6 @@ export function OpenEndedClusters({
   );
 
   const [showAllClusters, setShowAllClusters] = useState(false);
-  const [showAllResponses, setShowAllResponses] = useState(false);
 
   if (validResponses.length < 3 || clusters.length === 0) {
     // Prefer sample list if we have no real responses but samples exist.
