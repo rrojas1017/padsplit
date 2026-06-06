@@ -69,6 +69,9 @@ export interface PEQuestionSummary {
   topPct?: number;
   samples?: string[];
   totalSamples?: number;
+  // Full set of valid open-ended written responses (not capped, not deduped).
+  // Populated only for q.type === 'open'. Used by cluster UI for true counts.
+  allResponses?: string[];
   // Compound-question only: child summaries rendered under one parent card.
   // Each sub-summary is itself a regular PEQuestionSummary with its own type
   // (typically 'scale' for the dues amount and 'multi' for amenities).
