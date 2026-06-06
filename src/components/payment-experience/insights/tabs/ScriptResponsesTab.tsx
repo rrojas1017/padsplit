@@ -16,6 +16,7 @@ import {
   type PEQuestionSummary,
 } from '@/utils/paymentExperienceScriptResponses';
 import { openPaymentExperienceScriptReport } from '@/utils/paymentExperienceReportExport';
+import { OpenEndedClusters } from '@/components/payment-experience/insights/OpenEndedClusters';
 
 interface ScriptResponsesTabProps {
   eligibleRecords: PaymentExperienceRecord[];
@@ -337,7 +338,12 @@ function QuestionCard({
             {q.type === 'multi' && <MultiBars summary={summary} />}
             {q.type === 'yesno' && <YesNoPills summary={summary} total={total} />}
             {q.type === 'scale' && <ScaleDisplay summary={summary} />}
-            {q.type === 'open' && <OpenEndedDisplay summary={summary} />}
+            {q.type === 'open' && (
+              <OpenEndedClusters
+                responses={summary.samples ?? []}
+                totalSamples={summary.totalSamples ?? summary.count}
+              />
+            )}
           </>
         )}
 
