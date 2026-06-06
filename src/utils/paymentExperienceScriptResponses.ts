@@ -69,6 +69,9 @@ export interface PEQuestionSummary {
   topPct?: number;
   samples?: string[];
   totalSamples?: number;
+  // Full set of valid open-ended written responses (not capped, not deduped).
+  // Populated only for q.type === 'open'. Used by cluster UI for true counts.
+  allResponses?: string[];
   // Compound-question only: child summaries rendered under one parent card.
   // Each sub-summary is itself a regular PEQuestionSummary with its own type
   // (typically 'scale' for the dues amount and 'multi' for amenities).
@@ -482,6 +485,11 @@ function summarizeQuestion(
   }
 
   if (q.type === 'open') {
+    // allResponses: full population, not capped, not deduped. Trim for safety.
+    const allResponses = openAnswers
+      .map((s) => trim(s, 1000))
+      .filter((s) => s.length > 0);
+    // samples: backwards-compatible 25-item preview (also length-trimmed).
     const samples = openAnswers.map((s) => trim(s, 240)).slice(0, 25);
     return {
       question: q,
@@ -489,6 +497,7 @@ function summarizeQuestion(
       distribution: [],
       samples,
       totalSamples: answeredRecords,
+      allResponses,
     };
   }
 

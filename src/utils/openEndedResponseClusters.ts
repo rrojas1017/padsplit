@@ -128,26 +128,45 @@ export function clusterOpenEndedResponses(
 ): OpenEndedCluster[] {
   const maxExamples = options?.maxExamplesPerCluster ?? 5;
 
-  const deduped = normalizeOpenEndedResponses(responses);
-  const total = deduped.length;
+  // Trim + drop empties; keep duplicates so cluster counts reflect the raw
+  // written-response population.
+  const cleaned: string[] = [];
+  for (const raw of responses || []) {
+    if (raw == null) continue;
+    const s = String(raw).trim();
+    if (!s) continue;
+    cleaned.push(s);
+  }
+  const total = cleaned.length;
   if (total === 0) return [];
 
   const buckets = new Map<
     string,
-    { label: string; summary?: string; examples: string[]; count: number }
+    {
+      label: string;
+      summary?: string;
+      examples: string[];
+      exampleKeys: Set<string>;
+      count: number;
+    }
   >();
-  for (const resp of deduped) {
+  for (const resp of cleaned) {
     const id = classify(resp);
     const rule = RULES.find((r) => r.id === id);
     const label = rule?.label ?? OTHER_LABEL;
     const summary = rule?.summary;
     let bucket = buckets.get(id);
     if (!bucket) {
-      bucket = { label, summary, examples: [], count: 0 };
+      bucket = { label, summary, examples: [], exampleKeys: new Set(), count: 0 };
       buckets.set(id, bucket);
     }
     bucket.count += 1;
-    if (bucket.examples.length < maxExamples) bucket.examples.push(resp);
+    // Examples: dedupe case-insensitively for readability, cap at maxExamples.
+    const key = resp.toLowerCase();
+    if (bucket.examples.length < maxExamples && !bucket.exampleKeys.has(key)) {
+      bucket.exampleKeys.add(key);
+      bucket.examples.push(resp);
+    }
   }
 
   const clusters: OpenEndedCluster[] = Array.from(buckets.entries()).map(
