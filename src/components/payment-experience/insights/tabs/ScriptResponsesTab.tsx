@@ -340,8 +340,9 @@ function QuestionCard({
             {q.type === 'scale' && <ScaleDisplay summary={summary} />}
             {q.type === 'open' && (
               <OpenEndedClusters
-                responses={summary.samples ?? []}
-                totalSamples={summary.totalSamples ?? summary.count}
+                responses={summary.allResponses ?? summary.samples ?? []}
+                sampleResponses={summary.samples ?? []}
+                totalResponses={summary.count}
               />
             )}
           </>
