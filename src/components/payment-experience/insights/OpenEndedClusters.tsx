@@ -12,21 +12,33 @@ import {
 } from '@/components/ui/accordion';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import {
-  clusterOpenEndedResponses,
-  normalizeOpenEndedResponses,
-} from '@/utils/openEndedResponseClusters';
+import { clusterOpenEndedResponses } from '@/utils/openEndedResponseClusters';
 
 interface OpenEndedClustersProps {
+  /** Full set of responses used for clustering. */
   responses: string[];
-  totalSamples?: number;
+  /** Optional capped/representative preview list. */
+  sampleResponses?: string[];
+  /** Full written-response count for this question. */
+  totalResponses?: number;
 }
 
 const DEFAULT_VISIBLE_NAMED_CLUSTERS = 5;
 const OTHER_ID = 'other';
 
+function cleanResponses(input: string[]): string[] {
+  const out: string[] = [];
+  for (const raw of input || []) {
+    if (raw == null) continue;
+    const s = String(raw).trim();
+    if (!s) continue;
+    out.push(s);
+  }
+  return out;
+}
+
 function SimpleVerbatimList({ responses }: { responses: string[] }) {
-  const cleaned = responses.map((r) => String(r ?? '').trim()).filter(Boolean);
+  const cleaned = cleanResponses(responses);
   if (cleaned.length === 0) {
     return <p className="text-sm text-muted-foreground">No responses.</p>;
   }
@@ -48,10 +60,12 @@ function SimpleVerbatimList({ responses }: { responses: string[] }) {
 
 export function OpenEndedClusters({
   responses,
-  totalSamples,
+  sampleResponses,
+  totalResponses,
 }: OpenEndedClustersProps) {
+  // Trim + drop blanks, but do NOT dedupe — repeated answers must count.
   const validResponses = useMemo(
-    () => normalizeOpenEndedResponses(responses || []),
+    () => cleanResponses(responses || []),
     [responses],
   );
 
@@ -64,18 +78,22 @@ export function OpenEndedClusters({
   const [showAllResponses, setShowAllResponses] = useState(false);
 
   if (validResponses.length < 3 || clusters.length === 0) {
-    return <SimpleVerbatimList responses={validResponses} />;
+    // Prefer sample list if we have no real responses but samples exist.
+    const fallback =
+      validResponses.length > 0 ? validResponses : cleanResponses(sampleResponses || []);
+    return <SimpleVerbatimList responses={fallback} />;
   }
 
   const validTotal = validResponses.length;
+  // Sample-only when caller indicates total population is larger than what
+  // was passed in for clustering.
   const isSampleOnly =
-    typeof totalSamples === 'number' && totalSamples > validTotal;
+    typeof totalResponses === 'number' && totalResponses > validTotal;
 
   const headerTitle = isSampleOnly
     ? 'Representative Response Clusters'
     : 'Response Clusters';
 
-  // Split named vs Other; Other is always rendered last.
   const namedClusters = clusters.filter((c) => c.id !== OTHER_ID);
   const otherCluster = clusters.find((c) => c.id === OTHER_ID);
 
@@ -89,7 +107,6 @@ export function OpenEndedClusters({
 
   const hasMoreNamed = namedClusters.length > DEFAULT_VISIBLE_NAMED_CLUSTERS;
 
-  // Default-open: first non-Other cluster, else Other.
   const defaultOpenIndex = visibleClusters.findIndex((c) => c.id !== OTHER_ID);
   const defaultOpenValue = `cluster-${defaultOpenIndex >= 0 ? defaultOpenIndex : 0}`;
 
@@ -105,7 +122,7 @@ export function OpenEndedClusters({
         </p>
         <span className="text-xs text-muted-foreground tabular-nums">
           {isSampleOnly
-            ? `sample of ${validTotal} of ${totalSamples}`
+            ? `sample of ${validTotal} of ${totalResponses}`
             : `${validTotal} responses`}
         </span>
       </div>
