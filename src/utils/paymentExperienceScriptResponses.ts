@@ -485,6 +485,11 @@ function summarizeQuestion(
   }
 
   if (q.type === 'open') {
+    // allResponses: full population, not capped, not deduped. Trim for safety.
+    const allResponses = openAnswers
+      .map((s) => trim(s, 1000))
+      .filter((s) => s.length > 0);
+    // samples: backwards-compatible 25-item preview (also length-trimmed).
     const samples = openAnswers.map((s) => trim(s, 240)).slice(0, 25);
     return {
       question: q,
@@ -492,6 +497,7 @@ function summarizeQuestion(
       distribution: [],
       samples,
       totalSamples: answeredRecords,
+      allResponses,
     };
   }
 
