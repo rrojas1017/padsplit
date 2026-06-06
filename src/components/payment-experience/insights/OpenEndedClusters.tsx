@@ -191,38 +191,6 @@ export function OpenEndedClusters({
         </div>
       )}
 
-      <div className="pt-2 border-t border-border/60 space-y-2">
-        <div className="flex justify-center">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => setShowAllResponses((v) => !v)}
-            className="text-xs text-muted-foreground hover:text-foreground"
-          >
-            {showAllResponses ? 'Hide responses' : allResponsesButtonLabel}
-          </Button>
-        </div>
-
-        {showAllResponses && (
-          <div className="bg-muted/30 border rounded-lg p-3 max-h-80 overflow-y-auto overflow-x-hidden">
-            <ol className="space-y-2 list-none">
-              {validResponses.map((r, i) => (
-                <li
-                  key={i}
-                  className="flex gap-2 text-sm text-muted-foreground break-words whitespace-pre-wrap"
-                >
-                  <span className="tabular-nums shrink-0 text-muted-foreground/70">
-                    {i + 1}.
-                  </span>
-                  <span className="italic break-words min-w-0">
-                    &ldquo;{r}&rdquo;
-                  </span>
-                </li>
-              ))}
-            </ol>
-          </div>
-        )}
-      </div>
     </div>
   );
 }
