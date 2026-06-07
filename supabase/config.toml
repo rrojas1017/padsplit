@@ -172,3 +172,6 @@ verify_jwt = false
 [functions.generate-pe-executive-brief]
 verify_jwt = true
 
+[functions.generate-audience-survey-executive-brief]
+verify_jwt = true
+

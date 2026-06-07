@@ -3,6 +3,7 @@ import {
   HeadingLevel, AlignmentType, WidthType, BorderStyle, ShadingType,
   Header, Footer, PageNumber,
 } from 'docx';
+import { supabase } from '@/integrations/supabase/client';
 import type { AudienceSurveyRecord } from '@/hooks/useAudienceSurveyResponses';
 import type { AggResult } from '@/hooks/useAudienceSurveyResponses';
 
@@ -18,6 +19,91 @@ interface ReportMeta {
   totalRecords: number;
   avgAnswered: number;
   completionRate: number;
+}
+
+interface AudienceBrief {
+  narrative_headline?: string;
+  executive_analysis?: string;
+  strategic_findings?: string[];
+  recommended_actions?: Array<{
+    recommendation: string;
+    owner: string;
+    priority: string;
+    rationale: string;
+  }>;
+  question_analysis?: Array<{ number: number; interpretation: string }>;
+}
+
+function stripUUIDs(text: string): string {
+  return (text || '')
+    .replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi, '')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+}
+
+function asParagraphs(text: string): Paragraph[] {
+  return stripUUIDs(text)
+    .split(/\n\s*\n/)
+    .map(p => p.trim())
+    .filter(Boolean)
+    .map(p => new Paragraph({ children: [new TextRun({ text: p, size: 22, font: 'Arial' })], spacing: { after: 160 } }));
+}
+
+async function fetchAudienceBrief(questions: QuestionReport[], meta: ReportMeta): Promise<AudienceBrief | null> {
+  try {
+    const { data, error } = await supabase.functions.invoke('generate-audience-survey-executive-brief', {
+      body: {
+        meta,
+        questions: questions.map(q => ({
+          number: q.number,
+          label: q.label,
+          type: q.type,
+          total: q.type === 'yesno' ? (q.boolData?.total || 0) : meta.totalRecords,
+          topAnswers: q.data.slice(0, 6),
+          boolData: q.boolData,
+        })),
+      },
+    });
+    if (error) throw error;
+    return data?.executive_brief || null;
+  } catch (e) {
+    console.warn('[generateAudienceSurveyReport] AI brief unavailable, using deterministic analysis:', e);
+    return null;
+  }
+}
+
+function fallbackAudienceBrief(questions: QuestionReport[], meta: ReportMeta): AudienceBrief {
+  const byNumber = (n: number) => questions.find(q => q.number === n);
+  const top = (n: number) => byNumber(n)?.data?.[0];
+  const yesPct = (n: number) => byNumber(n)?.boolData?.pct;
+  const headlineParts = [
+    top(1)?.label ? `${top(1)!.label} is the leading audience channel` : null,
+    yesPct(4) != null ? `${yesPct(4)}% report seeing PadSplit ads` : null,
+  ].filter(Boolean);
+
+  const strategicFindings = questions
+    .map(q => `Q${q.number}: ${generateKeyFinding(q.label, q.data, q.boolData, q.type)}`)
+    .filter(f => !f.includes('No responses'))
+    .slice(0, 6);
+
+  const analysis = [
+    `The Audience Survey shows a usable marketing signal from ${meta.totalRecords} responses, with respondents completing an average of ${meta.avgAnswered} of 13 questions. This gives leadership enough coverage to compare channel reach, ad recall, trust barriers, and content preferences rather than reading the survey as isolated question results.`,
+    `${top(1)?.label ? `${top(1)!.label} leads platform usage at ${top(1)!.pct}%, which should anchor channel planning and creative testing.` : 'Platform usage should remain a primary segmentation lens for campaign planning.'} ${top(5)?.label ? `Respondents most expect PadSplit ads on ${top(5)!.label} (${top(5)!.pct}%), so media placement should be evaluated against where prospects naturally expect housing content to appear.` : ''}`,
+    `${yesPct(4) != null ? `PadSplit ad awareness sits at ${yesPct(4)}%, making the key question whether awareness is converting into trust and action.` : 'Ad awareness is not the only issue; trust and comprehension signals also matter.'} ${top(8)?.label ? `The leading initial concern is ${top(8)!.label} (${top(8)!.pct}%), which means creative should reduce perceived risk before asking prospects to convert.` : ''}`,
+    `${top(6)?.label || top(7)?.label ? `Engagement signals point to ${top(6)?.label || 'the leading scroll-stopper'} for attention and ${top(7)?.label || 'the leading click driver'} for action, suggesting that creative should separate hook messaging from conversion messaging.` : 'Creative performance should be analyzed separately for attention, click motivation, and post-click clarity.'} ${yesPct(13) != null ? `Video testimonial interest is ${yesPct(13)}%, which indicates the available supply of authentic proof content.` : ''}`,
+  ].join('\n\n');
+
+  return {
+    narrative_headline: headlineParts.length ? headlineParts.join('; ') : 'Audience survey highlights where awareness, trust, and content strategy need focus',
+    executive_analysis: analysis,
+    strategic_findings: strategicFindings,
+    recommended_actions: [
+      { recommendation: 'Prioritize the top audience channel in the next creative test cycle.', owner: 'Marketing', priority: 'P1', rationale: top(1) ? `${top(1)!.label} leads platform usage at ${top(1)!.pct}%.` : 'Survey results identify clear channel preferences.' },
+      { recommendation: 'Build ad creative that directly addresses the most common initial concern.', owner: 'Growth Creative', priority: 'P1', rationale: top(8) ? `${top(8)!.label} is the leading concern at ${top(8)!.pct}%.` : 'Concern reduction is required to turn awareness into action.' },
+      { recommendation: 'Separate scroll-stopping hooks from click-through proof points in campaign reporting.', owner: 'Performance Marketing', priority: 'P2', rationale: 'The survey captures different drivers for attention and clicking, so one generic message may underperform.' },
+    ],
+    question_analysis: questions.map(q => ({ number: q.number, interpretation: generateKeyFinding(q.label, q.data, q.boolData, q.type) })),
+  };
 }
 
 function generateKeyFinding(label: string, data: AggResult[], boolData?: { yes: number; no: number; total: number; pct: number }, type?: string): string {
@@ -66,11 +152,13 @@ export async function generateAudienceSurveyReport(
   questions: QuestionReport[],
   meta: ReportMeta,
 ) {
+  const brief = await fetchAudienceBrief(questions, meta) || fallbackAudienceBrief(questions, meta);
   const topFindings = questions
     .map(q => ({ label: q.label, finding: generateKeyFinding(q.label, q.data, q.boolData, q.type) }))
     .filter(f => !f.finding.includes('No responses'));
 
   const questionSections = questions.flatMap(q => {
+    const interpretation = brief.question_analysis?.find(item => item.number === q.number)?.interpretation;
     const children: (Paragraph | Table)[] = [
       new Paragraph({
         text: `Q${q.number}: ${q.label}`,
@@ -116,6 +204,16 @@ export async function generateAudienceSurveyReport(
       ],
       spacing: { before: 100, after: 200 },
     }));
+
+    if (interpretation && interpretation !== finding) {
+      children.push(new Paragraph({
+        children: [
+          new TextRun({ text: 'Analysis: ', bold: true, size: 20, font: 'Arial' }),
+          new TextRun({ text: stripUUIDs(interpretation), size: 20, font: 'Arial' }),
+        ],
+        spacing: { before: 40, after: 220 },
+      }));
+    }
 
     return children;
   });
@@ -168,12 +266,44 @@ export async function generateAudienceSurveyReport(
 
         new Paragraph({ text: 'Executive Summary', heading: HeadingLevel.HEADING_1 }),
         new Paragraph({
+          children: [new TextRun({ text: stripUUIDs(brief.narrative_headline || 'Audience survey marketing signals require focused channel and creative action.'), bold: true, size: 24, font: 'Arial' })],
+          spacing: { after: 180 },
+        }),
+        new Paragraph({
           children: [new TextRun({
             text: `This report summarizes findings from ${meta.totalRecords} responses collected through the PadSplit Audience Survey. The survey contains 13 questions covering platform usage, ad awareness, engagement triggers, barriers to adoption, and testimonial interest. On average, respondents answered ${meta.avgAnswered} of 13 questions (${meta.completionRate}% completion rate).`,
             size: 22, font: 'Arial',
           })],
           spacing: { after: 200 },
         }),
+
+        new Paragraph({ text: 'Executive Analysis', heading: HeadingLevel.HEADING_1 }),
+        ...asParagraphs(brief.executive_analysis || ''),
+
+        new Paragraph({ text: 'Strategic Findings', heading: HeadingLevel.HEADING_1 }),
+        ...(brief.strategic_findings?.length ? brief.strategic_findings : topFindings.slice(0, 6).map(f => `${f.label}: ${f.finding}`)).map(finding => new Paragraph({
+          children: [new TextRun({ text: stripUUIDs(finding), size: 21, font: 'Arial' })],
+          bullet: { level: 0 },
+          spacing: { after: 90 },
+        })),
+
+        new Paragraph({ text: 'Recommended Actions', heading: HeadingLevel.HEADING_1 }),
+        new Table({
+          width: { size: 9360, type: WidthType.DXA },
+          columnWidths: [3600, 1600, 1200, 2960],
+          rows: [
+            new TableRow({ children: [makeHeaderCell('Recommendation', 3600), makeHeaderCell('Owner', 1600), makeHeaderCell('Priority', 1200), makeHeaderCell('Rationale', 2960)] }),
+            ...(brief.recommended_actions || []).map(action => new TableRow({
+              children: [
+                makeCell(stripUUIDs(action.recommendation), 3600),
+                makeCell(stripUUIDs(action.owner), 1600),
+                makeCell(stripUUIDs(action.priority), 1200),
+                makeCell(stripUUIDs(action.rationale), 2960),
+              ],
+            })),
+          ],
+        }),
+        new Paragraph({ text: '', spacing: { after: 200 } }),
 
         new Paragraph({ text: 'Key Metrics', heading: HeadingLevel.HEADING_1 }),
         new Table({
