@@ -355,7 +355,7 @@ export default function ResearchInsights() {
           </SelectContent>
         </Select>
 
-        {!isAudienceSurvey && !isScriptView && !isPaymentExperience && (
+        {!isAudienceSurvey && !isScriptView && (
           <Select value={dateRange} onValueChange={(v) => setDateRange(v as DateRangeOption)}>
             <SelectTrigger className="w-[140px] h-8 text-xs">
               <SelectValue />
@@ -368,6 +368,19 @@ export default function ResearchInsights() {
               <SelectItem value="allTime">All Time</SelectItem>
             </SelectContent>
           </Select>
+        )}
+
+        {isPaymentExperience && (
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-8 gap-1.5 text-xs"
+            onClick={() => peDashboardRef.current?.downloadReport()}
+            disabled={peGenerating}
+          >
+            {peGenerating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileText className="w-3.5 h-3.5" />}
+            {peGenerating ? 'Generating…' : 'Word'}
+          </Button>
         )}
 
         {/* Right: Actions */}
