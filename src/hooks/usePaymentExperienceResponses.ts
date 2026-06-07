@@ -302,7 +302,7 @@ function pct(num: number, den: number): number | null {
   return (num / den) * 100;
 }
 
-function deriveKPIs(eligible: PaymentExperienceRecord[]): PaymentKPIs {
+export function deriveKPIs(eligible: PaymentExperienceRecord[]): PaymentKPIs {
   const literacyScores = eligible
     .map((r) => r.extraction?.payment_literacy_score)
     .filter((v): v is number => typeof v === 'number');
@@ -353,7 +353,7 @@ function deriveKPIs(eligible: PaymentExperienceRecord[]): PaymentKPIs {
   };
 }
 
-function aggregateFrictionThemes(
+export function aggregateFrictionThemes(
   eligible: PaymentExperienceRecord[],
 ): { themes: FrictionThemeAgg[]; summary: FrictionSummary } {
   const counts = new Map<string, { count: number; quote: string | null }>();
@@ -397,7 +397,7 @@ function aggregateFrictionThemes(
   };
 }
 
-function aggregateAutopayBarriers(eligible: PaymentExperienceRecord[]): AutopayBarrierAgg[] {
+export function aggregateAutopayBarriers(eligible: PaymentExperienceRecord[]): AutopayBarrierAgg[] {
   const notEnrolled = eligible.filter((r) => r.extraction?.autopay_status === 'not_enrolled');
   const denom = notEnrolled.length;
   if (!denom) return [];
