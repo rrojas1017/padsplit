@@ -371,6 +371,10 @@ export default function ResearchInsights() {
     }
   };
 
+  const lastUpdated = selectedReport?.created_at
+    ? format(new Date(selectedReport.created_at), 'MMM d, yyyy h:mm a')
+    : null;
+
   return (
     <DashboardLayout title="" subtitle="">
       <div className="max-w-7xl mx-auto space-y-4">
