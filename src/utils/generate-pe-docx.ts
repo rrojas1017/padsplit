@@ -188,7 +188,7 @@ export async function generatePEDocx(
   const clusterMap = new Map<string, Array<{ label: string; count: number; pct: number }>>();
   await Promise.all(openSummaries.map(async (q) => {
     const responses = (q.allResponses || []).filter(Boolean);
-    const clusters = await fetchClustersForQuestion(q.question.id, responses);
+    const clusters = await fetchClustersForQuestion(q.question.id, q.question.text, responses);
     if (clusters) clusterMap.set(q.question.id, clusters);
   }));
 
