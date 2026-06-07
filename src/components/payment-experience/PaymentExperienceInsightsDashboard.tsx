@@ -212,6 +212,7 @@ export const PaymentExperienceInsightsDashboard = forwardRef<
   const handleDownloadReport = async () => {
     if (isGenerating) return;
     setIsGenerating(true);
+    onGeneratingChange?.(true);
     try {
       toast.info('Generating clusters and narrative — this can take ~1–2 minutes…');
       await generatePEDocx(records, eligibleRecords, kpis, topFrictionThemes, autopayBarriers);
@@ -221,8 +222,17 @@ export const PaymentExperienceInsightsDashboard = forwardRef<
       toast.error('Failed to generate report');
     } finally {
       setIsGenerating(false);
+      onGeneratingChange?.(false);
     }
   };
+
+  useImperativeHandle(ref, () => ({
+    downloadReport: handleDownloadReport,
+    isGenerating,
+    hasEligible: eligibleRecords.length > 0,
+  }), [isGenerating, eligibleRecords.length, records, kpis, topFrictionThemes, autopayBarriers]);
+
+
 
 
   if (isLoading) {
