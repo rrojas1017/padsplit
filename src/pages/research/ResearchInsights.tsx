@@ -42,6 +42,11 @@ import { PaymentExperienceInsightsDashboard, type PaymentExperienceDashboardHand
 import { ExportMembersModal } from '@/components/research-insights/ExportMembersModal';
 import { exportFullReport } from '@/utils/export-report';
 import type { ExportFilter } from '@/hooks/useExportMembers';
+import { useAudienceSurveyResponses } from '@/hooks/useAudienceSurveyResponses';
+import { AUDIENCE_SURVEY_QUESTIONS } from '@/components/audience-survey/ScriptResponsesTab';
+import { generateAudienceSurveyReport } from '@/components/audience-survey/generateAudienceSurveyReport';
+import { formatAggLabels, capSlices } from '@/utils/audienceSurveyInsights';
+import type { AggResult } from '@/hooks/useAudienceSurveyResponses';
 
 import {
   AlertDialog,
@@ -80,6 +85,8 @@ export default function ResearchInsights() {
   const [showRegenConfirm, setShowRegenConfirm] = useState(false);
   const peDashboardRef = useRef<PaymentExperienceDashboardHandle>(null);
   const [peGenerating, setPeGenerating] = useState(false);
+  const [audienceGenerating, setAudienceGenerating] = useState(false);
+  const { records: audienceRecords, aggregateArray: audienceAggArray, aggregateBoolean: audienceAggBool } = useAudienceSurveyResponses();
 
   const { isAdmin } = useIsAdmin();
 
