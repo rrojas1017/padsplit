@@ -1,6 +1,6 @@
 // Accordion-style clustered open-ended response display for the Payment
-// Experience Script Responses tab. Visually mirrors the Move-Out Issue
-// Clusters pattern but uses neutral/amber styling rather than red.
+// Experience Script Responses tab. Each opened cluster shows every response
+// assigned to it (no global "All responses" section).
 
 import { useMemo, useState } from 'react';
 import { Quote } from 'lucide-react';
@@ -24,6 +24,7 @@ interface OpenEndedClustersProps {
 }
 
 const DEFAULT_VISIBLE_NAMED_CLUSTERS = 5;
+const DEFAULT_VISIBLE_RESPONSES_PER_CLUSTER = 10;
 const OTHER_ID = 'other';
 
 function cleanResponses(input: string[]): string[] {
@@ -75,17 +76,15 @@ export function OpenEndedClusters({
   );
 
   const [showAllClusters, setShowAllClusters] = useState(false);
+  const [expandedClusters, setExpandedClusters] = useState<Record<string, boolean>>({});
 
   if (validResponses.length < 3 || clusters.length === 0) {
-    // Prefer sample list if we have no real responses but samples exist.
     const fallback =
       validResponses.length > 0 ? validResponses : cleanResponses(sampleResponses || []);
     return <SimpleVerbatimList responses={fallback} />;
   }
 
   const validTotal = validResponses.length;
-  // Sample-only when caller indicates total population is larger than what
-  // was passed in for clustering.
   const isSampleOnly =
     typeof totalResponses === 'number' && totalResponses > validTotal;
 
@@ -109,7 +108,6 @@ export function OpenEndedClusters({
   const defaultOpenIndex = visibleClusters.findIndex((c) => c.id !== OTHER_ID);
   const defaultOpenValue = `cluster-${defaultOpenIndex >= 0 ? defaultOpenIndex : 0}`;
 
-
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-2 flex-wrap">
@@ -128,52 +126,85 @@ export function OpenEndedClusters({
         defaultValue={[defaultOpenValue]}
         className="space-y-2"
       >
-        {visibleClusters.map((cluster, index) => (
-          <AccordionItem
-            key={cluster.id}
-            value={`cluster-${index}`}
-            className="border rounded-lg px-1 border-b"
-          >
-            <AccordionTrigger className="hover:no-underline py-3 px-3">
-              <div className="flex items-center justify-between gap-3 w-full pr-2 flex-wrap">
-                <span className="text-sm font-medium text-foreground text-left break-words">
-                  {cluster.label}
-                </span>
-                <Badge
-                  variant="outline"
-                  className="shrink-0 tabular-nums text-[11px] font-medium"
-                >
-                  {cluster.count} · {cluster.percentage}%
-                </Badge>
-              </div>
-            </AccordionTrigger>
-            <AccordionContent className="px-3 pb-4 space-y-3">
-              {cluster.summary && (
-                <p className="text-xs text-muted-foreground leading-relaxed">
-                  {cluster.summary}
-                </p>
-              )}
-              {cluster.examples.length > 0 && (
-                <div className="space-y-2">
-                  <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground flex items-center gap-1.5">
-                    <Quote className="w-3 h-3" />
-                    Example responses
-                  </p>
-                  {cluster.examples.map((q, i) => (
-                    <div
-                      key={i}
-                      className="bg-muted/40 border-l-[3px] border-amber-300/60 rounded-r-md p-3"
-                    >
-                      <p className="text-sm italic text-muted-foreground leading-relaxed break-words whitespace-pre-wrap">
-                        &ldquo;{q}&rdquo;
-                      </p>
-                    </div>
-                  ))}
+        {visibleClusters.map((cluster, index) => {
+          const all = cluster.responses ?? [];
+          const isExpanded = !!expandedClusters[cluster.id];
+          const overLimit = all.length > DEFAULT_VISIBLE_RESPONSES_PER_CLUSTER;
+          const shown = overLimit && !isExpanded
+            ? all.slice(0, DEFAULT_VISIBLE_RESPONSES_PER_CLUSTER)
+            : all;
+
+          return (
+            <AccordionItem
+              key={cluster.id}
+              value={`cluster-${index}`}
+              className="border rounded-lg px-1 border-b"
+            >
+              <AccordionTrigger className="hover:no-underline py-3 px-3">
+                <div className="flex items-center justify-between gap-3 w-full pr-2 flex-wrap">
+                  <span className="text-sm font-medium text-foreground text-left break-words">
+                    {cluster.label}
+                  </span>
+                  <Badge
+                    variant="outline"
+                    className="shrink-0 tabular-nums text-[11px] font-medium"
+                  >
+                    {cluster.count} · {cluster.percentage}%
+                  </Badge>
                 </div>
-              )}
-            </AccordionContent>
-          </AccordionItem>
-        ))}
+              </AccordionTrigger>
+              <AccordionContent className="px-3 pb-4 space-y-3">
+                {cluster.summary && (
+                  <p className="text-xs text-muted-foreground leading-relaxed">
+                    {cluster.summary}
+                  </p>
+                )}
+                {all.length > 0 && (
+                  <div className="space-y-2">
+                    <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground flex items-center gap-1.5">
+                      <Quote className="w-3 h-3" />
+                      All responses in this cluster
+                    </p>
+                    <div className="max-h-96 overflow-y-auto pr-1 space-y-2">
+                      {shown.map((q, i) => (
+                        <div
+                          key={i}
+                          className="bg-muted/30 border-l-[3px] border-amber-300/60 rounded-r-md p-3"
+                        >
+                          <p className="text-sm italic text-muted-foreground leading-relaxed break-words whitespace-pre-wrap">
+                            <span className="not-italic font-medium text-foreground/70 mr-2 tabular-nums">
+                              {i + 1}.
+                            </span>
+                            &ldquo;{q}&rdquo;
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                    {overLimit && (
+                      <div className="flex justify-center pt-1">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() =>
+                            setExpandedClusters((prev) => ({
+                              ...prev,
+                              [cluster.id]: !prev[cluster.id],
+                            }))
+                          }
+                          className="text-xs text-muted-foreground hover:text-foreground"
+                        >
+                          {isExpanded
+                            ? 'Show fewer'
+                            : `Show all ${all.length} responses`}
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </AccordionContent>
+            </AccordionItem>
+          );
+        })}
       </Accordion>
 
       {hasMoreNamed && (
@@ -190,7 +221,6 @@ export function OpenEndedClusters({
           </Button>
         </div>
       )}
-
     </div>
   );
 }
