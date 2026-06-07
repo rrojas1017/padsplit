@@ -1,10 +1,14 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
 import {
-  Users, BookOpen, Repeat, FileQuestion, ShieldAlert, CalendarClock,
+  Users, BookOpen, Repeat, FileQuestion, ShieldAlert, CalendarClock, FileText, Loader2,
 } from 'lucide-react';
+import { toast } from 'sonner';
+import { generatePEDocx } from '@/utils/generate-pe-docx';
+
 import {
   usePaymentExperienceResponses,
   type KPIMetric,
