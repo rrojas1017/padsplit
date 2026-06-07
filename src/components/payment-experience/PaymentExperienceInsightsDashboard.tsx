@@ -260,30 +260,32 @@ export const PaymentExperienceInsightsDashboard = forwardRef<
 
   return (
     <div className="space-y-3">
-      <div className="flex items-center justify-end gap-2">
-        <Select value={dateRange} onValueChange={(v) => setDateRange(v as DateRangeOption)}>
-          <SelectTrigger className="w-[140px] h-8 text-xs">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="thisWeek">This Week</SelectItem>
-            <SelectItem value="thisMonth">This Month</SelectItem>
-            <SelectItem value="lastMonth">Last Month</SelectItem>
-            <SelectItem value="last3months">Last 3 Months</SelectItem>
-            <SelectItem value="allTime">All Time</SelectItem>
-          </SelectContent>
-        </Select>
-        <Button
-          onClick={handleDownloadReport}
-          disabled={isGenerating || eligibleRecords.length === 0}
-          variant="outline"
-          size="sm"
-          className="h-8 gap-1.5 text-xs"
-        >
-          {isGenerating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FileText className="h-3.5 w-3.5" />}
-          {isGenerating ? 'Generating…' : 'Word'}
-        </Button>
-      </div>
+      {!hideHeader && (
+        <div className="flex items-center justify-end gap-2">
+          <Select value={dateRange} onValueChange={(v) => setDateRange(v as DateRangeOption)}>
+            <SelectTrigger className="w-[140px] h-8 text-xs">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="thisWeek">This Week</SelectItem>
+              <SelectItem value="thisMonth">This Month</SelectItem>
+              <SelectItem value="lastMonth">Last Month</SelectItem>
+              <SelectItem value="last3months">Last 3 Months</SelectItem>
+              <SelectItem value="allTime">All Time</SelectItem>
+            </SelectContent>
+          </Select>
+          <Button
+            onClick={handleDownloadReport}
+            disabled={isGenerating || eligibleRecords.length === 0}
+            variant="outline"
+            size="sm"
+            className="h-8 gap-1.5 text-xs"
+          >
+            {isGenerating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FileText className="h-3.5 w-3.5" />}
+            {isGenerating ? 'Generating…' : 'Word'}
+          </Button>
+        </div>
+      )}
 
       <ExecutiveSummaryBanner
         insight={insight}
