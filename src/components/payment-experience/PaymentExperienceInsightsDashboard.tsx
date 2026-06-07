@@ -39,6 +39,9 @@ function filterByDateRange<T extends { booking_date: string }>(records: T[], ran
 
 import {
   usePaymentExperienceResponses,
+  deriveKPIs,
+  aggregateFrictionThemes,
+  aggregateAutopayBarriers,
   type KPIMetric,
 } from '@/hooks/usePaymentExperienceResponses';
 import { usePaymentExperienceAIInsight } from '@/hooks/usePaymentExperienceAIInsight';
