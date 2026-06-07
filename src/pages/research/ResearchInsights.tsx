@@ -78,6 +78,8 @@ export default function ResearchInsights() {
   const [exportTitle, setExportTitle] = useState('Export Members');
   const [exportFilename, setExportFilename] = useState('export.csv');
   const [showRegenConfirm, setShowRegenConfirm] = useState(false);
+  const peDashboardRef = useRef<PaymentExperienceDashboardHandle>(null);
+  const [peGenerating, setPeGenerating] = useState(false);
 
   const { isAdmin } = useIsAdmin();
 
