@@ -108,10 +108,10 @@ ${autopayBarriers.length === 0 ? "(none)" : autopayBarriers.map((b, i) => `${i +
 ${perQuestion.map((q) => {
   const header = `Q${q.order} [${q.type}] ${q.text} — n=${q.count}` + (q.avg != null ? ` · avg=${q.avg.toFixed(2)}` : "");
   const tops = q.topAnswers && q.topAnswers.length
-    ? "\n   " + q.topAnswers.slice(0, 5).map((a) => `${a.label} (${a.count}, ${a.pct.toFixed(1)}%)`).join(" · ")
+    ? "\n   " + q.topAnswers.slice(0, 4).map((a) => `${a.label} (${a.count}, ${a.pct.toFixed(1)}%)`).join(" · ")
     : "";
   const clusters = q.clusters && q.clusters.length
-    ? "\n   clusters: " + q.clusters.slice(0, 6).map((c) => `${c.label} (${c.count}, ${c.pct.toFixed(1)}%)`).join(" · ")
+    ? "\n   clusters: " + q.clusters.slice(0, 5).map((c) => `${c.label} (${c.count}, ${c.pct.toFixed(1)}%)`).join(" · ")
     : "";
   return header + tops + clusters;
 }).join("\n")}
