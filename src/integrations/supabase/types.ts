@@ -2101,6 +2101,36 @@ export type Database = {
         }
         Relationships: []
       }
+      payment_experience_open_ended_cluster_cache: {
+        Row: {
+          clusters: Json
+          created_at: string
+          id: string
+          model: string
+          question_id: string
+          response_hash: string
+          updated_at: string
+        }
+        Insert: {
+          clusters: Json
+          created_at?: string
+          id?: string
+          model: string
+          question_id: string
+          response_hash: string
+          updated_at?: string
+        }
+        Update: {
+          clusters?: Json
+          created_at?: string
+          id?: string
+          model?: string
+          question_id?: string
+          response_hash?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
           avatar_url: string | null
