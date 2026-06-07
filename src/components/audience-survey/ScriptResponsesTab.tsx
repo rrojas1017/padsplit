@@ -22,7 +22,7 @@ interface QuestionDef {
   boolAccessor?: (r: AudienceSurveyRecord) => boolean | undefined | null;
 }
 
-const QUESTIONS: QuestionDef[] = [
+export const AUDIENCE_SURVEY_QUESTIONS: QuestionDef[] = [
   { key: 'q1', label: 'Which social media platforms do you use?', type: 'multi', accessor: r => r.extraction.social_media_platforms?.platforms_used },
   { key: 'q2', label: 'Do you follow any influencers?', type: 'yesno', accessor: () => undefined, boolAccessor: r => r.extraction.influencer_following?.follows_influencers },
   { key: 'q3', label: 'Have you noticed any standout housing ads?', type: 'yesno', accessor: () => undefined, boolAccessor: r => r.extraction.ad_awareness?.noticed_standout_ads },
