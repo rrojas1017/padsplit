@@ -166,16 +166,11 @@ export function PaymentExperienceInsightsDashboard() {
   const eligibleRecords = useMemo(() => filterByDateRange(allEligible, dateRange), [allEligible, dateRange]);
 
   // Recompute KPIs and aggregates from the date-filtered eligible set
-  const { kpis, topFrictionThemes, autopayBarriers } = useMemo(() => {
-    // Lazy local imports to avoid widening the static import surface
-    const { deriveKPIs, aggregateFrictionThemes, aggregateAutopayBarriers } =
-      require('@/hooks/usePaymentExperienceResponses') as typeof import('@/hooks/usePaymentExperienceResponses');
-    return {
-      kpis: { ...deriveKPIs(eligibleRecords as any), totalRouted: records.length },
-      topFrictionThemes: aggregateFrictionThemes(eligibleRecords as any).themes,
-      autopayBarriers: aggregateAutopayBarriers(eligibleRecords as any),
-    };
-  }, [eligibleRecords, records]);
+  const { kpis, topFrictionThemes, autopayBarriers } = useMemo(() => ({
+    kpis: { ...deriveKPIs(eligibleRecords as any), totalRouted: records.length },
+    topFrictionThemes: aggregateFrictionThemes(eligibleRecords as any).themes,
+    autopayBarriers: aggregateAutopayBarriers(eligibleRecords as any),
+  }), [eligibleRecords, records]);
 
   const frictionSummary = allFrictionSummary; // headline copy unaffected
   const { insight } = usePaymentExperienceAIInsight({
