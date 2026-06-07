@@ -386,4 +386,4 @@ export const PaymentExperienceInsightsDashboard = forwardRef<
       />
     </div>
   );
-}
+});
