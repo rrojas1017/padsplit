@@ -152,11 +152,13 @@ export async function generateAudienceSurveyReport(
   questions: QuestionReport[],
   meta: ReportMeta,
 ) {
+  const brief = await fetchAudienceBrief(questions, meta) || fallbackAudienceBrief(questions, meta);
   const topFindings = questions
     .map(q => ({ label: q.label, finding: generateKeyFinding(q.label, q.data, q.boolData, q.type) }))
     .filter(f => !f.finding.includes('No responses'));
 
   const questionSections = questions.flatMap(q => {
+    const interpretation = brief.question_analysis?.find(item => item.number === q.number)?.interpretation;
     const children: (Paragraph | Table)[] = [
       new Paragraph({
         text: `Q${q.number}: ${q.label}`,
@@ -202,6 +204,16 @@ export async function generateAudienceSurveyReport(
       ],
       spacing: { before: 100, after: 200 },
     }));
+
+    if (interpretation && interpretation !== finding) {
+      children.push(new Paragraph({
+        children: [
+          new TextRun({ text: 'Analysis: ', bold: true, size: 20, font: 'Arial' }),
+          new TextRun({ text: stripUUIDs(interpretation), size: 20, font: 'Arial' }),
+        ],
+        spacing: { before: 40, after: 220 },
+      }));
+    }
 
     return children;
   });
@@ -254,12 +266,44 @@ export async function generateAudienceSurveyReport(
 
         new Paragraph({ text: 'Executive Summary', heading: HeadingLevel.HEADING_1 }),
         new Paragraph({
+          children: [new TextRun({ text: stripUUIDs(brief.narrative_headline || 'Audience survey marketing signals require focused channel and creative action.'), bold: true, size: 24, font: 'Arial' })],
+          spacing: { after: 180 },
+        }),
+        new Paragraph({
           children: [new TextRun({
             text: `This report summarizes findings from ${meta.totalRecords} responses collected through the PadSplit Audience Survey. The survey contains 13 questions covering platform usage, ad awareness, engagement triggers, barriers to adoption, and testimonial interest. On average, respondents answered ${meta.avgAnswered} of 13 questions (${meta.completionRate}% completion rate).`,
             size: 22, font: 'Arial',
           })],
           spacing: { after: 200 },
         }),
+
+        new Paragraph({ text: 'Executive Analysis', heading: HeadingLevel.HEADING_1 }),
+        ...asParagraphs(brief.executive_analysis || ''),
+
+        new Paragraph({ text: 'Strategic Findings', heading: HeadingLevel.HEADING_1 }),
+        ...(brief.strategic_findings?.length ? brief.strategic_findings : topFindings.slice(0, 6).map(f => `${f.label}: ${f.finding}`)).map(finding => new Paragraph({
+          children: [new TextRun({ text: stripUUIDs(finding), size: 21, font: 'Arial' })],
+          bullet: { level: 0 },
+          spacing: { after: 90 },
+        })),
+
+        new Paragraph({ text: 'Recommended Actions', heading: HeadingLevel.HEADING_1 }),
+        new Table({
+          width: { size: 9360, type: WidthType.DXA },
+          columnWidths: [3600, 1600, 1200, 2960],
+          rows: [
+            new TableRow({ children: [makeHeaderCell('Recommendation', 3600), makeHeaderCell('Owner', 1600), makeHeaderCell('Priority', 1200), makeHeaderCell('Rationale', 2960)] }),
+            ...(brief.recommended_actions || []).map(action => new TableRow({
+              children: [
+                makeCell(stripUUIDs(action.recommendation), 3600),
+                makeCell(stripUUIDs(action.owner), 1600),
+                makeCell(stripUUIDs(action.priority), 1200),
+                makeCell(stripUUIDs(action.rationale), 2960),
+              ],
+            })),
+          ],
+        }),
+        new Paragraph({ text: '', spacing: { after: 200 } }),
 
         new Paragraph({ text: 'Key Metrics', heading: HeadingLevel.HEADING_1 }),
         new Table({
