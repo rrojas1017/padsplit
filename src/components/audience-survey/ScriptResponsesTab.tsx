@@ -22,7 +22,7 @@ interface QuestionDef {
   boolAccessor?: (r: AudienceSurveyRecord) => boolean | undefined | null;
 }
 
-const QUESTIONS: QuestionDef[] = [
+export const AUDIENCE_SURVEY_QUESTIONS: QuestionDef[] = [
   { key: 'q1', label: 'Which social media platforms do you use?', type: 'multi', accessor: r => r.extraction.social_media_platforms?.platforms_used },
   { key: 'q2', label: 'Do you follow any influencers?', type: 'yesno', accessor: () => undefined, boolAccessor: r => r.extraction.influencer_following?.follows_influencers },
   { key: 'q3', label: 'Have you noticed any standout housing ads?', type: 'yesno', accessor: () => undefined, boolAccessor: r => r.extraction.ad_awareness?.noticed_standout_ads },
@@ -77,7 +77,7 @@ export function ScriptResponsesTab({ records, aggregateArray, aggregateBoolean }
     : null;
 
   // Pre-aggregate all questions
-  const questionData = QUESTIONS.map(q => {
+  const questionData = AUDIENCE_SURVEY_QUESTIONS.map(q => {
     if (q.type === 'multi') {
       const raw = aggregateArray(records, q.accessor);
       const formatted = formatAggLabels(raw);
@@ -89,7 +89,7 @@ export function ScriptResponsesTab({ records, aggregateArray, aggregateBoolean }
 
   const handleDownload = () => {
     generateAudienceSurveyReport(records, questionData.map(q => ({
-      number: QUESTIONS.findIndex(qq => qq.key === q.key) + 1,
+      number: AUDIENCE_SURVEY_QUESTIONS.findIndex(qq => qq.key === q.key) + 1,
       label: q.label,
       type: q.type,
       data: q.data,
@@ -120,7 +120,7 @@ export function ScriptResponsesTab({ records, aggregateArray, aggregateBoolean }
               <SelectValue placeholder="Jump to question…" />
             </SelectTrigger>
             <SelectContent>
-              {QUESTIONS.map((q, i) => (
+              {AUDIENCE_SURVEY_QUESTIONS.map((q, i) => (
                 <SelectItem key={q.key} value={q.key} className="text-xs">
                   Q{i + 1}: {q.label.slice(0, 40)}{q.label.length > 40 ? '…' : ''}
                 </SelectItem>

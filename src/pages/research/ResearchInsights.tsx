@@ -42,6 +42,11 @@ import { PaymentExperienceInsightsDashboard, type PaymentExperienceDashboardHand
 import { ExportMembersModal } from '@/components/research-insights/ExportMembersModal';
 import { exportFullReport } from '@/utils/export-report';
 import type { ExportFilter } from '@/hooks/useExportMembers';
+import { useAudienceSurveyResponses } from '@/hooks/useAudienceSurveyResponses';
+import { AUDIENCE_SURVEY_QUESTIONS } from '@/components/audience-survey/ScriptResponsesTab';
+import { generateAudienceSurveyReport } from '@/components/audience-survey/generateAudienceSurveyReport';
+import { formatAggLabels, capSlices } from '@/utils/audienceSurveyInsights';
+import type { AggResult } from '@/hooks/useAudienceSurveyResponses';
 
 import {
   AlertDialog,
@@ -80,6 +85,8 @@ export default function ResearchInsights() {
   const [showRegenConfirm, setShowRegenConfirm] = useState(false);
   const peDashboardRef = useRef<PaymentExperienceDashboardHandle>(null);
   const [peGenerating, setPeGenerating] = useState(false);
+  const [audienceGenerating, setAudienceGenerating] = useState(false);
+  const { records: audienceRecords, aggregateArray: audienceAggArray, aggregateBoolean: audienceAggBool } = useAudienceSurveyResponses();
 
   const { isAdmin } = useIsAdmin();
 
@@ -309,6 +316,61 @@ export default function ResearchInsights() {
     }
   };
 
+  const handleDownloadAudienceReport = async () => {
+    if (!audienceRecords.length) {
+      toast.error('No audience survey responses available');
+      return;
+    }
+    setAudienceGenerating(true);
+    toast.info('Generating Audience Survey report...');
+    try {
+      const countAnswered = (r: any) => {
+        const ext = r.extraction || {};
+        let count = 0;
+        const hasArr = (a: any) => Array.isArray(a) && a.length > 0;
+        const hasBool = (b: any) => typeof b === 'boolean';
+        if (hasArr(ext.social_media_platforms?.platforms_used)) count++;
+        if (hasBool(ext.influencer_following?.follows_influencers)) count++;
+        if (hasBool(ext.ad_awareness?.noticed_standout_ads)) count++;
+        if (hasBool(ext.ad_awareness?.has_seen_padsplit_ads)) count++;
+        if (hasArr(ext.ad_awareness?.expected_padsplit_ad_platforms) || hasArr(ext.ad_awareness?.where_seen_padsplit_ads)) count++;
+        if (hasArr(ext.ad_engagement?.what_makes_them_stop_scrolling)) count++;
+        if (hasArr(ext.ad_engagement?.what_makes_them_click_ad)) count++;
+        if (hasArr(ext.first_impressions?.initial_concerns)) count++;
+        if (hasArr(ext.first_impressions?.interest_drivers)) count++;
+        if (hasArr(ext.first_impressions?.confusing_aspects)) count++;
+        if (hasArr(ext.ad_engagement?.ad_detail_preferences)) count++;
+        if (hasArr(ext.ad_engagement?.preferred_content_types)) count++;
+        if (hasBool(ext.video_testimonial?.interested_in_recording)) count++;
+        return count;
+      };
+      const totalAnswered = audienceRecords.reduce((s, r) => s + countAnswered(r), 0);
+      const avgAnswered = audienceRecords.length > 0 ? Math.round((totalAnswered / audienceRecords.length) * 10) / 10 : 0;
+      const completionRate = audienceRecords.length > 0 ? Math.round((avgAnswered / 13) * 100) : 0;
+
+      const questionData = AUDIENCE_SURVEY_QUESTIONS.map((q, i) => {
+        if (q.type === 'multi') {
+          const raw = audienceAggArray(audienceRecords, q.accessor);
+          return { number: i + 1, label: q.label, type: q.type, data: capSlices(formatAggLabels(raw), 8), boolData: undefined };
+        }
+        const boolData = audienceAggBool(audienceRecords, q.boolAccessor!);
+        return { number: i + 1, label: q.label, type: q.type, data: [] as AggResult[], boolData };
+      });
+
+      await generateAudienceSurveyReport(audienceRecords, questionData, {
+        totalRecords: audienceRecords.length,
+        avgAnswered,
+        completionRate,
+      });
+      toast.success('Report downloaded successfully');
+    } catch (err) {
+      console.error('Audience report generation error:', err);
+      toast.error('Failed to generate report');
+    } finally {
+      setAudienceGenerating(false);
+    }
+  };
+
   const lastUpdated = selectedReport?.created_at
     ? format(new Date(selectedReport.created_at), 'MMM d, yyyy h:mm a')
     : null;
@@ -380,6 +442,19 @@ export default function ResearchInsights() {
           >
             {peGenerating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileText className="w-3.5 h-3.5" />}
             {peGenerating ? 'Generating…' : 'Word'}
+          </Button>
+        )}
+
+        {isAudienceSurvey && (
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-8 gap-1.5 text-xs"
+            onClick={handleDownloadAudienceReport}
+            disabled={audienceGenerating || !audienceRecords.length}
+          >
+            {audienceGenerating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileText className="w-3.5 h-3.5" />}
+            {audienceGenerating ? 'Generating…' : 'Word'}
           </Button>
         )}
 
