@@ -183,12 +183,27 @@ export function PaymentExperienceInsightsDashboard() {
 
   return (
     <div className="space-y-3">
+      <div className="flex justify-end">
+        <Button
+          onClick={handleDownloadReport}
+          disabled={isGenerating || eligibleRecords.length === 0}
+          variant="outline"
+          size="sm"
+          className="gap-2"
+        >
+          {isGenerating ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
+          {isGenerating ? 'Generating…' : 'Download Word Report'}
+        </Button>
+      </div>
+
       <ExecutiveSummaryBanner
         insight={insight}
         kpis={kpis}
         topFrictionThemes={topFrictionThemes}
         firstAction={analytics.suggestedActions[0]}
       />
+
+
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
         <KPI
