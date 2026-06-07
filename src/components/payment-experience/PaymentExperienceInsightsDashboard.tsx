@@ -2,12 +2,40 @@ import { useMemo, useState } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
 import {
   Users, BookOpen, Repeat, FileQuestion, ShieldAlert, CalendarClock, FileText, Loader2,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { generatePEDocx } from '@/utils/generate-pe-docx';
+import type { DateRangeOption } from '@/hooks/useResearchInsightsData';
+
+function filterByDateRange<T extends { booking_date: string }>(records: T[], range: DateRangeOption): T[] {
+  if (range === 'allTime') return records;
+  const now = new Date();
+  let start: Date;
+  let end: Date | null = null;
+  if (range === 'thisWeek') {
+    const day = now.getDay(); // 0 = Sun
+    start = new Date(now); start.setDate(now.getDate() - day); start.setHours(0,0,0,0);
+  } else if (range === 'thisMonth') {
+    start = new Date(now.getFullYear(), now.getMonth(), 1);
+  } else if (range === 'lastMonth') {
+    start = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    end = new Date(now.getFullYear(), now.getMonth(), 1);
+  } else { // last3months
+    start = new Date(now.getFullYear(), now.getMonth() - 3, 1);
+  }
+  return records.filter((r) => {
+    if (!r.booking_date) return false;
+    const d = new Date(r.booking_date);
+    if (isNaN(d.getTime())) return false;
+    if (d < start) return false;
+    if (end && d >= end) return false;
+    return true;
+  });
+}
 
 import {
   usePaymentExperienceResponses,
