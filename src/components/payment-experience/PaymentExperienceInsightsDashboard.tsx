@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { forwardRef, useImperativeHandle, useMemo, useState } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -152,14 +152,34 @@ const fmtScore = (m: KPIMetric, max: number) =>
 
 // ── Dashboard ───────────────────────────────────────────────────────────────
 
-export function PaymentExperienceInsightsDashboard() {
+export interface PaymentExperienceDashboardHandle {
+  downloadReport: () => Promise<void>;
+  isGenerating: boolean;
+  hasEligible: boolean;
+}
+
+interface PaymentExperienceDashboardProps {
+  dateRange?: DateRangeOption;
+  hideHeader?: boolean;
+  onGeneratingChange?: (g: boolean) => void;
+}
+
+export const PaymentExperienceInsightsDashboard = forwardRef<
+  PaymentExperienceDashboardHandle,
+  PaymentExperienceDashboardProps
+>(function PaymentExperienceInsightsDashboard(
+  { dateRange: dateRangeProp, hideHeader, onGeneratingChange },
+  ref,
+) {
   const {
     records: allRecords, eligibleRecords: allEligible, eligibilityStats,
     topFrictionThemes: allFrictionThemes, frictionSummary: allFrictionSummary,
     autopayBarriers: allBarriers, isLoading,
   } = usePaymentExperienceResponses();
 
-  const [dateRange, setDateRange] = useState<DateRangeOption>('allTime');
+  const [internalDateRange, setInternalDateRange] = useState<DateRangeOption>('allTime');
+  const dateRange = dateRangeProp ?? internalDateRange;
+  const setDateRange = (v: DateRangeOption) => setInternalDateRange(v);
 
   // Apply time filter to all derived datasets
   const records = useMemo(() => filterByDateRange(allRecords, dateRange), [allRecords, dateRange]);
@@ -192,6 +212,7 @@ export function PaymentExperienceInsightsDashboard() {
   const handleDownloadReport = async () => {
     if (isGenerating) return;
     setIsGenerating(true);
+    onGeneratingChange?.(true);
     try {
       toast.info('Generating clusters and narrative — this can take ~1–2 minutes…');
       await generatePEDocx(records, eligibleRecords, kpis, topFrictionThemes, autopayBarriers);
@@ -201,8 +222,17 @@ export function PaymentExperienceInsightsDashboard() {
       toast.error('Failed to generate report');
     } finally {
       setIsGenerating(false);
+      onGeneratingChange?.(false);
     }
   };
+
+  useImperativeHandle(ref, () => ({
+    downloadReport: handleDownloadReport,
+    isGenerating,
+    hasEligible: eligibleRecords.length > 0,
+  }), [isGenerating, eligibleRecords.length, records, kpis, topFrictionThemes, autopayBarriers]);
+
+
 
 
   if (isLoading) {
@@ -230,30 +260,32 @@ export function PaymentExperienceInsightsDashboard() {
 
   return (
     <div className="space-y-3">
-      <div className="flex items-center justify-end gap-2">
-        <Select value={dateRange} onValueChange={(v) => setDateRange(v as DateRangeOption)}>
-          <SelectTrigger className="w-[140px] h-8 text-xs">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="thisWeek">This Week</SelectItem>
-            <SelectItem value="thisMonth">This Month</SelectItem>
-            <SelectItem value="lastMonth">Last Month</SelectItem>
-            <SelectItem value="last3months">Last 3 Months</SelectItem>
-            <SelectItem value="allTime">All Time</SelectItem>
-          </SelectContent>
-        </Select>
-        <Button
-          onClick={handleDownloadReport}
-          disabled={isGenerating || eligibleRecords.length === 0}
-          variant="outline"
-          size="sm"
-          className="h-8 gap-1.5 text-xs"
-        >
-          {isGenerating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FileText className="h-3.5 w-3.5" />}
-          {isGenerating ? 'Generating…' : 'Word'}
-        </Button>
-      </div>
+      {!hideHeader && (
+        <div className="flex items-center justify-end gap-2">
+          <Select value={dateRange} onValueChange={(v) => setDateRange(v as DateRangeOption)}>
+            <SelectTrigger className="w-[140px] h-8 text-xs">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="thisWeek">This Week</SelectItem>
+              <SelectItem value="thisMonth">This Month</SelectItem>
+              <SelectItem value="lastMonth">Last Month</SelectItem>
+              <SelectItem value="last3months">Last 3 Months</SelectItem>
+              <SelectItem value="allTime">All Time</SelectItem>
+            </SelectContent>
+          </Select>
+          <Button
+            onClick={handleDownloadReport}
+            disabled={isGenerating || eligibleRecords.length === 0}
+            variant="outline"
+            size="sm"
+            className="h-8 gap-1.5 text-xs"
+          >
+            {isGenerating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FileText className="h-3.5 w-3.5" />}
+            {isGenerating ? 'Generating…' : 'Word'}
+          </Button>
+        </div>
+      )}
 
       <ExecutiveSummaryBanner
         insight={insight}
@@ -354,4 +386,4 @@ export function PaymentExperienceInsightsDashboard() {
       />
     </div>
   );
-}
+});

@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router-dom';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
@@ -38,7 +38,7 @@ import { MoveOutMemberTab } from '@/components/moveout-insights/MoveOutMemberTab
 import { AudienceSurveyDashboard } from '@/components/audience-survey/AudienceSurveyDashboard';
 import { AudienceSurveyInsightsDashboard } from '@/components/audience-survey/AudienceSurveyInsightsDashboard';
 import { ScriptInsightsPanel } from '@/components/research-insights/ScriptInsightsPanel';
-import { PaymentExperienceInsightsDashboard } from '@/components/payment-experience/PaymentExperienceInsightsDashboard';
+import { PaymentExperienceInsightsDashboard, type PaymentExperienceDashboardHandle } from '@/components/payment-experience/PaymentExperienceInsightsDashboard';
 import { ExportMembersModal } from '@/components/research-insights/ExportMembersModal';
 import { exportFullReport } from '@/utils/export-report';
 import type { ExportFilter } from '@/hooks/useExportMembers';
@@ -78,6 +78,8 @@ export default function ResearchInsights() {
   const [exportTitle, setExportTitle] = useState('Export Members');
   const [exportFilename, setExportFilename] = useState('export.csv');
   const [showRegenConfirm, setShowRegenConfirm] = useState(false);
+  const peDashboardRef = useRef<PaymentExperienceDashboardHandle>(null);
+  const [peGenerating, setPeGenerating] = useState(false);
 
   const { isAdmin } = useIsAdmin();
 
@@ -353,7 +355,7 @@ export default function ResearchInsights() {
           </SelectContent>
         </Select>
 
-        {!isAudienceSurvey && !isScriptView && !isPaymentExperience && (
+        {!isAudienceSurvey && !isScriptView && (
           <Select value={dateRange} onValueChange={(v) => setDateRange(v as DateRangeOption)}>
             <SelectTrigger className="w-[140px] h-8 text-xs">
               <SelectValue />
@@ -366,6 +368,19 @@ export default function ResearchInsights() {
               <SelectItem value="allTime">All Time</SelectItem>
             </SelectContent>
           </Select>
+        )}
+
+        {isPaymentExperience && (
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-8 gap-1.5 text-xs"
+            onClick={() => peDashboardRef.current?.downloadReport()}
+            disabled={peGenerating}
+          >
+            {peGenerating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileText className="w-3.5 h-3.5" />}
+            {peGenerating ? 'Generating…' : 'Word'}
+          </Button>
         )}
 
         {/* Right: Actions */}
@@ -504,7 +519,12 @@ export default function ResearchInsights() {
 
       {/* Report content — PAYMENT EXPERIENCE (live aggregation) */}
       {!isLoading && isPaymentExperience && (
-        <PaymentExperienceInsightsDashboard />
+        <PaymentExperienceInsightsDashboard
+          ref={peDashboardRef}
+          dateRange={dateRange}
+          hideHeader
+          onGeneratingChange={setPeGenerating}
+        />
       )}
 
       {/* Report content — MOVE-OUT SURVEY */}
