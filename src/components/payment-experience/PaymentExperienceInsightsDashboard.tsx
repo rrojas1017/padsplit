@@ -151,9 +151,30 @@ const fmtScore = (m: KPIMetric, max: number) =>
 
 export function PaymentExperienceInsightsDashboard() {
   const {
-    records, eligibleRecords, kpis, eligibilityStats,
-    topFrictionThemes, frictionSummary, autopayBarriers, isLoading,
+    records: allRecords, eligibleRecords: allEligible, eligibilityStats,
+    topFrictionThemes: allFrictionThemes, frictionSummary: allFrictionSummary,
+    autopayBarriers: allBarriers, isLoading,
   } = usePaymentExperienceResponses();
+
+  const [dateRange, setDateRange] = useState<DateRangeOption>('allTime');
+
+  // Apply time filter to all derived datasets
+  const records = useMemo(() => filterByDateRange(allRecords, dateRange), [allRecords, dateRange]);
+  const eligibleRecords = useMemo(() => filterByDateRange(allEligible, dateRange), [allEligible, dateRange]);
+
+  // Recompute KPIs and aggregates from the date-filtered eligible set
+  const { kpis, topFrictionThemes, autopayBarriers } = useMemo(() => {
+    // Lazy local imports to avoid widening the static import surface
+    const { deriveKPIs, aggregateFrictionThemes, aggregateAutopayBarriers } =
+      require('@/hooks/usePaymentExperienceResponses') as typeof import('@/hooks/usePaymentExperienceResponses');
+    return {
+      kpis: { ...deriveKPIs(eligibleRecords as any), totalRouted: records.length },
+      topFrictionThemes: aggregateFrictionThemes(eligibleRecords as any).themes,
+      autopayBarriers: aggregateAutopayBarriers(eligibleRecords as any),
+    };
+  }, [eligibleRecords, records]);
+
+  const frictionSummary = allFrictionSummary; // headline copy unaffected
   const { insight } = usePaymentExperienceAIInsight({
     kpis,
     topFriction: topFrictionThemes,
@@ -197,7 +218,7 @@ export function PaymentExperienceInsightsDashboard() {
     );
   }
 
-  if (records.length === 0) {
+  if (allRecords.length === 0) {
     return (
       <Card>
         <CardContent className="p-6 text-center text-sm text-muted-foreground">
@@ -211,16 +232,28 @@ export function PaymentExperienceInsightsDashboard() {
 
   return (
     <div className="space-y-3">
-      <div className="flex justify-end">
+      <div className="flex items-center justify-end gap-2">
+        <Select value={dateRange} onValueChange={(v) => setDateRange(v as DateRangeOption)}>
+          <SelectTrigger className="w-[140px] h-8 text-xs">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="thisWeek">This Week</SelectItem>
+            <SelectItem value="thisMonth">This Month</SelectItem>
+            <SelectItem value="lastMonth">Last Month</SelectItem>
+            <SelectItem value="last3months">Last 3 Months</SelectItem>
+            <SelectItem value="allTime">All Time</SelectItem>
+          </SelectContent>
+        </Select>
         <Button
           onClick={handleDownloadReport}
           disabled={isGenerating || eligibleRecords.length === 0}
           variant="outline"
           size="sm"
-          className="gap-2"
+          className="h-8 gap-1.5 text-xs"
         >
-          {isGenerating ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
-          {isGenerating ? 'Generating…' : 'Download Word Report'}
+          {isGenerating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FileText className="h-3.5 w-3.5" />}
+          {isGenerating ? 'Generating…' : 'Word'}
         </Button>
       </div>
 
