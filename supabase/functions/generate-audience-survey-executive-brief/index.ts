@@ -21,6 +21,8 @@ interface RequestBody {
   questions: QuestionSummary[];
 }
 
+type ExecutiveBrief = Record<string, unknown>;
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
@@ -87,7 +89,7 @@ ${questions.map((q) => {
 
 Write the JSON now. Make the analysis specific to these results and avoid generic marketing advice.`;
 
-    async function callModel(model: string, timeoutMs: number): Promise<{ ok: true; brief: any } | { ok: false; reason: string }> {
+    async function callModel(model: string, timeoutMs: number): Promise<{ ok: true; brief: ExecutiveBrief } | { ok: false; reason: string }> {
       const ctrl = new AbortController();
       const t = setTimeout(() => ctrl.abort(), timeoutMs);
       try {
@@ -111,7 +113,7 @@ Write the JSON now. Make the analysis specific to these results and avoid generi
         if (!aiResponse.ok) return { ok: false, reason: await aiResponse.text() };
         const aiResult = await aiResponse.json();
         const rawContent = aiResult?.choices?.[0]?.message?.content || "{}";
-        let brief: any;
+        let brief: ExecutiveBrief;
         try {
           brief = JSON.parse(rawContent);
         } catch {
@@ -120,8 +122,9 @@ Write the JSON now. Make the analysis specific to these results and avoid generi
         }
         if (!brief.generated_at) brief.generated_at = new Date().toISOString();
         return { ok: true, brief };
-      } catch (e: any) {
-        return { ok: false, reason: e?.name === "AbortError" ? "timeout" : String(e?.message || e) };
+      } catch (e: unknown) {
+        const error = e instanceof Error ? e : null;
+        return { ok: false, reason: error?.name === "AbortError" ? "timeout" : String(error?.message || e) };
       } finally {
         clearTimeout(t);
       }
