@@ -1,95 +1,49 @@
-# Refine Payment Experience Open-Ended Clusters
+## Goal
 
-Scope: only `src/utils/openEndedResponseClusters.ts` and `src/components/payment-experience/insights/OpenEndedClusters.tsx`. No backend, no other UI, no CSV/print/extraction changes.
+Fix two issues in Payment Experience open-ended clustering:
+1. Non-answers like "I don't know" landing inside substantive clusters (e.g., "Add monthly/biweekly options" on Q16).
+2. Too few clusters created — Gemini defaults to 5–8 even when 15+ are warranted.
 
-## 1. Store every response inside its cluster
+## Changes
 
-`src/utils/openEndedResponseClusters.ts`
-- Extend `OpenEndedCluster` with `responses: string[]` (full ordered list of every response assigned to that cluster, duplicates preserved).
-- Keep `examples: string[]` for backwards compatibility (still capped + case-insensitive deduped, derived from `responses`).
-- In `clusterOpenEndedResponses`, push every classified response into `bucket.responses` (no cap, no dedupe). Examples logic unchanged.
-- Sorting unchanged: named clusters by count desc, `Other responses` always last.
+### 1. Edge function `cluster-pe-open-ended` — stricter system prompt
 
-## 2. Expand deterministic clustering rules
+- **Force a dedicated `no_answer` cluster.** Hard rule: any response that is a non-answer ("I don't know", "no idea", "n/a", "nothing", "none", "no comment", "skip", blanks-equivalents) MUST go into a single `no_answer` cluster and MUST NOT be placed in any substantive cluster.
+- **Push for finer granularity.** Add explicit instructions:
+  - Target cluster count: `clamp(round(uniqueResponses / 6), 6, 20)` — passed in as a hint.
+  - No single substantive cluster may exceed ~25% of total responses; if it would, split it by sub-theme.
+  - Each cluster label must be distinct and specific (no overlapping themes).
+  - Include 2–3 short payment-domain examples in the prompt to anchor specificity (e.g., separate "Lower the price" vs "Offer discounts/promos" vs "Reduce fees").
+- **Post-Gemini server-side guard:** scan returned assignments; any response matching the no-answer regex gets reassigned to `no_answer` regardless of what Gemini said.
 
-In the `RULES` array, add/refine entries so fewer answers fall into Other. Order from most specific to broadest; first match wins.
+### 2. Second-pass split (oversized clusters)
 
-New / expanded clusters (keyword sets, lowercased substrings):
-- `clarity_communication` — "clear", "clarity", "explain", "explanation", "instructions", "communicate", "communication", "transparent"
-- `customer_support` — "support", "customer service", "rep", "agent", "chat", "phone call", "call back", "callback", "answer the phone"
-- `late_fees` — "late fee", "late charge", "penalty", "penalt" (moved before generic `fees_charges`)
-- `payment_processing` — "process", "post", "posted", "pending", "didn't go through", "declined", "fail", "error", "glitch", "bug"
-- `receipt_history` — "receipt", "history", "statement", "record", "proof", "confirmation"
-- `lower_price` — "cheaper", "lower", "too expensive", "too high", "afford", "price", "rate", "cost too much"
-- `partial_payments` — "partial", "split", "break it up", "pay half", "smaller payment", "installment"
-- `refunds` — "refund", "reimburs", "credit back", "money back"
-- `positive_feedback` — "easy", "simple", "great", "love", "perfect", "smooth", "no problem", "satisfied", "happy", "convenient" (only triggers when no negative cluster matched — handled by ordering it AFTER specific negative clusters but before Other)
-- Expand `no_issue` exact matches to also include: "all is well", "everything is fine", "everything good", "no complaints", "not really", "not at all", "nothing comes to mind", "i don't know", "idk", "unsure"
-- Expand `payment_reminders` keywords: "warning", "heads up", "before due", "advance notice"
-- Expand `due_date_flex` keywords: "grace period", "push back", "later date", "earlier date", "change date", "different date"
-- Expand `payment_methods` keywords: "money order", "check", "transfer", "wire", "crypto"
-- Expand `app_confusion` keywords: "login", "log in", "sign in", "ui", "interface", "buttons", "menu", "slow", "lag", "crash"
-- Expand `hardship` keywords: "covid", "sick", "injury", "laid off", "fired", "behind"
+After the first Gemini call returns:
+- Identify any substantive cluster with `> 25%` of total responses AND `> 30` unique responses.
+- For each such cluster (cap at 2 per question to bound cost), issue a single follow-up Gemini call that splits just that cluster's responses into 3–6 sub-clusters with the same rules.
+- Replace the oversized cluster with its sub-clusters in the final result.
+- All counts/responses preserved; `no_answer` cluster never split.
 
-Final rule order (top to bottom):
-1. `no_issue` (exact + expanded set)
-2. `late_fees`
-3. `payment_reminders`
-4. `due_date_flex`
-5. `autopay`
-6. `payment_methods`
-7. `payment_processing`
-8. `partial_payments`
-9. `refunds`
-10. `receipt_history`
-11. `fees_charges`
-12. `lower_price`
-13. `hardship`
-14. `app_confusion`
-15. `clarity_communication`
-16. `customer_support`
-17. `host_support`
-18. `positive_feedback`
-19. → `other`
+### 3. Cache invalidation — truncate
 
-## 3. Render full responses inside each opened cluster
+- Truncate `payment_experience_open_ended_cluster_cache` via the data tool so all PE open-ended questions re-cluster with the improved prompt on next view.
+- Only this cache table is affected — no survey data, bookings, or other tables touched.
 
-`src/components/payment-experience/insights/OpenEndedClusters.tsx`
-- Remove the "Example responses" capped block.
-- New per-cluster body using `cluster.responses`:
-  - Section label: `All responses in this cluster` with `Quote` icon.
-  - Wrapper `<div>` with `max-h-96 overflow-y-auto pr-1 space-y-2`.
-  - Each response rendered as a numbered muted quote block:
-    - `bg-muted/30 border-l-[3px] border-amber-300/60 rounded-r-md p-3`
-    - `text-sm text-muted-foreground italic leading-relaxed whitespace-pre-wrap break-words`
-    - Prefix `<span className="not-italic font-medium text-foreground/70 mr-2 tabular-nums">{i + 1}.</span>`
-- Per-cluster progressive disclosure:
-  - New state `Map<clusterId, boolean>` for `expandedCluster`.
-  - If `cluster.responses.length <= 10`, render all directly.
-  - Else render first 10 by default; add an inline `Button variant="ghost" size="sm"` inside that cluster's content:
-    - `Show all {count} responses` ↔ `Show fewer`
-  - Control lives inside the `AccordionContent`, below the response list.
-- Keep `cluster.summary` rendering above the list.
-- No global "All responses" section, no global "Show all responses" button (already absent, confirm removal stays).
-- Header text and counters unchanged (already match spec: "Response Clusters" / "Representative Response Clusters", "Based on N written/available sample responses").
-- Show-all-clusters control (named > 5) unchanged.
-- Small-sample fallback (`< 3`) unchanged.
+### 4. Scope (unchanged)
 
-## 4. Preserve full-response input
+- Topic tabs, CSV export, printable report, non-open-ended questions, deterministic fallback, auth/JWT model, persistent cache schema — all unchanged.
+- Model key stays `google/gemini-2.5-flash` (no `@v2` suffix since we're truncating).
 
-Call sites already pass `summary.allResponses ?? summary.samples ?? []` — not changing. `validResponses` still trimmed, blanks dropped, duplicates preserved.
+## Files
 
-## Out of scope
-
-Topic tabs, KPIs, Executive Summary, Survey Funnel, jump-to-question, non-open question cards, CSV export, printable report, Supabase queries, extraction, backfills, `raw_script_answers`, eligibility logic.
+- `supabase/functions/cluster-pe-open-ended/index.ts` — updated system prompt, no-answer guard, second-pass split logic, target-count hint.
+- Data operation — `TRUNCATE payment_experience_open_ended_cluster_cache`.
 
 ## Acceptance
 
-- Every valid written response is assigned to exactly one cluster and rendered inside that cluster when opened.
-- No global "All responses" section or button.
-- Cluster counts/percentages reflect the full response set, duplicates included.
-- `Other responses` stays last; named clusters sort by count desc.
-- Expanded keyword rules shrink Other.
-- Per-cluster "Show all N responses / Show fewer" works when count > 10.
-- Mobile (375/390/414): wraps cleanly, scrolls vertically, no horizontal overflow.
-- No TypeScript errors.
+- "I don't know" / non-answers appear only in a `no_answer` cluster, never in substantive ones.
+- Questions with many uniques produce noticeably more clusters (target 6–20 based on volume).
+- No substantive cluster dominates with >25% of responses unless it cannot be split further.
+- All valid responses still assigned to exactly one cluster; counts preserved including duplicates.
+- Deterministic fallback unchanged; AI failures still degrade gracefully.
+- Repeated visits hit cache after first regeneration.
