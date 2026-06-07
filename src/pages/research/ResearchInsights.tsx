@@ -445,6 +445,19 @@ export default function ResearchInsights() {
           </Button>
         )}
 
+        {isAudienceSurvey && (
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-8 gap-1.5 text-xs"
+            onClick={handleDownloadAudienceReport}
+            disabled={audienceGenerating || !audienceRecords.length}
+          >
+            {audienceGenerating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileText className="w-3.5 h-3.5" />}
+            {audienceGenerating ? 'Generating…' : 'Word'}
+          </Button>
+        )}
+
         {/* Right: Actions */}
         {isAdmin && !isAudienceSurvey && !isScriptView && !isPaymentExperience && (
           <Button
