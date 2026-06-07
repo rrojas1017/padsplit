@@ -2,6 +2,8 @@
 // - Requires an authenticated caller with research-access role.
 // - Persistently caches results in payment_experience_open_ended_cluster_cache.
 // - Calls Gemini via the Lovable AI Gateway only on cache miss.
+// - Server-side guard ensures non-answers go into a dedicated "no_answer" cluster.
+// - Second-pass split breaks up oversized clusters (>25% of total, >30 uniques).
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
@@ -16,6 +18,9 @@ const MODEL = "google/gemini-2.5-flash";
 const MAX_RESPONSES = 5000;
 const MAX_RESPONSE_LEN = 1000;
 const MAX_UNIQUES_TO_AI = 600;
+const SPLIT_PCT_THRESHOLD = 0.25; // split if >25% of total
+const SPLIT_UNIQUES_THRESHOLD = 30; // and >30 uniques
+const MAX_SPLITS_PER_QUESTION = 2;
 const ALLOWED_ROLES = new Set([
   "super_admin",
   "admin",
@@ -106,6 +111,30 @@ function slugifyId(label: string, idx: number): string {
   return s ? s.slice(0, 48) : `cluster-${idx + 1}`;
 }
 
+// ---- No-answer detection (hard server-side guard) ----
+const NO_ANSWER_EXACT = new Set([
+  "no", "nope", "n/a", "na", "n.a.", "none", "nothing", "nothing really",
+  "no comment", "no answer", "no idea", "no clue", "skip", "pass",
+  "i don't know", "i dont know", "idk", "i do not know", "dont know", "don't know",
+  "unsure", "not sure", "i'm not sure", "im not sure",
+  "-", "--", "...", ".", "?", "n", "nan", "null",
+]);
+const NO_ANSWER_PATTERNS = [
+  /^i\s*(do\s*not|don'?t|dont)\s*(really\s*)?know\b/i,
+  /^no\s*(real\s*)?(idea|clue|comment|answer|opinion|thoughts?)\b/i,
+  /^not\s*(really\s*)?sure\b/i,
+  /^nothing\s*(comes\s*to\s*mind|really|in\s*particular|specific)?\b/i,
+  /^i\s*have\s*no\s*(idea|clue|comment|answer|opinion)\b/i,
+  /^(can'?t|cannot)\s*think\s*of/i,
+];
+function isNoAnswer(text: string): boolean {
+  const lower = text.toLowerCase().replace(/\s+/g, " ").trim().replace(/[.!?]+$/, "");
+  if (!lower) return true;
+  if (NO_ANSWER_EXACT.has(lower)) return true;
+  if (lower.length <= 30 && NO_ANSWER_PATTERNS.some((re) => re.test(lower))) return true;
+  return false;
+}
+
 interface AICluster {
   id: string;
   label: string;
@@ -113,38 +142,48 @@ interface AICluster {
   responseIndices: number[];
 }
 
-async function callGemini(
-  questionText: string,
-  uniques: { text: string; count: number }[],
-): Promise<{ ok: true; clusters: AICluster[] } | { ok: false; reason: string }> {
-  const numbered = uniques
-    .map((u, i) => `${i + 1}. (x${u.count}) ${u.text}`)
-    .join("\n");
+function buildSystemPrompt(targetCount: number): string {
+  return `You are an expert qualitative researcher clustering open-ended survey responses about payment experience for a dashboard.
 
-  const system = `You are an expert qualitative researcher clustering open-ended survey responses for a dashboard.
+HARD RULES:
+- Any non-answer ("I don't know", "no idea", "n/a", "nothing", "none", "no comment", "skip", "unsure", blanks) MUST go in a SEPARATE cluster with id "no_answer" and label "No answer / Don't know". NEVER place these in substantive clusters.
+- Every numbered response MUST be assigned to exactly one cluster (or "otherIndices" only if truly unclassifiable).
+- "Other" is a true residual — minimize it.
 
-Rules:
-- Create as many specific, dashboard-friendly clusters as needed to minimize the "Other" bucket.
-- Cluster labels must be short (2-6 words), distinct, and non-overlapping.
-- Every numbered response MUST be assigned to exactly one cluster (or "otherIndices" if truly unclassifiable).
-- "Other" is reserved for genuinely unclassifiable answers only.
-- Return STRICT JSON only — no preamble, no markdown.
+GRANULARITY:
+- Aim for approximately ${targetCount} substantive clusters (excluding "no_answer" and "other"). Create more if the data clearly supports it.
+- NO substantive cluster may exceed ~25% of total responses. If a theme would dominate, SPLIT it by sub-theme (e.g., not just "Pricing" but separate "Lower the price", "Offer discounts/promos", "Reduce fees").
+- Cluster labels: short (2-6 words), distinct, specific, non-overlapping. Examples for payment topics:
+  * "Lower the price" vs "Offer discounts/promos" vs "Reduce fees" — keep separate.
+  * "Autopay setup" vs "Payment reminders" vs "Due-date flexibility" — keep separate.
+  * "App is confusing" vs "App crashes/slow" vs "Login problems" — keep separate.
+- Each cluster must be meaningfully different from the others. If two clusters could merge under one label, they should be one cluster.
 
-Output JSON shape:
+OUTPUT — STRICT JSON only, no preamble, no markdown:
 {
   "clusters": [
     { "id": "short-kebab-id", "label": "Short cluster label", "summary": "One-sentence summary.", "memberIndices": [1,2,3] }
   ],
   "otherIndices": [7, 12]
 }`;
+}
 
+async function callGeminiCluster(
+  questionText: string,
+  uniques: { text: string; count: number }[],
+  targetCount: number,
+): Promise<{ ok: true; clusters: AICluster[] } | { ok: false; reason: string }> {
+  const numbered = uniques
+    .map((u, i) => `${i + 1}. (x${u.count}) ${u.text}`)
+    .join("\n");
+  const system = buildSystemPrompt(targetCount);
   const user = `Survey question:
 "${questionText}"
 
 Numbered unique responses (x{count} = duplicate frequency, treat each numbered item as one response when assigning indices):
 ${numbered}
 
-Cluster them per the rules. Output only the JSON.`;
+Target ~${targetCount} substantive clusters plus a dedicated "no_answer" cluster for non-answers. Output only the JSON.`;
 
   let res: Response;
   try {
@@ -204,7 +243,6 @@ Cluster them per the rules. Output only the JSON.`;
     }
   }
 
-  // Other: explicit + any unseen indices.
   const otherSet = new Set<number>();
   const rawOther = Array.isArray(parsed.otherIndices) ? parsed.otherIndices : [];
   for (const v of rawOther) {
@@ -225,6 +263,86 @@ Cluster them per the rules. Output only the JSON.`;
     });
   }
   return { ok: true, clusters: aiClusters };
+}
+
+// Second-pass split: split one oversized cluster's responses into sub-clusters.
+async function callGeminiSplit(
+  questionText: string,
+  parentLabel: string,
+  uniques: { text: string; count: number }[],
+): Promise<{ ok: true; subs: { id: string; label: string; summary?: string; uniqueIndices: number[] }[] } | { ok: false; reason: string }> {
+  const numbered = uniques.map((u, i) => `${i + 1}. (x${u.count}) ${u.text}`).join("\n");
+  const system = `You are splitting one over-broad cluster of payment-experience survey responses into 3-6 more specific sub-clusters for a dashboard.
+
+RULES:
+- Create between 3 and 6 sub-clusters. Each must be specific and distinct.
+- Sub-cluster labels (2-6 words) must NOT repeat the parent label verbatim.
+- Every numbered response MUST go into exactly one sub-cluster (or otherIndices if truly unclassifiable).
+- STRICT JSON only.
+
+Output:
+{ "clusters": [ { "id": "kebab-id", "label": "Label", "summary": "...", "memberIndices": [1,2] } ], "otherIndices": [] }`;
+
+  const user = `Question: "${questionText}"
+Parent cluster being split: "${parentLabel}"
+
+Responses to split:
+${numbered}
+
+Output only the JSON.`;
+
+  let res: Response;
+  try {
+    res = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${LOVABLE_API_KEY}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: MODEL,
+        messages: [
+          { role: "system", content: system },
+          { role: "user", content: user },
+        ],
+        response_format: { type: "json_object" },
+      }),
+    });
+  } catch (e) {
+    console.error("[cluster-pe] split fetch failed", e);
+    return { ok: false, reason: "ai_error" };
+  }
+  if (!res.ok) return { ok: false, reason: "ai_error" };
+  const data = await res.json().catch(() => null);
+  const content = data?.choices?.[0]?.message?.content;
+  const parsed = typeof content === "string" ? tolerantJsonParse(content) : content;
+  if (!parsed || !Array.isArray(parsed.clusters)) return { ok: false, reason: "invalid_json" };
+
+  const N = uniques.length;
+  const seen = new Set<number>();
+  const subs: { id: string; label: string; summary?: string; uniqueIndices: number[] }[] = [];
+  for (let i = 0; i < parsed.clusters.length; i++) {
+    const c = parsed.clusters[i];
+    const label = String(c?.label ?? "").trim() || `Sub-cluster ${i + 1}`;
+    const id = (typeof c?.id === "string" && c.id.trim()) || slugifyId(label, i);
+    const summary = typeof c?.summary === "string" ? c.summary.trim() : undefined;
+    const members: number[] = [];
+    const raw = Array.isArray(c?.memberIndices) ? c.memberIndices : [];
+    for (const v of raw) {
+      const idx = Number(v);
+      if (!Number.isInteger(idx) || idx < 1 || idx > N || seen.has(idx)) continue;
+      seen.add(idx);
+      members.push(idx);
+    }
+    if (members.length > 0) subs.push({ id, label, summary, uniqueIndices: members });
+  }
+  const leftover: number[] = [];
+  for (let i = 1; i <= N; i++) if (!seen.has(i)) leftover.push(i);
+  if (leftover.length > 0) {
+    subs.push({
+      id: slugifyId(parentLabel + "-other", subs.length),
+      label: `${parentLabel} (other)`,
+      uniqueIndices: leftover,
+    });
+  }
+  return { ok: true, subs };
 }
 
 Deno.serve(async (req) => {
@@ -251,7 +369,6 @@ Deno.serve(async (req) => {
     auth: { persistSession: false },
   });
 
-  // Role check — research insights access.
   const { data: roles } = await admin
     .from("user_roles")
     .select("role")
@@ -277,7 +394,6 @@ Deno.serve(async (req) => {
   }
   if (!clientHash) return json(400, { ok: false, reason: "missing_hash" });
 
-  // Normalize: trim, drop blanks, cap length, preserve order/duplicates.
   const valid: string[] = [];
   for (const r of responses) {
     if (r == null) continue;
@@ -326,36 +442,83 @@ Deno.serve(async (req) => {
     u.originalIndices.push(i);
   });
   const allUniques = Array.from(uniqueMap.values()).sort((a, b) => b.count - a.count);
-  const head = allUniques.slice(0, MAX_UNIQUES_TO_AI);
-  const tail = allUniques.slice(MAX_UNIQUES_TO_AI);
 
-  // --- Call Gemini ---
-  const ai = await callGemini(questionText, head.map((u) => ({ text: u.text, count: u.count })));
-  if (!ai.ok) return json(200, { ok: false, reason: ai.reason });
+  // Pre-filter no-answers BEFORE Gemini sees them.
+  const noAnswerOriginal: number[] = [];
+  const substantiveUniques: Unique[] = [];
+  for (const u of allUniques) {
+    if (isNoAnswer(u.text)) {
+      noAnswerOriginal.push(...u.originalIndices);
+    } else {
+      substantiveUniques.push(u);
+    }
+  }
 
-  // Map AI clusters' uniques-index -> original response indices.
-  const clusterById = new Map<string, {
-    id: string; label: string; summary?: string; responseIndices: number[]; labelLower: string;
-  }>();
-  let otherIndices: number[] = [];
+  const head = substantiveUniques.slice(0, MAX_UNIQUES_TO_AI);
+  const tail = substantiveUniques.slice(MAX_UNIQUES_TO_AI);
+
+  // Target cluster count hint for Gemini
+  const targetCount = Math.max(6, Math.min(20, Math.round(substantiveUniques.length / 6)));
+
+  // --- Primary clustering call ---
+  let ai: { ok: true; clusters: AICluster[] } | { ok: false; reason: string };
+  if (head.length === 0) {
+    ai = { ok: true, clusters: [] };
+  } else {
+    ai = await callGeminiCluster(questionText, head.map((u) => ({ text: u.text, count: u.count })), targetCount);
+    if (!ai.ok) return json(200, { ok: false, reason: ai.reason });
+  }
+
+  // Build clusters keyed by id; track which head-unique-indices belong to each cluster.
+  type WorkCluster = {
+    id: string; label: string; summary?: string;
+    labelLower: string;
+    headUniqueIndices: number[]; // 1-based into head
+    originalIndices: number[];
+  };
+  const clusterById = new Map<string, WorkCluster>();
+  const otherSetOriginal = new Set<number>();
+  const aiNoAnswerOriginal: number[] = [];
 
   for (const c of ai.clusters) {
-    const indices: number[] = [];
+    const isAINoAnswer = c.id === "no_answer" || /no[_\s-]?answer|don'?t\s*know/i.test(c.label);
+    if (c.id === "other") {
+      for (const u1 of c.responseIndices) {
+        const u = head[u1 - 1];
+        if (u) {
+          // Server-side guard: re-route no-answers to no_answer bucket
+          if (isNoAnswer(u.text)) aiNoAnswerOriginal.push(...u.originalIndices);
+          else for (const oi of u.originalIndices) otherSetOriginal.add(oi);
+        }
+      }
+      continue;
+    }
+    const headIdxs: number[] = [];
+    const origIdxs: number[] = [];
     for (const u1 of c.responseIndices) {
       const u = head[u1 - 1];
-      if (u) indices.push(...u.originalIndices);
+      if (!u) continue;
+      // Guard: pull any sneaky no-answer out of substantive clusters
+      if (!isAINoAnswer && isNoAnswer(u.text)) {
+        aiNoAnswerOriginal.push(...u.originalIndices);
+        continue;
+      }
+      headIdxs.push(u1);
+      origIdxs.push(...u.originalIndices);
     }
-    if (c.id === "other") {
-      otherIndices.push(...indices);
-    } else if (indices.length > 0) {
-      clusterById.set(c.id, {
-        id: c.id,
-        label: c.label,
-        summary: c.summary,
-        responseIndices: indices,
-        labelLower: c.label.toLowerCase(),
-      });
+    if (origIdxs.length === 0) continue;
+    if (isAINoAnswer) {
+      aiNoAnswerOriginal.push(...origIdxs);
+      continue;
     }
+    clusterById.set(c.id, {
+      id: c.id,
+      label: c.label,
+      summary: c.summary,
+      labelLower: c.label.toLowerCase(),
+      headUniqueIndices: headIdxs,
+      originalIndices: origIdxs,
+    });
   }
 
   // --- Tail merge via deterministic classifier ---
@@ -363,43 +526,95 @@ Deno.serve(async (req) => {
     const fb = fallbackClassify(u.text);
     let merged = false;
     if (fb.id !== "other") {
-      // Try to merge into existing cluster with matching id or label.
       const byId = clusterById.get(fb.id);
       if (byId) {
-        byId.responseIndices.push(...u.originalIndices);
+        byId.originalIndices.push(...u.originalIndices);
         merged = true;
       } else {
         for (const c of clusterById.values()) {
           if (c.labelLower === fb.label.toLowerCase()) {
-            c.responseIndices.push(...u.originalIndices);
+            c.originalIndices.push(...u.originalIndices);
             merged = true;
             break;
           }
         }
       }
     }
-    if (!merged) otherIndices.push(...u.originalIndices);
+    if (!merged) for (const oi of u.originalIndices) otherSetOriginal.add(oi);
   }
 
-  // Sort named clusters by size desc; Other last.
-  const namedClusters = Array.from(clusterById.values()).sort(
-    (a, b) => b.responseIndices.length - a.responseIndices.length || a.label.localeCompare(b.label),
-  );
-  // Sort indices ascending for stable display.
-  for (const c of namedClusters) c.responseIndices.sort((a, b) => a - b);
+  // --- Second-pass split: oversized substantive clusters ---
+  const totalResponses = valid.length;
+  const sizeThreshold = Math.ceil(totalResponses * SPLIT_PCT_THRESHOLD);
+  const splitCandidates = Array.from(clusterById.values())
+    .filter((c) => c.originalIndices.length > sizeThreshold && c.headUniqueIndices.length > SPLIT_UNIQUES_THRESHOLD)
+    .sort((a, b) => b.originalIndices.length - a.originalIndices.length)
+    .slice(0, MAX_SPLITS_PER_QUESTION);
 
-  const finalClusters: AICluster[] = namedClusters.map((c) => ({
-    id: c.id,
-    label: c.label,
-    summary: c.summary,
-    responseIndices: c.responseIndices,
-  }));
-  if (otherIndices.length > 0) {
-    otherIndices = Array.from(new Set(otherIndices)).sort((a, b) => a - b);
+  for (const parent of splitCandidates) {
+    // Build the unique list for this cluster (from head).
+    const subUniques = parent.headUniqueIndices
+      .map((h1) => head[h1 - 1])
+      .filter(Boolean) as Unique[];
+    if (subUniques.length < 4) continue;
+    const split = await callGeminiSplit(
+      questionText,
+      parent.label,
+      subUniques.map((u) => ({ text: u.text, count: u.count })),
+    );
+    if (!split.ok || split.subs.length < 2) continue;
+    // Replace parent with sub-clusters.
+    clusterById.delete(parent.id);
+    for (const sub of split.subs) {
+      const origs: number[] = [];
+      for (const idx1 of sub.uniqueIndices) {
+        const u = subUniques[idx1 - 1];
+        if (u) origs.push(...u.originalIndices);
+      }
+      if (origs.length === 0) continue;
+      // Avoid id collision
+      let id = sub.id;
+      let n = 2;
+      while (clusterById.has(id)) id = `${sub.id}-${n++}`;
+      clusterById.set(id, {
+        id,
+        label: sub.label,
+        summary: sub.summary,
+        labelLower: sub.label.toLowerCase(),
+        headUniqueIndices: [],
+        originalIndices: origs,
+      });
+    }
+  }
+
+  // --- Assemble final output ---
+  const namedClusters = Array.from(clusterById.values())
+    .map((c) => ({
+      id: c.id,
+      label: c.label,
+      summary: c.summary,
+      responseIndices: Array.from(new Set(c.originalIndices)).sort((a, b) => a - b),
+    }))
+    .sort((a, b) => b.responseIndices.length - a.responseIndices.length || a.label.localeCompare(b.label));
+
+  const finalClusters: AICluster[] = [...namedClusters];
+
+  // No-answer bucket (pre-filtered + any AI-routed)
+  const allNoAnswer = Array.from(new Set([...noAnswerOriginal, ...aiNoAnswerOriginal])).sort((a, b) => a - b);
+  if (allNoAnswer.length > 0) {
+    finalClusters.push({
+      id: "no_answer",
+      label: "No answer / Don't know",
+      summary: "Respondents declined to answer or said they didn't know.",
+      responseIndices: allNoAnswer,
+    });
+  }
+
+  if (otherSetOriginal.size > 0) {
     finalClusters.push({
       id: "other",
       label: "Other responses",
-      responseIndices: otherIndices,
+      responseIndices: Array.from(otherSetOriginal).sort((a, b) => a - b),
     });
   }
 
