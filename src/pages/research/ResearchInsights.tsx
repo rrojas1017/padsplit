@@ -519,7 +519,12 @@ export default function ResearchInsights() {
 
       {/* Report content — PAYMENT EXPERIENCE (live aggregation) */}
       {!isLoading && isPaymentExperience && (
-        <PaymentExperienceInsightsDashboard />
+        <PaymentExperienceInsightsDashboard
+          ref={peDashboardRef}
+          dateRange={dateRange}
+          hideHeader
+          onGeneratingChange={setPeGenerating}
+        />
       )}
 
       {/* Report content — MOVE-OUT SURVEY */}
