@@ -1,49 +1,54 @@
-## Goal
+## Payment Experience Executive Brief (Word Report)
 
-Fix two issues in Payment Experience open-ended clustering:
-1. Non-answers like "I don't know" landing inside substantive clusters (e.g., "Add monthly/biweekly options" on Q16).
-2. Too few clusters created — Gemini defaults to 5–8 even when 15+ are warranted.
+Mirror the Move-Out report architecture, adapted for PE data.
 
-## Changes
+### 1. New files
 
-### 1. Edge function `cluster-pe-open-ended` — stricter system prompt
+- `src/utils/generate-pe-docx.ts` — builds the `.docx` (deterministic KPIs + AI narrative)
+- `supabase/functions/generate-pe-executive-brief/index.ts` — Gemini **2.5 Pro** narrative generator
+- `supabase/config.toml` — register the new function with `verify_jwt = true`
 
-- **Force a dedicated `no_answer` cluster.** Hard rule: any response that is a non-answer ("I don't know", "no idea", "n/a", "nothing", "none", "no comment", "skip", blanks-equivalents) MUST go into a single `no_answer` cluster and MUST NOT be placed in any substantive cluster.
-- **Push for finer granularity.** Add explicit instructions:
-  - Target cluster count: `clamp(round(uniqueResponses / 6), 6, 20)` — passed in as a hint.
-  - No single substantive cluster may exceed ~25% of total responses; if it would, split it by sub-theme.
-  - Each cluster label must be distinct and specific (no overlapping themes).
-  - Include 2–3 short payment-domain examples in the prompt to anchor specificity (e.g., separate "Lower the price" vs "Offer discounts/promos" vs "Reduce fees").
-- **Post-Gemini server-side guard:** scan returned assignments; any response matching the no-answer regex gets reassigned to `no_answer` regardless of what Gemini said.
+### 2. Trigger
 
-### 2. Second-pass split (oversized clusters)
+Add a **Download Word Report** button on the PE Insights dashboard (`PaymentExperienceInsightsDashboard.tsx`), matching the Move-Out placement. It passes the **currently-filtered** records (date range / filters from the dashboard hook) into `generatePEDocx()` — same scoping behavior as Move-Out.
 
-After the first Gemini call returns:
-- Identify any substantive cluster with `> 25%` of total responses AND `> 30` unique responses.
-- For each such cluster (cap at 2 per question to bound cost), issue a single follow-up Gemini call that splits just that cluster's responses into 3–6 sub-clusters with the same rules.
-- Replace the oversized cluster with its sub-clusters in the final result.
-- All counts/responses preserved; `no_answer` cluster never split.
+### 3. Document structure
 
-### 3. Cache invalidation — truncate
+1. **Title block** — "PadSplit — Payment Experience Executive Brief", date range, respondent count
+2. **KPI table** (recomputed from raw data, never AI):
+   - Members Surveyed
+   - Avg Payment Literacy (/100)
+   - Auto-pay Enrolled %
+   - Move-in Cost Clarity (/5)
+   - Hardship-Aware %
+   - Pay-cycle Misalignment %
+3. **Executive Analysis** — AI narrative paragraphs (Gemini 2.5 Pro), grounded in the aggregates we pass in. Falls back to deterministic summary if AI fails.
+4. **Per-question detail — every script question** (no top-N filter):
+   - Question text, N responses, avg score (if Likert), distribution bar
+   - For open-ended: top Gemini clusters from `payment_experience_open_ended_cluster_cache` with **counts + % share only** (no verbatim quotes), `no_answer` cluster shown separately
+5. **Top friction themes & autopay barriers** — aggregate counts from existing analytics
+6. **Recommended Actions** — AI bullets (max ~6) from Gemini 2.5 Pro
+7. **Methodology appendix + footer**
 
-- Truncate `payment_experience_open_ended_cluster_cache` via the data tool so all PE open-ended questions re-cluster with the improved prompt on next view.
-- Only this cache table is affected — no survey data, bookings, or other tables touched.
+### 4. Privacy
 
-### 4. Scope (unchanged)
+**Aggregate only** — no member verbatims, no names, no IDs in the docx. Clusters show labels + counts + share.
 
-- Topic tabs, CSV export, printable report, non-open-ended questions, deterministic fallback, auth/JWT model, persistent cache schema — all unchanged.
-- Model key stays `google/gemini-2.5-flash` (no `@v2` suffix since we're truncating).
+### 5. AI model
 
-## Files
+`google/gemini-2.5-pro` via Lovable AI Gateway (`https://ai.gateway.lovable.dev/v1/chat/completions`), matching Move-Out's executive brief quality tier.
 
-- `supabase/functions/cluster-pe-open-ended/index.ts` — updated system prompt, no-answer guard, second-pass split logic, target-count hint.
-- Data operation — `TRUNCATE payment_experience_open_ended_cluster_cache`.
+### 6. Deterministic-first rule
 
-## Acceptance
+All numbers (totals, %s, averages, distributions) are recomputed in `generate-pe-docx.ts` from the filtered raw records + cluster cache. AI writes prose only — never numbers.
 
-- "I don't know" / non-answers appear only in a `no_answer` cluster, never in substantive ones.
-- Questions with many uniques produce noticeably more clusters (target 6–20 based on volume).
-- No substantive cluster dominates with >25% of responses unless it cannot be split further.
-- All valid responses still assigned to exactly one cluster; counts preserved including duplicates.
-- Deterministic fallback unchanged; AI failures still degrade gracefully.
-- Repeated visits hit cache after first regeneration.
+### 7. Shared utility (optional, light refactor)
+
+Extract KPI table + section builders into `src/utils/docx-shared.ts` so Move-Out and PE share primitives without duplication.
+
+### Technical notes
+
+- Reuse `usePaymentExperienceResponses` data already on the dashboard (filtered records, KPIs, friction themes, autopay barriers).
+- For open-ended clusters, read from `payment_experience_open_ended_cluster_cache` keyed by `(questionId, responseHash)` — same source the dashboard uses.
+- Edge function payload: `{ kpis, perQuestionAggregates, frictionThemes, autopayBarriers, dateRange, totalRespondents }` → returns `{ headline, executiveAnalysis: string[], recommendedActions: string[] }`.
+- Browser-side `docx` library assembles and downloads — no server-side PDF/docx rendering.

@@ -168,3 +168,7 @@ verify_jwt = false
 
 [functions.persist-research-raw-answers]
 verify_jwt = false
+
+[functions.generate-pe-executive-brief]
+verify_jwt = true
+

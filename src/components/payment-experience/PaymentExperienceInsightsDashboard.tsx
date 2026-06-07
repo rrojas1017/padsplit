@@ -1,10 +1,14 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
 import {
-  Users, BookOpen, Repeat, FileQuestion, ShieldAlert, CalendarClock,
+  Users, BookOpen, Repeat, FileQuestion, ShieldAlert, CalendarClock, FileText, Loader2,
 } from 'lucide-react';
+import { toast } from 'sonner';
+import { generatePEDocx } from '@/utils/generate-pe-docx';
+
 import {
   usePaymentExperienceResponses,
   type KPIMetric,
@@ -137,6 +141,23 @@ export function PaymentExperienceInsightsDashboard() {
     kpiCaptions: computeKpiCaptions(eligibleRecords),
   }), [records, eligibleRecords]);
 
+  const [isGenerating, setIsGenerating] = useState(false);
+  const handleDownloadReport = async () => {
+    if (isGenerating) return;
+    setIsGenerating(true);
+    try {
+      toast.info('Generating Payment Experience executive brief…');
+      await generatePEDocx(records, eligibleRecords, kpis, topFrictionThemes, autopayBarriers);
+      toast.success('Executive brief downloaded');
+    } catch (e) {
+      console.error(e);
+      toast.error('Failed to generate report');
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+
   if (isLoading) {
     return (
       <div className="space-y-3">
@@ -162,12 +183,27 @@ export function PaymentExperienceInsightsDashboard() {
 
   return (
     <div className="space-y-3">
+      <div className="flex justify-end">
+        <Button
+          onClick={handleDownloadReport}
+          disabled={isGenerating || eligibleRecords.length === 0}
+          variant="outline"
+          size="sm"
+          className="gap-2"
+        >
+          {isGenerating ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
+          {isGenerating ? 'Generating…' : 'Download Word Report'}
+        </Button>
+      </div>
+
       <ExecutiveSummaryBanner
         insight={insight}
         kpis={kpis}
         topFrictionThemes={topFrictionThemes}
         firstAction={analytics.suggestedActions[0]}
       />
+
+
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
         <KPI
