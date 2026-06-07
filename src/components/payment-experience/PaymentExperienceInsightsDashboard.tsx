@@ -152,7 +152,25 @@ const fmtScore = (m: KPIMetric, max: number) =>
 
 // ── Dashboard ───────────────────────────────────────────────────────────────
 
-export function PaymentExperienceInsightsDashboard() {
+export interface PaymentExperienceDashboardHandle {
+  downloadReport: () => Promise<void>;
+  isGenerating: boolean;
+  hasEligible: boolean;
+}
+
+interface PaymentExperienceDashboardProps {
+  dateRange?: DateRangeOption;
+  hideHeader?: boolean;
+  onGeneratingChange?: (g: boolean) => void;
+}
+
+export const PaymentExperienceInsightsDashboard = forwardRef<
+  PaymentExperienceDashboardHandle,
+  PaymentExperienceDashboardProps
+>(function PaymentExperienceInsightsDashboard(
+  { dateRange: dateRangeProp, hideHeader, onGeneratingChange },
+  ref,
+) {
   const {
     records: allRecords, eligibleRecords: allEligible, eligibilityStats,
     topFrictionThemes: allFrictionThemes, frictionSummary: allFrictionSummary,
