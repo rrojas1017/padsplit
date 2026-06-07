@@ -1,6 +1,6 @@
 // Accordion-style clustered open-ended response display for the Payment
-// Experience Script Responses tab. Each opened cluster shows every response
-// assigned to it (no global "All responses" section).
+// Experience Script Responses tab. Uses Gemini AI clusters (server-side, cached)
+// with deterministic clustering as the instant render + fallback.
 
 import { useMemo, useState } from 'react';
 import { Quote } from 'lucide-react';
@@ -12,14 +12,17 @@ import {
 } from '@/components/ui/accordion';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { clusterOpenEndedResponses } from '@/utils/openEndedResponseClusters';
+import {
+  clusterOpenEndedResponses,
+  type OpenEndedCluster,
+} from '@/utils/openEndedResponseClusters';
+import { usePEOpenEndedClusters } from '@/hooks/usePEOpenEndedClusters';
 
 interface OpenEndedClustersProps {
-  /** Full set of responses used for clustering. */
+  questionId: string;
+  questionText: string;
   responses: string[];
-  /** Optional capped/representative preview list. */
   sampleResponses?: string[];
-  /** Full written-response count for this question. */
   totalResponses?: number;
 }
 
@@ -59,21 +62,82 @@ function SimpleVerbatimList({ responses }: { responses: string[] }) {
   );
 }
 
+function buildAiClusters(
+  aiClusters: { id: string; label: string; summary?: string; responseIndices: number[] }[],
+  validResponses: string[],
+): OpenEndedCluster[] {
+  const total = validResponses.length;
+  if (total === 0 || !aiClusters?.length) return [];
+
+  const built: OpenEndedCluster[] = aiClusters.map((c) => {
+    const resps: string[] = [];
+    for (const idx of c.responseIndices) {
+      if (Number.isInteger(idx) && idx >= 0 && idx < total) {
+        resps.push(validResponses[idx]);
+      }
+    }
+    const examples: string[] = [];
+    const seen = new Set<string>();
+    for (const r of resps) {
+      const k = r.toLowerCase();
+      if (seen.has(k)) continue;
+      seen.add(k);
+      examples.push(r);
+      if (examples.length >= 5) break;
+    }
+    const pct = (resps.length / total) * 100;
+    return {
+      id: c.id,
+      label: c.label,
+      summary: c.summary,
+      examples,
+      responses: resps,
+      count: resps.length,
+      percentage: resps.length === 0 ? 0 : pct < 1 ? 1 : Math.round(pct),
+    };
+  });
+
+  built.sort((a, b) => {
+    const aOther = a.id === OTHER_ID;
+    const bOther = b.id === OTHER_ID;
+    if (aOther && !bOther) return 1;
+    if (!aOther && bOther) return -1;
+    return b.count - a.count || a.label.localeCompare(b.label);
+  });
+  return built.filter((c) => c.count > 0);
+}
+
 export function OpenEndedClusters({
+  questionId,
+  questionText,
   responses,
   sampleResponses,
   totalResponses,
 }: OpenEndedClustersProps) {
-  // Trim + drop blanks, but do NOT dedupe — repeated answers must count.
   const validResponses = useMemo(
     () => cleanResponses(responses || []),
     [responses],
   );
 
-  const clusters = useMemo(
+  const deterministic = useMemo(
     () => clusterOpenEndedResponses(validResponses),
     [validResponses],
   );
+
+  const aiQuery = usePEOpenEndedClusters({
+    questionId,
+    questionText,
+    responses: validResponses,
+  });
+
+  const aiClusters = useMemo(() => {
+    if (aiQuery.data?.ok && aiQuery.data.clusters?.length) {
+      return buildAiClusters(aiQuery.data.clusters, validResponses);
+    }
+    return null;
+  }, [aiQuery.data, validResponses]);
+
+  const clusters = aiClusters && aiClusters.length > 0 ? aiClusters : deterministic;
 
   const [showAllClusters, setShowAllClusters] = useState(false);
   const [expandedClusters, setExpandedClusters] = useState<Record<string, boolean>>({});
@@ -108,12 +172,21 @@ export function OpenEndedClusters({
   const defaultOpenIndex = visibleClusters.findIndex((c) => c.id !== OTHER_ID);
   const defaultOpenValue = `cluster-${defaultOpenIndex >= 0 ? defaultOpenIndex : 0}`;
 
+  const isRefining = aiQuery.isLoading && !aiClusters;
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-2 flex-wrap">
-        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-          {headerTitle}
-        </p>
+        <div className="flex items-center gap-2">
+          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            {headerTitle}
+          </p>
+          {isRefining && (
+            <span className="text-[10px] text-muted-foreground italic">
+              Refining clusters…
+            </span>
+          )}
+        </div>
         <span className="text-xs text-muted-foreground tabular-nums">
           {isSampleOnly
             ? `Based on ${validTotal} available sample responses`

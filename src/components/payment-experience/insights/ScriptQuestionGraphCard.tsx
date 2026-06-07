@@ -369,6 +369,8 @@ export function ScriptQuestionGraphCard({
             {q.type === 'scale' && <ScaleDisplay summary={summary} />}
             {q.type === 'open' && (
               <OpenEndedClusters
+                questionId={String(summary.question.id)}
+                questionText={summary.question.text}
                 responses={summary.allResponses ?? summary.samples ?? []}
                 sampleResponses={summary.samples ?? []}
                 totalResponses={summary.count}
