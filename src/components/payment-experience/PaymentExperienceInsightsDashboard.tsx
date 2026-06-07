@@ -193,7 +193,7 @@ export function PaymentExperienceInsightsDashboard() {
     if (isGenerating) return;
     setIsGenerating(true);
     try {
-      toast.info('Generating Payment Experience executive brief…');
+      toast.info('Generating clusters and narrative — this can take ~1–2 minutes…');
       await generatePEDocx(records, eligibleRecords, kpis, topFrictionThemes, autopayBarriers);
       toast.success('Executive brief downloaded');
     } catch (e) {
