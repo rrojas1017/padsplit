@@ -74,30 +74,52 @@ async function sha256Hex(text: string): Promise<string> {
 
 async function fetchClustersForQuestion(
   questionId: string,
+  questionText: string,
   responses: string[],
 ): Promise<Array<{ label: string; count: number; pct: number }> | null> {
   if (responses.length < 8) return null; // matches MIN_RESPONSES_FOR_AI
-  try {
-    const hash = await sha256Hex(JSON.stringify(responses));
-    const { data, error } = await supabase
-      .from('payment_experience_open_ended_cluster_cache')
-      .select('clusters')
-      .eq('question_id', questionId)
-      .eq('response_hash', hash)
-      .maybeSingle();
-    if (error || !data) return null;
-    const raw = (data as any).clusters as Array<{ label?: string; responseIndices?: number[] }>;
+  const total = responses.length;
+  const shape = (raw: any): Array<{ label: string; count: number; pct: number }> | null => {
     if (!Array.isArray(raw)) return null;
-    const total = responses.length;
     return raw
-      .map((c) => ({
+      .map((c: any) => ({
         label: c.label || 'Unlabeled',
         count: Array.isArray(c.responseIndices) ? c.responseIndices.length : 0,
       }))
       .filter((c) => c.count > 0)
       .sort((a, b) => b.count - a.count)
       .map((c) => ({ ...c, pct: total > 0 ? (c.count / total) * 100 : 0 }));
-  } catch {
+  };
+
+  try {
+    const hash = await sha256Hex(JSON.stringify(responses));
+    // 1) Cache lookup
+    const { data } = await supabase
+      .from('payment_experience_open_ended_cluster_cache')
+      .select('clusters')
+      .eq('question_id', questionId)
+      .eq('response_hash', hash)
+      .maybeSingle();
+    if (data && (data as any).clusters) {
+      const out = shape((data as any).clusters);
+      if (out && out.length) return out;
+    }
+
+    // 2) Cache miss — invoke the cluster function on demand (90s soft timeout)
+    const invokeP = supabase.functions.invoke('cluster-pe-open-ended', {
+      body: { questionId, questionText, responses, responseHash: hash },
+    });
+    const timeoutP = new Promise<{ data: any; error: any }>((resolve) =>
+      setTimeout(() => resolve({ data: null, error: { message: 'timeout' } }), 90_000),
+    );
+    const { data: fnData, error: fnError } = await Promise.race([invokeP, timeoutP]) as any;
+    if (fnError || !fnData || fnData.ok !== true) {
+      console.warn('[generate-pe-docx] cluster invoke failed for', questionId, fnError);
+      return null;
+    }
+    return shape(fnData.clusters);
+  } catch (e) {
+    console.warn('[generate-pe-docx] cluster lookup error for', questionId, e);
     return null;
   }
 }
@@ -166,7 +188,7 @@ export async function generatePEDocx(
   const clusterMap = new Map<string, Array<{ label: string; count: number; pct: number }>>();
   await Promise.all(openSummaries.map(async (q) => {
     const responses = (q.allResponses || []).filter(Boolean);
-    const clusters = await fetchClustersForQuestion(q.question.id, responses);
+    const clusters = await fetchClustersForQuestion(q.question.id, q.question.text, responses);
     if (clusters) clusterMap.set(q.question.id, clusters);
   }));
 
