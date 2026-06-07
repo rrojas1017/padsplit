@@ -141,6 +141,23 @@ export function PaymentExperienceInsightsDashboard() {
     kpiCaptions: computeKpiCaptions(eligibleRecords),
   }), [records, eligibleRecords]);
 
+  const [isGenerating, setIsGenerating] = useState(false);
+  const handleDownloadReport = async () => {
+    if (isGenerating) return;
+    setIsGenerating(true);
+    try {
+      toast.info('Generating Payment Experience executive brief…');
+      await generatePEDocx(records, eligibleRecords, kpis, topFrictionThemes, autopayBarriers);
+      toast.success('Executive brief downloaded');
+    } catch (e) {
+      console.error(e);
+      toast.error('Failed to generate report');
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+
   if (isLoading) {
     return (
       <div className="space-y-3">
