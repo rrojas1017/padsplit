@@ -118,45 +118,71 @@ ${perQuestion.map((q) => {
 
 Write the JSON now. Be specific. Recommendations must reference real numbers from above.`;
 
-    const aiResponse = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${LOVABLE_API_KEY}`,
-      },
-      body: JSON.stringify({
-        model: "google/gemini-2.5-pro",
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: userPrompt },
-        ],
-        response_format: { type: "json_object" },
-        temperature: 0.6,
-      }),
-    });
+    async function callModel(model: string, timeoutMs: number): Promise<{ ok: true; brief: any } | { ok: false; reason: string; status?: number }> {
+      const ctrl = new AbortController();
+      const t = setTimeout(() => ctrl.abort(), timeoutMs);
+      try {
+        const aiResponse = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${LOVABLE_API_KEY}`,
+          },
+          body: JSON.stringify({
+            model,
+            messages: [
+              { role: "system", content: systemPrompt },
+              { role: "user", content: userPrompt },
+            ],
+            response_format: { type: "json_object" },
+            temperature: 0.6,
+          }),
+          signal: ctrl.signal,
+        });
+        if (!aiResponse.ok) {
+          const errText = await aiResponse.text();
+          console.error(`[generate-pe-executive-brief] ${model} error:`, aiResponse.status, errText);
+          return { ok: false, reason: errText, status: aiResponse.status };
+        }
+        const aiResult = await aiResponse.json();
+        const rawContent = aiResult?.choices?.[0]?.message?.content || "{}";
+        let brief: any;
+        try {
+          brief = JSON.parse(rawContent);
+        } catch {
+          const m = rawContent.match(/```(?:json)?\s*([\s\S]*?)```/);
+          brief = m ? JSON.parse(m[1]) : { executive_narrative: rawContent };
+        }
+        if (!brief || (!brief.executive_narrative && !brief.narrative_headline)) {
+          return { ok: false, reason: "empty_brief" };
+        }
+        if (!brief.generated_at) brief.generated_at = new Date().toISOString();
+        return { ok: true, brief };
+      } catch (e: any) {
+        const reason = e?.name === "AbortError" ? "timeout" : String(e?.message || e);
+        console.error(`[generate-pe-executive-brief] ${model} failed:`, reason);
+        return { ok: false, reason };
+      } finally {
+        clearTimeout(t);
+      }
+    }
 
-    if (!aiResponse.ok) {
-      const errText = await aiResponse.text();
-      console.error("[generate-pe-executive-brief] AI error:", aiResponse.status, errText);
+    // Try Pro first (user preference) with a 110s ceiling. On any failure, fall
+    // back to Flash so the report always gets a narrative.
+    let modelUsed = "google/gemini-2.5-pro";
+    let result = await callModel("google/gemini-2.5-pro", 110_000);
+    if (!result.ok) {
+      console.warn("[generate-pe-executive-brief] Pro failed, falling back to Flash:", result.reason);
+      modelUsed = "google/gemini-2.5-flash";
+      result = await callModel("google/gemini-2.5-flash", 30_000);
+    }
+    if (!result.ok) {
       return new Response(
-        JSON.stringify({ error: "AI generation failed", status: aiResponse.status, detail: errText }),
+        JSON.stringify({ error: "AI generation failed", detail: result.reason }),
         { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } },
       );
     }
-
-    const aiResult = await aiResponse.json();
-    const rawContent = aiResult?.choices?.[0]?.message?.content || "{}";
-
-    let brief: any;
-    try {
-      brief = JSON.parse(rawContent);
-    } catch {
-      const m = rawContent.match(/```(?:json)?\s*([\s\S]*?)```/);
-      brief = m ? JSON.parse(m[1]) : { executive_narrative: rawContent };
-    }
-    if (!brief.generated_at) brief.generated_at = new Date().toISOString();
-
-    return new Response(JSON.stringify({ executive_brief: brief }), {
+    return new Response(JSON.stringify({ executive_brief: result.brief, model_used: modelUsed }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (err) {
