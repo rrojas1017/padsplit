@@ -177,7 +177,9 @@ export const PaymentExperienceInsightsDashboard = forwardRef<
     autopayBarriers: allBarriers, isLoading,
   } = usePaymentExperienceResponses();
 
-  const [dateRange, setDateRange] = useState<DateRangeOption>('allTime');
+  const [internalDateRange, setInternalDateRange] = useState<DateRangeOption>('allTime');
+  const dateRange = dateRangeProp ?? internalDateRange;
+  const setDateRange = (v: DateRangeOption) => setInternalDateRange(v);
 
   // Apply time filter to all derived datasets
   const records = useMemo(() => filterByDateRange(allRecords, dateRange), [allRecords, dateRange]);
