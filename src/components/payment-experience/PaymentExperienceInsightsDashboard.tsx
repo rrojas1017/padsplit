@@ -2,15 +2,46 @@ import { useMemo, useState } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
 import {
   Users, BookOpen, Repeat, FileQuestion, ShieldAlert, CalendarClock, FileText, Loader2,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { generatePEDocx } from '@/utils/generate-pe-docx';
+import type { DateRangeOption } from '@/hooks/useResearchInsightsData';
+
+function filterByDateRange<T extends { booking_date: string }>(records: T[], range: DateRangeOption): T[] {
+  if (range === 'allTime') return records;
+  const now = new Date();
+  let start: Date;
+  let end: Date | null = null;
+  if (range === 'thisWeek') {
+    const day = now.getDay(); // 0 = Sun
+    start = new Date(now); start.setDate(now.getDate() - day); start.setHours(0,0,0,0);
+  } else if (range === 'thisMonth') {
+    start = new Date(now.getFullYear(), now.getMonth(), 1);
+  } else if (range === 'lastMonth') {
+    start = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    end = new Date(now.getFullYear(), now.getMonth(), 1);
+  } else { // last3months
+    start = new Date(now.getFullYear(), now.getMonth() - 3, 1);
+  }
+  return records.filter((r) => {
+    if (!r.booking_date) return false;
+    const d = new Date(r.booking_date);
+    if (isNaN(d.getTime())) return false;
+    if (d < start) return false;
+    if (end && d >= end) return false;
+    return true;
+  });
+}
 
 import {
   usePaymentExperienceResponses,
+  deriveKPIs,
+  aggregateFrictionThemes,
+  aggregateAutopayBarriers,
   type KPIMetric,
 } from '@/hooks/usePaymentExperienceResponses';
 import { usePaymentExperienceAIInsight } from '@/hooks/usePaymentExperienceAIInsight';
@@ -123,9 +154,25 @@ const fmtScore = (m: KPIMetric, max: number) =>
 
 export function PaymentExperienceInsightsDashboard() {
   const {
-    records, eligibleRecords, kpis, eligibilityStats,
-    topFrictionThemes, frictionSummary, autopayBarriers, isLoading,
+    records: allRecords, eligibleRecords: allEligible, eligibilityStats,
+    topFrictionThemes: allFrictionThemes, frictionSummary: allFrictionSummary,
+    autopayBarriers: allBarriers, isLoading,
   } = usePaymentExperienceResponses();
+
+  const [dateRange, setDateRange] = useState<DateRangeOption>('allTime');
+
+  // Apply time filter to all derived datasets
+  const records = useMemo(() => filterByDateRange(allRecords, dateRange), [allRecords, dateRange]);
+  const eligibleRecords = useMemo(() => filterByDateRange(allEligible, dateRange), [allEligible, dateRange]);
+
+  // Recompute KPIs and aggregates from the date-filtered eligible set
+  const { kpis, topFrictionThemes, autopayBarriers } = useMemo(() => ({
+    kpis: { ...deriveKPIs(eligibleRecords as any), totalRouted: records.length },
+    topFrictionThemes: aggregateFrictionThemes(eligibleRecords as any).themes,
+    autopayBarriers: aggregateAutopayBarriers(eligibleRecords as any),
+  }), [eligibleRecords, records]);
+
+  const frictionSummary = allFrictionSummary; // headline copy unaffected
   const { insight } = usePaymentExperienceAIInsight({
     kpis,
     topFriction: topFrictionThemes,
@@ -169,7 +216,7 @@ export function PaymentExperienceInsightsDashboard() {
     );
   }
 
-  if (records.length === 0) {
+  if (allRecords.length === 0) {
     return (
       <Card>
         <CardContent className="p-6 text-center text-sm text-muted-foreground">
@@ -183,16 +230,28 @@ export function PaymentExperienceInsightsDashboard() {
 
   return (
     <div className="space-y-3">
-      <div className="flex justify-end">
+      <div className="flex items-center justify-end gap-2">
+        <Select value={dateRange} onValueChange={(v) => setDateRange(v as DateRangeOption)}>
+          <SelectTrigger className="w-[140px] h-8 text-xs">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="thisWeek">This Week</SelectItem>
+            <SelectItem value="thisMonth">This Month</SelectItem>
+            <SelectItem value="lastMonth">Last Month</SelectItem>
+            <SelectItem value="last3months">Last 3 Months</SelectItem>
+            <SelectItem value="allTime">All Time</SelectItem>
+          </SelectContent>
+        </Select>
         <Button
           onClick={handleDownloadReport}
           disabled={isGenerating || eligibleRecords.length === 0}
           variant="outline"
           size="sm"
-          className="gap-2"
+          className="h-8 gap-1.5 text-xs"
         >
-          {isGenerating ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
-          {isGenerating ? 'Generating…' : 'Download Word Report'}
+          {isGenerating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FileText className="h-3.5 w-3.5" />}
+          {isGenerating ? 'Generating…' : 'Word'}
         </Button>
       </div>
 
