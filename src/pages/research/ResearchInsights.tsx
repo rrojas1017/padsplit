@@ -316,9 +316,60 @@ export default function ResearchInsights() {
     }
   };
 
-  const lastUpdated = selectedReport?.created_at
-    ? format(new Date(selectedReport.created_at), 'MMM d, yyyy h:mm a')
-    : null;
+  const handleDownloadAudienceReport = async () => {
+    if (!audienceRecords.length) {
+      toast.error('No audience survey responses available');
+      return;
+    }
+    setAudienceGenerating(true);
+    toast.info('Generating Audience Survey report...');
+    try {
+      const countAnswered = (r: any) => {
+        const ext = r.extraction || {};
+        let count = 0;
+        const hasArr = (a: any) => Array.isArray(a) && a.length > 0;
+        const hasBool = (b: any) => typeof b === 'boolean';
+        if (hasArr(ext.social_media_platforms?.platforms_used)) count++;
+        if (hasBool(ext.influencer_following?.follows_influencers)) count++;
+        if (hasBool(ext.ad_awareness?.noticed_standout_ads)) count++;
+        if (hasBool(ext.ad_awareness?.has_seen_padsplit_ads)) count++;
+        if (hasArr(ext.ad_awareness?.expected_padsplit_ad_platforms) || hasArr(ext.ad_awareness?.where_seen_padsplit_ads)) count++;
+        if (hasArr(ext.ad_engagement?.what_makes_them_stop_scrolling)) count++;
+        if (hasArr(ext.ad_engagement?.what_makes_them_click_ad)) count++;
+        if (hasArr(ext.first_impressions?.initial_concerns)) count++;
+        if (hasArr(ext.first_impressions?.interest_drivers)) count++;
+        if (hasArr(ext.first_impressions?.confusing_aspects)) count++;
+        if (hasArr(ext.ad_engagement?.ad_detail_preferences)) count++;
+        if (hasArr(ext.ad_engagement?.preferred_content_types)) count++;
+        if (hasBool(ext.video_testimonial?.interested_in_recording)) count++;
+        return count;
+      };
+      const totalAnswered = audienceRecords.reduce((s, r) => s + countAnswered(r), 0);
+      const avgAnswered = audienceRecords.length > 0 ? Math.round((totalAnswered / audienceRecords.length) * 10) / 10 : 0;
+      const completionRate = audienceRecords.length > 0 ? Math.round((avgAnswered / 13) * 100) : 0;
+
+      const questionData = AUDIENCE_SURVEY_QUESTIONS.map((q, i) => {
+        if (q.type === 'multi') {
+          const raw = audienceAggArray(audienceRecords, q.accessor);
+          return { number: i + 1, label: q.label, type: q.type, data: capSlices(formatAggLabels(raw), 8), boolData: undefined };
+        }
+        const boolData = audienceAggBool(audienceRecords, q.boolAccessor!);
+        return { number: i + 1, label: q.label, type: q.type, data: [] as AggResult[], boolData };
+      });
+
+      await generateAudienceSurveyReport(audienceRecords, questionData, {
+        totalRecords: audienceRecords.length,
+        avgAnswered,
+        completionRate,
+      });
+      toast.success('Report downloaded successfully');
+    } catch (err) {
+      console.error('Audience report generation error:', err);
+      toast.error('Failed to generate report');
+    } finally {
+      setAudienceGenerating(false);
+    }
+  };
 
   return (
     <DashboardLayout title="" subtitle="">
