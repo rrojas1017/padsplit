@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useSessionState } from '@/hooks/useSessionState';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePageTracking } from '@/hooks/usePageTracking';
 import { supabase } from '@/integrations/supabase/client';
