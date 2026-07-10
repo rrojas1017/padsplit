@@ -37,8 +37,8 @@ export default function Dashboard() {
   usePageTracking('view_dashboard');
   const { user } = useAuth();
   const { agents, isLoading: agentsLoading } = useAgents();
-  const [dateRange, setDateRange] = useState<DateRangeFilterType>('today');
-  const [customDates, setCustomDates] = useState<CalcCustomDateRange | undefined>(undefined);
+  const [dateRange, setDateRange] = useSessionState<DateRangeFilterType>('dashboard:dateRange', 'today');
+  const [customDates, setCustomDates] = useSessionState<CalcCustomDateRange | undefined>('dashboard:customDates', undefined);
   const [selectedSiteId, setSelectedSiteId] = useState<string | null>(null);
   const { bookings, isLoading: bookingsLoading } = useDashboardData(dateRange, customDates);
 
