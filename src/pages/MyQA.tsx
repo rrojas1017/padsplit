@@ -28,8 +28,8 @@ export default function MyQA() {
   const { user } = useAuth();
   const { agents } = useAgents();
   const { coachingBlocked } = useDailyCostGate();
-  const [dateRange, setDateRange] = useState<DateFilterValue>('today');
-  const [customDates, setCustomDates] = useState<CustomDateRange | undefined>(undefined);
+  const [dateRange, setDateRange] = useSessionState<DateFilterValue>('myQA:dateRange', 'today');
+  const [customDates, setCustomDates] = useSessionState<CustomDateRange | undefined>('myQA:customDates', undefined);
 
   const handleRangeChange = (range: DateFilterValue, dates?: CustomDateRange) => {
     setDateRange(range);
