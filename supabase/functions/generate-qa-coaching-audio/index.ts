@@ -345,7 +345,7 @@ Generate ONLY the spoken coaching script. No formatting, no quotes around the sc
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'google/gemini-2.5-pro',
+        model: 'google/gemini-2.5-flash',
         messages: [
           { role: 'system', content: 'You are Katty, an empathetic QA coach. Generate only the spoken coaching script, nothing else.' },
           { role: 'user', content: kattyPrompt }
@@ -380,7 +380,7 @@ Generate ONLY the spoken coaching script. No formatting, no quotes around the sc
       site_id: siteId,
       input_tokens: estimatedInputTokens,
       output_tokens: estimatedOutputTokens,
-      metadata: { model: 'google/gemini-2.5-pro', script_length: coachingScript.length },
+      metadata: { model: 'google/gemini-2.5-flash', script_length: coachingScript.length },
       triggered_by_user_id: triggeredByUserId || undefined,
       is_internal: isInternal,
     });
