@@ -280,7 +280,7 @@ Generate ONLY the spoken script, no stage directions or formatting.`;
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "google/gemini-2.5-pro",
+        model: "google/gemini-2.5-flash",
         messages: [
           { role: "system", content: "You are an enthusiastic motivational coach creating spoken audio scripts for sales agents." },
           { role: "user", content: scriptPrompt }
@@ -315,7 +315,7 @@ Generate ONLY the spoken script, no stage directions or formatting.`;
       site_id: siteId,
       input_tokens: estimatedInputTokens,
       output_tokens: estimatedOutputTokens,
-      metadata: { model: 'google/gemini-2.5-pro', script_length: coachingScript.length },
+      metadata: { model: 'google/gemini-2.5-flash', script_length: coachingScript.length },
       triggered_by_user_id: triggeredByUserId || undefined,
       is_internal: isInternal,
     });
