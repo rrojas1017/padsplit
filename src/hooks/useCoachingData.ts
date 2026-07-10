@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react';
+import { useMemo } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { useAgents } from '@/contexts/AgentsContext';
@@ -43,7 +44,6 @@ async function fetchAllPages(dateRange?: DateRangeFilterType, customDates?: Calc
   let page = 0;
   let hasMore = true;
 
-  // Compute date bounds if provided
   let startStr: string | undefined;
   let endStr: string | undefined;
   if (dateRange && dateRange !== 'all') {
@@ -82,22 +82,16 @@ async function fetchAllPages(dateRange?: DateRangeFilterType, customDates?: Calc
       .order('updated_at', { ascending: false })
       .range(from, to);
 
-    // Apply server-side date filtering when a range is specified
     if (startStr && endStr) {
       query = query.gte('bookings.booking_date', startStr).lte('bookings.booking_date', endStr);
     }
 
     const { data, error } = await query;
-
     if (error) {
       console.error('Error fetching coaching page', page, error);
       break;
     }
-
-    if (data) {
-      allRows.push(...data);
-    }
-
+    if (data) allRows.push(...data);
     hasMore = (data?.length ?? 0) === PAGE_SIZE;
     page++;
   }
@@ -105,99 +99,93 @@ async function fetchAllPages(dateRange?: DateRangeFilterType, customDates?: Calc
   return allRows;
 }
 
+function rangeKey(dateRange?: DateRangeFilterType, customDates?: CalcCustomDateRange): string {
+  if (!dateRange) return 'default';
+  if (dateRange === 'custom' && customDates) {
+    return `custom-${format(customDates.from, 'yyyy-MM-dd')}-${format(customDates.to, 'yyyy-MM-dd')}`;
+  }
+  return dateRange;
+}
+
 export function useCoachingData(options: UseCoachingDataOptions = {}) {
   const { user, isLoading: authLoading } = useAuth();
   const { agents } = useAgents();
-  const [coachingBookings, setCoachingBookings] = useState<CoachingBooking[]>([]);
-  const [coachingBookingsWithAudio, setCoachingBookingsWithAudio] = useState<CoachingBookingWithAudio[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-
   const { agentId, includeAudio = false, dateRange, customDates } = options;
 
-  useEffect(() => {
-    if (authLoading || !user) return;
+  const { data: rawRows = [], isLoading: queryLoading } = useQuery({
+    queryKey: ['coachingData', rangeKey(dateRange, customDates)],
+    queryFn: () => fetchAllPages(dateRange, customDates),
+    enabled: !authLoading && !!user,
+    staleTime: 5 * 60 * 1000, // 5 min: don't refetch on remount within this window
+    gcTime: 30 * 60 * 1000,   // keep cache 30 min
+    refetchOnWindowFocus: false,
+    refetchOnMount: false,
+  });
 
-    const fetchCoachingData = async () => {
-      setIsLoading(true);
-      try {
-        const allData = await fetchAllPages(dateRange, customDates);
+  const filteredData = useMemo(() => {
+    return agentId ? rawRows.filter((item: any) => item.bookings.agent_id === agentId) : rawRows;
+  }, [rawRows, agentId]);
 
-        let filteredData = allData;
-        if (agentId) {
-          filteredData = filteredData.filter((item: any) => item.bookings.agent_id === agentId);
-        }
+  const coachingBookings = useMemo<CoachingBooking[]>(() => {
+    const mapped = filteredData.map((item: any) => {
+      const booking = item.bookings;
+      const agent = agents.find(a => a.id === booking.agent_id);
+      const analyzedAt = item.coaching_audio_generated_at || item.updated_at || item.created_at || `${booking.booking_date}T00:00:00`;
+      return {
+        id: booking.id,
+        bookingDate: new Date(booking.booking_date + 'T00:00:00'),
+        analyzedAt,
+        agentId: booking.agent_id,
+        agentName: agent?.name || 'Unknown Agent',
+        memberName: booking.member_name || 'Unknown Member',
+        transcriptionStatus: booking.transcription_status || 'completed',
+        agentFeedback: item.agent_feedback as AgentFeedback,
+        coachingAudioUrl: item.coaching_audio_url,
+        coachingAudioListenedAt: item.coaching_audio_listened_at,
+        coachingAudioGeneratedAt: item.coaching_audio_generated_at,
+      };
+    });
+    mapped.sort((a, b) => {
+      const tsA = a.analyzedAt ? new Date(a.analyzedAt).getTime() : 0;
+      const tsB = b.analyzedAt ? new Date(b.analyzedAt).getTime() : 0;
+      return tsB - tsA;
+    });
+    return mapped;
+  }, [filteredData, agents]);
 
-        const mappedData: CoachingBooking[] = filteredData.map((item: any) => {
-          const booking = item.bookings;
-          const agent = agents.find(a => a.id === booking.agent_id);
-          const analyzedAt = item.coaching_audio_generated_at || item.updated_at || item.created_at || `${booking.booking_date}T00:00:00`;
+  const coachingBookingsWithAudio = useMemo<CoachingBookingWithAudio[]>(() => {
+    if (!includeAudio) return [];
+    const mapped = filteredData.map((item: any) => {
+      const booking = item.bookings;
+      const agent = agents.find(a => a.id === booking.agent_id);
+      const analyzedAt = item.coaching_audio_generated_at || item.updated_at || item.created_at || `${booking.booking_date}T00:00:00`;
+      return {
+        id: booking.id,
+        bookingDate: new Date(booking.booking_date + 'T00:00:00'),
+        analyzedAt,
+        agentId: booking.agent_id,
+        agentName: agent?.name || 'Unknown Agent',
+        memberName: booking.member_name || 'Unknown Member',
+        transcriptionStatus: booking.transcription_status || 'completed',
+        agentFeedback: item.agent_feedback as AgentFeedback,
+        coachingAudioUrl: item.coaching_audio_url,
+        coachingAudioGeneratedAt: item.coaching_audio_generated_at,
+        coachingAudioListenedAt: item.coaching_audio_listened_at,
+        marketCity: booking.market_city,
+        marketState: booking.market_state,
+      };
+    });
+    mapped.sort((a, b) => {
+      const tsA = a.analyzedAt ? new Date(a.analyzedAt).getTime() : 0;
+      const tsB = b.analyzedAt ? new Date(b.analyzedAt).getTime() : 0;
+      return tsB - tsA;
+    });
+    return mapped;
+  }, [filteredData, agents, includeAudio]);
 
-          return {
-            id: booking.id,
-            bookingDate: new Date(booking.booking_date + 'T00:00:00'),
-            analyzedAt,
-            agentId: booking.agent_id,
-            agentName: agent?.name || 'Unknown Agent',
-            memberName: booking.member_name || 'Unknown Member',
-            transcriptionStatus: booking.transcription_status || 'completed',
-            agentFeedback: item.agent_feedback as AgentFeedback,
-            coachingAudioUrl: item.coaching_audio_url,
-            coachingAudioListenedAt: item.coaching_audio_listened_at,
-            coachingAudioGeneratedAt: item.coaching_audio_generated_at,
-          };
-        });
-
-        // Sort by derived analysis timestamp (newest first)
-        mappedData.sort((a, b) => {
-          const tsA = a.analyzedAt ? new Date(a.analyzedAt).getTime() : 0;
-          const tsB = b.analyzedAt ? new Date(b.analyzedAt).getTime() : 0;
-          return tsB - tsA;
-        });
-
-        setCoachingBookings(mappedData);
-
-        if (includeAudio) {
-          const mappedWithAudio: CoachingBookingWithAudio[] = filteredData.map((item: any) => {
-            const booking = item.bookings;
-            const agent = agents.find(a => a.id === booking.agent_id);
-            const analyzedAt = item.coaching_audio_generated_at || item.updated_at || item.created_at || `${booking.booking_date}T00:00:00`;
-
-            return {
-              id: booking.id,
-              bookingDate: new Date(booking.booking_date + 'T00:00:00'),
-              analyzedAt,
-              agentId: booking.agent_id,
-              agentName: agent?.name || 'Unknown Agent',
-              memberName: booking.member_name || 'Unknown Member',
-              transcriptionStatus: booking.transcription_status || 'completed',
-              agentFeedback: item.agent_feedback as AgentFeedback,
-              coachingAudioUrl: item.coaching_audio_url,
-              coachingAudioGeneratedAt: item.coaching_audio_generated_at,
-              coachingAudioListenedAt: item.coaching_audio_listened_at,
-              marketCity: booking.market_city,
-              marketState: booking.market_state,
-            };
-          });
-
-          mappedWithAudio.sort((a, b) => {
-            const tsA = a.analyzedAt ? new Date(a.analyzedAt).getTime() : 0;
-            const tsB = b.analyzedAt ? new Date(b.analyzedAt).getTime() : 0;
-            return tsB - tsA;
-          });
-
-          setCoachingBookingsWithAudio(mappedWithAudio);
-        }
-      } catch (err) {
-        console.error('Error in useCoachingData:', err);
-        setCoachingBookings([]);
-        setCoachingBookingsWithAudio([]);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    fetchCoachingData();
-  }, [user, authLoading, agents, agentId, includeAudio, dateRange, customDates]);
-
-  return { coachingBookings, coachingBookingsWithAudio, isLoading };
+  return {
+    coachingBookings,
+    coachingBookingsWithAudio,
+    isLoading: authLoading || queryLoading,
+  };
 }
