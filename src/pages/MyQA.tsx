@@ -237,7 +237,8 @@ export default function MyQA() {
         {/* Controls */}
         <div className="flex flex-wrap justify-between items-center gap-4">
           <DateRangeFilter 
-            defaultValue="today"
+            defaultValue={dateRange}
+            defaultCustomDates={customDates}
             onRangeChange={handleRangeChange}
             includeAllTime={true}
             includeCustom={true}
