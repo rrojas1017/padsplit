@@ -55,8 +55,8 @@ export default function CoachingEngagement() {
   const { agents } = useAgents();
   const { user } = useAuth();
   
-  const [dateRange, setDateRange] = useState<DateRangeFilterType>('today');
-  const [customDates, setCustomDates] = useState<CalcCustomDateRange | undefined>(undefined);
+  const [dateRange, setDateRange] = useSessionState<DateRangeFilterType>('coachingEngagement:dateRange', 'today');
+  const [customDates, setCustomDates] = useSessionState<CalcCustomDateRange | undefined>('coachingEngagement:customDates', undefined);
   const [selectedSiteId, setSelectedSiteId] = useState<string>('all');
   const [sites, setSites] = useState<Site[]>([]);
 
