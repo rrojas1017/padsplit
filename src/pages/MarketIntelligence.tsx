@@ -49,8 +49,8 @@ const getDateRange = (range: DateRange, custom?: CustomDateRange) => {
 
 export default function MarketIntelligence() {
   usePageTracking('view_market_intelligence');
-  const [dateRange, setDateRange] = useState<DateRange>('all');
-  const [customDates, setCustomDates] = useState<CustomDateRange | undefined>();
+  const [dateRange, setDateRange] = useSessionState<DateRange>('marketIntel:dateRange', 'all');
+  const [customDates, setCustomDates] = useSessionState<CustomDateRange | undefined>('marketIntel:customDates', undefined);
   const [minRecords, setMinRecords] = useState(3);
 
   // Backfill market state
