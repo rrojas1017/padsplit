@@ -123,7 +123,7 @@ export default function Dashboard() {
       {/* Filters */}
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-3">
-          <DateRangeFilter onRangeChange={handleRangeChange} includeAllTime={true} includeCustom={true} />
+          <DateRangeFilter onRangeChange={handleRangeChange} includeAllTime={true} includeCustom={true} defaultValue={dateRange} defaultCustomDates={customDates} />
           <SiteFilter onSiteChange={setSelectedSiteId} />
         </div>
         <div className="text-sm text-muted-foreground">
