@@ -310,6 +310,7 @@ export default function MyPerformance() {
       actions={
         <DateRangeFilter 
           defaultValue={dateFilter} 
+          defaultCustomDates={customDates}
           onRangeChange={handleRangeChange} 
           includeAllTime={true}
           includeCustom={true}
