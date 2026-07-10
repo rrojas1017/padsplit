@@ -43,7 +43,8 @@ export default function Leaderboard() {
     >
       <div className="flex items-center gap-3 mb-6">
         <DateRangeFilter 
-          defaultValue="today" 
+          defaultValue={dateRange} 
+          defaultCustomDates={customDates}
           onRangeChange={handleRangeChange}
           includeAllTime={true}
           includeCustom={true}
