@@ -196,7 +196,8 @@ export default function CoachingEngagement() {
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
           <DateRangeFilter 
             onRangeChange={handleRangeChange} 
-            defaultValue="today"
+            defaultValue={dateRange}
+            defaultCustomDates={customDates}
             includeAllTime={true}
             includeCustom={true}
           />
