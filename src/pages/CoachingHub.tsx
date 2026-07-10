@@ -168,6 +168,7 @@ export default function CoachingHub() {
           <DateRangeFilter 
             onRangeChange={handleRangeChange} 
             defaultValue={dateRange}
+            defaultCustomDates={customDates}
             includeAllTime={true}
             includeCustom={true}
           />
