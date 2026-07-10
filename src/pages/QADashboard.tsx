@@ -32,8 +32,8 @@ export default function QADashboard() {
   const { user, hasRole } = useAuth();
   const { agents } = useAgents();
   const { coachingBlocked } = useDailyCostGate();
-  const [dateRange, setDateRange] = useState<DateFilterValue>('today');
-  const [customDates, setCustomDates] = useState<CustomDateRange | undefined>(undefined);
+  const [dateRange, setDateRange] = useSessionState<DateFilterValue>('qaDashboard:dateRange', 'today');
+  const [customDates, setCustomDates] = useSessionState<CustomDateRange | undefined>('qaDashboard:customDates', undefined);
   const [selectedAgent, setSelectedAgent] = useState<string>('all');
   const [isBatchScoring, setIsBatchScoring] = useState(false);
   const [selectedAgentForModal, setSelectedAgentForModal] = useState<string | null>(null);
