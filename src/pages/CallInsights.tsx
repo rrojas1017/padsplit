@@ -45,7 +45,7 @@ export default function CallInsights() {
   const initialTab = searchParams.get('tab') === 'bookings' ? 'bookings' : 
                      searchParams.get('tab') === 'cross-sell' && isSuperAdmin ? 'cross-sell' : 'non-bookings';
   const [activeTab, setActiveTab] = useState(initialTab);
-  const [dateRange, setDateRange] = useState<DateRangeOption>('allTime');
+  const [dateRange, setDateRange] = useSessionState<DateRangeOption>('callInsights:dateRange', 'allTime');
   const [isExporting, setIsExporting] = useState(false);
 
   const handleExportCombined = async () => {
