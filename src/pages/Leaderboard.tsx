@@ -15,8 +15,8 @@ export default function Leaderboard() {
   usePageTracking('view_leaderboard');
   const { bookings, isLoading: bookingsLoading } = useBookings();
   const { agents, isLoading: agentsLoading } = useAgents();
-  const [dateRange, setDateRange] = useState<DateRangeFilterType>('today');
-  const [customDates, setCustomDates] = useState<CalcCustomDateRange | undefined>(undefined);
+  const [dateRange, setDateRange] = useSessionState<DateRangeFilterType>('leaderboard:dateRange', 'today');
+  const [customDates, setCustomDates] = useSessionState<CalcCustomDateRange | undefined>('leaderboard:customDates', undefined);
 
   const handleRangeChange = (range: DateFilterValue, dates?: CustomDateRange) => {
     setDateRange(range as DateRangeFilterType);
