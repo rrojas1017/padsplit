@@ -25,8 +25,8 @@ import PlatformCostBanner from '@/components/billing/PlatformCostBanner';
 
 const Billing = () => {
   const { hasRole, isLoading: authLoading } = useAuth();
-  const [dateFilter, setDateFilter] = useState<DateFilterValue>('today');
-  const [customDates, setCustomDates] = useState<CustomDateRange | undefined>(undefined);
+  const [dateFilter, setDateFilter] = useSessionState<DateFilterValue>('billing:dateRange', 'today');
+  const [customDates, setCustomDates] = useSessionState<CustomDateRange | undefined>('billing:customDates', undefined);
 
   const handleRangeChange = (range: DateFilterValue, dates?: CustomDateRange) => {
     setDateFilter(range);
