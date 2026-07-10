@@ -24,7 +24,7 @@ import {
   Mic,
   ClipboardCheck,
 } from 'lucide-react';
-import { useEffect } from 'react';
+
 
 interface Site {
   id: string;
