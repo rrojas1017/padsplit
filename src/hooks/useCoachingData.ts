@@ -38,6 +38,10 @@ interface UseCoachingDataOptions {
 }
 
 const PAGE_SIZE = 1000;
+const COACHING_CACHE_STALE_MS = 30 * 60 * 1000;
+
+const coachingRowsCache = new Map<string, any[]>();
+const coachingRowsRequests = new Map<string, Promise<any[]>>();
 
 async function fetchAllPages(dateRange?: DateRangeFilterType, customDates?: CalcCustomDateRange) {
   const allRows: any[] = [];
@@ -99,6 +103,23 @@ async function fetchAllPages(dateRange?: DateRangeFilterType, customDates?: Calc
   return allRows;
 }
 
+async function fetchCachedAllPages(cacheKey: string, dateRange?: DateRangeFilterType, customDates?: CalcCustomDateRange) {
+  const existingRequest = coachingRowsRequests.get(cacheKey);
+  if (existingRequest) return existingRequest;
+
+  const request = fetchAllPages(dateRange, customDates)
+    .then((rows) => {
+      coachingRowsCache.set(cacheKey, rows);
+      return rows;
+    })
+    .finally(() => {
+      coachingRowsRequests.delete(cacheKey);
+    });
+
+  coachingRowsRequests.set(cacheKey, request);
+  return request;
+}
+
 function rangeKey(dateRange?: DateRangeFilterType, customDates?: CalcCustomDateRange): string {
   if (!dateRange) return 'default';
   if (dateRange === 'custom' && customDates) {
@@ -111,15 +132,20 @@ export function useCoachingData(options: UseCoachingDataOptions = {}) {
   const { user, isLoading: authLoading } = useAuth();
   const { agents } = useAgents();
   const { agentId, includeAudio = false, dateRange, customDates } = options;
+  const dateRangeKey = rangeKey(dateRange, customDates);
+  const cacheKey = `${user?.id ?? 'anonymous'}:${dateRangeKey}`;
 
   const { data: rawRows = [], isLoading: queryLoading } = useQuery({
-    queryKey: ['coachingData', rangeKey(dateRange, customDates)],
-    queryFn: () => fetchAllPages(dateRange, customDates),
+    queryKey: ['coachingData', user?.id, dateRangeKey],
+    queryFn: () => fetchCachedAllPages(cacheKey, dateRange, customDates),
     enabled: !authLoading && !!user,
-    staleTime: 5 * 60 * 1000, // 5 min: don't refetch on remount within this window
-    gcTime: 30 * 60 * 1000,   // keep cache 30 min
+    initialData: () => coachingRowsCache.get(cacheKey),
+    initialDataUpdatedAt: () => (coachingRowsCache.has(cacheKey) ? Date.now() : undefined),
+    staleTime: COACHING_CACHE_STALE_MS, // route changes reuse cached data instead of showing the loader again
+    gcTime: 60 * 60 * 1000,   // keep cache 60 min
     refetchOnWindowFocus: false,
     refetchOnMount: false,
+    refetchOnReconnect: false,
   });
 
   const filteredData = useMemo(() => {
@@ -186,6 +212,6 @@ export function useCoachingData(options: UseCoachingDataOptions = {}) {
   return {
     coachingBookings,
     coachingBookingsWithAudio,
-    isLoading: authLoading || queryLoading,
+    isLoading: authLoading || (queryLoading && rawRows.length === 0),
   };
 }

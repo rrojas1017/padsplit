@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 
@@ -41,114 +41,98 @@ interface UseQADataOptions {
   includeUnscored?: boolean;
 }
 
+const QA_CACHE_STALE_MS = 30 * 60 * 1000;
+
+async function fetchQAData(agentId?: string, includeUnscored = false) {
+  const { data: rubricData } = await supabase
+    .from('qa_settings')
+    .select('*')
+    .eq('is_active', true)
+    .limit(1)
+    .maybeSingle();
+
+  const rubric = rubricData
+    ? {
+        id: rubricData.id,
+        name: rubricData.name,
+        categories: rubricData.categories as unknown as QACategory[],
+        isActive: rubricData.is_active ?? true,
+      }
+    : null;
+
+  let query = supabase
+    .from('booking_transcriptions')
+    .select(`
+      id,
+      booking_id,
+      qa_scores,
+        bookings!inner (
+        id,
+        member_name,
+        booking_date,
+        agent_id,
+        market_city,
+        market_state,
+        record_type,
+        agents!inner (
+          id,
+          name
+        )
+      )
+    `)
+    .neq('bookings.record_type', 'research');
+
+  if (!includeUnscored) {
+    query = query.not('qa_scores', 'is', null);
+  }
+
+  const { data: transcriptions, error } = await query.order('created_at', { ascending: false });
+
+  if (error) {
+    console.error('Error fetching QA data:', error);
+    throw error;
+  }
+
+  const qaBookings: QABooking[] = (transcriptions || [])
+    .filter((t: any) => {
+      const booking = t.bookings as any;
+      if (agentId && booking.agent_id !== agentId) return false;
+      return true;
+    })
+    .map((t: any) => {
+      const booking = t.bookings as any;
+      const agent = booking.agents as any;
+      return {
+        id: t.id,
+        bookingId: t.booking_id,
+        memberName: booking.member_name,
+        bookingDate: booking.booking_date,
+        agentId: booking.agent_id,
+        agentName: agent?.name || 'Unknown',
+        marketCity: booking.market_city,
+        marketState: booking.market_state,
+        qaScores: t.qa_scores as unknown as QAScores | null,
+      };
+    });
+
+  return { qaBookings, rubric };
+}
+
 export function useQAData(options: UseQADataOptions = {}) {
   const { agentId, includeUnscored = false } = options;
   const { user } = useAuth();
-  const [qaBookings, setQABookings] = useState<QABooking[]>([]);
-  const [rubric, setRubric] = useState<QARubric | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const { data, isLoading } = useQuery({
+    queryKey: ['qaData', user?.id, agentId ?? 'all', includeUnscored],
+    queryFn: () => fetchQAData(agentId, includeUnscored),
+    enabled: !!user,
+    staleTime: QA_CACHE_STALE_MS,
+    gcTime: 60 * 60 * 1000,
+    refetchOnWindowFocus: false,
+    refetchOnMount: false,
+    refetchOnReconnect: false,
+  });
 
-  useEffect(() => {
-    if (!user) return;
-
-    const fetchData = async () => {
-      try {
-        setIsLoading(true);
-
-        // Fetch active rubric
-        const { data: rubricData } = await supabase
-          .from('qa_settings')
-          .select('*')
-          .eq('is_active', true)
-          .limit(1)
-          .maybeSingle();
-
-        if (rubricData) {
-          setRubric({
-            id: rubricData.id,
-            name: rubricData.name,
-            categories: rubricData.categories as unknown as QACategory[],
-            isActive: rubricData.is_active ?? true,
-          });
-        }
-
-        // Build query for transcriptions with QA scores - join agents directly
-        let query = supabase
-          .from('booking_transcriptions')
-          .select(`
-            id,
-            booking_id,
-            qa_scores,
-              bookings!inner (
-              id,
-              member_name,
-              booking_date,
-              agent_id,
-              market_city,
-              market_state,
-              record_type,
-              agents!inner (
-                id,
-                name
-              )
-            )
-          `)
-          .neq('bookings.record_type', 'research');
-
-        if (!includeUnscored) {
-          query = query.not('qa_scores', 'is', null);
-        }
-
-        // Order by most recent first to ensure today's data is included within the 1000-row limit
-        query = query.order('created_at', { ascending: false });
-
-        const { data: transcriptions, error } = await query;
-
-        if (error) {
-          console.error('Error fetching QA data:', error);
-          return;
-        }
-
-        if (!transcriptions) {
-          setQABookings([]);
-          return;
-        }
-
-        // Map to QABooking format - agent name comes from joined query
-        const mappedBookings: QABooking[] = transcriptions
-          .filter(t => {
-            const booking = t.bookings as any;
-            if (agentId && booking.agent_id !== agentId) return false;
-            return true;
-          })
-          .map(t => {
-            const booking = t.bookings as any;
-            const agent = booking.agents as any;
-            return {
-              id: t.id,
-              bookingId: t.booking_id,
-              memberName: booking.member_name,
-              bookingDate: booking.booking_date,
-              agentId: booking.agent_id,
-              agentName: agent?.name || 'Unknown',
-              marketCity: booking.market_city,
-              marketState: booking.market_state,
-              qaScores: t.qa_scores as unknown as QAScores | null,
-            };
-          });
-
-        setQABookings(mappedBookings);
-      } catch (error) {
-        console.error('Error in useQAData:', error);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    fetchData();
-  }, [user, agentId, includeUnscored]);
-
-  return { qaBookings, rubric, isLoading };
+  return { qaBookings: data?.qaBookings || [], rubric: data?.rubric || null, isLoading: !!user && isLoading };
 }
 
 // Calculate aggregate stats

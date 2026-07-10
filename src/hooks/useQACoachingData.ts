@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 
@@ -32,111 +32,91 @@ export interface UseQACoachingDataOptions {
   includeUnscored?: boolean;
 }
 
+const QA_COACHING_CACHE_STALE_MS = 30 * 60 * 1000;
+
+async function fetchQACoachingData(agentId?: string, includeUnscored = false) {
+  let query = supabase
+    .from('booking_transcriptions')
+    .select(`
+      id,
+      booking_id,
+      qa_scores,
+      qa_coaching_audio_url,
+      qa_coaching_audio_generated_at,
+      qa_coaching_audio_listened_at,
+      agent_feedback,
+      coaching_audio_url,
+      coaching_audio_listened_at,
+      bookings!inner(
+        id,
+        booking_date,
+        agent_id,
+        member_name,
+        market_city,
+        market_state,
+        record_type,
+        agents!inner(id, name, user_id)
+      )
+    `)
+    .neq('bookings.record_type', 'research');
+
+  if (!includeUnscored) {
+    query = query.not('qa_scores', 'is', null);
+  }
+
+  const { data, error } = await query.order('created_at', { ascending: false });
+
+  if (error) {
+    console.error('Error fetching QA coaching data:', error);
+    throw error;
+  }
+
+  let bookings: QACoachingBooking[] = (data || []).map((item: any) => {
+    const booking = item.bookings;
+    const agent = booking?.agents;
+    
+    return {
+      id: item.id,
+      bookingId: item.booking_id,
+      bookingDate: new Date(booking?.booking_date + 'T00:00:00'),
+      agentId: booking?.agent_id || '',
+      agentName: agent?.name || 'Unknown',
+      agentUserId: agent?.user_id || undefined,
+      memberName: booking?.member_name,
+      qaScores: item.qa_scores,
+      qaCoachingAudioUrl: item.qa_coaching_audio_url,
+      qaCoachingAudioGeneratedAt: item.qa_coaching_audio_generated_at,
+      qaCoachingAudioListenedAt: item.qa_coaching_audio_listened_at,
+      marketCity: booking?.market_city,
+      marketState: booking?.market_state,
+      agentFeedback: item.agent_feedback,
+      coachingAudioUrl: item.coaching_audio_url,
+      coachingAudioListenedAt: item.coaching_audio_listened_at,
+    };
+  });
+
+  if (agentId) {
+    bookings = bookings.filter(b => b.agentId === agentId);
+  }
+
+  return bookings;
+}
+
 export function useQACoachingData(options: UseQACoachingDataOptions = {}) {
   const { agentId, includeUnscored = false } = options;
   const { user } = useAuth();
-  const [qaCoachingBookings, setQACoachingBookings] = useState<QACoachingBooking[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const { data: qaCoachingBookings = [], isLoading } = useQuery({
+    queryKey: ['qaCoachingData', user?.id, agentId ?? 'all', includeUnscored],
+    queryFn: () => fetchQACoachingData(agentId, includeUnscored),
+    enabled: !!user,
+    staleTime: QA_COACHING_CACHE_STALE_MS,
+    gcTime: 60 * 60 * 1000,
+    refetchOnWindowFocus: false,
+    refetchOnMount: false,
+    refetchOnReconnect: false,
+  });
 
-  useEffect(() => {
-    if (!user) {
-      setIsLoading(false);
-      return;
-    }
-
-    const fetchQACoachingData = async () => {
-      try {
-        setIsLoading(true);
-
-        let query = supabase
-          .from('booking_transcriptions')
-          .select(`
-            id,
-            booking_id,
-            qa_scores,
-            qa_coaching_audio_url,
-            qa_coaching_audio_generated_at,
-            qa_coaching_audio_listened_at,
-            agent_feedback,
-            coaching_audio_url,
-            coaching_audio_listened_at,
-            bookings!inner(
-              id,
-              booking_date,
-              agent_id,
-              member_name,
-              market_city,
-              market_state,
-              record_type,
-              agents!inner(id, name, user_id)
-            )
-          `);
-
-        // Exclude research records - coaching is only for booking/non-booking calls
-        query = query.neq('bookings.record_type', 'research');
-
-        // Filter by QA scores presence
-        if (!includeUnscored) {
-          query = query.not('qa_scores', 'is', null);
-        }
-
-        const { data, error } = await query.order('created_at', { ascending: false });
-
-        if (error) {
-          console.error('Error fetching QA coaching data:', error);
-          setQACoachingBookings([]);
-          return;
-        }
-
-        if (!data) {
-          setQACoachingBookings([]);
-          return;
-        }
-
-        // Transform data
-        let bookings: QACoachingBooking[] = data.map((item: any) => {
-          const booking = item.bookings;
-          const agent = booking?.agents;
-          
-          return {
-            id: item.id,
-            bookingId: item.booking_id,
-            bookingDate: new Date(booking?.booking_date + 'T00:00:00'),
-            agentId: booking?.agent_id || '',
-            agentName: agent?.name || 'Unknown',
-            agentUserId: agent?.user_id || undefined,
-            memberName: booking?.member_name,
-            qaScores: item.qa_scores,
-            qaCoachingAudioUrl: item.qa_coaching_audio_url,
-            qaCoachingAudioGeneratedAt: item.qa_coaching_audio_generated_at,
-            qaCoachingAudioListenedAt: item.qa_coaching_audio_listened_at,
-            marketCity: booking?.market_city,
-            marketState: booking?.market_state,
-            // Jeff's coaching fields
-            agentFeedback: item.agent_feedback,
-            coachingAudioUrl: item.coaching_audio_url,
-            coachingAudioListenedAt: item.coaching_audio_listened_at,
-          };
-        });
-
-        // Filter by agent if specified
-        if (agentId) {
-          bookings = bookings.filter(b => b.agentId === agentId);
-        }
-
-        setQACoachingBookings(bookings);
-      } catch (error) {
-        console.error('Error in fetchQACoachingData:', error);
-        setQACoachingBookings([]);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    fetchQACoachingData();
-  }, [user, agentId, includeUnscored]);
-
-  return { qaCoachingBookings, isLoading };
+  return { qaCoachingBookings, isLoading: !!user && isLoading };
 }
 
 // Calculate QA coaching engagement stats
