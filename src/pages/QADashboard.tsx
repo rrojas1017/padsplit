@@ -250,7 +250,8 @@ export default function QADashboard() {
         <div className="flex flex-wrap justify-between items-center gap-4">
           <div className="flex items-center gap-3">
             <DateRangeFilter 
-              defaultValue="today"
+              defaultValue={dateRange}
+              defaultCustomDates={customDates}
               onRangeChange={handleRangeChange}
               includeAllTime={true}
               includeCustom={true}
