@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useSessionState } from '@/hooks/useSessionState';
 import { Navigate } from 'react-router-dom';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { useAuth } from '@/contexts/AuthContext';
