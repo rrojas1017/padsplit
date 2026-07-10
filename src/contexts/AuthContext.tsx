@@ -441,6 +441,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await supabase.auth.signOut();
     setUser(null);
     setSession(null);
+    // Reset session-scoped UI state (e.g. per-page date range) on logout
+    const { clearSessionState } = await import('@/hooks/useSessionState');
+    clearSessionState();
   };
 
   const realUser = user;
