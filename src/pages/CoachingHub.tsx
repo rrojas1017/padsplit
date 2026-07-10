@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { useSessionState } from '@/hooks/useSessionState';
 import { useDailyCostGate } from '@/hooks/useDailyCostGate';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { usePageTracking } from '@/hooks/usePageTracking';
@@ -59,8 +60,8 @@ export default function CoachingHub() {
   const { user } = useAuth();
   const { coachingBlocked } = useDailyCostGate();
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
-  const [dateRange, setDateRange] = useState<DateRangeFilterType>('7d');
-  const [customDates, setCustomDates] = useState<CalcCustomDateRange | undefined>(undefined);
+  const [dateRange, setDateRange] = useSessionState<DateRangeFilterType>('coachingHub:dateRange', '7d');
+  const [customDates, setCustomDates] = useSessionState<CalcCustomDateRange | undefined>('coachingHub:customDates', undefined);
   const { coachingBookings, isLoading: coachingLoading } = useCoachingData({ dateRange, customDates });
 
   const handleRangeChange = (range: DateFilterValue, dates?: CustomDateRange) => {
@@ -167,6 +168,7 @@ export default function CoachingHub() {
           <DateRangeFilter 
             onRangeChange={handleRangeChange} 
             defaultValue={dateRange}
+            defaultCustomDates={customDates}
             includeAllTime={true}
             includeCustom={true}
           />

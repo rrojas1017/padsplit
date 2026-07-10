@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { useSessionState } from '@/hooks/useSessionState';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { usePageTracking } from '@/hooks/usePageTracking';
 import { LeaderboardTable } from '@/components/dashboard/LeaderboardTable';
@@ -14,8 +15,8 @@ export default function Leaderboard() {
   usePageTracking('view_leaderboard');
   const { bookings, isLoading: bookingsLoading } = useBookings();
   const { agents, isLoading: agentsLoading } = useAgents();
-  const [dateRange, setDateRange] = useState<DateRangeFilterType>('today');
-  const [customDates, setCustomDates] = useState<CalcCustomDateRange | undefined>(undefined);
+  const [dateRange, setDateRange] = useSessionState<DateRangeFilterType>('leaderboard:dateRange', 'today');
+  const [customDates, setCustomDates] = useSessionState<CalcCustomDateRange | undefined>('leaderboard:customDates', undefined);
 
   const handleRangeChange = (range: DateFilterValue, dates?: CustomDateRange) => {
     setDateRange(range as DateRangeFilterType);
@@ -42,7 +43,8 @@ export default function Leaderboard() {
     >
       <div className="flex items-center gap-3 mb-6">
         <DateRangeFilter 
-          defaultValue="today" 
+          defaultValue={dateRange} 
+          defaultCustomDates={customDates}
           onRangeChange={handleRangeChange}
           includeAllTime={true}
           includeCustom={true}

@@ -30,6 +30,7 @@ export interface CustomDateRange {
 interface DateRangeFilterProps {
   onRangeChange?: (range: DateFilterValue, customDates?: CustomDateRange) => void;
   defaultValue?: DateFilterValue;
+  defaultCustomDates?: CustomDateRange;
   includeAllTime?: boolean;
   includeCustom?: boolean;
 }
@@ -37,11 +38,14 @@ interface DateRangeFilterProps {
 export function DateRangeFilter({ 
   onRangeChange, 
   defaultValue = 'today', 
+  defaultCustomDates,
   includeAllTime = false,
   includeCustom = true,
 }: DateRangeFilterProps) {
   const [selected, setSelected] = useState<DateFilterValue>(defaultValue);
-  const [customDates, setCustomDates] = useState<DateRange | undefined>(undefined);
+  const [customDates, setCustomDates] = useState<DateRange | undefined>(
+    defaultCustomDates ? { from: defaultCustomDates.from, to: defaultCustomDates.to } : undefined,
+  );
   const [isOpen, setIsOpen] = useState(false);
 
   const handlePresetSelect = (value: DateFilterValue) => {

@@ -18,6 +18,7 @@ import {
   Trophy, ArrowUp, ArrowDown, AlertTriangle
 } from 'lucide-react';
 import { useState, useMemo } from 'react';
+import { useSessionState } from '@/hooks/useSessionState';
 import { useDailyCostGate } from '@/hooks/useDailyCostGate';
 import { format, isWithinInterval, startOfDay, endOfDay, startOfWeek, startOfMonth, subDays } from 'date-fns';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Cell } from 'recharts';
@@ -27,8 +28,8 @@ export default function MyQA() {
   const { user } = useAuth();
   const { agents } = useAgents();
   const { coachingBlocked } = useDailyCostGate();
-  const [dateRange, setDateRange] = useState<DateFilterValue>('today');
-  const [customDates, setCustomDates] = useState<CustomDateRange | undefined>(undefined);
+  const [dateRange, setDateRange] = useSessionState<DateFilterValue>('myQA:dateRange', 'today');
+  const [customDates, setCustomDates] = useSessionState<CustomDateRange | undefined>('myQA:customDates', undefined);
 
   const handleRangeChange = (range: DateFilterValue, dates?: CustomDateRange) => {
     setDateRange(range);
@@ -236,7 +237,8 @@ export default function MyQA() {
         {/* Controls */}
         <div className="flex flex-wrap justify-between items-center gap-4">
           <DateRangeFilter 
-            defaultValue="today"
+            defaultValue={dateRange}
+            defaultCustomDates={customDates}
             onRangeChange={handleRangeChange}
             includeAllTime={true}
             includeCustom={true}

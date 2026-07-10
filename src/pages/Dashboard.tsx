@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useSessionState } from '@/hooks/useSessionState';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { usePageTracking } from '@/hooks/usePageTracking';
 import { KPICard } from '@/components/dashboard/KPICard';
@@ -36,8 +37,8 @@ export default function Dashboard() {
   usePageTracking('view_dashboard');
   const { user } = useAuth();
   const { agents, isLoading: agentsLoading } = useAgents();
-  const [dateRange, setDateRange] = useState<DateRangeFilterType>('today');
-  const [customDates, setCustomDates] = useState<CalcCustomDateRange | undefined>(undefined);
+  const [dateRange, setDateRange] = useSessionState<DateRangeFilterType>('dashboard:dateRange', 'today');
+  const [customDates, setCustomDates] = useSessionState<CalcCustomDateRange | undefined>('dashboard:customDates', undefined);
   const [selectedSiteId, setSelectedSiteId] = useState<string | null>(null);
   const { bookings, isLoading: bookingsLoading } = useDashboardData(dateRange, customDates);
 
@@ -122,7 +123,7 @@ export default function Dashboard() {
       {/* Filters */}
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-3">
-          <DateRangeFilter onRangeChange={handleRangeChange} includeAllTime={true} includeCustom={true} />
+          <DateRangeFilter onRangeChange={handleRangeChange} includeAllTime={true} includeCustom={true} defaultValue={dateRange} defaultCustomDates={customDates} />
           <SiteFilter onSiteChange={setSelectedSiteId} />
         </div>
         <div className="text-sm text-muted-foreground">

@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useSessionState } from '@/hooks/useSessionState';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePageTracking } from '@/hooks/usePageTracking';
 import { supabase } from '@/integrations/supabase/client';
@@ -51,7 +52,7 @@ const MemberInsights = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [isLoadingDetail, setIsLoadingDetail] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [dateRange, setDateRange] = useState<DateRangeOption>('thisMonth');
+  const [dateRange, setDateRange] = useSessionState<DateRangeOption>('memberInsights:dateRange', 'thisMonth');
   const [dbSlowMode, setDbSlowMode] = useState(false);
 
   // Memoized fetch function to prevent stale closures

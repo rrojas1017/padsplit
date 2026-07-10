@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
+import { useSessionState } from '@/hooks/useSessionState';
 import { useQuery } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router-dom';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
@@ -71,8 +72,8 @@ export default function ResearchInsights() {
     || (localStorage.getItem('research_insights_campaign') as CampaignType)
     || 'move_out_survey'
   );
-  const [dateRange, setDateRange] = useState<DateRangeOption>('allTime');
-  const [campaignId, setCampaignId] = useState<string>('all');
+  const [dateRange, setDateRange] = useSessionState<DateRangeOption>('researchInsights:dateRange', 'allTime');
+  const [campaignId, setCampaignId] = useSessionState<string>('researchInsights:campaignId', 'all');
   const [isGenerating, setIsGenerating] = useState(false);
   const [isBackfilling, setIsBackfilling] = useState(false);
   const [phase, setPhase] = useState<'processing' | 'analyzing' | null>(null);

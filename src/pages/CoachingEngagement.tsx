@@ -1,4 +1,6 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
+import { useSessionState } from '@/hooks/useSessionState';
+
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { usePageTracking } from '@/hooks/usePageTracking';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -22,7 +24,7 @@ import {
   Mic,
   ClipboardCheck,
 } from 'lucide-react';
-import { useEffect } from 'react';
+
 
 interface Site {
   id: string;
@@ -53,8 +55,8 @@ export default function CoachingEngagement() {
   const { agents } = useAgents();
   const { user } = useAuth();
   
-  const [dateRange, setDateRange] = useState<DateRangeFilterType>('today');
-  const [customDates, setCustomDates] = useState<CalcCustomDateRange | undefined>(undefined);
+  const [dateRange, setDateRange] = useSessionState<DateRangeFilterType>('coachingEngagement:dateRange', 'today');
+  const [customDates, setCustomDates] = useSessionState<CalcCustomDateRange | undefined>('coachingEngagement:customDates', undefined);
   const [selectedSiteId, setSelectedSiteId] = useState<string>('all');
   const [sites, setSites] = useState<Site[]>([]);
 
@@ -194,7 +196,8 @@ export default function CoachingEngagement() {
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
           <DateRangeFilter 
             onRangeChange={handleRangeChange} 
-            defaultValue="today"
+            defaultValue={dateRange}
+            defaultCustomDates={customDates}
             includeAllTime={true}
             includeCustom={true}
           />

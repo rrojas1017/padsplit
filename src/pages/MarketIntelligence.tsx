@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { useSessionState } from '@/hooks/useSessionState';
 import { cn } from '@/lib/utils';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { usePageTracking } from '@/hooks/usePageTracking';
@@ -48,8 +49,8 @@ const getDateRange = (range: DateRange, custom?: CustomDateRange) => {
 
 export default function MarketIntelligence() {
   usePageTracking('view_market_intelligence');
-  const [dateRange, setDateRange] = useState<DateRange>('all');
-  const [customDates, setCustomDates] = useState<CustomDateRange | undefined>();
+  const [dateRange, setDateRange] = useSessionState<DateRange>('marketIntel:dateRange', 'all');
+  const [customDates, setCustomDates] = useSessionState<CustomDateRange | undefined>('marketIntel:customDates', undefined);
   const [minRecords, setMinRecords] = useState(3);
 
   // Backfill market state
@@ -169,7 +170,7 @@ export default function MarketIntelligence() {
     >
       {/* Filters */}
       <div className="flex flex-wrap items-center gap-4 mb-6">
-        <DateRangeFilter onRangeChange={handleRangeChange} includeAllTime={true} includeCustom={true} defaultValue="all" />
+        <DateRangeFilter onRangeChange={handleRangeChange} includeAllTime={true} includeCustom={true} defaultValue={dateRange} defaultCustomDates={customDates} />
         
         <div className="flex items-center gap-3">
           <span className="text-sm text-muted-foreground whitespace-nowrap">Min records:</span>

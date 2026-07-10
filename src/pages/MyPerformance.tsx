@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useSessionState } from '@/hooks/useSessionState';
 import { useDailyCostGate } from '@/hooks/useDailyCostGate';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { usePageTracking } from '@/hooks/usePageTracking';
@@ -120,8 +121,8 @@ export default function MyPerformance() {
   const { user } = useAuth();
   const { bookings, isLoading: bookingsLoading } = useBookings();
   const { agents, isLoading: agentsLoading } = useAgents();
-  const [dateFilter, setDateFilter] = useState<DateFilterValue>('today');
-  const [customDates, setCustomDates] = useState<CustomDateRange | undefined>(undefined);
+  const [dateFilter, setDateFilter] = useSessionState<DateFilterValue>('myPerformance:dateRange', 'today');
+  const [customDates, setCustomDates] = useSessionState<CustomDateRange | undefined>('myPerformance:customDates', undefined);
 
   const handleRangeChange = (range: DateFilterValue, dates?: CustomDateRange) => {
     setDateFilter(range);
@@ -309,6 +310,7 @@ export default function MyPerformance() {
       actions={
         <DateRangeFilter 
           defaultValue={dateFilter} 
+          defaultCustomDates={customDates}
           onRangeChange={handleRangeChange} 
           includeAllTime={true}
           includeCustom={true}
