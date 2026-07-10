@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useSessionState } from '@/hooks/useSessionState';
 import { useSearchParams } from 'react-router-dom';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
