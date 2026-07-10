@@ -113,7 +113,8 @@ const Billing = () => {
           </div>
           
           <DateRangeFilter 
-            defaultValue="today"
+            defaultValue={dateFilter}
+            defaultCustomDates={customDates}
             onRangeChange={handleRangeChange}
             includeAllTime={true}
             includeCustom={true}
