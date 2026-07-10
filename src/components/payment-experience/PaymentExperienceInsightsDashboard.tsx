@@ -178,7 +178,7 @@ export const PaymentExperienceInsightsDashboard = forwardRef<
     autopayBarriers: allBarriers, isLoading,
   } = usePaymentExperienceResponses();
 
-  const [internalDateRange, setInternalDateRange] = useState<DateRangeOption>('allTime');
+  const [internalDateRange, setInternalDateRange] = useSessionState<DateRangeOption>('paymentExperience:dateRange', 'allTime');
   const dateRange = dateRangeProp ?? internalDateRange;
   const setDateRange = (v: DateRangeOption) => setInternalDateRange(v);
 
