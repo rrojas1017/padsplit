@@ -48,6 +48,24 @@ export function DateRangeFilter({
   );
   const [isOpen, setIsOpen] = useState(false);
 
+  // Keep internal state in sync with parent-provided defaults so that
+  // persisted (session-stored) values are reflected after navigation/remount
+  // even when the parent passes a new default asynchronously.
+  const didMountRef = useRef(false);
+  const customFromTs = defaultCustomDates?.from ? defaultCustomDates.from.getTime() : 0;
+  const customToTs = defaultCustomDates?.to ? defaultCustomDates.to.getTime() : 0;
+  useEffect(() => {
+    if (!didMountRef.current) {
+      didMountRef.current = true;
+      return;
+    }
+    setSelected(defaultValue);
+    setCustomDates(
+      defaultCustomDates ? { from: defaultCustomDates.from, to: defaultCustomDates.to } : undefined,
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [defaultValue, customFromTs, customToTs]);
+
   const handlePresetSelect = (value: DateFilterValue) => {
     setSelected(value);
     setCustomDates(undefined);
