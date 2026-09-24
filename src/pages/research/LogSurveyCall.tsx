@@ -495,6 +495,12 @@ export default function LogSurveyCall() {
 
   const currentQ = questions[questionIndex];
   const showSectionNav = phase === 'question' && sections.length > 1;
+  // Prefill Duration (minutes) from the call timer on entering wrap-up.
+  useEffect(() => {
+    if (phase === 'wrapup' && !callDurationMinutes && callStartTime && elapsedSeconds > 0) {
+      setCallDurationMinutes(String(Math.round(elapsedSeconds / 6) / 10));
+    }
+  }, [phase, callDurationMinutes, callStartTime, elapsedSeconds]);
 
   if (submitted) {
     return (

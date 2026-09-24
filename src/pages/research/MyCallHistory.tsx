@@ -141,18 +141,29 @@ export default function MyCallHistory() {
                       <TableRow>
                         <TableCell colSpan={7} className="bg-muted/30">
                           <div className="p-3 space-y-3">
-                            {call.responses && Object.keys(call.responses).length > 0 && (
-                              <div>
-                                <p className="text-sm font-medium mb-1">Responses</p>
-                                <div className="space-y-1">
-                                  {Object.entries(call.responses).map(([key, val]) => (
-                                    <p key={key} className="text-sm text-muted-foreground">
-                                      Q{key}: <span className="text-foreground">{String(val)}</span>
-                                    </p>
-                                  ))}
+                            {call.responses && (() => {
+                              const entries = Object.entries(call.responses)
+                                .filter(([key]) => !key.startsWith('_'))
+                                .map(([key, val]) => {
+                                  let display = val;
+                                  if (typeof display === 'boolean') display = display ? 'Yes' : 'No';
+                                  else if (Array.isArray(display)) display = display.join(', ');
+                                  return [key, display] as [string, unknown];
+                                });
+                              if (entries.length === 0) return null;
+                              return (
+                                <div>
+                                  <p className="text-sm font-medium mb-1">Responses</p>
+                                  <div className="space-y-1">
+                                    {entries.map(([key, val]) => (
+                                      <p key={key} className="text-sm text-muted-foreground">
+                                        {questionLabels.get(key) || `Q${key}`}: <span className="text-foreground">{String(val)}</span>
+                                      </p>
+                                    ))}
+                                  </div>
                                 </div>
-                              </div>
-                            )}
+                              );
+                            })()}
                             {call.researcher_notes && (
                               <div>
                                 <p className="text-sm font-medium mb-1">Notes</p>
