@@ -6,16 +6,14 @@
  * no fabricated precision.
  */
 import {
-  CADENCE_NORMALIZATION_MAP,
-  AUTOPAY_BARRIER_MAP,
   AUTOPAY_BARRIER_LABELS,
-  FRICTION_THEME_MAP,
   FRICTION_THEME_LABELS,
   NO_FRICTION_KEY,
   CADENCE_LABELS,
   type CadenceBucket,
   type PaymentExperienceRecord,
 } from '@/hooks/usePaymentExperienceResponses';
+import { canon, resolvedAutopay, resolvedBarrier, resolvedCadence, resolvedFriction } from '@/utils/paymentExperienceNormalize';
 
 // ── Confidence ──────────────────────────────────────────────────────────────
 
@@ -35,49 +33,15 @@ export const CONFIDENCE_LABEL: Record<ConfidenceLevel, string> = {
   insufficient: 'Insufficient',
 };
 
-// ── Local normalization helpers (mirror hook internals) ─────────────────────
+// ── Shared resolver (single source for every PE number) ─────────────────────
 
-function normalizeKey(raw: unknown): string {
-  if (raw == null) return '';
-  return String(raw)
-    .toLowerCase()
-    .replace(/[_/]/g, ' ')
-    .replace(/[^\w\s'-]/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-
-function lookup<T extends string>(
-  map: Record<string, T>,
-  raw: unknown,
-  fallback: T | null,
-): T | null {
-  const key = normalizeKey(raw);
-  if (!key) return fallback;
-  if (map[key]) return map[key];
-  for (const mapKey of Object.keys(map)) {
-    if (key.includes(mapKey)) return map[mapKey];
-  }
-  return fallback;
-}
-
-function normalizeCadence(raw: unknown): CadenceBucket {
-  if (!normalizeKey(raw)) return 'unknown';
-  return lookup(CADENCE_NORMALIZATION_MAP, raw, 'other' as CadenceBucket) ?? 'unknown';
-}
-
-function normalizeFriction(raw: unknown): string | null {
-  if (!normalizeKey(raw)) return null;
-  return lookup(FRICTION_THEME_MAP, raw, 'other');
-}
-
-function normalizeBarrier(raw: unknown): string | null {
-  if (!normalizeKey(raw)) return null;
-  return lookup(AUTOPAY_BARRIER_MAP, raw, 'other');
+function apStatus(r: PaymentExperienceRecord): 'enrolled' | 'not_enrolled' | null {
+  const a = resolvedAutopay(r);
+  return a === 'yes' ? 'enrolled' : a === 'no' ? 'not_enrolled' : null;
 }
 
 function deviceBucket(raw: unknown): string | null {
-  const k = normalizeKey(raw);
+  const k = canon(raw);
   if (!k) return null;
   if (k.includes('mobile') || k.includes('app')) return 'Mobile app';
   if (k.includes('desktop') || k.includes('web') || k.includes('computer') || k.includes('laptop')) return 'Web / desktop';
@@ -122,9 +86,9 @@ export function computeSegmentedInsights(eligible: PaymentExperienceRecord[]): S
   {
     const groups: Partial<Record<CadenceBucket, { enrolled: number; answered: number }>> = {};
     for (const r of eligible) {
-      const cadence = normalizeCadence(r.extraction?.pay_cadence);
+      const cadence = resolvedCadence(r);
       if (cadence === 'unknown' || cadence === 'other') continue;
-      const status = r.extraction?.autopay_status;
+      const status = apStatus(r);
       if (!status) continue;
       const g = (groups[cadence] ||= { enrolled: 0, answered: 0 });
       g.answered++;
@@ -194,7 +158,7 @@ export function computeSegmentedInsights(eligible: PaymentExperienceRecord[]): S
       'Not enrolled': { aware: 0, answered: 0 },
     };
     for (const r of eligible) {
-      const status = r.extraction?.autopay_status;
+      const status = apStatus(r);
       const gap = r.extraction?.hardship_awareness_gap;
       if (typeof gap !== 'boolean') continue;
       if (status === 'enrolled') {
@@ -236,8 +200,8 @@ export function computeSegmentedInsights(eligible: PaymentExperienceRecord[]): S
       'Not enrolled': { friction: 0, answered: 0 },
     };
     for (const r of eligible) {
-      const status = r.extraction?.autopay_status;
-      const themeKey = normalizeFriction(r.extraction?.top_friction_theme);
+      const status = apStatus(r);
+      const themeKey = resolvedFriction(r);
       if (!themeKey) continue;
       if (status === 'enrolled') {
         groups.Enrolled.answered++;
@@ -293,7 +257,7 @@ export function computeKeyDrivers(eligible: PaymentExperienceRecord[]): DriverIn
     let lowEnrolled = 0, lowAns = 0, highEnrolled = 0, highAns = 0;
     for (const r of eligible) {
       const s = r.extraction?.payment_literacy_score;
-      const status = r.extraction?.autopay_status;
+      const status = apStatus(r);
       if (typeof s !== 'number' || !status) continue;
       const enrolled = status === 'enrolled' ? 1 : 0;
       if (s < 60) { lowAns++; lowEnrolled += enrolled; }
@@ -321,10 +285,10 @@ export function computeKeyDrivers(eligible: PaymentExperienceRecord[]): DriverIn
   {
     let weeklyAns = 0, weeklyCash = 0, nonWeeklyAns = 0, nonWeeklyCash = 0;
     for (const r of eligible) {
-      const cadence = normalizeCadence(r.extraction?.pay_cadence);
+      const cadence = resolvedCadence(r);
       if (cadence === 'unknown') continue;
-      const friction = normalizeFriction(r.extraction?.top_friction_theme);
-      const barrier = normalizeBarrier(r.extraction?.autopay_barrier_category);
+      const friction = resolvedFriction(r);
+      const barrier = resolvedBarrier(r);
       const cash = friction === 'pay_cycle_mismatch' || barrier === 'cashflow_constraint' || barrier === 'income_irregularity';
       if (cadence === 'weekly') { weeklyAns++; if (cash) weeklyCash++; }
       else { nonWeeklyAns++; if (cash) nonWeeklyCash++; }
@@ -349,7 +313,7 @@ export function computeKeyDrivers(eligible: PaymentExperienceRecord[]): DriverIn
     let awareAns = 0, awareFric = 0, unawareAns = 0, unawareFric = 0;
     for (const r of eligible) {
       const gap = r.extraction?.hardship_awareness_gap;
-      const themeKey = normalizeFriction(r.extraction?.top_friction_theme);
+      const themeKey = resolvedFriction(r);
       if (typeof gap !== 'boolean' || !themeKey) continue;
       const f = themeKey !== NO_FRICTION_KEY ? 1 : 0;
       if (gap === false) { awareAns++; awareFric += f; }
@@ -389,10 +353,10 @@ export function computeEmergingRisks(eligible: PaymentExperienceRecord[]): Emerg
   const risks: EmergingRisk[] = [];
   if (eligible.length < 10) return risks;
 
-  const notEnrolled = eligible.filter((r) => r.extraction?.autopay_status === 'not_enrolled');
+  const notEnrolled = eligible.filter((r) => apStatus(r) === 'not_enrolled');
   const barrierCounts = new Map<string, number>();
   for (const r of notEnrolled) {
-    const k = normalizeBarrier(r.extraction?.autopay_barrier_category);
+    const k = resolvedBarrier(r);
     if (!k) continue;
     barrierCounts.set(k, (barrierCounts.get(k) || 0) + 1);
   }
@@ -432,12 +396,12 @@ export function computeEmergingRisks(eligible: PaymentExperienceRecord[]): Emerg
 
   // R3: Non-weekly earners report friction
   const irregular = eligible.filter((r) => {
-    const cadence = normalizeCadence(r.extraction?.pay_cadence);
+    const cadence = resolvedCadence(r);
     return cadence === 'biweekly' || cadence === 'semi_monthly' || cadence === 'monthly' || cadence === 'other';
   });
   if (irregular.length >= 10) {
     const withFriction = irregular.filter((r) => {
-      const t = normalizeFriction(r.extraction?.top_friction_theme);
+      const t = resolvedFriction(r);
       return t && t !== NO_FRICTION_KEY;
     }).length;
     const share = withFriction / irregular.length;
@@ -455,7 +419,7 @@ export function computeEmergingRisks(eligible: PaymentExperienceRecord[]): Emerg
   // R4: Method failures recurring
   let methodFails = 0;
   for (const r of eligible) {
-    if (normalizeFriction(r.extraction?.top_friction_theme) === 'method_failure') methodFails++;
+    if (resolvedFriction(r) === 'method_failure') methodFails++;
   }
   if (methodFails >= 5 && methodFails / eligible.length >= 0.1) {
     risks.push({
@@ -505,9 +469,9 @@ export function computeSuggestedActions(eligible: PaymentExperienceRecord[]): Su
   const actions: SuggestedAction[] = [];
   if (eligible.length < 10) return actions;
 
-  const notEnrolled = eligible.filter((r) => r.extraction?.autopay_status === 'not_enrolled');
+  const notEnrolled = eligible.filter((r) => apStatus(r) === 'not_enrolled');
   const unaware = notEnrolled.filter(
-    (r) => normalizeBarrier(r.extraction?.autopay_barrier_category) === 'unaware',
+    (r) => resolvedBarrier(r) === 'unaware',
   ).length;
   if (notEnrolled.length >= 10 && unaware / notEnrolled.length >= 0.1) {
     actions.push({
@@ -522,7 +486,7 @@ export function computeSuggestedActions(eligible: PaymentExperienceRecord[]): Su
   const cadenceCounts: Record<CadenceBucket, number> = {
     weekly: 0, biweekly: 0, semi_monthly: 0, monthly: 0, other: 0, unknown: 0,
   };
-  for (const r of eligible) cadenceCounts[normalizeCadence(r.extraction?.pay_cadence)]++;
+  for (const r of eligible) cadenceCounts[resolvedCadence(r)]++;
   const cadenceDen = eligible.length - cadenceCounts.unknown;
   const misaligned = cadenceDen - cadenceCounts.weekly;
   if (cadenceDen >= 10 && misaligned / cadenceDen >= 0.4) {
@@ -566,7 +530,7 @@ export function computeSuggestedActions(eligible: PaymentExperienceRecord[]): Su
 
   let mf = 0;
   for (const r of eligible) {
-    if (normalizeFriction(r.extraction?.top_friction_theme) === 'method_failure') mf++;
+    if (resolvedFriction(r) === 'method_failure') mf++;
   }
   if (mf >= 5 && mf / eligible.length >= 0.08) {
     actions.push({
@@ -593,11 +557,11 @@ export function computeSurveyFunnel(
   allRecords: PaymentExperienceRecord[],
   eligible: PaymentExperienceRecord[],
 ): FunnelStep[] {
-  const notEnrolled = eligible.filter((r) => r.extraction?.autopay_status === 'not_enrolled');
+  const notEnrolled = eligible.filter((r) => apStatus(r) === 'not_enrolled');
   let cashflow = 0;
   let trust = 0;
   for (const r of notEnrolled) {
-    const b = normalizeBarrier(r.extraction?.autopay_barrier_category);
+    const b = resolvedBarrier(r);
     if (b === 'cashflow_constraint' || b === 'income_irregularity') cashflow++;
     else if (b === 'distrust_recurring_charges' || b === 'wants_manual_control') trust++;
   }
@@ -632,7 +596,7 @@ export function computeKpiCaptions(eligible: PaymentExperienceRecord[]): KpiCapt
   {
     const counts: Partial<Record<CadenceBucket, number>> = {};
     for (const r of eligible) {
-      const c = normalizeCadence(r.extraction?.pay_cadence);
+      const c = resolvedCadence(r);
       if (c === 'unknown' || c === 'other' || c === 'weekly') continue;
       counts[c] = (counts[c] ?? 0) + 1;
     }
@@ -648,9 +612,9 @@ export function computeKpiCaptions(eligible: PaymentExperienceRecord[]): KpiCapt
   {
     const groups: Partial<Record<CadenceBucket, { enrolled: number; n: number }>> = {};
     for (const r of eligible) {
-      const c = normalizeCadence(r.extraction?.pay_cadence);
+      const c = resolvedCadence(r);
       if (c === 'unknown' || c === 'other') continue;
-      const s = r.extraction?.autopay_status;
+      const s = apStatus(r);
       if (!s) continue;
       const g = (groups[c] ||= { enrolled: 0, n: 0 });
       g.n++;
@@ -670,7 +634,7 @@ export function computeKpiCaptions(eligible: PaymentExperienceRecord[]): KpiCapt
   {
     let eA = 0, eAware = 0, nA = 0, nAware = 0;
     for (const r of eligible) {
-      const s = r.extraction?.autopay_status;
+      const s = apStatus(r);
       const gap = r.extraction?.hardship_awareness_gap;
       if (typeof gap !== 'boolean') continue;
       if (s === 'enrolled') { eA++; if (gap === false) eAware++; }

@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import type { PaymentExperienceExtraction } from '@/types/research-insights';
+import { resolvedAutopay, resolvedBarrier, resolvedCadence, resolvedClarity, resolvedFriction } from '@/utils/paymentExperienceNormalize';
 import { fetchAllPages } from '@/utils/fetchAllPages';
 
 /**
@@ -144,44 +145,6 @@ export const AUTOPAY_BARRIER_LABELS: Record<string, string> = {
 // Normalization helper
 // ────────────────────────────────────────────────────────────────────────────
 
-function normalizeKey(raw: any): string {
-  if (raw == null) return '';
-  return String(raw)
-    .toLowerCase()
-    .replace(/[_/]/g, ' ')
-    .replace(/[^\w\s'-]/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-
-function lookup<T extends string>(map: Record<string, T>, raw: any, fallback: T): T {
-  const key = normalizeKey(raw);
-  if (!key) return fallback;
-  if (map[key]) return map[key];
-  // Loose contains match (helps with "I bi-weekly pay" etc.)
-  for (const mapKey of Object.keys(map)) {
-    if (key.includes(mapKey)) return map[mapKey];
-  }
-  return fallback;
-}
-
-function normalizeCadence(raw: any): CadenceBucket {
-  if (raw == null || normalizeKey(raw) === '') return 'unknown';
-  return lookup(CADENCE_NORMALIZATION_MAP, raw, 'other');
-}
-
-function normalizeFriction(raw: any): string | null {
-  const key = normalizeKey(raw);
-  if (!key) return null;
-  return lookup(FRICTION_THEME_MAP, raw, 'other');
-}
-
-function normalizeAutopayBarrier(raw: any): string | null {
-  const key = normalizeKey(raw);
-  if (!key) return null;
-  return lookup(AUTOPAY_BARRIER_MAP, raw, 'other');
-}
-
 // ────────────────────────────────────────────────────────────────────────────
 // Record + KPI types
 // ────────────────────────────────────────────────────────────────────────────
@@ -263,6 +226,7 @@ export interface FrictionSummary {
   noFrictionShare: number; // share of answered
   frictionAnswered: number; // answered - noFriction
   totalAnswered: number;
+  otherCount?: number; // 'other' friction answers, shown separately from the top 5
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -307,12 +271,13 @@ export function deriveKPIs(eligible: PaymentExperienceRecord[]): PaymentKPIs {
     .map((r) => r.extraction?.payment_literacy_score)
     .filter((v): v is number => typeof v === 'number');
 
-  const autopayAnswered = eligible.filter((r) => !!r.extraction?.autopay_status);
-  const autopayEnrolled = autopayAnswered.filter((r) => r.extraction?.autopay_status === 'enrolled').length;
+  const autopayResolved = eligible.map(resolvedAutopay);
+  const autopayEnrolled = autopayResolved.filter((a) => a === 'yes').length;
+  const autopayAnswered = autopayResolved.filter((a) => a === 'yes' || a === 'no');
 
   const clarityScores = eligible
-    .map((r) => r.extraction?.move_in_cost_clarity_1to5)
-    .filter((v): v is number => typeof v === 'number');
+    .map(resolvedClarity)
+    .filter((v): v is number => v !== null);
 
   const hardshipAnswered = eligible.filter((r) => typeof r.extraction?.hardship_awareness_gap === 'boolean');
   const hardshipKnown = hardshipAnswered.filter((r) => r.extraction?.hardship_awareness_gap === false).length;
@@ -321,10 +286,10 @@ export function deriveKPIs(eligible: PaymentExperienceRecord[]): PaymentKPIs {
     weekly: 0, biweekly: 0, semi_monthly: 0, monthly: 0, other: 0, unknown: 0,
   };
   for (const r of eligible) {
-    breakdown[normalizeCadence(r.extraction?.pay_cadence)]++;
+    breakdown[resolvedCadence(r)]++;
   }
-  const cadenceDenominator = eligible.length - breakdown.unknown;
-  const misalignedNumerator = cadenceDenominator - breakdown.weekly;
+  const misalignedNumerator = breakdown.biweekly + breakdown.semi_monthly + breakdown.monthly;
+  const cadenceDenominator = breakdown.weekly + misalignedNumerator;
 
   const literacyAvg = literacyScores.length ? literacyScores.reduce((a, b) => a + b, 0) / literacyScores.length : null;
   const clarityAvg = clarityScores.length ? clarityScores.reduce((a, b) => a + b, 0) / clarityScores.length : null;
@@ -360,7 +325,7 @@ export function aggregateFrictionThemes(
   let answered = 0;
   let noFrictionCount = 0;
   for (const r of eligible) {
-    const themeKey = normalizeFriction(r.extraction?.top_friction_theme);
+    const themeKey = resolvedFriction(r);
     if (!themeKey) continue;
     answered++;
     if (themeKey === NO_FRICTION_KEY) {
@@ -376,7 +341,9 @@ export function aggregateFrictionThemes(
     counts.set(themeKey, existing);
   }
   const frictionAnswered = answered - noFrictionCount;
+  const otherCount = counts.get('other')?.count ?? 0;
   const themes = Array.from(counts.entries())
+    .filter(([key]) => key !== 'other')
     .map(([key, v]) => ({
       key,
       label: FRICTION_THEME_LABELS[key] || key,
@@ -393,17 +360,18 @@ export function aggregateFrictionThemes(
       noFrictionShare: answered ? noFrictionCount / answered : 0,
       frictionAnswered,
       totalAnswered: answered,
+      otherCount,
     },
   };
 }
 
 export function aggregateAutopayBarriers(eligible: PaymentExperienceRecord[]): AutopayBarrierAgg[] {
-  const notEnrolled = eligible.filter((r) => r.extraction?.autopay_status === 'not_enrolled');
+  const notEnrolled = eligible.filter((r) => resolvedAutopay(r) === 'no');
   const denom = notEnrolled.length;
   if (!denom) return [];
   const counts = new Map<string, { count: number; unlocks: Map<string, number> }>();
   for (const r of notEnrolled) {
-    const key = normalizeAutopayBarrier(r.extraction?.autopay_barrier_category);
+    const key = resolvedBarrier(r);
     if (!key) continue;
     const existing = counts.get(key) || { count: 0, unlocks: new Map() };
     existing.count++;
@@ -428,7 +396,7 @@ export function aggregateAutopayBarriers(eligible: PaymentExperienceRecord[]): A
     .slice(0, 5);
 }
 
-function computeEligibilityStats(records: PaymentExperienceRecord[]): EligibilityStats {
+export function computeEligibilityStats(records: PaymentExperienceRecord[]): EligibilityStats {
   let voicemail = 0, tooShort = 0, insufficientExtraction = 0, eligible = 0;
   for (const r of records) {
     if (r.analyticsEligible) eligible++;
