@@ -43,6 +43,16 @@ export default function Dashboard() {
   const [selectedSiteId, setSelectedSiteId] = useState<string | null>(null);
   const { bookings, isLoading: bookingsLoading } = useDashboardData(dateRange, customDates);
 
+  // Insights panel (today vs yesterday, this week, this month, next 7 days)
+  // always needs the current ET week/month regardless of the selected range.
+  const insightsToday = businessToday();
+  const insightsFrom = [startOfMonthStr(insightsToday), startOfWeekStr(insightsToday), addDaysStr(insightsToday, -1)].sort()[0];
+  const { bookings: insightBookings } = useDashboardData(
+    'custom',
+    { from: insightsFrom, to: insightsToday },
+    { skipPrevious: true },
+  );
+
   // Billing data for cost breakdown (super admin only)
   const { summary: costSummary, costs, isLoading: costsLoading, isSuperAdmin } = useBillingData(
     getBillingDateRange(dateRange),
@@ -66,6 +76,10 @@ export default function Dashboard() {
   const filteredBookings = selectedSiteId
     ? bookings.filter(b => filteredAgents.some(a => a.id === b.agentId))
     : bookings;
+
+  const filteredInsightBookings = selectedSiteId
+    ? insightBookings.filter(b => filteredAgents.some(a => a.id === b.agentId))
+    : insightBookings;
 
   const handleRangeChange = (range: DateFilterValue, dates?: CustomDateRange) => {
     setDateRange(range as DateRangeFilterType);

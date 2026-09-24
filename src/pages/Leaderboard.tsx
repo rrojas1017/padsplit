@@ -23,8 +23,8 @@ export default function Leaderboard() {
     setCustomDates(range === 'custom' && dates ? dates : undefined);
   };
 
-  const isLoading = bookingsLoading || agentsLoading;
   const { bookings, isLoading: bookingsLoading } = useDashboardData(dateRange, customDates);
+  const isLoading = bookingsLoading || agentsLoading;
   const leaderboard = calculateLeaderboard(bookings, agents, dateRange, customDates);
   const nonBookingCount = calculateNonBookingCount(bookings, dateRange, customDates);
 
