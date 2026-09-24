@@ -1,15 +1,18 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { FunctionsHttpError } from "@supabase/supabase-js";
+import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
-import { Download, BarChart3, LayoutDashboard, ListChecks } from "lucide-react";
+import { Download, BarChart3, LayoutDashboard, ListChecks, Sparkles, RefreshCw } from "lucide-react";
 import { DynamicQuestionCard } from "@/components/research/DynamicQuestionCard";
 import { ScriptResultsOverview } from "@/components/research/ScriptResultsOverview";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { useAuth } from "@/contexts/AuthContext";
+import { resolveResearchCampaignType } from "@/utils/researchCampaignType";
 import type { ScriptQuestion } from "@/hooks/useResearchScripts";
 
 export interface ScriptResponse {
@@ -32,6 +35,7 @@ interface ScriptInsightsPanelProps {
 export function ScriptInsightsPanel({ scriptId }: ScriptInsightsPanelProps) {
   const { user } = useAuth();
   const canSeeSubmissions = user?.role === "super_admin" || user?.role === "admin";
+  const canSeeAISummary = canSeeSubmissions || user?.role === "supervisor";
   const { data: script, isLoading: scriptLoading } = useQuery({
     queryKey: ["script-detail", scriptId],
     queryFn: async () => {
@@ -49,6 +53,7 @@ export function ScriptInsightsPanel({ scriptId }: ScriptInsightsPanelProps) {
   const questions: ScriptQuestion[] = useMemo(() => {
     if (!script?.questions) return [];
     return (script.questions as any[]).map((q: any) => ({
+      id: q.id ?? undefined,
       order: q.order ?? 0,
       question: q.question ?? "",
       type: q.type ?? "open_ended",
@@ -59,8 +64,15 @@ export function ScriptInsightsPanel({ scriptId }: ScriptInsightsPanelProps) {
       branch: q.branch ?? undefined,
       ai_extraction_hint: q.ai_extraction_hint ?? undefined,
       is_internal: q.is_internal ?? false,
+      scale_min: typeof q.scale_min === "number" ? q.scale_min : undefined,
+      scale_max: typeof q.scale_max === "number" ? q.scale_max : undefined,
     }));
   }, [script]);
+
+  const campaignType = useMemo(
+    () => (script ? resolveResearchCampaignType({ id: script.id, slug: (script as { slug?: string | null }).slug ?? null }) : null),
+    [script],
+  );
 
   const { data: responses = [], isLoading: responsesLoading } = useQuery({
     queryKey: ["script-responses", scriptId],
@@ -128,7 +140,7 @@ export function ScriptInsightsPanel({ scriptId }: ScriptInsightsPanelProps) {
     );
   }
 
-  if (responses.length === 0 && !canSeeSubmissions) {
+  if (responses.length === 0 && !canSeeSubmissions && !canSeeAISummary) {
     return (
       <div className="text-center py-16">
         <BarChart3 className="w-14 h-14 mx-auto mb-4 text-muted-foreground/50" />
@@ -160,6 +172,11 @@ export function ScriptInsightsPanel({ scriptId }: ScriptInsightsPanelProps) {
           {canSeeSubmissions && (
             <TabsTrigger value="submissions" className="gap-2">
               <ListChecks className="w-4 h-4" /> Submissions
+            </TabsTrigger>
+          )}
+          {canSeeAISummary && campaignType && (
+            <TabsTrigger value="ai-summary" className="gap-2">
+              <Sparkles className="w-4 h-4" /> AI Summary
             </TabsTrigger>
           )}
         </TabsList>
@@ -214,7 +231,199 @@ export function ScriptInsightsPanel({ scriptId }: ScriptInsightsPanelProps) {
             <ScriptSubmissionsTab scriptId={scriptId} />
           </TabsContent>
         )}
+
+        {canSeeAISummary && campaignType && (
+          <TabsContent value="ai-summary">
+            <ScriptAISummaryTab scriptId={scriptId} campaignType={campaignType} canGenerate={canSeeSubmissions} />
+          </TabsContent>
+        )}
       </Tabs>
+    </div>
+  );
+}
+
+// ── AI Summary tab (BUG-003 Phase B) ──
+
+interface InsightRow {
+  id: string;
+  status: string | null;
+  error_message: string | null;
+  generated_at: string;
+  created_at: string;
+  total_records_analyzed: number | null;
+  data: unknown;
+}
+
+const POLL_MS = 5000;
+const POLL_MAX_MS = 3 * 60 * 1000;
+
+function asArray(v: unknown): Record<string, unknown>[] {
+  return Array.isArray(v) ? v.filter((x): x is Record<string, unknown> => !!x && typeof x === "object") : [];
+}
+function asStr(v: unknown): string {
+  return typeof v === "string" ? v : "";
+}
+function levelVariant(level: string): "destructive" | "default" | "secondary" | "outline" {
+  if (level === "high" || level === "strong") return "destructive";
+  if (level === "medium" || level === "moderate") return "default";
+  if (level === "low" || level === "weak") return "secondary";
+  return "outline";
+}
+
+function ScriptAISummaryTab({ scriptId, campaignType, canGenerate }: { scriptId: string; campaignType: string; canGenerate: boolean }) {
+  const [pollStartedAt, setPollStartedAt] = useState<number | null>(null);
+  const [isInvoking, setIsInvoking] = useState(false);
+
+  const { data: row, isLoading, refetch } = useQuery({
+    queryKey: ["script-ai-summary", campaignType],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("research_insights")
+        .select("id, status, error_message, generated_at, created_at, total_records_analyzed, data")
+        .eq("campaign_type", campaignType)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (error) throw error;
+      return (data ?? null) as InsightRow | null;
+    },
+    refetchInterval: (query) => {
+      const r = query.state.data as InsightRow | null | undefined;
+      if (r?.status !== "processing") return false;
+      if (pollStartedAt === null) return POLL_MS;
+      return Date.now() - pollStartedAt < POLL_MAX_MS ? POLL_MS : false;
+    },
+  });
+
+  const handleGenerate = async () => {
+    setIsInvoking(true);
+    setPollStartedAt(Date.now());
+    try {
+      const { data, error } = await supabase.functions.invoke("generate-research-insights", {
+        body: { campaign_type: campaignType, script_id: scriptId, force: true },
+      });
+      if (error) {
+        let msg = error.message;
+        if (error instanceof FunctionsHttpError) {
+          try {
+            const j = await error.context.json();
+            if (j?.error) msg = String(j.error);
+          } catch { /* keep default */ }
+        }
+        toast.error(msg);
+      } else if (data?.skipped) {
+        toast.info(data.reason === "not_enough_records" ? "At least 3 submissions are needed" : `Skipped: ${data.reason}`);
+      } else if (data?.success === false) {
+        toast.error(data.error || "AI summary failed");
+      } else {
+        toast.success("AI summary updated");
+      }
+    } finally {
+      setIsInvoking(false);
+      refetch();
+    }
+  };
+
+  const dataObj = (row?.data && typeof row.data === "object" ? row.data : {}) as Record<string, unknown>;
+  const report = (dataObj.report && typeof dataObj.report === "object" ? dataObj.report : null) as Record<string, unknown> | null;
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <p className="text-sm text-muted-foreground">
+          {row && row.status === "completed"
+            ? <>Generated {dateFmt.format(new Date(row.generated_at))} ET · {row.total_records_analyzed ?? 0} records analysed</>
+            : row?.status === "processing" ? "Generating…" : null}
+        </p>
+        {canGenerate && (
+          <Button size="sm" variant="outline" className="h-8 gap-1.5 text-xs" onClick={handleGenerate} disabled={isInvoking || row?.status === "processing"}>
+            <RefreshCw className={`w-3.5 h-3.5 ${isInvoking ? "animate-spin" : ""}`} /> {row ? "Refresh" : "Generate"}
+          </Button>
+        )}
+      </div>
+
+      {isLoading ? (
+        <Skeleton className="h-64 w-full" />
+      ) : !row ? (
+        <p className="text-sm text-muted-foreground text-center py-12">No AI summary yet</p>
+      ) : row.status === "failed" ? (
+        <Card><CardContent className="p-4 text-sm text-destructive">AI summary failed: {row.error_message || "Unknown error"}</CardContent></Card>
+      ) : row.status === "processing" ? (
+        <Skeleton className="h-64 w-full" />
+      ) : !report ? (
+        <p className="text-sm text-muted-foreground text-center py-12">No AI summary yet</p>
+      ) : (
+        <div className="space-y-4">
+          {asStr(report.executive_summary) && (
+            <Card><CardContent className="p-4 space-y-1">
+              <h4 className="text-sm font-semibold text-foreground">Executive summary</h4>
+              <p className="text-sm text-foreground whitespace-pre-line">{asStr(report.executive_summary)}</p>
+            </CardContent></Card>
+          )}
+
+          {asArray(report.key_findings).length > 0 && (
+            <Card><CardContent className="p-4 space-y-3">
+              <h4 className="text-sm font-semibold text-foreground">Key findings</h4>
+              {asArray(report.key_findings).map((k, i) => (
+                <div key={i} className="space-y-0.5">
+                  <div className="flex items-start gap-2">
+                    <Badge variant={levelVariant(asStr(k.strength))} className="text-[10px] capitalize shrink-0">{asStr(k.strength) || "—"}</Badge>
+                    <p className="text-sm text-foreground">{asStr(k.finding)}</p>
+                  </div>
+                  {asStr(k.evidence) && <p className="text-xs text-muted-foreground pl-1">{asStr(k.evidence)}</p>}
+                </div>
+              ))}
+            </CardContent></Card>
+          )}
+
+          {asArray(report.section_insights).length > 0 && (
+            <Card><CardContent className="p-4 space-y-3">
+              <h4 className="text-sm font-semibold text-foreground">By section</h4>
+              {asArray(report.section_insights).map((s, i) => (
+                <div key={i} className="space-y-1">
+                  <p className="text-sm font-medium text-foreground">{asStr(s.section)}</p>
+                  <p className="text-sm text-muted-foreground">{asStr(s.summary)}</p>
+                  {Array.isArray(s.notable_quotes) && s.notable_quotes.filter(q => typeof q === "string").map((q, j) => (
+                    <blockquote key={j} className="border-l-2 border-border pl-3 text-xs italic text-muted-foreground">“{q as string}”</blockquote>
+                  ))}
+                </div>
+              ))}
+            </CardContent></Card>
+          )}
+
+          {asArray(report.top_issues).length > 0 && (
+            <Card><CardContent className="p-4 space-y-2">
+              <h4 className="text-sm font-semibold text-foreground">Top issues</h4>
+              {asArray(report.top_issues).map((t, i) => (
+                <div key={i} className="flex items-start gap-2">
+                  <Badge variant={levelVariant(asStr(t.severity))} className="text-[10px] capitalize shrink-0">{asStr(t.severity) || "—"}</Badge>
+                  <p className="text-sm text-foreground flex-1">{asStr(t.issue)}</p>
+                  {typeof t.share_pct === "number" && <span className="text-xs text-muted-foreground">{t.share_pct}%</span>}
+                </div>
+              ))}
+            </CardContent></Card>
+          )}
+
+          {asArray(report.recommendations).length > 0 && (
+            <Card><CardContent className="p-4 space-y-3">
+              <h4 className="text-sm font-semibold text-foreground">Recommendations</h4>
+              {asArray(report.recommendations).map((r, i) => (
+                <div key={i} className="space-y-0.5">
+                  <div className="flex items-start gap-2">
+                    <Badge variant={levelVariant(asStr(r.priority))} className="text-[10px] capitalize shrink-0">{asStr(r.priority) || "—"}</Badge>
+                    <p className="text-sm text-foreground">{asStr(r.action)}</p>
+                  </div>
+                  {asStr(r.rationale) && <p className="text-xs text-muted-foreground pl-1">{asStr(r.rationale)}</p>}
+                </div>
+              ))}
+            </CardContent></Card>
+          )}
+
+          {asStr(report.data_quality_notes) && (
+            <p className="text-xs text-muted-foreground"><span className="font-medium">Data quality:</span> {asStr(report.data_quality_notes)}</p>
+          )}
+        </div>
+      )}
     </div>
   );
 }

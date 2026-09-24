@@ -983,6 +983,263 @@ async function selfInvokeResume(supabaseUrl: string, supabaseServiceKey: string,
   }
 }
 
+// ── BUG-003 Phase B: script mode (campaign types matching /^script_[0-9a-f]{8}$/) ──
+// Separate path; move_out_survey / audience_survey / payment_experience never reach it.
+
+const SCRIPT_MODE_RE = /^script_[0-9a-f]{8}$/;
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const SM_ROUTE_SCRIPT_ID_MAP: Record<string, string> = {
+  '6397bb7f-ac6a-49ea-90ad-9ca6ec046434': 'move_out_survey',
+  'c701a243-1c66-425a-8f79-99a290ec5b6b': 'payment_experience',
+};
+function smResolveCampaignType(script: { id: string; slug?: string | null } | null): string | null {
+  if (!script?.id) return null;
+  if (SM_ROUTE_SCRIPT_ID_MAP[script.id]) return SM_ROUTE_SCRIPT_ID_MAP[script.id];
+  if (script.slug && ['payment_experience', 'audience_survey'].includes(script.slug)) return script.slug;
+  return script.slug || `script_${String(script.id).slice(0, 8)}`;
+}
+function smStableId(q: any, idx: number): string {
+  if (q?.id !== undefined && q?.id !== null && String(q.id).trim() !== '') return String(q.id);
+  return `q_idx_${idx}`;
+}
+function smJson(status: number, b: unknown): Response {
+  return new Response(JSON.stringify(b), { status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+}
+
+const SCRIPT_MODE_SYSTEM = `You analyse a PadSplit research survey. Use ONLY the data given to you.
+Rules:
+- Cite numbers from the provided stats (counts, averages, percentages). Never invent numbers.
+- Do not invent quotes. Any quote in notable_quotes must be copied verbatim from the open answers provided.
+- If the data is thin, say so in data_quality_notes.
+Return ONLY a JSON object with exactly this shape:
+{
+  "executive_summary": string,
+  "key_findings": [{ "finding": string, "evidence": string, "strength": "strong"|"moderate"|"weak" }],
+  "section_insights": [{ "section": string, "summary": string, "notable_quotes": string[] }],
+  "top_issues": [{ "issue": string, "share_pct": number|null, "severity": "high"|"medium"|"low" }],
+  "recommendations": [{ "action": string, "rationale": string, "priority": "high"|"medium"|"low" }],
+  "data_quality_notes": string
+}`;
+
+function smValidateReport(r: any): string | null {
+  if (!r || typeof r !== 'object' || Array.isArray(r)) return 'report is not an object';
+  if (typeof r.executive_summary !== 'string') return 'executive_summary missing';
+  if (typeof r.data_quality_notes !== 'string') return 'data_quality_notes missing';
+  const lvl3 = (v: unknown, a: string[]) => typeof v === 'string' && a.includes(v);
+  if (!Array.isArray(r.key_findings) || !r.key_findings.every((k: any) =>
+    k && typeof k.finding === 'string' && typeof k.evidence === 'string' && lvl3(k.strength, ['strong', 'moderate', 'weak']))) return 'key_findings invalid';
+  if (!Array.isArray(r.section_insights) || !r.section_insights.every((s: any) =>
+    s && typeof s.section === 'string' && typeof s.summary === 'string' && Array.isArray(s.notable_quotes) && s.notable_quotes.every((x: unknown) => typeof x === 'string'))) return 'section_insights invalid';
+  if (!Array.isArray(r.top_issues) || !r.top_issues.every((t: any) =>
+    t && typeof t.issue === 'string' && (t.share_pct === null || typeof t.share_pct === 'number') && lvl3(t.severity, ['high', 'medium', 'low']))) return 'top_issues invalid';
+  if (!Array.isArray(r.recommendations) || !r.recommendations.every((x: any) =>
+    x && typeof x.action === 'string' && typeof x.rationale === 'string' && lvl3(x.priority, ['high', 'medium', 'low']))) return 'recommendations invalid';
+  return null;
+}
+
+// deno-lint-ignore no-explicit-any
+async function runScriptMode(supabase: any, lovableApiKey: string, ctx: { kind: string; userId?: string }, body: any, campaignType: string): Promise<Response> {
+  const scriptId = body.script_id ?? body.scriptId;
+  if (typeof scriptId !== 'string' || !UUID_RE.test(scriptId)) return smJson(400, { error: 'script_id (uuid) is required' });
+
+  const { data: script, error: sErr } = await supabase
+    .from('research_scripts').select('id, name, slug, questions').eq('id', scriptId).maybeSingle();
+  if (sErr) return smJson(500, { error: 'Script lookup failed' });
+  if (!script) return smJson(404, { error: 'Script not found' });
+  if (smResolveCampaignType(script) !== campaignType) return smJson(400, { error: 'campaign_type does not match script' });
+
+  // Records (paged, no 1000 cap).
+  const records: any[] = [];
+  for (let from = 0; ; from += 1000) {
+    const { data, error } = await supabase
+      .from('bookings')
+      .select('id, booking_date, created_at, research_call_id, booking_transcriptions!inner(research_extraction, survey_progress, call_summary, updated_at, research_campaign_type)')
+      .eq('record_type', 'research')
+      .eq('has_valid_conversation', true)
+      .eq('booking_transcriptions.research_campaign_type', campaignType)
+      .order('created_at', { ascending: true })
+      .range(from, from + 999);
+    if (error) return smJson(500, { error: 'Record lookup failed' });
+    records.push(...(data || []));
+    if (!data || data.length < 1000) break;
+  }
+  const eligible = records.length;
+  const tOf = (r: any) => Array.isArray(r.booking_transcriptions) ? r.booking_transcriptions[0] : r.booking_transcriptions;
+
+  if (eligible < 3) {
+    console.log('[Gate] script skipped reason=not_enough_records');
+    return smJson(200, { success: true, skipped: true, reason: 'not_enough_records', eligible });
+  }
+
+  if (body.force !== true) {
+    const { data: last } = await supabase
+      .from('research_insights').select('id, generated_at')
+      .eq('campaign_type', campaignType).eq('status', 'completed')
+      .order('generated_at', { ascending: false }).limit(1).maybeSingle();
+    if (last?.generated_at) {
+      const lastTs = new Date(last.generated_at).getTime();
+      const hasNew = records.some(r => {
+        const t = tOf(r);
+        return new Date(r.created_at).getTime() > lastTs || (t?.updated_at && new Date(t.updated_at).getTime() > lastTs);
+      });
+      if (!hasNew) {
+        console.log('[Gate] script skipped reason=no_new_records');
+        return smJson(200, { success: true, skipped: true, reason: 'no_new_records', eligible, last_insight_id: last.id });
+      }
+      console.log('[Gate] script ran reason=new_records');
+    } else {
+      console.log('[Gate] script ran reason=no_previous');
+    }
+  } else {
+    console.log('[Gate] script ran reason=forced');
+  }
+
+  // Stats.
+  const questions = (Array.isArray(script.questions) ? script.questions : [])
+    .map((q: any, idx: number) => ({ q, idx, sid: smStableId(q, idx) }))
+    .filter(({ q }: any) => q?.is_internal !== true);
+  const perQ: Record<string, any> = {};
+  const openAnswers: Record<string, string[]> = {};
+  for (const { q, sid } of questions) {
+    const base = { question: String(q.question ?? '').slice(0, 300), type: q.type, section: q.section ?? null };
+    if (q.type === 'scale') {
+      const min = typeof q.scale_min === 'number' ? q.scale_min : 1;
+      const max = typeof q.scale_max === 'number' ? q.scale_max : 10;
+      const dist: Record<string, number> = {};
+      for (let v = min; v <= max; v++) dist[String(v)] = 0;
+      perQ[sid] = { ...base, scale_min: min, scale_max: max, n: 0, sum: 0, distribution: dist };
+    } else if (q.type === 'open_ended' || !q.type) {
+      perQ[sid] = { ...base, n: 0 };
+      openAnswers[sid] = [];
+    } else {
+      perQ[sid] = { ...base, n: 0, counts: {} as Record<string, number> };
+    }
+  }
+
+  let completed = 0, endedEarly = 0, answeredSum = 0, totalSum = 0, progressN = 0;
+  const otherNotes: string[] = [];
+  for (const r of records) {
+    const t = tOf(r);
+    const sp = t?.survey_progress;
+    if (sp && typeof sp === 'object') {
+      if (sp.ended_early === true) endedEarly++; else completed++;
+      if (typeof sp.answered === 'number' && typeof sp.total === 'number') { answeredSum += sp.answered; totalSum += sp.total; progressN++; }
+    } else {
+      completed++;
+    }
+    const raw = t?.research_extraction?.raw_script_answers;
+    const hasRaw = raw && typeof raw === 'object' && Object.keys(raw).length > 0;
+    if (!hasRaw) {
+      if (typeof t?.call_summary === 'string' && t.call_summary.trim() && otherNotes.length < 100) otherNotes.push(t.call_summary.trim().slice(0, 1000));
+      continue;
+    }
+    for (const { q, sid } of questions) {
+      const a = raw[sid];
+      const s = perQ[sid];
+      if (!a || !s) continue;
+      if (q.type === 'scale') {
+        const v = typeof a.scale_value === 'number' ? a.scale_value : Number(a.scale_value);
+        if (!Number.isFinite(v)) continue;
+        s.n++; s.sum += v;
+        const k = String(Math.round(v));
+        s.distribution[k] = (s.distribution[k] ?? 0) + 1;
+      } else if (openAnswers[sid]) {
+        const txt = typeof a.raw_text_answer === 'string' ? a.raw_text_answer.trim() : '';
+        if (!txt) continue;
+        s.n++;
+        if (openAnswers[sid].length < 150) openAnswers[sid].push(txt.slice(0, 300));
+      } else {
+        const labels: string[] = Array.isArray(a.selected_option_labels) ? a.selected_option_labels : (a.raw_text_answer ? [String(a.raw_text_answer)] : []);
+        if (!labels.length) continue;
+        s.n++;
+        for (const l of labels) s.counts[l] = (s.counts[l] ?? 0) + 1;
+      }
+    }
+  }
+  for (const s of Object.values(perQ)) {
+    if (s.type === 'scale') { s.average = s.n ? Math.round((s.sum / s.n) * 100) / 100 : null; delete s.sum; }
+  }
+  const stats = {
+    totals: {
+      records: eligible, completed, ended_early: endedEarly,
+      avg_answered: progressN ? Math.round((answeredSum / progressN) * 10) / 10 : null,
+      avg_total: progressN ? Math.round((totalSum / progressN) * 10) / 10 : null,
+      audio_summaries_only: otherNotes.length,
+    },
+    questions: perQ,
+  };
+
+  // Prompt (optional per-script focus).
+  const { data: focus } = await supabase
+    .from('research_prompts').select('prompt_text, model, temperature')
+    .eq('prompt_key', `aggregation_${campaignType}`).maybeSingle();
+  const model = (focus?.model as string) || 'google/gemini-2.5-flash';
+  const temperature = typeof focus?.temperature === 'number' ? focus.temperature : 0.2;
+  const openBlock = Object.entries(openAnswers)
+    .filter(([, arr]) => arr.length > 0)
+    .map(([sid, arr]) => `### ${perQ[sid].question}\n${arr.map(x => `- ${x}`).join('\n')}`)
+    .join('\n\n');
+  const userPrompt = [
+    `Survey: ${script.name}`,
+    focus?.prompt_text ? `Focus:\n${focus.prompt_text}` : '',
+    `Stats (JSON):\n${JSON.stringify(stats)}`,
+    openBlock ? `Open answers (verbatim):\n${openBlock}` : 'Open answers: none',
+    otherNotes.length ? `Other notes (call summaries):\n${otherNotes.map(x => `- ${x}`).join('\n')}` : '',
+  ].filter(Boolean).join('\n\n');
+
+  const createdBy = ctx.kind === 'user' ? (ctx.userId ?? null) : null;
+  const { data: row, error: insErr } = await supabase.from('research_insights').insert({
+    campaign_type: campaignType,
+    insight_type: 'aggregate',
+    caller_type: 'all',
+    status: 'processing',
+    analysis_period: 'allTime',
+    total_records_analyzed: eligible,
+    created_by: createdBy,
+    data: { mode: 'script', script_id: script.id },
+  }).select('id').single();
+  if (insErr || !row) return smJson(500, { error: 'Failed to create insight row' });
+
+  const fail = async (msg: string) => {
+    await supabase.from('research_insights').update({ status: 'failed', error_message: msg.slice(0, 500) }).eq('id', row.id);
+    return smJson(200, { success: false, insight_id: row.id, error: msg });
+  };
+
+  let ai;
+  try {
+    ai = await callLovableAI(lovableApiKey, model, temperature, SCRIPT_MODE_SYSTEM, userPrompt);
+  } catch (e) {
+    console.error('[Script] AI call failed', e instanceof Error ? e.message.slice(0, 200) : 'unknown');
+    return await fail('AI call failed');
+  }
+  await logApiCost(supabase, {
+    service_provider: 'lovable_ai', service_type: 'research_aggregation',
+    edge_function: 'generate-research-insights',
+    input_tokens: ai.inputTokens, token_source: ai.tokenSource, output_tokens: ai.outputTokens,
+    metadata: { model, prompt: 'script_mode', campaign_type: campaignType },
+    triggered_by_user_id: createdBy || undefined, is_internal: ctx.kind === 'internal',
+  });
+
+  let report: any;
+  try {
+    const c = ai.content.trim();
+    const m = c.match(/```(?:json)?\s*([\s\S]*?)```/);
+    report = JSON.parse(m ? m[1].trim() : c);
+  } catch {
+    return await fail('AI returned invalid JSON');
+  }
+  const invalid = smValidateReport(report);
+  if (invalid) return await fail(`AI report invalid: ${invalid}`);
+
+  const { error: updErr } = await supabase.from('research_insights').update({
+    status: 'completed',
+    generated_at: new Date().toISOString(),
+    data: { mode: 'script', script_id: script.id, stats: { ...stats, open_answers_count: Object.fromEntries(Object.entries(openAnswers).map(([k, v]) => [k, v.length])) }, report },
+  }).eq('id', row.id);
+  if (updErr) return await fail('Failed to save report');
+  return smJson(200, { success: true, insight_id: row.id });
+}
+
 // ── Main handler ──
 
 Deno.serve(async (req) => {
@@ -1017,6 +1274,12 @@ Deno.serve(async (req) => {
         JSON.stringify({ success: true, message: `Processing chunk ${chunkIndex + 1}` }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
+    }
+
+    // ── SCRIPT mode (BUG-003 Phase B): only for script_<8 hex> campaign types ──
+    const rawCampaignType = body.campaignType || body.campaign_type;
+    if (typeof rawCampaignType === 'string' && SCRIPT_MODE_RE.test(rawCampaignType)) {
+      return await runScriptMode(supabase, lovableApiKey, auth.ctx as { kind: string; userId?: string }, body, rawCampaignType);
     }
 
     // ── INITIAL path: fetch records, create insight, start chain ──
