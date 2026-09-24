@@ -48,7 +48,8 @@ Content to translate:
 - Intro script: ${JSON.stringify(intro || "")}
 - Closing script: ${JSON.stringify(closing || "")}
 - Rebuttal script: ${JSON.stringify(rebuttal || "")}
-- Questions: ${JSON.stringify((questions || []).map((q: any) => ({
+- Questions: ${JSON.stringify((questions || []).map((q: any, index: number) => ({
+  key: String(index),
   id: q.id,
   text: q.text || q.question || "",
   options: q.options || [],
@@ -89,7 +90,7 @@ Use the translate_script tool to return the translated content.`;
                     items: {
                       type: "object",
                       properties: {
-                        id: { type: "number" },
+                        key: { type: "string" },
                         text: { type: "string", description: "Translated question text" },
                         options: { type: "array", items: { type: "string" }, description: "Translated options" },
                         probes: { type: "array", items: { type: "string" }, description: "Translated probes" },
@@ -97,7 +98,7 @@ Use the translate_script tool to return the translated content.`;
                         branch_yes_probes: { type: "array", items: { type: "string" } },
                         branch_no_probes: { type: "array", items: { type: "string" } },
                       },
-                      required: ["id", "text"],
+                      required: ["key", "text"],
                       additionalProperties: false,
                     },
                   },
@@ -153,9 +154,15 @@ Use the translate_script tool to return the translated content.`;
     }
 
     // Merge translations back into original questions structure
-    const translatedQuestions = (questions || []).map((origQ: any) => {
-      const tq = (translated.questions || []).find((q: any) => q.id === origQ.id);
-      if (!tq) return origQ;
+    const returnedQuestions: any[] = Array.isArray(translated.questions) ? translated.questions : [];
+    const byKey = new Map<string, any>();
+    for (const q of returnedQuestions) {
+      if (q && q.key !== undefined && q.key !== null) byKey.set(String(q.key), q);
+    }
+    let missingCount = 0;
+    const translatedQuestions = (questions || []).map((origQ: any, index: number) => {
+      const tq = byKey.get(String(index)) ?? returnedQuestions[index];
+      if (!tq) { missingCount++; return origQ; }
       return {
         ...origQ,
         text: tq.text || origQ.text,
@@ -176,6 +183,7 @@ Use the translate_script tool to return the translated content.`;
       closing: translated.closing || closing,
       rebuttal: translated.rebuttal || rebuttal,
       questions: translatedQuestions,
+      ...((returnedQuestions.length < (questions || []).length || missingCount > 0) ? { partial: true } : {}),
     }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
