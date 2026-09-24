@@ -1,15 +1,15 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-};
+import { requireUserOrInternal, corsHeaders } from "../_shared/auth.ts";
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
+
+  const auth = await requireUserOrInternal(req, ['super_admin']);
+  if (!auth.ok) return auth.response;
 
   try {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
@@ -25,30 +25,8 @@ serve(async (req) => {
     const endDate = body.endDate || null;
     let jobId = body.jobId || null;
 
-    // If this is the initial call (has Authorization header), verify the user
-    const authHeader = req.headers.get('Authorization');
-    if (authHeader && !jobId) {
-      const token = authHeader.replace('Bearer ', '');
-      const anonClient = createClient(supabaseUrl, Deno.env.get('SUPABASE_ANON_KEY')!);
-      const { data: { user }, error: authError } = await anonClient.auth.getUser(token);
-
-      if (authError || !user) {
-        return new Response(JSON.stringify({ error: 'Unauthorized' }), {
-          status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-        });
-      }
-
-      const { data: roleData } = await supabase
-        .from('user_roles')
-        .select('role')
-        .eq('user_id', user.id)
-        .single();
-
-      if (roleData?.role !== 'super_admin') {
-        return new Response(JSON.stringify({ error: 'Forbidden: super_admin only' }), {
-          status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-        });
-      }
+    // Initial call (no jobId): create the job. Auth is enforced above on every call.
+    if (!jobId) {
 
       // Count remaining before creating job
       let initialRemaining = 0;
