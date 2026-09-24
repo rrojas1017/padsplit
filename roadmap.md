@@ -25,4 +25,4 @@
 - [x] BIL-FE correction: archived null edge_function → 'archived_monthly_summary' + static label
 - [x] BIL-COSTS: shared _shared/costs.ts price list, 10 functions switched, deploy + 401 checks
 - [x] BIL-COSTS correction: deepseek-flash alias + DeepSeek fallback
-- [ ] P5-SEC: internal-only continuation paths + requireUser in create/delete/update-user-role
+- [x] P5-SEC: internal-only continuation paths + requireUser in create/delete/update-user-role
