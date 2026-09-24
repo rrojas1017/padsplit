@@ -152,3 +152,6 @@ verify_jwt = true
 
 [functions.notify-moved-in]
 verify_jwt = false
+
+[functions.admin-reset-password]
+verify_jwt = true
