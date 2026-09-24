@@ -29,6 +29,7 @@ interface NonBookingStats {
   transcribedCalls: number;
   avgDurationSeconds: number;
   highReadinessCalls: number;
+  hotLeads: number;
 }
 
 interface NonBookingInsight {
@@ -67,7 +68,12 @@ export function NonBookingAnalysisTab({ dateRange, onDateRangeChange }: NonBooki
   };
 
   const getDateRangeParams = (option: DateRangeOption) => {
-    const today = new Date();
+    // "Today" is the America/New_York calendar date, built as a local Date from its parts
+    const etParts = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit',
+    }).formatToParts(new Date());
+    const part = (t: string) => Number(etParts.find((p) => p.type === t)?.value);
+    const today = new Date(part('year'), part('month') - 1, part('day'));
     let startDate: Date;
     let endDate: Date;
     
@@ -76,11 +82,12 @@ export function NonBookingAnalysisTab({ dateRange, onDateRangeChange }: NonBooki
         startDate = startOfWeek(today, { weekStartsOn: 1 });
         endDate = endOfDay(today);
         break;
-      case 'lastMonth':
+      case 'lastMonth': {
         const lastMonthDate = subMonths(today, 1);
         startDate = startOfMonth(lastMonthDate);
         endDate = endOfMonth(lastMonthDate);
         break;
+      }
       case 'thisMonth':
         startDate = startOfMonth(today);
         endDate = endOfDay(today);
@@ -90,7 +97,7 @@ export function NonBookingAnalysisTab({ dateRange, onDateRangeChange }: NonBooki
         endDate = endOfDay(today);
         break;
       case 'allTime':
-        startDate = new Date('2024-01-01');
+        startDate = new Date(2024, 0, 1);
         endDate = endOfDay(today);
         break;
       default:
@@ -105,32 +112,29 @@ export function NonBookingAnalysisTab({ dateRange, onDateRangeChange }: NonBooki
     };
   };
 
-  // Helper for server-side stats query
-  const getStatsStartDate = (option: DateRangeOption): string | null => {
+  // Helper for server-side stats query (inclusive bounds; allTime → no bounds)
+  const getStatsBounds = (option: DateRangeOption): { start_date?: string; end_date?: string } => {
+    if (option === 'allTime') return {};
     const params = getDateRangeParams(option);
-    if (option === 'allTime') return null;
-    return params.start;
+    return { start_date: params.start, end_date: params.end };
   };
 
   // Fetch stats using server-side aggregation
   const { data: stats, isLoading: statsLoading } = useQuery({
     queryKey: ['non-booking-stats', dateRange],
     queryFn: async (): Promise<NonBookingStats> => {
-      const startDate = getStatsStartDate(dateRange);
-      
-      const { data, error } = await supabase.rpc('get_non_booking_stats', {
-        start_date: startDate
-      });
+      const { data, error } = await supabase.rpc('get_non_booking_stats', getStatsBounds(dateRange));
 
       if (error) throw error;
 
-      const result = data?.[0] || { total_calls: 0, transcribed_calls: 0, high_readiness_calls: 0, avg_duration_seconds: 0 };
+      const result = data?.[0] || { total_calls: 0, transcribed_calls: 0, high_readiness_calls: 0, avg_duration_seconds: 0, hot_leads: 0 };
 
       return {
         totalCalls: Number(result.total_calls) || 0,
         transcribedCalls: Number(result.transcribed_calls) || 0,
         avgDurationSeconds: Number(result.avg_duration_seconds) || 0,
         highReadinessCalls: Number(result.high_readiness_calls) || 0,
+        hotLeads: Number(result.hot_leads) || 0,
       };
     },
   });
@@ -193,13 +197,12 @@ export function NonBookingAnalysisTab({ dateRange, onDateRangeChange }: NonBooki
   // Auto-select latest insight for current date range (reset when date range changes)
   useEffect(() => {
     if (previousInsights) {
-      if (previousInsights.length > 0) {
-        // Auto-select most recent insight for this period
-        setSelectedInsightId(previousInsights[0].id);
-      } else {
-        // No insights for this period - clear selection
-        setSelectedInsightId(null);
-      }
+      // Keep the current selection if it is still in the list; otherwise pick the newest
+      setSelectedInsightId((current) =>
+        current && previousInsights.some((i) => i.id === current)
+          ? current
+          : (previousInsights[0]?.id ?? null)
+      );
     }
   }, [previousInsights, dateRange]);
 
@@ -406,6 +409,7 @@ export function NonBookingAnalysisTab({ dateRange, onDateRangeChange }: NonBooki
               isAnalyzing={isAnalyzing}
             />
             <NonBookingMissedOpportunitiesPanel 
+              hotLeadsCount={stats.hotLeads}
               highReadinessCount={stats.highReadinessCalls}
               dateRange={dateRange}
               missedOpportunities={formattedMissedOpportunities}

@@ -368,12 +368,38 @@ Return JSON:
     console.log(`[ProcessAnalysis] AI response received (${txt.length} chars)`);
 
     let parsed: any = {};
+    let parseOk = false;
     try {
       const match = txt.match(/\{[\s\S]*\}/);
-      parsed = match ? JSON.parse(match[0]) : {};
+      if (match) {
+        parsed = JSON.parse(match[0]);
+        parseOk = true;
+      }
     } catch { 
-      console.warn(`[ProcessAnalysis] Failed to parse AI response, using empty object`);
+      console.warn(`[ProcessAnalysis] Failed to parse AI response`);
       parsed = {}; 
+    }
+
+    // INS-11: never save an empty "completed" analysis
+    if (!parseOk || !Array.isArray(parsed?.rejection_reasons) || parsed.rejection_reasons.length === 0) {
+      console.warn(`[ProcessAnalysis] AI response unusable (parsed=${parseOk}, ${txt.length} chars) — marking failed`);
+      await supabase.from('non_booking_insights').update({
+        status: 'failed',
+        error_message: 'AI response could not be parsed',
+      }).eq('id', id);
+      const fIn = Math.ceil(prompt.length / 4), fOut = Math.ceil(txt.length / 4);
+      await supabase.from('api_costs').insert({
+        service_provider: 'lovable_ai',
+        service_type: 'ai_non_booking_insights',
+        edge_function: 'analyze-non-booking-insights',
+        input_tokens: fIn,
+        output_tokens: fOut,
+        estimated_cost_usd: (fIn / 1000) * 0.00015 + (fOut / 1000) * 0.0006,
+        metadata: { model: 'google/gemini-2.5-flash', total_calls: total, parse_failed: true },
+        triggered_by_user_id: triggeredByUserId || null,
+        is_internal: isInternal,
+      });
+      return;
     }
 
     // If AI didn't return proper objection_patterns, create them from pre-aggregated data
@@ -497,7 +523,8 @@ Deno.serve(async (req) => {
         analysis_period, 
         date_range_start, 
         date_range_end, 
-        status: 'processing' 
+        status: 'processing',
+        created_by: triggeredByUserId
       })
       .select()
       .single();
