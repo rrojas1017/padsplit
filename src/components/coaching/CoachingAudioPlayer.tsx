@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { supabase } from '@/integrations/supabase/client';
+import { resolveCoachingAudioSrc } from '@/utils/coachingAudio';
 import { toast } from 'sonner';
 import { Headphones, Play, Pause, Loader2, Volume2, CheckCircle, Target, Lock } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -43,6 +44,7 @@ export function CoachingAudioPlayer({
   const [isGenerating, setIsGenerating] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentAudioUrl, setCurrentAudioUrl] = useState<string | null>(audioUrl || null);
+  const [resolvedSrc, setResolvedSrc] = useState<string | null>(null);
   const [progress, setProgress] = useState(0);
   const [duration, setDuration] = useState(0);
   const [hasBeenListened, setHasBeenListened] = useState(!!listenedAt);
@@ -58,6 +60,17 @@ export function CoachingAudioPlayer({
   useEffect(() => {
     setCurrentAudioUrl(audioUrl || null);
   }, [audioUrl]);
+
+  // Resolve a signed URL whenever the raw audio URL changes (works for public
+  // URLs, signed URLs, or bare paths; survives the bucket being made private).
+  useEffect(() => {
+    let cancelled = false;
+    setResolvedSrc(null);
+    resolveCoachingAudioSrc(currentAudioUrl).then((url) => {
+      if (!cancelled) setResolvedSrc(url);
+    });
+    return () => { cancelled = true; };
+  }, [currentAudioUrl]);
 
   // Check if the current user is the owning agent
   const isOwningAgent = agentUserId && user?.id === agentUserId;
@@ -298,7 +311,7 @@ export function CoachingAudioPlayer({
     <div className={cn("space-y-2", className)}>
       <audio
         ref={audioRef}
-        src={currentAudioUrl}
+        src={resolvedSrc ?? undefined}
         onTimeUpdate={handleTimeUpdate}
         onLoadedMetadata={handleLoadedMetadata}
         onEnded={handleEnded}
