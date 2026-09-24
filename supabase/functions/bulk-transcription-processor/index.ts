@@ -467,7 +467,16 @@ serve(async (req) => {
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
     
     const { jobId, action = 'start' } = await req.json() as JobConfig;
-    
+
+    // Internal self-chaining continuation only. Must run before any job lookup
+    // so a user (even super_admin) cannot drive the continuation of a real id.
+    if (action === 'continue' && auth.ctx.kind !== 'internal') {
+      return new Response(JSON.stringify({ error: 'Forbidden' }), {
+        status: 403,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
     if (!jobId) {
       throw new Error('Missing jobId');
     }
@@ -570,9 +579,6 @@ serve(async (req) => {
       }
       
       case 'continue': {
-        if (auth.ctx.kind !== 'internal') {
-          return new Response(JSON.stringify({ error: 'Forbidden' }), { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-        }
         // Internal action - just start the next chunk
         EdgeRuntime.waitUntil(
           runProcessingLoop(supabase, jobId, supabaseUrl, supabaseServiceKey)
