@@ -109,9 +109,13 @@ export function buildRawScriptAnswers(
         break;
       }
       case 'yes_no': {
-        const v = String(answer).trim().toLowerCase();
-        if (!v) return;
-        const label = v.startsWith('y') ? 'Yes' : v.startsWith('n') ? 'No' : null;
+        let label: 'Yes' | 'No' | null = null;
+        if (typeof answer === 'boolean') label = answer ? 'Yes' : 'No';
+        else {
+          const v = String(answer).trim().toLowerCase();
+          if (!v) return;
+          label = v.startsWith('y') ? 'Yes' : v.startsWith('n') ? 'No' : null;
+        }
         if (!label) return;
         base.question_type = 'yes_no';
         base.selected_option_labels = [label];

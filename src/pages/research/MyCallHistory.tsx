@@ -42,6 +42,22 @@ export default function MyCallHistory() {
     return Array.from(map.entries());
   }, [myCalls]);
 
+  // campaign_id -> question label lookup (by question id, q_idx_<i>, and raw index)
+  const questionLabels = useMemo(() => {
+    const map = new Map<string, string>();
+    myCampaigns.forEach((c: any) => {
+      const qs = c.script?.questions || [];
+      qs.forEach((q: any, i: number) => {
+        const label = q.question ?? q.text ?? '';
+        if (!label) return;
+        if (q.id != null && q.id !== '') { map.set(String(q.id), label); }
+        map.set(`q_idx_${i}`, label);
+        map.set(String(i), label);
+      });
+    });
+    return map;
+  }, [myCampaigns]);
+
   return (
     <ResearchLayout title="Call History" subtitle="Your past survey calls">
       {/* Summary Cards */}
@@ -141,18 +157,29 @@ export default function MyCallHistory() {
                       <TableRow>
                         <TableCell colSpan={7} className="bg-muted/30">
                           <div className="p-3 space-y-3">
-                            {call.responses && Object.keys(call.responses).length > 0 && (
-                              <div>
-                                <p className="text-sm font-medium mb-1">Responses</p>
-                                <div className="space-y-1">
-                                  {Object.entries(call.responses).map(([key, val]) => (
-                                    <p key={key} className="text-sm text-muted-foreground">
-                                      Q{key}: <span className="text-foreground">{String(val)}</span>
-                                    </p>
-                                  ))}
+                            {call.responses && (() => {
+                              const entries = Object.entries(call.responses)
+                                .filter(([key]) => !key.startsWith('_'))
+                                .map(([key, val]) => {
+                                  let display = val;
+                                  if (typeof display === 'boolean') display = display ? 'Yes' : 'No';
+                                  else if (Array.isArray(display)) display = display.join(', ');
+                                  return [key, display] as [string, unknown];
+                                });
+                              if (entries.length === 0) return null;
+                              return (
+                                <div>
+                                  <p className="text-sm font-medium mb-1">Responses</p>
+                                  <div className="space-y-1">
+                                    {entries.map(([key, val]) => (
+                                      <p key={key} className="text-sm text-muted-foreground">
+                                        {questionLabels.get(key) || `Q${key}`}: <span className="text-foreground">{String(val)}</span>
+                                      </p>
+                                    ))}
+                                  </div>
                                 </div>
-                              </div>
-                            )}
+                              );
+                            })()}
                             {call.researcher_notes && (
                               <div>
                                 <p className="text-sm font-medium mb-1">Notes</p>

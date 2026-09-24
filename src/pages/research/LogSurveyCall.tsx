@@ -195,7 +195,9 @@ export default function LogSurveyCall() {
   } | null>(null);
 
   const questions: ScriptQuestion[] = useMemo(
-    () => translatedContent?.questions || selectedCampaign?.script?.questions || [],
+    () => (translatedContent?.questions || selectedCampaign?.script?.questions || []).map(
+      (q, index) => ({ ...q, id: (q.id ?? '') !== '' ? q.id : `q_idx_${index}`, text: q.question ?? q.text ?? '' })
+    ),
     [selectedCampaign, translatedContent]
   );
   const introScript = translatedContent?.intro ?? (selectedCampaign?.script?.intro_script || '');
@@ -425,18 +427,27 @@ export default function LogSurveyCall() {
   const handleSubmit = async () => {
     if (!callOutcome) return;
 
-    const callerName = `${callerFirstName.trim()} ${callerLastName.trim()}`.trim();
+    const useCorrected = nameConfirmed === false && (correctedFirstName.trim() || correctedLastName.trim());
+    const firstName = (useCorrected ? correctedFirstName : callerFirstName).trim();
+    const lastName = (useCorrected ? correctedLastName : callerLastName).trim();
+    const callerName = `${firstName} ${lastName}`.trim();
+
+    const durationMinutes = callDurationMinutes
+      ? parseFloat(callDurationMinutes)
+      : callStartTime && elapsedSeconds > 0
+        ? Math.round(elapsedSeconds / 6) / 10
+        : NaN;
 
     const submission: CallSubmission = {
       campaign_id: campaignId,
       caller_name: callerName,
-      caller_first_name: callerFirstName.trim(),
-      caller_last_name: callerLastName.trim(),
+      caller_first_name: firstName,
+      caller_last_name: lastName,
       caller_phone: verifiedPhone.trim() || callerPhone.trim() || undefined,
       caller_type: callerType,
       caller_status: callerStatus || undefined,
       call_outcome: callOutcome,
-      call_duration_seconds: callDurationMinutes ? Math.round(parseFloat(callDurationMinutes) * 60) : undefined,
+      call_duration_seconds: Number.isFinite(durationMinutes) ? Math.round(durationMinutes * 60) : undefined,
       transfer_notes: callOutcome === 'transferred' ? transferNotes : undefined,
       responses: Object.keys(responses).length > 0 ? responses : undefined,
       probe_notes: Object.keys(probeNotes).length > 0 ? probeNotes : undefined,
@@ -484,6 +495,12 @@ export default function LogSurveyCall() {
 
   const currentQ = questions[questionIndex];
   const showSectionNav = phase === 'question' && sections.length > 1;
+  // Prefill Duration (minutes) from the call timer on entering wrap-up.
+  useEffect(() => {
+    if (phase === 'wrapup' && !callDurationMinutes && callStartTime && elapsedSeconds > 0) {
+      setCallDurationMinutes(String(Math.round(elapsedSeconds / 6) / 10));
+    }
+  }, [phase, callDurationMinutes, callStartTime, elapsedSeconds]);
 
   if (submitted) {
     return (
@@ -495,7 +512,7 @@ export default function LogSurveyCall() {
             <p className="text-muted-foreground">Your survey call has been recorded.</p>
             <div className="flex gap-3 justify-center pt-4">
               <Button onClick={resetForm}><Phone className="h-4 w-4 mr-2" /> Log Another Call</Button>
-              <Button variant="outline" onClick={() => navigate('/research/my-history')}>View History</Button>
+              <Button variant="outline" onClick={() => navigate('/research/history')}>View History</Button>
             </div>
           </CardContent>
         </Card>
@@ -912,7 +929,7 @@ export default function LogSurveyCall() {
                         ? 'bg-muted border-muted-foreground/20'
                         : 'bg-muted/50'
                     )}>
-                      <p className="text-xl font-medium leading-relaxed">{currentQ.text}</p>
+                      <p className="text-xl font-medium leading-relaxed">{currentQ.question ?? currentQ.text}</p>
                     </div>
 
                     {/* Probing follow-ups (general) */}
@@ -952,7 +969,7 @@ export default function LogSurveyCall() {
                               label="YES follow-ups"
                               variant="branch-yes"
                               probeNotes={probeNotes[`${currentQ.id}_yes`]}
-                              onProbeNoteChange={(idx, note) => setProbeNote(currentQ.id, idx, note)}
+                              onProbeNoteChange={(idx, note) => setProbeNote(`${currentQ.id}_yes`, idx, note)}
                             />
                           )
                           : currentQ.branch?.no_probes && (
@@ -961,7 +978,7 @@ export default function LogSurveyCall() {
                               label="NO follow-ups"
                               variant="branch-no"
                               probeNotes={probeNotes[`${currentQ.id}_no`]}
-                              onProbeNoteChange={(idx, note) => setProbeNote(currentQ.id, idx, note)}
+                              onProbeNoteChange={(idx, note) => setProbeNote(`${currentQ.id}_no`, idx, note)}
                             />
                           )
                         }
