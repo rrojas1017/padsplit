@@ -1,7 +1,7 @@
 # Project Task Roadmap
 
 ## In Progress
-- [ ] P6-C: useMyGoal .maybeSingle(), SiteFilter supervisor lock, Leaderboard site filter wiring
+(none)
 
 ## Open
 (none)
