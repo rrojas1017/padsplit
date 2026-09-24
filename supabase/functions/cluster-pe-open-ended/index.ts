@@ -6,6 +6,21 @@
 // - Second-pass split breaks up oversized clusters (>25% of total, >30 uniques).
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { tokensFromUsage, logApiCost } from "../_shared/costs.ts";
+
+// deno-lint-ignore no-explicit-any
+type CostCtx = { admin: any; userId: string; isInternal: boolean };
+// deno-lint-ignore no-explicit-any
+async function logClusterCost(cost: CostCtx | undefined, data: any, promptText: string, content: unknown): Promise<void> {
+  if (!cost || !data) return;
+  const t = tokensFromUsage(data, promptText, typeof content === "string" ? content : "");
+  await logApiCost(cost.admin, {
+    service_provider: "lovable_ai", service_type: "pe_open_ended_clustering",
+    edge_function: "cluster-pe-open-ended",
+    input_tokens: t.inputTokens, output_tokens: t.outputTokens, token_source: t.source,
+    model: MODEL, triggered_by_user_id: cost.userId, is_internal: cost.isInternal,
+  });
+}
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -172,6 +187,7 @@ async function callGeminiCluster(
   questionText: string,
   uniques: { text: string; count: number }[],
   targetCount: number,
+  cost?: CostCtx,
 ): Promise<{ ok: true; clusters: AICluster[] } | { ok: false; reason: string }> {
   const numbered = uniques
     .map((u, i) => `${i + 1}. (x${u.count}) ${u.text}`)
@@ -215,6 +231,7 @@ Target ~${targetCount} substantive clusters plus a dedicated "no_answer" cluster
   }
   const data = await res.json().catch(() => null);
   const content = data?.choices?.[0]?.message?.content;
+  await logClusterCost(cost, data, system + user, content);
   const parsed = typeof content === "string" ? tolerantJsonParse(content) : content;
   if (!parsed || !Array.isArray(parsed.clusters)) {
     return { ok: false, reason: "invalid_json" };
@@ -270,6 +287,7 @@ async function callGeminiSplit(
   questionText: string,
   parentLabel: string,
   uniques: { text: string; count: number }[],
+  cost?: CostCtx,
 ): Promise<{ ok: true; subs: { id: string; label: string; summary?: string; uniqueIndices: number[] }[] } | { ok: false; reason: string }> {
   const numbered = uniques.map((u, i) => `${i + 1}. (x${u.count}) ${u.text}`).join("\n");
   const system = `You are splitting one over-broad cluster of payment-experience survey responses into 3-6 more specific sub-clusters for a dashboard.
@@ -312,6 +330,7 @@ Output only the JSON.`;
   if (!res.ok) return { ok: false, reason: "ai_error" };
   const data = await res.json().catch(() => null);
   const content = data?.choices?.[0]?.message?.content;
+  await logClusterCost(cost, data, system + user, content);
   const parsed = typeof content === "string" ? tolerantJsonParse(content) : content;
   if (!parsed || !Array.isArray(parsed.clusters)) return { ok: false, reason: "invalid_json" };
 
@@ -465,7 +484,7 @@ Deno.serve(async (req) => {
   if (head.length === 0) {
     ai = { ok: true, clusters: [] };
   } else {
-    ai = await callGeminiCluster(questionText, head.map((u) => ({ text: u.text, count: u.count })), targetCount);
+    ai = await callGeminiCluster(questionText, head.map((u) => ({ text: u.text, count: u.count })), targetCount, { admin, userId, isInternal: userRoles.includes("super_admin") });
     if (!ai.ok) return json(200, { ok: false, reason: ai.reason });
   }
 
@@ -561,6 +580,7 @@ Deno.serve(async (req) => {
       questionText,
       parent.label,
       subUniques.map((u) => ({ text: u.text, count: u.count })),
+      { admin, userId, isInternal: userRoles.includes("super_admin") },
     );
     if (!split.ok || split.subs.length < 2) continue;
     // Replace parent with sub-clusters.
