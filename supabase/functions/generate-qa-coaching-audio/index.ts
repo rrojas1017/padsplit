@@ -2,10 +2,7 @@ import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-};
+import { requireUserOrInternal, canSeeBooking, jsonResponse, corsHeaders, STAFF } from "../_shared/auth.ts";
 
 // Cost logging helper function
 async function logApiCost(supabase: any, params: {
@@ -93,11 +90,18 @@ serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
+  const auth = await requireUserOrInternal(req, STAFF);
+  if (!auth.ok) return auth.response;
+
   try {
     const { bookingId, isRegenerate = false } = await req.json();
     
     if (!bookingId) {
       throw new Error('bookingId is required');
+    }
+
+    if (!(await canSeeBooking(auth.ctx, bookingId))) {
+      return jsonResponse(404, { error: 'Booking not found' });
     }
 
     console.log(`Generating QA coaching audio for booking: ${bookingId}, isRegenerate: ${isRegenerate}`);
@@ -107,42 +111,10 @@ serve(async (req) => {
     const SUPABASE_URL = Deno.env.get('SUPABASE_URL');
     const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
 
-    // Detect if triggered by a logged-in user (for cost auditing)
-    let triggeredByUserId: string | null = null;
-    let isInternal = false;
-    const authHeader = req.headers.get('Authorization');
-    if (authHeader) {
-      const token = authHeader.replace('Bearer ', '');
-      try {
-        // First try auth.getUser for proper user tokens
-        const serviceClient = createClient(SUPABASE_URL!, SUPABASE_SERVICE_ROLE_KEY!);
-        const { data: { user } } = await serviceClient.auth.getUser(token);
-        if (user) {
-          triggeredByUserId = user.id;
-          const { data: roleData } = await serviceClient.from('user_roles').select('role').eq('user_id', user.id).single();
-          isInternal = roleData?.role === 'super_admin';
-          if (isInternal) console.log('[Internal] Request triggered by super_admin, marking costs as internal');
-        }
-      } catch (e) {
-        console.log('[Internal] auth.getUser failed, trying JWT decode fallback:', e);
-        // Fallback: decode JWT payload to extract user id (works for all valid JWTs)
-        try {
-          const payloadB64 = token.split('.')[1];
-          if (payloadB64) {
-            const payload = JSON.parse(atob(payloadB64));
-            if (payload.sub) {
-              triggeredByUserId = payload.sub;
-              const serviceClient = createClient(SUPABASE_URL!, SUPABASE_SERVICE_ROLE_KEY!);
-              const { data: roleData } = await serviceClient.from('user_roles').select('role').eq('user_id', payload.sub).single();
-              isInternal = roleData?.role === 'super_admin';
-              if (isInternal) console.log('[Internal] JWT decode fallback: super_admin detected, marking costs as internal');
-            }
-          }
-        } catch (decodeErr) {
-          console.log('[Internal] JWT decode fallback also failed:', decodeErr);
-        }
-      }
-    }
+    // Attribution from the verified caller
+    const triggeredByUserId: string | null = auth.ctx.kind === 'user' ? auth.ctx.userId : null;
+    const isInternal = auth.ctx.kind === 'user' && auth.ctx.role === 'super_admin';
+    if (isInternal) console.log('[Internal] Request triggered by super_admin, marking costs as internal');
 
     if (!ELEVENLABS_API_KEY || !LOVABLE_API_KEY || !SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
       throw new Error('Missing required environment variables');
