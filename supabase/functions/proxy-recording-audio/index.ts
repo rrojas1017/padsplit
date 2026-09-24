@@ -1,10 +1,5 @@
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type",
-};
+import { corsHeaders, requireUser, STAFF } from "../_shared/auth.ts";
+import { isAllowedRecordingUrl, safeRecordingFetch } from "../_shared/url.ts";
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -12,28 +7,8 @@ Deno.serve(async (req) => {
   }
 
   try {
-    // Validate JWT
-    const authHeader = req.headers.get("Authorization");
-    if (!authHeader?.startsWith("Bearer ")) {
-      return new Response(JSON.stringify({ error: "Unauthorized" }), {
-        status: 401,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-
-    const anonClient = createClient(
-      Deno.env.get("SUPABASE_URL")!,
-      Deno.env.get("SUPABASE_ANON_KEY")!
-    );
-
-    const token = authHeader.replace("Bearer ", "");
-    const { data: { user }, error: authError } = await anonClient.auth.getUser(token);
-    if (authError || !user) {
-      return new Response(JSON.stringify({ error: "Unauthorized" }), {
-        status: 401,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
+    const auth = await requireUser(req, STAFF);
+    if (!auth.ok) return auth.response;
 
     // Get bookingId from query params
     const url = new URL(req.url);
@@ -45,19 +20,14 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Fetch kixie_link using service role
-    const serviceClient = createClient(
-      Deno.env.get("SUPABASE_URL")!,
-      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
-    );
-
-    const { data: booking, error: bookingError } = await serviceClient
+    // Read with the caller's own client so row-level access rules apply
+    const { data: booking, error: bookingError } = await auth.ctx.userClient
       .from("bookings")
       .select("kixie_link")
       .eq("id", bookingId)
-      .single();
+      .maybeSingle();
 
-    if (bookingError || !booking?.kixie_link) {
+    if (bookingError || !booking?.kixie_link || !isAllowedRecordingUrl(booking.kixie_link)) {
       return new Response(JSON.stringify({ error: "No recording found" }), {
         status: 404,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -65,7 +35,7 @@ Deno.serve(async (req) => {
     }
 
     // Fetch audio from the upstream URL server-side
-    const audioResponse = await fetch(booking.kixie_link);
+    const audioResponse = await safeRecordingFetch(booking.kixie_link);
     if (!audioResponse.ok) {
       console.error(`Upstream fetch failed: ${audioResponse.status} ${audioResponse.statusText}`);
       return new Response(JSON.stringify({ error: "Failed to fetch recording" }), {

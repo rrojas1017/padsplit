@@ -1,10 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-};
+import { corsHeaders } from "../_shared/auth.ts";
 
 // Parse user agent to extract device info
 function parseUserAgent(ua: string | null): { deviceType: string; os: string; browser: string } {
@@ -126,7 +123,7 @@ serve(async (req) => {
     // Fetch all sites
     const { data: sites, error: sitesError } = await supabase
       .from('sites')
-      .select('*');
+      .select('id,name');
 
     if (sitesError) {
       console.error('Error fetching sites:', sitesError);
@@ -134,9 +131,11 @@ serve(async (req) => {
     }
 
     // Fetch all agents
-    const { data: agents, error: agentsError } = await supabase
+    let agentsQuery = supabase
       .from('agents')
-      .select('*');
+      .select('id,name,site_id,active,avatar_url');
+    if (tokenData.site_filter) agentsQuery = agentsQuery.eq('site_id', tokenData.site_filter);
+    const { data: agents, error: agentsError } = await agentsQuery;
 
     if (agentsError) {
       console.error('Error fetching agents:', agentsError);
@@ -148,13 +147,21 @@ serve(async (req) => {
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
     const dateLimit = thirtyDaysAgo.toISOString().split('T')[0];
     
-    const { data: bookings, error: bookingsError } = await supabase
-      .from('bookings')
-      .select('*')
-      .gte('booking_date', dateLimit)
-      .neq('status', 'Non Booking')
-      .order('booking_date', { ascending: false })
-      .limit(500);
+    let bookings: unknown[] | null = [];
+    let bookingsError: unknown = null;
+    const agentIds = (agents || []).map((a: { id: string }) => a.id);
+    if (!tokenData.site_filter || agentIds.length > 0) {
+      let bq = supabase
+        .from('bookings')
+        .select('id,agent_id,booking_date,move_in_date,status,record_type,booking_type,market_city,market_state,communication_method,move_in_day_reach_out,created_at')
+        .gte('booking_date', dateLimit)
+        .neq('status', 'Non Booking')
+        .neq('record_type', 'research');
+      if (tokenData.site_filter) bq = bq.in('agent_id', agentIds);
+      const res = await bq.order('booking_date', { ascending: false }).limit(500);
+      bookings = res.data;
+      bookingsError = res.error;
+    }
 
     if (bookingsError) {
       console.error('Error fetching bookings:', bookingsError);

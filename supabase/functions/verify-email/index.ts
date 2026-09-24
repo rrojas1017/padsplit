@@ -1,9 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-};
+import { corsHeaders, requireUser, canSeeBooking, STAFF } from "../_shared/auth.ts";
 
 interface VerifyEmailRequest {
   bookingId: string;
@@ -35,6 +32,9 @@ Deno.serve(async (req) => {
     return new Response('ok', { headers: corsHeaders });
   }
 
+  const auth = await requireUser(req, STAFF);
+  if (!auth.ok) return auth.response;
+
   try {
     const { bookingId, email }: VerifyEmailRequest = await req.json();
 
@@ -47,7 +47,14 @@ Deno.serve(async (req) => {
       );
     }
 
-    console.log(`Verifying email for booking ${bookingId}: ${email}`);
+    if (!(await canSeeBooking(auth.ctx, bookingId))) {
+      return new Response(
+        JSON.stringify({ error: 'Booking not found' }),
+        { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    console.log(`Verifying email for booking ${bookingId}`);
 
     // Get EmailListVerify API key
     const apiKey = Deno.env.get('EMAILLISTVERIFY_API_KEY');
@@ -139,7 +146,7 @@ Deno.serve(async (req) => {
       verificationResult = { verified: false, status: 'unknown' };
     }
 
-    console.log(`Verification result for ${email}:`, verificationResult);
+    console.log(`Verification result for booking ${bookingId}:`, verificationResult);
 
     // Update booking with verification results
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;

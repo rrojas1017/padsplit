@@ -1,9 +1,13 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-webhook-secret',
+import { corsHeaders as sharedCors, timingSafeEqual } from "../_shared/auth.ts";
+
+const corsHeaders: Record<string, string> = {
+  ...sharedCors,
+  'Access-Control-Allow-Headers': sharedCors['Access-Control-Allow-Headers'].includes('x-webhook-secret')
+    ? sharedCors['Access-Control-Allow-Headers']
+    : sharedCors['Access-Control-Allow-Headers'] + ', x-webhook-secret',
 };
 
 // Kixie webhook payload structure
@@ -60,9 +64,16 @@ serve(async (req) => {
     }
 
     // Validate webhook secret if configured
-    if (settings.webhook_secret) {
-      const providedSecret = req.headers.get('x-webhook-secret');
-      if (providedSecret !== settings.webhook_secret) {
+    if (!settings.webhook_secret) {
+      console.error('[Kixie Webhook] Secret not configured');
+      return new Response(
+        JSON.stringify({ error: 'Webhook secret not configured' }),
+        { status: 503, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+    {
+      const providedSecret = req.headers.get('x-webhook-secret') ?? '';
+      if (!(await timingSafeEqual(providedSecret, settings.webhook_secret))) {
         console.error('[Kixie Webhook] Invalid webhook secret');
         return new Response(
           JSON.stringify({ error: 'Invalid webhook secret' }),
