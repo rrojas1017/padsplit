@@ -1,235 +1,58 @@
-# SECURITY FIX P7 — Authorization on 5 user-facing AI/report functions
+# Security Fix P8 — 6 public-facing edge functions
 
-## Goal
-These 5 edge functions are reachable today with just the public anon key (or,
-for `persist-research-raw-answers`, any logged-in user regardless of role) and
-each triggers paid Gemini calls or writes survey data. Add the shared
-authorization guard right after the `OPTIONS` preflight, replacing each local
-`corsHeaders` with the shared import from `_shared/auth.ts`. Keep request /
-response shapes unchanged; only add `401`/`403`/`404`.
+Shared modules: `_shared/auth.ts` (requireUser, canSeeBooking, adminClient, corsHeaders, timingSafeEqual, STAFF) and `_shared/url.ts` (isAllowedRecordingUrl, safeRecordingFetch). Response shapes unchanged except the new 400/401/403/404/429/503. No logging of tokens, secrets, client secrets or hashes. config.toml, src/**, SQL, RLS, migrations, other functions, prompts and cost logic are not touched.
 
-## Shared module used
-`supabase/functions/_shared/auth.ts` exports: `corsHeaders`, `requireUser`,
-`canSeeBooking`, and the role arrays `STAFF`, `MANAGERS`, `RESEARCH`. `requireUser`
-resolves the JWT via `auth.getUser` (never `atob`), loads roles from
-`user_roles` (highest wins), rejects no-role and inactive profiles, and returns
-`{ ok, ctx }` where `ctx.userId`, `ctx.role` are available for the `user` kind.
-`canSeeBooking(ctx, bookingId)` queries `bookings` via the caller's RLS-scoped
-client and returns false when the caller cannot see the booking.
+Confirmed before writing: `api_rate_limit_hit(p_client_id text, p_limit integer)` exists and returns `TABLE(allowed, remaining, reset_at)`; `api_credentials.rate_limit` exists; `recordings.vixicom.com` is on the allowed list.
 
-App callers already send the logged-in user's JWT through
-`supabase.functions.invoke(...)`; no `src/**` changes are needed.
+## 1. verify-email
+- Lines 3–6: remove the local `corsHeaders`; add `import { corsHeaders, requireUser, canSeeBooking, STAFF } from "../_shared/auth.ts";`.
+- After OPTIONS (line 36), before `try`: `const auth = await requireUser(req, STAFF); if (!auth.ok) return auth.response;`
+- After the bookingId/email check (after line 48): `if (!(await canSeeBooking(auth.ctx, bookingId))) return 404 {error:'Booking not found'}`.
+- Line 50: stop printing the email address in the log (keep the booking id only). Line 142 gets the same change. The service-role update (lines 145–156) stays as it is.
 
-## config.toml
-No changes. Existing values stay as-is, including
-`persist-research-raw-answers` (`verify_jwt = false`) — the in-function
-`requireUser` is the real guard, matching the P1 pattern.
+## 2. verify-email-realtime
+- Lines 3–6: use the shared import `{ corsHeaders, requireUser, STAFF }`.
+- After OPTIONS (line 22): `requireUser(req, STAFF)`, returning `auth.response` on failure.
+- Line 52: stop printing the email address in the log.
 
----
+## 3. proxy-recording-audio
+- Lines 1–7: remove the `createClient` import and the local `corsHeaders`; import `{ corsHeaders, requireUser, STAFF }` from auth.ts and `{ isAllowedRecordingUrl, safeRecordingFetch }` from url.ts.
+- Lines 15–36 (manual getUser): replace with `const auth = await requireUser(req, STAFF); if (!auth.ok) return auth.response;`
+- Lines 48–65: read with `auth.ctx.userClient.from('bookings').select('kixie_link').eq('id', bookingId).maybeSingle()`, so the booking's access rules decide what each user can see. If there is no row, no link, or `!isAllowedRecordingUrl(link)`, return 404 `{error:'No recording found'}`.
+- Line 68: `await safeRecordingFetch(booking.kixie_link)` instead of `fetch`. Keep the existing 502 path. If the helper throws on a blocked redirect, the existing catch returns 500. Streaming and headers (lines 77–94) are unchanged.
 
-## 1. generate-coaching-quiz — `requireUser(STAFF)` + `canSeeBooking`
-Caller: `CoachingQuizModal.tsx` (agents on their own calls).
+## 4. get-wallboard-data
+- Lines 4–7: use the shared `corsHeaders` import. The token validation, expiry check and view logging (lines 53–124) are unchanged.
+- Line 129: `select('id,name')`.
+- Lines 137–139: `select('id,name,site_id,active,avatar_url')`, plus `.eq('site_id', tokenData.site_filter)` when `site_filter` is set.
+- Lines 151–157: select `id,agent_id,booking_date,move_in_date,status,record_type,booking_type,market_city,market_state,communication_method,move_in_day_reach_out,created_at`, add `.neq('record_type','research')`, and when `site_filter` is set add `.in('agent_id', agentIds)` (if the list is empty, return an empty bookings list and skip the query). Keep the 30-day window, `neq status 'Non Booking'`, the ordering, `limit(500)` and the response structure.
 
-**Replace lines 1–7** (imports + local corsHeaders):
-```ts
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+## 5. submit-conversation-audio
+- Lines 3–6: use the shared import `{ corsHeaders, adminClient as sharedAdmin }` (aliased so it does not clash with the local `adminClient` variable), plus `{ isAllowedRecordingUrl }` from url.ts. The credential checks (lines 32–68) are unchanged, except that line 46 also selects `rate_limit`.
+- After line 68 (credential validated), add the rate limit:
+  - `const { data: rlRows, error: rlErr } = await sharedAdmin().rpc('api_rate_limit_hit', { p_client_id: clientId, p_limit: credential.rate_limit ?? 60 });`
+  - Use the first row (`rl = Array.isArray(rlRows) ? rlRows[0] : rlRows`).
+  - If `rlErr`: log `rlErr.message` only and continue (fail open).
+  - If `rl && !rl.allowed`: return 429 `{error:'Rate limit exceeded'}` with headers `Retry-After = max(1, ceil((reset_at - now)/1000))` and `X-RateLimit-Remaining: 0`.
+  - Otherwise keep `remaining` for the success response.
+- After the field validation (after line 89), before any lookup or insert:
+  - `if (!isAllowedRecordingUrl(audioUrl))` → 400 `{error:'audioUrl host not allowed'}`.
+  - `if (!isUuid && !/^[A-Za-z0-9 _.-]{1,100}$/.test(campaign))` → 400 `{error:'Invalid campaign'}`. The `isUuid` check (line 106) moves up so it runs before this.
+- Line 261: the 201 response adds the `X-RateLimit-Remaining` header when a value is known. The body is unchanged.
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-};
-```
-with:
-```ts
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { corsHeaders, requireUser, canSeeBooking, STAFF } from "../_shared/auth.ts";
-```
+## 6. receive-kixie-webhook
+- Lines 4–7: use the shared `{ corsHeaders, timingSafeEqual }` import. The shared headers already allow any extra header; add `x-webhook-secret` if it is missing.
+- Keep the disabled → 403 check (lines 54–60).
+- Lines 62–72: if `!settings.webhook_secret`, return 503 `{error:'Webhook secret not configured'}`. Otherwise `const provided = req.headers.get('x-webhook-secret') ?? ''`, and if `!(await timingSafeEqual(provided, settings.webhook_secret))` return the existing 401 `{error:'Invalid webhook secret'}`.
 
-**Insert after the OPTIONS block** (after line 19):
-```ts
-  const auth = await requireUser(req, STAFF);
-  if (!auth.ok) return auth.response;
-```
+## Verification
+- Run `deno check` on all 6, then deploy all 6.
+- Public-key POST `{}`: verify-email, verify-email-realtime and proxy-recording-audio should return 401.
+- get-wallboard-data with `{"token":"fake"}` should return the existing 401 `{valid:false,error:'Invalid token'}`.
+- submit-conversation-audio with no credentials should return the existing 401 "missing API credentials".
+- receive-kixie-webhook POST `{}` should return 403 "Webhook is disabled".
 
-**Insert after the `quizType` validation block** (after line 36, before
-`const supabaseUrl = ...`), using the booking the caller just supplied:
-```ts
-    const canSee = await canSeeBooking(auth.ctx, bookingId);
-    if (!canSee) {
-      return new Response(
-        JSON.stringify({ error: 'Booking not found' }),
-        { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-```
-
-Everything else (transcription fetch, AI call, JSON parsing, responses) unchanged.
-
----
-
-## 2. generate-executive-brief — `requireUser(MANAGERS)`
-Caller: `generate-executive-docx.ts` / `generate-executive-pdf.ts` (report
-exports on Research Insights — super_admin/admin/supervisor).
-
-**Replace lines 1–7** (imports + local corsHeaders):
-```ts
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type",
-};
-```
-with:
-```ts
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { corsHeaders, requireUser, MANAGERS } from "../_shared/auth.ts";
-```
-
-**Insert after the OPTIONS block** (after line 24):
-```ts
-  const auth = await requireUser(req, MANAGERS);
-  if (!auth.ok) return auth.response;
-```
-
-No other change.
-
----
-
-## 3. generate-pe-executive-brief — `requireUser(MANAGERS)`
-Caller: `generate-pe-docx.ts` (Payment Experience report export — managers).
-
-**Replace lines 7–10** (local corsHeaders):
-```ts
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
-```
-with:
-```ts
-import { corsHeaders, requireUser, MANAGERS } from "../_shared/auth.ts";
-```
-(import placed where the `const corsHeaders` block was; the top-of-file comment
-lines 1–5 are untouched.)
-
-**Insert after the OPTIONS line** (after line 44):
-```ts
-  const auth = await requireUser(req, MANAGERS);
-  if (!auth.ok) return auth.response;
-```
-
-No other change.
-
----
-
-## 4. generate-audience-survey-executive-brief — `requireUser(MANAGERS)`
-Caller: `generateAudienceSurveyReport.ts` (Audience Survey report export — managers).
-
-**Replace lines 3–6** (local corsHeaders):
-```ts
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
-```
-with:
-```ts
-import { corsHeaders, requireUser, MANAGERS } from "../_shared/auth.ts";
-```
-
-**Insert after the OPTIONS line** (after line 27):
-```ts
-  const auth = await requireUser(req, MANAGERS);
-  if (!auth.ok) return auth.response;
-```
-
-No other change.
-
----
-
-## 5. persist-research-raw-answers — `requireUser(RESEARCH)` + researcher ownership check
-Caller: `useResearchCalls.ts` `LogSurveyCall` (researchers and managers).
-
-`RESEARCH = ["super_admin", "admin", "supervisor", "researcher"]`. Managers may
-write any call. A `researcher` may only write a call whose
-`research_calls.researcher_id === auth.ctx.userId`.
-
-**Replace lines 7–12** (import + local corsHeaders):
-```ts
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-};
-```
-with:
-```ts
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { corsHeaders, requireUser, RESEARCH } from '../_shared/auth.ts';
-```
-
-**Replace lines 18–36** (the manual `Authorization`/`getUser` block):
-```ts
-    const authHeader = req.headers.get('Authorization') || '';
-    const token = authHeader.replace(/^Bearer\s+/i, '');
-    if (!token) {
-      return new Response(JSON.stringify({ error: 'Unauthorized' }), {
-        status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
-
-    const admin = createClient(
-      Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
-    );
-
-    const { data: userData, error: userErr } = await admin.auth.getUser(token);
-    if (userErr || !userData?.user) {
-      return new Response(JSON.stringify({ error: 'Unauthorized' }), {
-        status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
-```
-with:
-```ts
-    const auth = await requireUser(req, RESEARCH);
-    if (!auth.ok) return auth.response;
-
-    const admin = createClient(
-      Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
-    );
-```
-
-**Insert after the `raw_script_answers` validation block** (after line 49,
-before the booking lookup at line 52) — researcher ownership check:
-```ts
-    if (auth.ctx.role === 'researcher') {
-      const { data: rc, error: rcErr } = await admin
-        .from('research_calls')
-        .select('researcher_id')
-        .eq('id', research_call_id)
-        .maybeSingle();
-      if (rcErr || !rc || rc.researcher_id !== auth.ctx.userId) {
-        return new Response(JSON.stringify({ error: 'Forbidden' }), {
-          status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        });
-      }
-    }
-```
-
-Everything else (booking lookup, transcription merge, update, responses) unchanged.
-
----
-
-## Out of scope
-No changes to `src/**`, SQL, RLS, migrations, other functions, prompts, models,
-timeouts, or cost logic. `config.toml` unchanged.
-
-## Verification after implementation
-Deploy the 5 functions, then anon-key `POST {}` each — expected `401 {"error":"Unauthorized"}` for all 5.
+## Notes and risks
+- The wallboard page will get fewer fields per booking and agent. Any wallboard view that reads another field would show blank for it. The listed fields are the ones given in the request; the app code is not being changed.
+- Recordings behind a redirect to a host outside the list will no longer play (404/500).
+- The ViciDial integration keeps working unless its campaign names contain characters outside letters, numbers, space, `_ . -`. The 5 known campaign keys all fit, except `Move-in-out-Research:-Member-experience-&-Reason-code-Classification`, which contains `:` and `&` and would be rejected with 400. **Decision needed:** allow `:` and `&` too (they are safe once the value is quoted in the filter), or keep the pattern exactly as specified.
