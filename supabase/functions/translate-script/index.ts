@@ -1,15 +1,31 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
-};
+import { requireUser, adminClient, jsonResponse, corsHeaders, RESEARCH } from "../_shared/auth.ts";
 
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
-    const { intro, closing, rebuttal, questions, targetLanguage } = await req.json();
+    const body = await req.json();
+    const { intro, closing, rebuttal, questions, targetLanguage, scriptToken } = body;
+
+    if (JSON.stringify({ intro, closing, rebuttal, questions }).length > 100000) {
+      return jsonResponse(413, { error: "Input too large" });
+    }
+
+    if (typeof scriptToken === "string" && scriptToken.length > 0) {
+      const { data: tok, error: tokErr } = await adminClient()
+        .from("script_access_tokens")
+        .select("id, is_active, expires_at")
+        .eq("token", scriptToken)
+        .maybeSingle();
+      const valid = !tokErr && !!tok && tok.is_active === true &&
+        (tok.expires_at === null || new Date(tok.expires_at).getTime() > Date.now());
+      if (!valid) return jsonResponse(401, { error: "Unauthorized" });
+    } else {
+      const auth = await requireUser(req, RESEARCH);
+      if (!auth.ok) return auth.response;
+    }
 
     if (!targetLanguage || targetLanguage === "en") {
       return new Response(JSON.stringify({ intro, closing, rebuttal, questions }), {

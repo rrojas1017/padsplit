@@ -2,10 +2,8 @@ import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-};
+import { requireUser, jsonResponse, corsHeaders, ADMINS } from "../_shared/auth.ts";
+import { isAllowedRecordingUrl, safeRecordingFetch } from "../_shared/url.ts";
 
 interface STTResult {
   transcription: string;
@@ -117,7 +115,7 @@ async function transcribeWithDeepgram(
 async function downloadAudio(kixieUrl: string): Promise<{ blob: Blob; sizeMB: number }> {
   console.log('[Compare] Downloading audio from:', kixieUrl);
   
-  const audioResponse = await fetch(kixieUrl, {
+  const audioResponse = await safeRecordingFetch(kixieUrl, {
     headers: {
       'Accept': 'audio/*',
       'User-Agent': 'Mozilla/5.0 (compatible; TranscriptionBot/1.0)',
@@ -143,12 +141,16 @@ serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
+  const auth = await requireUser(req, ADMINS);
+  if (!auth.ok) return auth.response;
+
   try {
     const { bookingId, kixieUrl } = await req.json();
     
     if (!kixieUrl) {
       throw new Error('Missing kixieUrl parameter');
     }
+    if (!isAllowedRecordingUrl(kixieUrl)) return jsonResponse(400, { error: 'Recording URL not allowed' });
 
     // Get API keys
     const elevenLabsApiKey = Deno.env.get('ELEVENLABS_API_KEY');

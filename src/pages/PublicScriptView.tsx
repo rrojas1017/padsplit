@@ -436,7 +436,7 @@ export default function PublicScriptView() {
                       });
                     } else {
                       // Fallback: translate on-the-fly
-                      const result = await translateScript(script, 'es');
+                      const result = await translateScript(script, 'es', token);
                       if (result) {
                         setTranslatedContent({
                           intro: result.intro,
