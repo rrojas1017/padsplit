@@ -17,6 +17,7 @@ interface FailedBooking {
   kixie_link: string;
   member_name: string;
   booking_date: string;
+  updated_at?: string | null;
   transcription_status: string | null;
   transcription_error_message: string | null;
   import_batch_id: string | null;
@@ -134,7 +135,8 @@ serve(async (req) => {
                 transcription_status: 'pending',
                 transcription_error_message: null 
               })
-              .eq('id', booking.id);
+              .eq('id', booking.id)
+              .or('transcription_status.is.null,transcription_status.in.(failed,pending,queued)');
 
             // Determine if TTS should be skipped (imported records or non-Vixicom sites)
             const isImported = !!booking.import_batch_id;
@@ -277,7 +279,7 @@ serve(async (req) => {
             const booking = found[i];
             try {
               await supabase.from('booking_transcriptions').delete().eq('booking_id', booking.id);
-              await supabase.from('bookings').update({ transcription_status: 'pending', transcription_error_message: null }).eq('id', booking.id);
+              await supabase.from('bookings').update({ transcription_status: 'pending', transcription_error_message: null }).eq('id', booking.id).or('transcription_status.is.null,transcription_status.in.(failed,pending,queued)');
               const response = await fetch(`${SUPABASE_URL}/functions/v1/transcribe-call`, {
                 method: 'POST',
                 headers: { 'Authorization': `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`, 'Content-Type': 'application/json' },
@@ -327,7 +329,7 @@ serve(async (req) => {
 
           try {
             await supabase.from('booking_transcriptions').delete().eq('booking_id', booking.id);
-            await supabase.from('bookings').update({ transcription_status: 'pending', transcription_error_message: null }).eq('id', booking.id);
+            await supabase.from('bookings').update({ transcription_status: 'pending', transcription_error_message: null }).eq('id', booking.id).or('transcription_status.is.null,transcription_status.in.(failed,pending,queued)');
 
             const response = await fetch(`${SUPABASE_URL}/functions/v1/transcribe-call`, {
               method: 'POST',
@@ -378,6 +380,7 @@ serve(async (req) => {
         kixie_link,
         member_name,
         booking_date,
+        updated_at,
         transcription_status,
         transcription_error_message,
         import_batch_id,
@@ -434,7 +437,7 @@ serve(async (req) => {
       if (transcribedIds.has(b.id)) return false;
       // For queued records, only include if they've been stuck for >10 minutes
       if (b.transcription_status === 'queued') {
-        return (b.booking_date || '') < tenMinutesAgo;
+        return (b.updated_at || '') < tenMinutesAgo;
       }
       return true;
     });
@@ -487,7 +490,8 @@ serve(async (req) => {
               transcription_status: 'pending',
               transcription_error_message: null 
             })
-            .eq('id', booking.id);
+            .eq('id', booking.id)
+            .or('transcription_status.is.null,transcription_status.in.(failed,pending,queued)');
 
           // Determine if TTS should be skipped (imported records or non-Vixicom sites)
           const isImported = !!booking.import_batch_id;
