@@ -1039,30 +1039,65 @@ Deno.serve(async (req) => {
 
     const triggeredByUserId: string | null = auth.ctx.kind === 'user' ? auth.ctx.userId : null;
 
-    // Fetch processed research records filtered by campaign type
-    let query = supabase
-      .from('bookings')
-      .select(`
-        id,
-        booking_date,
-        member_name,
-        booking_transcriptions!inner (
-          research_extraction,
-          research_classification,
-          research_processing_status,
-          research_campaign_type
-        )
-      `)
-      .eq('record_type', 'research')
-      .eq('has_valid_conversation', true)
-      .eq('booking_transcriptions.research_processing_status', 'completed')
-      .eq('booking_transcriptions.research_campaign_type', campaignType);
+    // Resolve campaign → research_call ids (bookings link to calls, not campaigns)
+    let campaignCallIds: string[] | null = null;
+    if (campaignId) {
+      campaignCallIds = [];
+      for (let from = 0; ; from += 1000) {
+        const { data: calls, error: callsErr } = await supabase
+          .from('research_calls')
+          .select('id')
+          .eq('campaign_id', campaignId)
+          .order('id')
+          .range(from, from + 999);
+        if (callsErr) throw new Error(`Failed to fetch campaign calls: ${callsErr.message}`);
+        campaignCallIds.push(...(calls || []).map((c: any) => c.id));
+        if (!calls || calls.length < 1000) break;
+      }
+    }
 
-    if (campaignId) query = query.eq('research_call_id', campaignId);
-    if (dateRangeStart) query = query.gte('booking_date', dateRangeStart);
-    if (dateRangeEnd) query = query.lte('booking_date', dateRangeEnd);
+    // Fetch processed research records filtered by campaign type (paged by 1000)
+    const buildQuery = (callIds: string[] | null) => {
+      let q = supabase
+        .from('bookings')
+        .select(`
+          id,
+          booking_date,
+          member_name,
+          booking_transcriptions!inner (
+            research_extraction,
+            research_classification,
+            research_processing_status,
+            research_campaign_type,
+            survey_progress
+          )
+        `)
+        .eq('record_type', 'research')
+        .eq('has_valid_conversation', true)
+        .eq('booking_transcriptions.research_processing_status', 'completed')
+        .eq('booking_transcriptions.research_campaign_type', campaignType);
+      if (callIds) q = q.in('research_call_id', callIds);
+      if (dateRangeStart) q = q.gte('booking_date', dateRangeStart);
+      if (dateRangeEnd) q = q.lte('booking_date', dateRangeEnd);
+      return q;
+    };
 
-    const { data: records, error: fetchError } = await query;
+    const records: any[] = [];
+    let fetchError: { message: string } | null = null;
+    const idChunks: (string[] | null)[] = [];
+    if (campaignCallIds) {
+      for (let i = 0; i < campaignCallIds.length; i += 500) idChunks.push(campaignCallIds.slice(i, i + 500));
+    } else {
+      idChunks.push(null);
+    }
+    outer: for (const chunk of idChunks) {
+      for (let from = 0; ; from += 1000) {
+        const { data: page, error } = await buildQuery(chunk).order('id').range(from, from + 999);
+        if (error) { fetchError = error; break outer; }
+        records.push(...(page || []));
+        if (!page || page.length < 1000) break;
+      }
+    }
     if (fetchError) throw new Error(`Failed to fetch records: ${fetchError.message}`);
 
     const processedRecords = (records || []).filter((r: any) => {
