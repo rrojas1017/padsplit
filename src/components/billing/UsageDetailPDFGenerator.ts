@@ -13,12 +13,41 @@ const CLIENT = {
   name: 'PadSplit, Inc.',
 };
 
-const SOW_RATES: Record<string, number> = {
+const DEFAULT_SOW_RATES: Record<string, number> = {
   voice_processing: 0.15,
   text_processing: 0.04,
   email_delivery: 0.03,
   sms_delivery: 0.05,
 };
+
+type Rates = Record<string, number>;
+
+/** Unit rates: invoice line-item snapshot → active SOW pricing → hard-coded default. */
+async function resolveRates(invoiceNumber?: string): Promise<Rates> {
+  const rates: Rates = { ...DEFAULT_SOW_RATES };
+  const categories = Object.keys(DEFAULT_SOW_RATES);
+  const fromInvoice = new Set<string>();
+  if (invoiceNumber) {
+    const { data: inv } = await supabase.from('billing_invoices').select('id').eq('invoice_number', invoiceNumber).maybeSingle();
+    if (inv?.id) {
+      const { data: items } = await supabase.from('invoice_line_items').select('service_category, unit_rate').eq('invoice_id', inv.id);
+      (items ?? []).forEach((li) => {
+        if (categories.includes(li.service_category) && li.unit_rate != null) {
+          rates[li.service_category] = Number(li.unit_rate);
+          fromInvoice.add(li.service_category);
+        }
+      });
+    }
+  }
+  const missing = categories.filter((c) => !fromInvoice.has(c));
+  if (missing.length > 0) {
+    const { data: sow } = await supabase.from('sow_pricing_config').select('service_category, base_rate, is_active').in('service_category', missing);
+    (sow ?? []).forEach((row) => {
+      if (row.is_active !== false && row.base_rate != null) rates[row.service_category] = Number(row.base_rate);
+    });
+  }
+  return rates;
+}
 
 const fmtCurrency = (amount: number, decimals = 2) =>
   new Intl.NumberFormat('en-US', {
@@ -149,6 +178,7 @@ function drawCoverPage(
   invoiceNumber: string | undefined,
   summary: { voice: number; text: number; emails: number; sms: number },
   totalPages: number,
+  rates: Rates,
 ) {
   const pw = doc.internal.pageSize.getWidth();
   drawConfidential(doc);
@@ -200,10 +230,10 @@ function drawCoverPage(
   y = drawTableHeader(doc, y, cols);
 
   const rows = [
-    { label: 'Voice-Based Records (AI Processing)', count: summary.voice, rate: SOW_RATES.voice_processing },
-    { label: 'Text-Based Records (AI Processing)', count: summary.text, rate: SOW_RATES.text_processing },
-    { label: 'Email Delivery', count: summary.emails, rate: SOW_RATES.email_delivery },
-    { label: 'SMS Delivery', count: summary.sms, rate: SOW_RATES.sms_delivery },
+    { label: 'Voice-Based Records (AI Processing)', count: summary.voice, rate: rates.voice_processing },
+    { label: 'Text-Based Records (AI Processing)', count: summary.text, rate: rates.text_processing },
+    { label: 'Email Delivery', count: summary.emails, rate: rates.email_delivery },
+    { label: 'SMS Delivery', count: summary.sms, rate: rates.sms_delivery },
   ];
 
   doc.setFontSize(8);
@@ -337,6 +367,7 @@ function drawCommunicationPage(
   sms: CommRecord[],
   startPage: number,
   totalPages: number,
+  rates: Rates,
 ): number {
   if (emails.length === 0 && sms.length === 0) return startPage;
 
@@ -392,7 +423,7 @@ function drawCommunicationPage(
       const recipientTrunc = recipient.length > 35 ? recipient.substring(0, 33) + '…' : recipient;
       doc.text(recipientTrunc, 60, y);
       doc.text(rec.status || '—', 140, y);
-      doc.text(fmtCurrency(type === 'email' ? SOW_RATES.email_delivery : SOW_RATES.sms_delivery), pw - 16, y, { align: 'right' });
+      doc.text(fmtCurrency(type === 'email' ? rates.email_delivery : rates.sms_delivery), pw - 16, y, { align: 'right' });
       y += 6;
     });
 
@@ -416,6 +447,7 @@ function drawReconciliation(
   periodEnd: string,
   pageNum: number,
   totalPages: number,
+  rates: Rates,
 ) {
   doc.addPage();
   const pw = doc.internal.pageSize.getWidth();
@@ -443,10 +475,10 @@ function drawReconciliation(
   y = drawTableHeader(doc, y, cols);
 
   const rows = [
-    { label: 'AI Processing – Voice Records', qty: summary.voice, rate: SOW_RATES.voice_processing },
-    { label: 'AI Processing – Text Records', qty: summary.text, rate: SOW_RATES.text_processing },
-    { label: 'Email Delivery', qty: summary.emails, rate: SOW_RATES.email_delivery },
-    { label: 'SMS Delivery', qty: summary.sms, rate: SOW_RATES.sms_delivery },
+    { label: 'AI Processing – Voice Records', qty: summary.voice, rate: rates.voice_processing },
+    { label: 'AI Processing – Text Records', qty: summary.text, rate: rates.text_processing },
+    { label: 'Email Delivery', qty: summary.emails, rate: rates.email_delivery },
+    { label: 'SMS Delivery', qty: summary.sms, rate: rates.sms_delivery },
   ];
 
   let grandTotal = 0;
@@ -508,7 +540,7 @@ export async function generateUsageDetailPDF(
   periodEnd: string,
   invoiceNumber?: string,
 ): Promise<void> {
-  const data = await fetchUsageData(periodStart, periodEnd);
+  const [data, rates] = await Promise.all([fetchUsageData(periodStart, periodEnd), resolveRates(invoiceNumber)]);
 
   const summary = {
     voice: data.voiceRecords.length,
@@ -530,20 +562,20 @@ export async function generateUsageDetailPDF(
   const doc = new jsPDF();
 
   // Page 1: Cover
-  drawCoverPage(doc, periodStart, periodEnd, invoiceNumber, summary, estPages);
+  drawCoverPage(doc, periodStart, periodEnd, invoiceNumber, summary, estPages, rates);
 
   // Pages 2+: Voice records
   let nextPage = 2;
-  nextPage = drawRecordDetailPages(doc, data.voiceRecords, 'Voice Record Detail', 'Voice', SOW_RATES.voice_processing, nextPage, estPages);
+  nextPage = drawRecordDetailPages(doc, data.voiceRecords, 'Voice Record Detail', 'Voice', rates.voice_processing, nextPage, estPages);
 
   // Text records
-  nextPage = drawRecordDetailPages(doc, data.textRecords, 'Text Record Detail', 'Text', SOW_RATES.text_processing, nextPage, estPages);
+  nextPage = drawRecordDetailPages(doc, data.textRecords, 'Text Record Detail', 'Text', rates.text_processing, nextPage, estPages);
 
   // Communications
-  nextPage = drawCommunicationPage(doc, data.emails as CommRecord[], data.sms as CommRecord[], nextPage, estPages);
+  nextPage = drawCommunicationPage(doc, data.emails as CommRecord[], data.sms as CommRecord[], nextPage, estPages, rates);
 
   // Reconciliation
-  drawReconciliation(doc, summary, invoiceNumber, periodStart, periodEnd, nextPage, estPages);
+  drawReconciliation(doc, summary, invoiceNumber, periodStart, periodEnd, nextPage, estPages, rates);
 
   const filename = `usage-detail-${periodStart}-to-${periodEnd}.pdf`;
   doc.save(filename);

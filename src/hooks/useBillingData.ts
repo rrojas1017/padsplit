@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
-import { startOfDay, endOfDay, startOfWeek, endOfWeek, startOfMonth, endOfMonth, subDays } from 'date-fns';
+import { resolveRange, businessToday, addDaysStr, startOfWeekStr, BUSINESS_TZ } from '@/utils/businessTime';
 import { SOWPricingConfig } from '@/utils/billingCalculations';
 
 export interface ApiCost {
@@ -66,7 +66,29 @@ export interface BillingInvoice {
   client?: Client;
 }
 
-export type DateRangeType = 'today' | 'yesterday' | 'thisWeek' | 'thisMonth' | 'last30Days' | 'allTime' | 'custom';
+export type DateRangeType = 'today' | 'yesterday' | 'thisWeek' | 'thisMonth' | 'last7Days' | 'last30Days' | 'allTime' | 'custom';
+
+interface CostSummaryRow {
+  service_provider: string;
+  service_type: string;
+  edge_function: string;
+  rows: number;
+  cost_usd: number;
+  source: 'live' | 'archived';
+}
+
+/** ISO instant of 00:00 America/New_York on the given 'yyyy-MM-dd' day (DST-aware). */
+function etMidnightIso(ymd: string): string {
+  const probe = new Date(`${ymd}T12:00:00Z`);
+  const tzName = new Intl.DateTimeFormat('en-US', { timeZone: BUSINESS_TZ, timeZoneName: 'longOffset' })
+    .formatToParts(probe).find((p) => p.type === 'timeZoneName')?.value ?? 'GMT-05:00';
+  const m = tzName.match(/GMT([+-]\d{2}):?(\d{2})?/);
+  const offset = m ? `${m[1]}:${m[2] ?? '00'}` : '-05:00';
+  return new Date(`${ymd}T00:00:00${offset}`).toISOString();
+}
+
+const isAddOn = (serviceType: string | null | undefined) =>
+  !!serviceType && (serviceType.startsWith('tts_') || serviceType === 'qa_script_generation');
 
 export type BillingUnit = 'raw_cost' | 'per_booking' | 'per_minute';
 
@@ -101,29 +123,31 @@ export function useBillingData(dateRange: DateRangeType = 'thisMonth', customSta
 
   const isSuperAdmin = hasRole(['super_admin']);
 
-  const getDateRange = useCallback((): { start: Date; end: Date } => {
-    const now = new Date();
+  const [rpcSummary, setRpcSummary] = useState<CostSummaryRow[] | null>(null);
+  const [costsCapped, setCostsCapped] = useState(false);
+
+  const getDateRange = useCallback((): { pStart: string; pEnd: string } => {
+    const today = businessToday();
+    let from: string | null;
+    let to: string;
     switch (dateRange) {
-      case 'today':
-        return { start: startOfDay(now), end: endOfDay(now) };
-      case 'yesterday':
-        const yesterday = subDays(now, 1);
-        return { start: startOfDay(yesterday), end: endOfDay(yesterday) };
-      case 'thisWeek':
-        return { start: startOfWeek(now, { weekStartsOn: 1 }), end: endOfWeek(now, { weekStartsOn: 1 }) };
-      case 'thisMonth':
-        return { start: startOfMonth(now), end: endOfMonth(now) };
-      case 'last30Days':
-        return { start: startOfDay(subDays(now, 30)), end: endOfDay(now) };
+      case 'today': ({ from, to } = resolveRange('today')); break;
+      case 'yesterday': ({ from, to } = resolveRange('yesterday')); break;
+      case 'thisWeek': from = startOfWeekStr(today); to = today; break;
+      case 'thisMonth': ({ from, to } = resolveRange('month')); break;
+      case 'last7Days': ({ from, to } = resolveRange('7d')); break;
+      case 'last30Days': ({ from, to } = resolveRange('30d')); break;
       case 'custom':
-        return { 
-          start: customStart ? startOfDay(customStart) : startOfMonth(now), 
-          end: customEnd ? endOfDay(customEnd) : endOfDay(now) 
-        };
+        ({ from, to } = customStart && customEnd
+          ? resolveRange('custom', { from: customStart, to: customEnd })
+          : resolveRange('month'));
+        break;
       case 'allTime':
       default:
-        return { start: new Date('2020-01-01'), end: endOfDay(now) };
+        ({ from, to } = resolveRange('all'));
     }
+    const pStart = from ? etMidnightIso(from) : new Date('2020-01-01T00:00:00-05:00').toISOString();
+    return { pStart, pEnd: etMidnightIso(addDaysStr(to, 1)) };
   }, [dateRange, customStart, customEnd]);
 
   const fetchData = useCallback(async () => {
@@ -136,20 +160,31 @@ export function useBillingData(dateRange: DateRangeType = 'thisMonth', customSta
     setError(null);
 
     try {
-      const { start, end } = getDateRange();
+      const { pStart, pEnd } = getDateRange();
+
+      const rpcPromise = supabase.rpc('billing_cost_summary', { p_start: pStart, p_end: pEnd });
 
       // Fetch costs filtered by when the cost was logged (created_at), not booking_date.
       // This ensures "today" shows costs processed today regardless of when the booking was made.
       const { data: costsRaw, error: costsError } = await supabase
         .from('api_costs')
         .select('*')
-        .gte('created_at', start.toISOString())
-        .lte('created_at', end.toISOString())
+        .gte('created_at', pStart)
+        .lt('created_at', pEnd)
         .eq('is_internal', false)
         .order('created_at', { ascending: false })
         .limit(5000);
 
       if (costsError) throw costsError;
+      setCostsCapped((costsRaw?.length ?? 0) >= 1000);
+
+      const { data: rpcData, error: rpcError } = await rpcPromise;
+      if (rpcError) {
+        console.warn('billing_cost_summary unavailable, using row totals:', rpcError.message);
+        setRpcSummary(null);
+      } else {
+        setRpcSummary((rpcData ?? []) as unknown as CostSummaryRow[]);
+      }
       let costsData: any[] = costsRaw || [];
 
       // When excludeTTS is enabled (e.g. Dashboard), filter out optional add-on costs
@@ -167,8 +202,8 @@ export function useBillingData(dateRange: DateRangeType = 'thisMonth', customSta
         supabase.from('billing_invoices').select('*').order('created_at', { ascending: false }).limit(100),
         supabase.from('sow_pricing_config').select('*').order('service_category'),
         supabase.from('contact_communications').select('communication_type')
-          .gte('sent_at', start.toISOString())
-          .lte('sent_at', end.toISOString()),
+          .gte('sent_at', pStart)
+          .lt('sent_at', pEnd),
       ]);
 
       if (clientsRes.error) throw clientsRes.error;
@@ -185,7 +220,7 @@ export function useBillingData(dateRange: DateRangeType = 'thisMonth', customSta
     } finally {
       setIsLoading(false);
     }
-  }, [isSuperAdmin, getDateRange]);
+  }, [isSuperAdmin, getDateRange, options?.excludeTTS]);
 
   useEffect(() => {
     fetchData();
@@ -203,7 +238,12 @@ export function useBillingData(dateRange: DateRangeType = 'thisMonth', customSta
   const uniqueBookingIds = new Set(costs.filter(c => c.booking_id).map(c => c.booking_id));
   const uniqueBookingsProcessed = uniqueBookingIds.size;
   const totalTalkTimeSeconds = costs.reduce((sum, c) => sum + (c.audio_duration_seconds || 0), 0);
-  const totalCost = costs.reduce((sum, c) => sum + Number(c.estimated_cost_usd), 0);
+  const rpcRows = rpcSummary ? rpcSummary.filter((r) => !(options?.excludeTTS && isAddOn(r.service_type))) : null;
+  const totalsSource: 'rpc' | 'rows' = rpcRows ? 'rpc' : 'rows';
+  const archivedCost = rpcRows ? rpcRows.filter((r) => r.source === 'archived').reduce((s, r) => s + Number(r.cost_usd), 0) : 0;
+  const totalCost = rpcRows
+    ? rpcRows.reduce((sum, r) => sum + Number(r.cost_usd), 0)
+    : costs.reduce((sum, c) => sum + Number(c.estimated_cost_usd), 0);
   const costPerBooking = uniqueBookingsProcessed > 0 ? totalCost / uniqueBookingsProcessed : 0;
   const costPerMinute = totalTalkTimeSeconds > 0 ? totalCost / (totalTalkTimeSeconds / 60) : 0;
 
@@ -226,27 +266,27 @@ export function useBillingData(dateRange: DateRangeType = 'thisMonth', customSta
     telephonyMinutes: 0,
   };
 
-  // Group by provider
-  costs.forEach(cost => {
-    const provider = cost.service_provider;
-    summary.byProvider[provider] = (summary.byProvider[provider] || 0) + Number(cost.estimated_cost_usd);
-  });
-
-  // Group by service type
-  costs.forEach(cost => {
-    const type = cost.service_type;
-    summary.byServiceType[type] = (summary.byServiceType[type] || 0) + Number(cost.estimated_cost_usd);
-  });
-
-  // Group by function
-  costs.forEach(cost => {
-    const fn = cost.edge_function;
-    if (!summary.byFunction[fn]) {
-      summary.byFunction[fn] = { count: 0, cost: 0 };
-    }
-    summary.byFunction[fn].count++;
-    summary.byFunction[fn].cost += Number(cost.estimated_cost_usd);
-  });
+  if (rpcRows) {
+    rpcRows.forEach((r) => {
+      const cost = Number(r.cost_usd);
+      summary.byProvider[r.service_provider] = (summary.byProvider[r.service_provider] || 0) + cost;
+      summary.byServiceType[r.service_type] = (summary.byServiceType[r.service_type] || 0) + cost;
+      if (!summary.byFunction[r.edge_function]) summary.byFunction[r.edge_function] = { count: 0, cost: 0 };
+      summary.byFunction[r.edge_function].count += Number(r.rows);
+      summary.byFunction[r.edge_function].cost += cost;
+    });
+  } else {
+    costs.forEach(cost => {
+      const provider = cost.service_provider;
+      summary.byProvider[provider] = (summary.byProvider[provider] || 0) + Number(cost.estimated_cost_usd);
+      const type = cost.service_type;
+      summary.byServiceType[type] = (summary.byServiceType[type] || 0) + Number(cost.estimated_cost_usd);
+      const fn = cost.edge_function;
+      if (!summary.byFunction[fn]) summary.byFunction[fn] = { count: 0, cost: 0 };
+      summary.byFunction[fn].count++;
+      summary.byFunction[fn].cost += Number(cost.estimated_cost_usd);
+    });
+  }
 
   // Group by date for trend
   const dailyMap: Record<string, { cost: number; count: number }> = {};
@@ -437,5 +477,8 @@ export function useBillingData(dateRange: DateRangeType = 'thisMonth', customSta
     updateSOWPricing,
     fetchInvoiceLineItems,
     fetchPeriodCounts,
+    costsCapped,
+    totalsSource,
+    archivedCost,
   };
 }
