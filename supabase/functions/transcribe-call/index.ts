@@ -323,6 +323,7 @@ async function callDeepSeekForAnalysis(
   model: string;
   inputTokens: number;
   outputTokens: number;
+  tokenSource: 'usage' | 'estimate';
   latencyMs: number;
 }> {
   const DEEPSEEK_API_KEY = Deno.env.get('DEEPSEEK_API_KEY');
