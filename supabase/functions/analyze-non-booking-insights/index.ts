@@ -387,6 +387,18 @@ Return JSON:
         status: 'failed',
         error_message: 'AI response could not be parsed',
       }).eq('id', id);
+      const fIn = Math.ceil(prompt.length / 4), fOut = Math.ceil(txt.length / 4);
+      await supabase.from('api_costs').insert({
+        service_provider: 'lovable_ai',
+        service_type: 'ai_non_booking_insights',
+        edge_function: 'analyze-non-booking-insights',
+        input_tokens: fIn,
+        output_tokens: fOut,
+        estimated_cost_usd: (fIn / 1000) * 0.00015 + (fOut / 1000) * 0.0006,
+        metadata: { model: 'google/gemini-2.5-flash', total_calls: total, parse_failed: true },
+        triggered_by_user_id: triggeredByUserId || null,
+        is_internal: isInternal,
+      });
       return;
     }
 
