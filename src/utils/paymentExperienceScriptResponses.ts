@@ -4,13 +4,11 @@
 // Script Responses panel. No backend, no new business logic — reuses the
 // canonical normalization maps from usePaymentExperienceResponses.
 
+import { resolveAnswer, resolvedAutopay, resolvedBarrier, resolvedCadence, resolvedClarity, resolvedFriction } from '@/utils/paymentExperienceNormalize';
 import {
   type PaymentExperienceRecord,
-  CADENCE_NORMALIZATION_MAP,
   CADENCE_LABELS,
-  FRICTION_THEME_MAP,
   FRICTION_THEME_LABELS,
-  AUTOPAY_BARRIER_MAP,
   AUTOPAY_BARRIER_LABELS,
 } from '@/hooks/usePaymentExperienceResponses';
 
@@ -93,25 +91,6 @@ export interface PEScriptData {
 }
 
 // ── helpers ────────────────────────────────────────────────────────────────
-
-const lookupNormalized = (
-  map: Record<string, string>,
-  raw: any,
-): string | null => {
-  if (raw == null) return null;
-  const key = String(raw)
-    .toLowerCase()
-    .replace(/[_/]/g, ' ')
-    .replace(/[^\w\s'-]/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-  if (!key) return null;
-  if (map[key]) return map[key];
-  for (const k of Object.keys(map)) {
-    if (key.includes(k)) return map[k];
-  }
-  return 'other';
-};
 
 const trim = (s: string, n = 240) =>
   s.length > n ? s.slice(0, n - 1).trimEnd() + '…' : s;
@@ -215,6 +194,30 @@ function getAnswer(rec: PaymentExperienceRecord, q: PEQuestionDef): any {
   // extraction (or, in the future, by the agent runtime). Falls through to
   // legacy *_stated / payment_literacy_breakdown.* fields below when the
   // record was extracted before this field existed.
+  // KPI-linked questions go through the shared resolver so the tiles and
+  // these distributions always agree.
+  switch (q.id) {
+    case 'pay_cadence': {
+      if (resolveAnswer(rec, 'pay_cadence') === null) return null;
+      return [resolvedCadence(rec)];
+    }
+    case 'autopay_enrolled': {
+      const a = resolvedAutopay(rec);
+      return a === 'unanswered' ? null : a;
+    }
+    case 'autopay_barrier': {
+      if (resolvedAutopay(rec) !== 'no') return null;
+      const k = resolvedBarrier(rec);
+      return k ? [k] : null;
+    }
+    case 'top_friction_theme': {
+      const k = resolvedFriction(rec);
+      return k ? [k] : null;
+    }
+    case 'move_in_cost_clarity':
+      return resolvedClarity(rec);
+  }
+
   const raw: any = ext.raw_script_answers && typeof ext.raw_script_answers === 'object'
     ? ext.raw_script_answers
     : null;
@@ -222,11 +225,6 @@ function getAnswer(rec: PaymentExperienceRecord, q: PEQuestionDef): any {
   if (fromRaw !== null && fromRaw !== undefined) return fromRaw;
 
   switch (q.id) {
-    case 'pay_cadence': {
-      if (ext.pay_cadence == null || String(ext.pay_cadence).trim() === '') return null;
-      const norm = lookupNormalized(CADENCE_NORMALIZATION_MAP, ext.pay_cadence);
-      return [norm || 'other'];
-    }
     case 'dues_day_stated': {
       const v = breakdown.dues_day_stated;
       if (v == null || v === '') return null;
@@ -277,9 +275,8 @@ function getAnswer(rec: PaymentExperienceRecord, q: PEQuestionDef): any {
       return [allowed.has(s) ? s : 'unknown'];
     }
     case 'reminder_system': {
-      // No dedicated extraction field; surface payment_literacy_notes verbatims
-      // when present.
-      return firstNonEmptyString(ext.payment_literacy_notes);
+      // Only raw script answers count (handled above); no legacy fallback.
+      return null;
     }
     case 'easy_payment_benchmark':
       return firstNonEmptyString(ext.easy_payment_benchmark);
@@ -293,21 +290,6 @@ function getAnswer(rec: PaymentExperienceRecord, q: PEQuestionDef): any {
       const method = firstNonEmptyString(cm.method);
       if (!method) return null;
       return [method.toLowerCase()];
-    }
-    case 'autopay_enrolled':
-      if (ext.autopay_status === 'enrolled') return 'yes';
-      if (ext.autopay_status === 'not_enrolled') return 'no';
-      return null;
-    case 'autopay_barrier': {
-      if (ext.autopay_status !== 'not_enrolled') return null;
-      const k = lookupNormalized(AUTOPAY_BARRIER_MAP, ext.autopay_barrier_category);
-      return k ? [k] : null;
-    }
-    case 'move_in_cost_clarity':
-      return typeof ext.move_in_cost_clarity_1to5 === 'number' ? ext.move_in_cost_clarity_1to5 : null;
-    case 'top_friction_theme': {
-      const k = lookupNormalized(FRICTION_THEME_MAP, ext.top_friction_theme);
-      return k ? [k] : null;
     }
     case 'overdue_threshold': {
       const v = ext.overdue_threshold_belief_usd;
@@ -519,16 +501,42 @@ function summarizeQuestion(
         distribution.push({ key: String(v), label: String(v), count: c, percentage: pct(c, denom) });
       }
     } else {
+      // Half-open buckets [lo, nextLo) so decimals are never dropped. Dues
+      // add "Below $50"/"Above $300", overdue adds "Above $2,000"; for other
+      // scales the first/last bucket are open-ended. Every numeric answer
+      // lands in exactly one row.
       const bucketsCount = 10;
       const span = (max - min + 1) / bucketsCount;
       const isUsd = q.id === 'dues_amount_stated_usd';
+      const isOverdue = q.id === 'overdue_threshold';
+      const los: number[] = [];
+      for (let i = 0; i < bucketsCount; i++) los.push(Math.round(min + i * span));
+      if (isUsd) {
+        const c = nums.filter((n) => n < min).length;
+        distribution.push({ key: `below-${min}`, label: `Below $${min}`, count: c, percentage: pct(c, denom) });
+      }
       for (let i = 0; i < bucketsCount; i++) {
-        const lo = Math.round(min + i * span);
-        const hi = i === bucketsCount - 1 ? max : Math.round(min + (i + 1) * span) - 1;
-        const c = nums.filter((n) => n >= lo && n <= hi).length;
+        const lo = los[i];
+        const isFirst = i === 0;
+        const isLast = i === bucketsCount - 1;
+        const hiLabel = isLast ? max : los[i + 1] - 1;
+        const c = nums.filter((n) => {
+          const aboveLo = isFirst && !isUsd ? true : n >= lo;
+          const belowHi = isLast ? (isUsd || isOverdue ? n <= max : true) : n < los[i + 1];
+          return aboveLo && belowHi;
+        }).length;
         distribution.push({
-          key: `${lo}-${hi}`,
-          label: isUsd ? `$${lo}–$${hi}` : `${lo}–${hi}`,
+          key: `${lo}-${hiLabel}`,
+          label: isUsd ? `$${lo}–$${hiLabel}` : `${lo}–${hiLabel}`,
+          count: c,
+          percentage: pct(c, denom),
+        });
+      }
+      if (isUsd || isOverdue) {
+        const c = nums.filter((n) => n > max).length;
+        distribution.push({
+          key: `above-${max}`,
+          label: `Above $${max.toLocaleString('en-US')}`,
           count: c,
           percentage: pct(c, denom),
         });

@@ -19,3 +19,4 @@
 - [x] P-G3 translate merge by key, per-script research mode, wizard defaults
 - [x] P-G4 research_campaign_type routing for public/agent-logged answers
 - [x] LP-4 Non-Booking numbers (stats bounds, hot leads, failed parse, created_by)
+- [x] LP-1 Payment Experience KPI correctness (shared resolver/normalizer)
