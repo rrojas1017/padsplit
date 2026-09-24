@@ -19,6 +19,7 @@ import { TranscriptionModal } from '@/components/booking/TranscriptionModal';
 import { Booking } from '@/types';
 import { getAgentName } from '@/utils/agentUtils';
 import { maskEmail, maskPhone, shouldMaskContactInfo } from '@/utils/contactPrivacy';
+import { researchCampaignLabel } from '@/utils/researchCampaignType';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -205,8 +206,21 @@ export default function Reports() {
     isLoading, 
     importBatches, 
     manualRecordCount,
-    refetch 
+    refetch,
+    researchScriptOptions,
+    researchProgressById,
   } = useReportsData(filters, pagination, sorting);
+
+  const scriptLabelByType = useMemo(() => {
+    const m: Record<string, string> = {};
+    researchScriptOptions.forEach(o => { m[o.value] = o.label; });
+    return m;
+  }, [researchScriptOptions]);
+
+  const campaignFilterLabel =
+    campaignTypeFilter === 'all'
+      ? 'All Campaigns'
+      : researchCampaignLabel(campaignTypeFilter, scriptLabelByType, 'long');
 
   // Client-side sort for survey progress (page-scoped) — JSON field on embedded join can't be sorted server-side
   const records = useMemo(() => {
@@ -331,7 +345,7 @@ export default function Reports() {
       ];
       const rows = records.map(booking => [
         format(booking.bookingDate, 'yyyy-MM-dd'),
-        booking.researchCampaignType === 'audience_survey' ? 'Audience Survey' : booking.researchCampaignType === 'payment_experience' ? 'Payment Experience' : 'Move-Out Survey',
+        researchCampaignLabel(booking.researchCampaignType, scriptLabelByType, 'long'),
         booking.contactPhone ? (shouldMask ? maskPhone(booking.contactPhone) : booking.contactPhone) : '',
         booking.memberName?.startsWith('API Submission') ? '' : booking.memberName,
         booking.contactEmail ? (shouldMask ? maskEmail(booking.contactEmail) : booking.contactEmail) : '',
@@ -693,13 +707,7 @@ export default function Reports() {
             <DropdownMenuTrigger asChild>
               <Button variant={campaignTypeFilter !== 'all' ? 'default' : 'outline'} className="gap-2">
                 <FlaskConical className="w-4 h-4" />
-                {campaignTypeFilter === 'all'
-                  ? 'All Campaigns'
-                  : campaignTypeFilter === 'move_out_survey'
-                  ? 'Move-Out Survey'
-                  : campaignTypeFilter === 'payment_experience'
-                  ? 'Payment Experience'
-                  : 'Audience Survey'}
+                {campaignFilterLabel}
                 <ChevronDown className="w-4 h-4" />
               </Button>
             </DropdownMenuTrigger>
@@ -737,6 +745,18 @@ export default function Reports() {
                   Payment Experience
                 </span>
               </DropdownMenuItem>
+              {researchScriptOptions.map(opt => (
+                <DropdownMenuItem
+                  key={opt.value}
+                  onClick={() => setCampaignTypeFilter(opt.value)}
+                  className={campaignTypeFilter === opt.value ? 'bg-accent/20' : ''}
+                >
+                  <span className="flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full bg-muted-foreground"></span>
+                    {opt.label}
+                  </span>
+                </DropdownMenuItem>
+              ))}
             </DropdownMenuContent>
           </DropdownMenu>
         )}
@@ -1078,6 +1098,7 @@ export default function Reports() {
                     </td>
                     {/* Campaign */}
                     <td className="py-3 px-4 text-sm">
+                      <span className="inline-flex items-center gap-1.5 flex-wrap">
                       {booking.researchCampaignType === 'audience_survey' ? (
                         <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium bg-blue-500/15 text-blue-600 dark:text-blue-400">
                           <span className="w-1.5 h-1.5 rounded-full bg-blue-500"></span>
@@ -1099,12 +1120,33 @@ export default function Reports() {
                           <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
                           Payment
                         </span>
-                      ) : (
+                      ) : booking.researchCampaignType === 'move_out_survey' ? (
                         <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium bg-purple-500/15 text-purple-600 dark:text-purple-400">
                           <span className="w-1.5 h-1.5 rounded-full bg-purple-500"></span>
                           Move-Out
                         </span>
+                      ) : booking.researchCampaignType ? (
+                        <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium bg-muted text-muted-foreground">
+                          <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground"></span>
+                          {researchCampaignLabel(booking.researchCampaignType, scriptLabelByType)}
+                        </span>
+                      ) : (
+                        <span className="text-muted-foreground">—</span>
                       )}
+                      {researchProgressById[booking.id]?.endedEarly && (() => {
+                        const p = researchProgressById[booking.id];
+                        return (
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Badge variant="outline" className="text-[10px] px-1.5 py-0 cursor-help">Ended early</Badge>
+                            </TooltipTrigger>
+                            <TooltipContent side="right">
+                              <p className="text-xs">{p.disposition || 'No disposition'} · {p.answered ?? '?'}/{p.total ?? '?'} answered</p>
+                            </TooltipContent>
+                          </Tooltip>
+                        );
+                      })()}
+                      </span>
                     </td>
                     {/* Contact (phone-first) */}
                     <td className="py-3 px-4 text-sm text-foreground">

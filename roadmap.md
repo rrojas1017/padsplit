@@ -36,3 +36,4 @@
 - [x] BUG-001b: super_admin password reset from Edit User / Researcher / Agent dialogs (admin-reset-password function, ResetPasswordSection, drift #31 migration file written, not applied)
 - [x] BUG-002: Deactivate/Reactivate (admin-set-user-status), reset ends sessions + forces new password, Change password for all roles (change-own-password, ChangePasswordDialog), AuthContext inactive/ban/session checks; drift #32/#33 migration file written, not applied
 - [x] P6-C: useMyGoal .maybeSingle() (no 406 on no goal), SiteFilter supervisor lock + preselect, Leaderboard site filter wiring (Set-based)
+- [x] BUG-003 Phase A: form/runtime research bookings has_valid_conversation + survey_progress, early ends kept, Reports per-script filter/labels/Ended-early badge, Submissions tab
