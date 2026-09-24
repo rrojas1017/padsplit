@@ -3287,6 +3287,10 @@ export type Database = {
       }
       is_agent: { Args: { _user_id: string }; Returns: boolean }
       reap_stuck_transcriptions: { Args: never; Returns: Json }
+      revoke_user_sessions: {
+        Args: { p_keep_session_id?: string; p_user_id: string }
+        Returns: number
+      }
     }
     Enums: {
       app_role: "super_admin" | "admin" | "supervisor" | "agent" | "researcher"
