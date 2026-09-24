@@ -37,7 +37,7 @@ const Billing = () => {
     if (dateFilter === 'custom') return 'custom';
     if (dateFilter === 'today') return 'today';
     if (dateFilter === 'yesterday') return 'yesterday';
-    if (dateFilter === '7d') return 'last30Days';
+    if (dateFilter === '7d') return 'last7Days';
     if (dateFilter === '30d') return 'last30Days';
     if (dateFilter === 'month') return 'thisMonth';
     if (dateFilter === 'all') return 'allTime';
