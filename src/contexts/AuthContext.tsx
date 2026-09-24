@@ -1,7 +1,14 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, ReactNode, useCallback, useRef } from 'react';
 import { User, UserRole } from '@/types';
 import { supabase } from '@/integrations/supabase/client';
 import { Session, User as SupabaseUser } from '@supabase/supabase-js';
+import { toast } from '@/hooks/use-toast';
+
+const DEACTIVATED_MESSAGE = 'Your account has been deactivated. Contact your administrator.';
+const SESSION_CHECK_MS = 5 * 60 * 1000;
+
+const readMustChange = (u: SupabaseUser | null | undefined): boolean =>
+  (u?.app_metadata as Record<string, unknown> | undefined)?.must_change_password === true;
 
 export interface ImpersonatedUser {
   id: string;
@@ -22,6 +29,8 @@ interface AuthContextType {
   signup: (email: string, password: string, name: string) => Promise<{ success: boolean; error?: string }>;
   logout: () => void;
   hasRole: (roles: UserRole[]) => boolean;
+  mustChangePassword: boolean;
+  refreshMustChangePassword: () => Promise<void>;
 }
 
 const IMPERSONATION_KEY = 'impersonated_user_v1';
@@ -83,6 +92,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [mustChangePassword, setMustChangePassword] = useState(false);
+  const inactiveRef = useRef(false);
   const [impersonated, setImpersonated] = useState<ImpersonatedUser | null>(() => {
     try {
       const raw = sessionStorage.getItem(IMPERSONATION_KEY);
@@ -125,6 +136,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         throw roleError;
       }
 
+      if (profileData && profileData.status === 'inactive') {
+        inactiveRef.current = true;
+        await supabase.auth.signOut();
+        setUser(null);
+        setSession(null);
+        setMustChangePassword(false);
+        toast({ title: DEACTIVATED_MESSAGE, variant: 'destructive' });
+        return false;
+      }
+
       if (profileData) {
         const userData: User = {
           id: supabaseUser.id,
@@ -150,6 +171,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
       
       return false;
+    }
+  };
+
+  // Ends the local session when the server says it is gone (revoked / banned).
+  const checkSessionAlive = async () => {
+    try {
+      const { data: { session: current } } = await supabase.auth.getSession();
+      if (!current) return;
+      const { error } = await supabase.auth.getUser();
+      const status = (error as { status?: number } | null)?.status;
+      if (error && (status === 401 || status === 403)) {
+        await supabase.auth.signOut({ scope: 'local' });
+        setUser(null);
+        setSession(null);
+        setMustChangePassword(false);
+        toast({ title: 'Your session has ended. Please sign in again.', variant: 'destructive' });
+      }
+    } catch {
+      // network errors are ignored; next check retries
     }
   };
 
@@ -217,6 +257,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         
         if (session?.user && isMounted) {
           setSession(session);
+          setMustChangePassword(readMustChange(session.user));
           // CRITICAL: Wait for user data to be fetched before setting isLoading = false
           const success = await fetchUserData(session.user);
           if (isMounted) {
@@ -224,7 +265,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               setTimeout(() => {
                 startAgentSession(session.user.id, 'agent');
               }, 100);
-            } else {
+            } else if (!inactiveRef.current) {
               // Fallback: set minimal user so we don't redirect to login
               setMinimalUser(session.user);
             }
@@ -257,6 +298,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (event === 'SIGNED_OUT') {
           setSession(null);
           setUser(null);
+          setMustChangePassword(false);
+        }
+
+        if ((event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'USER_UPDATED') && session?.user) {
+          setMustChangePassword(readMustChange(session.user));
         }
         
         // Handle SIGNED_IN event for session restoration (fires on refresh with valid session)
@@ -281,6 +327,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // Handle visibility change (mobile tab resume) with error handling
     const handleVisibilityChange = async () => {
       if (document.visibilityState === 'visible') {
+        void checkSessionAlive();
         try {
           const { data: { session }, error } = await supabase.auth.getSession();
           
@@ -315,14 +362,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
+  // Periodic check: a revoked session or banned user gets signed out locally.
+  useEffect(() => {
+    if (!session?.user?.id) return;
+    const id = window.setInterval(() => { void checkSessionAlive(); }, SESSION_CHECK_MS);
+    return () => window.clearInterval(id);
+  }, [session?.user?.id]);
+
+  const refreshMustChangePassword = async () => {
+    const { data } = await supabase.auth.getSession();
+    setMustChangePassword(readMustChange(data.session?.user));
+  };
+
   const login = async (email: string, password: string): Promise<{ success: boolean; error?: string }> => {
     try {
+      inactiveRef.current = false;
       const { data, error } = await supabase.auth.signInWithPassword({
         email,
         password,
       });
 
       if (error) {
+        if (error.message?.toLowerCase().includes('banned')) {
+          return { success: false, error: DEACTIVATED_MESSAGE };
+        }
         return { success: false, error: error.message };
       }
 
@@ -332,6 +395,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       // Set session immediately
       setSession(data.session);
+      setMustChangePassword(readMustChange(data.user));
 
       // Validate IP restriction for agents
       try {
@@ -356,6 +420,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       // Fetch user data with improved retry logic
       const success = await fetchUserData(data.user);
+
+      if (inactiveRef.current) {
+        return { success: false, error: DEACTIVATED_MESSAGE };
+      }
       
       if (!success) {
         // FALLBACK: Allow login with minimal data, fetch complete profile in background
@@ -441,6 +509,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await supabase.auth.signOut();
     setUser(null);
     setSession(null);
+    setMustChangePassword(false);
     // Reset session-scoped UI state (e.g. per-page date range) on logout
     const { clearSessionState } = await import('@/hooks/useSessionState');
     clearSessionState();
@@ -487,6 +556,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       signup,
       logout,
       hasRole,
+      mustChangePassword,
+      refreshMustChangePassword,
     }}>
       {children}
     </AuthContext.Provider>
