@@ -30,8 +30,10 @@ import {
   FlaskConical,
   ScrollText,
   FolderKanban,
-  Key
+  Key,
+  KeyRound
 } from 'lucide-react';
+import { ChangePasswordDialog } from '@/components/account/ChangePasswordDialog';
 import { NavLink, useLocation } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { useSidebar } from '@/contexts/SidebarContext';
@@ -85,7 +87,8 @@ const menuItems: MenuItem[] = [
 ];
 
 export function AppSidebar() {
-  const { user, logout, hasRole } = useAuth();
+  const { user, logout, hasRole, isImpersonating } = useAuth();
+  const [changePwOpen, setChangePwOpen] = useState(false);
   const location = useLocation();
   const { collapsed, toggleSidebar } = useSidebar();
   const { getOrderedItems, moveItem, resetOrder, hasCustomOrder } = useSidebarOrder(user?.id);
@@ -328,6 +331,19 @@ export function AppSidebar() {
             <p className="text-xs text-sidebar-foreground/60 truncate">{roleLabel[user.role]}</p>
           </div>
         )}
+        {user && !isImpersonating && (
+          <button
+            onClick={() => setChangePwOpen(true)}
+            className={cn(
+              "flex items-center gap-3 px-3 py-2.5 rounded-lg w-full transition-colors",
+              "text-sidebar-foreground hover:bg-sidebar-accent"
+            )}
+          >
+            <KeyRound className="w-5 h-5 flex-shrink-0" />
+            {!collapsed && <span className="text-sm font-medium">Change password</span>}
+          </button>
+        )}
+        <ChangePasswordDialog open={changePwOpen} onOpenChange={setChangePwOpen} />
         <button
           onClick={logout}
           className={cn(
