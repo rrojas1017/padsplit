@@ -482,6 +482,60 @@ export default function UserManagement() {
     }
   };
 
+  const handleOpenEditUserDialog = (user: UserWithRole) => {
+    setEditingUser({
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+      siteId: user.site_id || '',
+    });
+    setIsEditUserDialogOpen(true);
+  };
+
+  const handleSaveUser = async () => {
+    if (!editingUser) return;
+    const trimmedName = editingUser.name.trim();
+    if (!trimmedName) return; // save button is disabled for empty names
+
+    setIsSavingUser(true);
+    try {
+      const updates: { name: string; site_id?: string | null } = { name: trimmedName };
+      if (editingUser.role === 'supervisor') {
+        updates.site_id = editingUser.siteId || null;
+      }
+
+      const { data, error } = await supabase
+        .from('profiles')
+        .update(updates)
+        .eq('id', editingUser.id)
+        .select('id');
+
+      // RLS denials surface as an error OR as an empty returned array (0 rows updated)
+      if (error || !data || data.length === 0) {
+        toast({
+          title: 'Error',
+          description: "You don't have permission to edit this user",
+          variant: 'destructive',
+        });
+        return; // keep dialog open
+      }
+
+      toast({ title: 'Success', description: 'User updated' });
+      setIsEditUserDialogOpen(false);
+      setEditingUser(null);
+      fetchUsers();
+    } catch (error) {
+      toast({
+        title: 'Error',
+        description: "You don't have permission to edit this user",
+        variant: 'destructive',
+      });
+    } finally {
+      setIsSavingUser(false);
+    }
+  };
+
   const handleToggleAgentStatus = async (agentId: string) => {
     try {
       await toggleAgentStatus(agentId);
