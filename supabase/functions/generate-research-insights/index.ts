@@ -7,6 +7,23 @@ declare const EdgeRuntime: {
 import { requireUserOrInternal, MANAGERS, corsHeaders } from '../_shared/auth.ts';
 import { logApiCost, tokensFromUsage } from "../_shared/costs.ts";
 
+// ── P5-GATE helpers (nightly "skip when nothing new") ──
+// deno-lint-ignore no-explicit-any
+async function gateMaxTs(q: any, col: string): Promise<number> {
+  const { data, error } = await q.order(col, { ascending: false, nullsFirst: false }).limit(1);
+  if (error) throw new Error(`gate query failed: ${error.message}`);
+  const v = data?.[0]?.[col];
+  return v ? new Date(v).getTime() : -Infinity;
+}
+function gateSkipResponse(lastInsightId: string, cors: Record<string, string>): Response {
+  console.log('[Gate] skipped reason=no_new_records');
+  return new Response(
+    JSON.stringify({ success: true, skipped: true, reason: 'no_new_records', last_insight_id: lastInsightId }),
+    { status: 200, headers: { ...cors, 'Content-Type': 'application/json' } }
+  );
+}
+
+
 
 const DEFAULT_AGGREGATION_PROMPT = `You are a strategic analyst for PadSplit's Member Experience and Operations leadership. You are reviewing a batch of classified move-out cases to identify systemic patterns, operational blind spots, and prioritized actionable recommendations.
 
@@ -1089,6 +1106,45 @@ Deno.serve(async (req) => {
         JSON.stringify({ success: false, error: `No processed ${campaignType} records found for the selected filters` }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
+    }
+
+    // ── P5-GATE: skip automated runs when nothing changed ──
+    if (body.automated === true && body.force !== true) {
+      try {
+        const { data: prev, error: prevErr } = await supabase
+          .from('research_insights')
+          .select('id, created_at, total_records_analyzed')
+          .eq('campaign_type', campaignType)
+          .eq('analysis_period', analysisPeriod)
+          .eq('status', 'completed')
+          .is('campaign_id', null)
+          .is('date_range_start', null)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (prevErr) throw new Error(prevErr.message);
+        if (!prev) {
+          console.log('[Gate] ran reason=no_previous');
+        } else {
+          const btQ = (cols: string) => supabase.from('booking_transcriptions').select(cols)
+            .eq('research_campaign_type', campaignType).eq('research_processing_status', 'completed');
+          const a = Math.max(
+            await gateMaxTs(btQ('created_at'), 'created_at'),
+            await gateMaxTs(btQ('updated_at'), 'updated_at'),
+            await gateMaxTs(btQ('research_processed_at'), 'research_processed_at'),
+          );
+          const b = await gateMaxTs(supabase.from('research_prompts').select('updated_at'), 'updated_at');
+          const prevTs = new Date(prev.created_at).getTime();
+          if (prev.total_records_analyzed === processedRecords.length && prevTs > a && prevTs > b) {
+            return gateSkipResponse(prev.id, corsHeaders);
+          }
+          console.log('[Gate] ran reason=new_records');
+        }
+      } catch (_e) {
+        console.log('[Gate] ran reason=new_records');
+      }
+    } else {
+      console.log(`[Gate] ran reason=${body.force === true ? 'forced' : 'manual'}`);
     }
 
     const classifications = processedRecords.map((r: any) => {

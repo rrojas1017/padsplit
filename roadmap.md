@@ -27,3 +27,4 @@
 - [x] BIL-COSTS correction: deepseek-flash alias + DeepSeek fallback
 - [x] P5-SEC: internal-only continuation paths + requireUser in create/delete/update-user-role
 - [x] P5-SEC correction: bulk-transcription-processor continue guard moved before job lookup (403 for user callers)
+- [x] P5-GATE: nightly skip-when-nothing-new gate (3 insight functions) + drift migration file #21-#25 (written, not applied)

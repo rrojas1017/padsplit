@@ -3,6 +3,23 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { requireUserOrInternal, ADMINS, corsHeaders } from '../_shared/auth.ts';
 import { logApiCost, tokensFromUsage } from "../_shared/costs.ts";
 
+// ── P5-GATE helpers (nightly "skip when nothing new") ──
+// deno-lint-ignore no-explicit-any
+async function gateMaxTs(q: any, col: string): Promise<number> {
+  const { data, error } = await q.order(col, { ascending: false, nullsFirst: false }).limit(1);
+  if (error) throw new Error(`gate query failed: ${error.message}`);
+  const v = data?.[0]?.[col];
+  return v ? new Date(v).getTime() : -Infinity;
+}
+function gateSkipResponse(lastInsightId: string, cors: Record<string, string>): Response {
+  console.log('[Gate] skipped reason=no_new_records');
+  return new Response(
+    JSON.stringify({ success: true, skipped: true, reason: 'no_new_records', last_insight_id: lastInsightId }),
+    { status: 200, headers: { ...cors, 'Content-Type': 'application/json' } }
+  );
+}
+
+
 interface CallKeyPoints {
   summary: string;
   memberConcerns: string[];
@@ -939,6 +956,54 @@ Deno.serve(async (req) => {
     const isInternal = auth.ctx.kind === 'user' && auth.ctx.role === 'super_admin';
 
     console.log(`Starting ${analysis_period} member insights analysis from ${date_range_start} to ${date_range_end}`);
+
+    // ── P5-GATE: skip automated runs when nothing changed ──
+    if (body.automated === true && body.force !== true) {
+      try {
+        const { data: prev, error: prevErr } = await supabase
+          .from('member_insights')
+          .select('id, created_at')
+          .eq('analysis_period', 'allTime')
+          .eq('status', 'completed')
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (prevErr) throw new Error(prevErr.message);
+        if (!prev) {
+          console.log('[Gate] ran reason=no_previous');
+        } else {
+          // deno-lint-ignore no-explicit-any
+          const bQ = (cols: string): any => supabase.from('bookings').select(`${cols}, booking_transcriptions!inner(id)`)
+            .eq('transcription_status', 'completed')
+            .eq('record_type', 'booking')
+            .neq('status', 'Non Booking')
+            .neq('status', 'Research')
+            .gte('booking_date', date_range_start)
+            .lte('booking_date', date_range_end);
+          // deno-lint-ignore no-explicit-any
+          const btQ = (): any => supabase.from('booking_transcriptions').select('updated_at, bookings!inner(id)')
+            .eq('bookings.transcription_status', 'completed')
+            .eq('bookings.record_type', 'booking')
+            .neq('bookings.status', 'Non Booking')
+            .neq('bookings.status', 'Research')
+            .gte('bookings.booking_date', date_range_start)
+            .lte('bookings.booking_date', date_range_end);
+          const latest = Math.max(
+            await gateMaxTs(bQ('created_at'), 'created_at'),
+            await gateMaxTs(bQ('updated_at'), 'updated_at'),
+            await gateMaxTs(btQ(), 'updated_at'),
+          );
+          if (new Date(prev.created_at).getTime() > latest) {
+            return gateSkipResponse(prev.id, corsHeaders);
+          }
+          console.log('[Gate] ran reason=new_records');
+        }
+      } catch (_e) {
+        console.log('[Gate] ran reason=new_records');
+      }
+    } else {
+      console.log(`[Gate] ran reason=${body.force === true ? 'forced' : 'manual'}`);
+    }
 
     // Create a pending insight record immediately
     const { data: pendingInsight, error: insertError } = await supabase
