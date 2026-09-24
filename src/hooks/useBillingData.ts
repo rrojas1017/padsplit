@@ -269,11 +269,12 @@ export function useBillingData(dateRange: DateRangeType = 'thisMonth', customSta
   if (rpcRows) {
     rpcRows.forEach((r) => {
       const cost = Number(r.cost_usd);
+      const fnKey = r.edge_function ?? 'archived_monthly_summary';
       summary.byProvider[r.service_provider] = (summary.byProvider[r.service_provider] || 0) + cost;
       summary.byServiceType[r.service_type] = (summary.byServiceType[r.service_type] || 0) + cost;
-      if (!summary.byFunction[r.edge_function]) summary.byFunction[r.edge_function] = { count: 0, cost: 0 };
-      summary.byFunction[r.edge_function].count += Number(r.rows);
-      summary.byFunction[r.edge_function].cost += cost;
+      if (!summary.byFunction[fnKey]) summary.byFunction[fnKey] = { count: 0, cost: 0 };
+      summary.byFunction[fnKey].count += Number(r.rows);
+      summary.byFunction[fnKey].cost += cost;
     });
   } else {
     costs.forEach(cost => {
