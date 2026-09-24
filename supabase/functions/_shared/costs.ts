@@ -15,6 +15,7 @@ export const PRICES = {
     'openai/gpt-5': { in: 1.25, out: 10 },
     'deepseek-v4-flash': { in: 0.30, out: 1.20 },
     'deepseek-chat': { in: 0.30, out: 1.20 },
+    'deepseek-flash': { in: 0.30, out: 1.20 },
   } as Record<string, LlmPrice>,
   stt_per_minute: {
     deepgram_nova2: 0.0043,
@@ -35,7 +36,7 @@ function gatewayMultiplier(): number {
   return Number.isFinite(n) && n > 0 ? n : 1;
 }
 
-function findLlmPrice(model: string | undefined | null): { key: string; price: LlmPrice } {
+function findLlmPrice(model: string | undefined | null, providerHint?: string): { key: string; price: LlmPrice } {
   const m = (model || '').trim();
   if (m && PRICES.llm[m]) return { key: m, price: PRICES.llm[m] };
   const tail = m.includes('/') ? m.split('/').pop()! : m;
@@ -45,11 +46,15 @@ function findLlmPrice(model: string | undefined | null): { key: string; price: L
       if (kt === tail) return { key: k, price: p };
     }
   }
+  // DeepSeek models never fall back to the Gemini Pro price.
+  if (m.toLowerCase().startsWith('deepseek') || providerHint === 'deepseek') {
+    return { key: 'deepseek-v4-flash', price: PRICES.llm['deepseek-v4-flash'] };
+  }
   return { key: DEFAULT_LLM, price: PRICES.llm[DEFAULT_LLM] };
 }
 
-export function llmCost(model: string | undefined | null, inTok: number, outTok: number): number {
-  const { key, price } = findLlmPrice(model);
+export function llmCost(model: string | undefined | null, inTok: number, outTok: number, providerHint?: string): number {
+  const { key, price } = findLlmPrice(model, providerHint);
   const i = Math.max(0, Number(inTok) || 0);
   const o = Math.max(0, Number(outTok) || 0);
   const long = price.longThreshold !== undefined && i > price.longThreshold;
@@ -118,7 +123,7 @@ export function computeCost(row: CostRow): number {
   const model = row.model ?? row.metadata?.model ?? row.metadata?.model_id;
   if (row.service_provider === 'lovable_ai' || row.service_provider === 'deepseek') {
     return llmCost(model || (row.service_provider === 'deepseek' ? 'deepseek-v4-flash' : undefined),
-      row.input_tokens || 0, row.output_tokens || 0);
+      row.input_tokens || 0, row.output_tokens || 0, row.service_provider);
   }
   let cost = 0;
   if (row.audio_duration_seconds) cost += sttCost(row.service_provider, model, row.audio_duration_seconds);
