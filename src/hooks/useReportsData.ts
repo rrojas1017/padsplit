@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAgents } from '@/contexts/AgentsContext';
 import { Booking, CallKeyPoints, AgentFeedback } from '@/types';
+import { resolveResearchCampaignType, isBuiltinResearchType } from '@/utils/researchCampaignType';
 import { startOfDay, endOfDay, format } from 'date-fns';
 
 export interface DateRange {
@@ -46,6 +47,18 @@ export interface ReportsSorting {
   direction: SortDirection;
 }
 
+export interface ResearchScriptOption {
+  value: string;
+  label: string;
+}
+
+export interface ResearchProgressInfo {
+  endedEarly: boolean;
+  disposition: string | null;
+  answered: number | null;
+  total: number | null;
+}
+
 interface UseReportsDataReturn {
   records: Booking[];
   totalCount: number;
@@ -57,6 +70,10 @@ interface UseReportsDataReturn {
   importBatches: ImportBatch[];
   manualRecordCount: number;
   refetch: () => void;
+  /** Active research scripts without a dedicated dashboard (value = resolved campaign type). */
+  researchScriptOptions: ResearchScriptOption[];
+  /** Survey progress flags for research rows, keyed by booking id. */
+  researchProgressById: Record<string, ResearchProgressInfo>;
 }
 
 // Map sort column names to database column names
@@ -83,6 +100,32 @@ export function useReportsData(
   const [error, setError] = useState<Error | null>(null);
   const [importBatches, setImportBatches] = useState<ImportBatch[]>([]);
   const [manualRecordCount, setManualRecordCount] = useState(0);
+  const [researchScriptOptions, setResearchScriptOptions] = useState<ResearchScriptOption[]>([]);
+  const [researchProgressById, setResearchProgressById] = useState<Record<string, ResearchProgressInfo>>({});
+
+  // Active research scripts without a dedicated dashboard → extra campaign filter entries.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const { data, error: scriptsErr } = await supabase
+        .from('research_scripts')
+        .select('id, name, slug, is_active')
+        .eq('is_active', true)
+        .order('name', { ascending: true });
+      if (scriptsErr || cancelled) return;
+      const seen = new Set<string>();
+      const opts: ResearchScriptOption[] = [];
+      (data || []).forEach(s => {
+        const type = resolveResearchCampaignType({ id: s.id, slug: s.slug });
+        if (!type || isBuiltinResearchType(type) || seen.has(type)) return;
+        seen.add(type);
+        opts.push({ value: type, label: s.name });
+      });
+      setResearchScriptOptions(opts);
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
 
   // Fetch import batches for the dropdown filter
   useEffect(() => {
@@ -357,8 +400,18 @@ export function useReportsData(
       if (researchSummaryResult.error) throw researchSummaryResult.error;
 
       // Transform to Booking type - get transcription data from joined table
+      const progressMap: Record<string, ResearchProgressInfo> = {};
       const transformedRecords: Booking[] = (data || []).map(row => {
         const transcription = row.booking_transcriptions as any;
+        const sp = transcription?.survey_progress;
+        if (sp && sp.ended_early === true) {
+          progressMap[row.id] = {
+            endedEarly: true,
+            disposition: typeof sp.disposition === 'string' ? sp.disposition : null,
+            answered: typeof sp.answered === 'number' ? sp.answered : null,
+            total: typeof sp.total === 'number' ? sp.total : null,
+          };
+        }
         return {
           id: row.id,
           bookingDate: new Date(row.booking_date + 'T00:00:00'),
@@ -407,6 +460,7 @@ export function useReportsData(
       });
 
       setRecords(transformedRecords);
+      setResearchProgressById(progressMap);
       setTotalCount(count || 0);
       setResearchSummary({
         successfulCalls: researchSummaryResult.count || 0,
@@ -437,5 +491,7 @@ export function useReportsData(
     importBatches,
     manualRecordCount,
     refetch,
+    researchScriptOptions,
+    researchProgressById,
   };
 }
