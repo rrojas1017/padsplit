@@ -17,6 +17,7 @@ export default function Leaderboard() {
   const { agents, isLoading: agentsLoading } = useAgents();
   const [dateRange, setDateRange] = useSessionState<DateRangeFilterType>('leaderboard:dateRange', 'today');
   const [customDates, setCustomDates] = useSessionState<CalcCustomDateRange | undefined>('leaderboard:customDates', undefined);
+  const [selectedSiteId, setSelectedSiteId] = useSessionState<string | null>('leaderboard:site', null);
 
   const handleRangeChange = (range: DateFilterValue, dates?: CustomDateRange) => {
     setDateRange(range as DateRangeFilterType);
@@ -25,8 +26,18 @@ export default function Leaderboard() {
 
   const { bookings, isLoading: bookingsLoading } = useDashboardData(dateRange, customDates);
   const isLoading = bookingsLoading || agentsLoading;
-  const leaderboard = calculateLeaderboard(bookings, agents, dateRange, customDates);
-  const nonBookingCount = calculateNonBookingCount(bookings, dateRange, customDates);
+
+  // Site filter (null = all sites)
+  const filteredAgents = selectedSiteId
+    ? agents.filter(a => a.siteId === selectedSiteId)
+    : agents;
+  const siteAgentIds = new Set(filteredAgents.map(a => a.id));
+  const filteredBookings = selectedSiteId
+    ? bookings.filter(b => siteAgentIds.has(b.agentId))
+    : bookings;
+
+  const leaderboard = calculateLeaderboard(filteredBookings, filteredAgents, dateRange, customDates);
+  const nonBookingCount = calculateNonBookingCount(filteredBookings, dateRange, customDates);
 
   const summaryStats = useMemo(() => {
     const totalBookings = leaderboard.reduce((sum, entry) => sum + entry.bookings, 0);
@@ -50,7 +61,7 @@ export default function Leaderboard() {
           includeAllTime={true}
           includeCustom={true}
         />
-        <SiteFilter />
+        <SiteFilter onSiteChange={setSelectedSiteId} />
       </div>
 
       {isLoading ? (

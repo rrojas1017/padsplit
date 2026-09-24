@@ -260,8 +260,8 @@ export function useMyGoal() {
         const { data: agentData } = await supabase
           .from('agents')
           .select('id, name, site_id')
-          .eq('user_id', user.id)
-          .single();
+        .eq('user_id', user.id)
+        .maybeSingle();
 
         if (!agentData) {
           setGoal(null);
@@ -274,8 +274,8 @@ export function useMyGoal() {
           .from('agent_goals')
           .select('*')
           .eq('agent_id', agentData.id)
-          .eq('week_start', weekStartStr)
-          .single();
+        .eq('week_start', weekStartStr)
+        .maybeSingle();
 
         if (!goalData) {
           setGoal(null);
