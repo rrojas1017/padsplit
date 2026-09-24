@@ -202,43 +202,15 @@ serve(async (req) => {
       && payload.recordingurl 
       && durationSeconds >= (settings.min_duration_seconds || 30);
 
-    if (shouldTranscribe) {
-      // Determine skipTts: only Vixicom agents get TTS for live webhook calls
-      const isVixicom = siteName?.toLowerCase().includes('vixicom') || false;
-      const skipTts = !isVixicom;
-      
-      console.log(`[Kixie Webhook] Triggering transcription for call ${newCall.id} (skipTts: ${skipTts}, site: ${siteName})`);
-      
-      // Trigger transcription (fire-and-forget)
-      fetch(`${supabaseUrl}/functions/v1/transcribe-call`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${supabaseServiceKey}`,
-        },
-        body: JSON.stringify({
-          callId: newCall.id,
-          kixieUrl: payload.recordingurl,
-          skipTts,
-        }),
-      }).then(res => {
-        if (res.ok) {
-          console.log(`[Kixie Webhook] Transcription triggered for call ${newCall.id}`);
-        } else {
-          console.error(`[Kixie Webhook] Transcription trigger failed: ${res.status}`);
-        }
-      }).catch(err => {
-        console.error('[Kixie Webhook] Transcription trigger error:', err);
-      });
-    } else {
-      console.log(`[Kixie Webhook] Skipping transcription: auto=${settings.auto_transcribe}, hasUrl=${!!payload.recordingurl}, duration=${durationSeconds}s, minDuration=${settings.min_duration_seconds}s`);
-    }
+    // The calls pipeline is not wired to transcription (transcribe-call only accepts bookingId).
+    console.log(`[Kixie Webhook] Transcription not triggered (calls pipeline not wired): eligible=${!!shouldTranscribe}, duration=${durationSeconds}s`);
 
     return new Response(
       JSON.stringify({ 
         success: true, 
         callId: newCall.id,
-        transcriptionTriggered: shouldTranscribe,
+        transcriptionTriggered: false,
+        reason: 'calls pipeline not wired to transcription',
       }),
       { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );

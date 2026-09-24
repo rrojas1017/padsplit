@@ -13,3 +13,4 @@
 - [P-A] Research call logging fixes (4 frontend files) — done
 - [P1–P8] Security fixes: auth guards on edge functions, unused-function cleanup, SSRF/role hardening (prior phases)
 - [x] P-B public script submissions (PublicScriptView + submit-public-script + validate-script-token)
+- [x] PIPE-2 reanalyze parity + Kixie webhook cleanup
