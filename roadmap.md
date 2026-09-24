@@ -33,3 +33,4 @@
 - [x] P6-B: NULL move-in date (HubSpot import null, NULL-safe readers, 2 functions)
 - [x] P6-MIG: Phase 6 drift-log capture migration file written (#27–#30), not applied
 - [x] BUG-001: Edit User dialog on Non-Agents tab (UserManagement.tsx only) — state, handlers, super_admin-gated menu item, dialog
+- [x] BUG-001b: super_admin password reset from Edit User / Researcher / Agent dialogs (admin-reset-password function, ResetPasswordSection, drift #31 migration file written, not applied)

@@ -37,6 +37,7 @@ import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/contexts/AuthContext';
 import { useAgents } from '@/contexts/AgentsContext';
 import { CommunicationPermissionsCell } from '@/components/user-management/CommunicationPermissionsCell';
+import { ResetPasswordSection } from '@/components/user-management/ResetPasswordSection';
 
 interface UserWithRole {
   id: string;
@@ -1568,6 +1569,16 @@ export default function UserManagement() {
               </div>
             </div>
           )}
+          {isSuperAdmin && editingAgent && (() => {
+            const linkedUserId = agents.find(a => a.id === editingAgent.id)?.userId;
+            if (!linkedUserId) return null;
+            return (
+              <div className="border-t pt-4 space-y-2">
+                <h4 className="text-sm font-medium">Password</h4>
+                <ResetPasswordSection userId={linkedUserId} userName={editingAgent.name} />
+              </div>
+            );
+          })()}
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsEditAgentDialogOpen(false)}>
               Cancel
@@ -1626,6 +1637,12 @@ export default function UserManagement() {
                 />
                 <p className="text-xs text-muted-foreground">Used to match incoming API submissions to this researcher.</p>
               </div>
+            </div>
+          )}
+          {isSuperAdmin && editingResearcher && (
+            <div className="border-t pt-4 space-y-2">
+              <h4 className="text-sm font-medium">Password</h4>
+              <ResetPasswordSection userId={editingResearcher.id} userName={editingResearcher.name} />
             </div>
           )}
           <DialogFooter>
@@ -1694,6 +1711,12 @@ export default function UserManagement() {
                   <p className="text-sm text-primary font-medium">All Sites</p>
                 )}
               </div>
+            </div>
+          )}
+          {isSuperAdmin && editingUser && (
+            <div className="border-t pt-4 space-y-2">
+              <h4 className="text-sm font-medium">Password</h4>
+              <ResetPasswordSection userId={editingUser.id} userName={editingUser.name} />
             </div>
           )}
           <DialogFooter>
