@@ -18,3 +18,4 @@
 - [x] P-G2 frontend cleanup (7 files)
 - [x] P-G3 translate merge by key, per-script research mode, wizard defaults
 - [x] P-G4 research_campaign_type routing for public/agent-logged answers
+- [ ] LP-4 Non-Booking numbers (stats bounds, hot leads, failed parse, created_by)
