@@ -7,10 +7,27 @@ declare const EdgeRuntime: {
   waitUntil: (promise: Promise<unknown>) => void;
 };
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-};
+import { requireUserOrInternal, canSeeBooking, jsonResponse, corsHeaders, STAFF } from "../_shared/auth.ts";
+import { isAllowedRecordingUrl } from "../_shared/url.ts";
+
+// Fetch a recording URL without following redirects automatically.
+// Follows at most 3 redirect hops, each Location must pass isAllowedRecordingUrl.
+async function safeRecordingFetch(url: string, init: RequestInit = {}): Promise<Response> {
+  let current = url;
+  for (let hop = 0; hop <= 3; hop++) {
+    if (!isAllowedRecordingUrl(current)) throw new Error('Recording URL not allowed');
+    const res = await fetch(current, { ...init, redirect: 'manual' });
+    if (res.status >= 300 && res.status < 400) {
+      const loc = res.headers.get('location');
+      if (!loc) return res;
+      if (hop === 3) throw new Error('Too many recording redirects');
+      current = new URL(loc, current).toString();
+      continue;
+    }
+    return res;
+  }
+  throw new Error('Too many recording redirects');
+}
 
 // === HARD-WIRED COST PROTECTION CONSTANTS ===
 const MAX_COST_PER_RECORD_NO_TTS = 0.07; // USD - absolute ceiling per record (excluding TTS)
@@ -805,7 +822,7 @@ async function validateAudioUrl(audioUrl: string): Promise<{ valid: boolean; con
   console.log('[Validate] Performing HEAD request to validate audio URL...');
   
   try {
-    const headResponse = await fetch(audioUrl, {
+    const headResponse = await safeRecordingFetch(audioUrl, {
       method: 'HEAD',
       headers: {
         'User-Agent': 'Mozilla/5.0 (compatible; Lovable/1.0)',
@@ -1554,7 +1571,7 @@ async function processTranscription(bookingId: string, kixieUrl: string, skipTts
       } else {
         // ElevenLabs requires blob upload, so download the audio first
         console.log('[Background] Downloading audio for ElevenLabs...');
-        const audioResponse = await fetch(kixieUrl, {
+        const audioResponse = await safeRecordingFetch(kixieUrl, {
           headers: {
             'User-Agent': 'Mozilla/5.0 (compatible; Lovable/1.0)',
           },
@@ -2464,11 +2481,18 @@ serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
+  const auth = await requireUserOrInternal(req, STAFF);
+  if (!auth.ok) return auth.response;
+
   try {
-    const { bookingId, kixieUrl, skipTts = false } = await req.json();
-    
-    if (!bookingId || !kixieUrl) {
-      throw new Error('Missing bookingId or kixieUrl');
+    // A `kixieUrl` body field is accepted for compatibility but ignored.
+    const { bookingId, skipTts = false } = await req.json();
+
+    if (!bookingId) {
+      return jsonResponse(400, { error: 'Missing bookingId' });
+    }
+    if (!(await canSeeBooking(auth.ctx, bookingId))) {
+      return jsonResponse(404, { error: 'Booking not found' });
     }
     
     console.log(`Received transcription request for booking ${bookingId} (skipTts: ${skipTts})`);
@@ -2477,6 +2501,13 @@ serve(async (req) => {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabaseCheck = createClient(supabaseUrl, supabaseServiceKey);
+
+    const { data: recRow } = await supabaseCheck
+      .from('bookings').select('kixie_link').eq('id', bookingId).maybeSingle();
+    const recordingUrl: string | null = recRow?.kixie_link ?? null;
+    if (!recordingUrl || !isAllowedRecordingUrl(recordingUrl)) {
+      return jsonResponse(400, { error: 'Recording URL missing or not allowed' });
+    }
 
     const { data: claimResult, error: claimError } = await supabaseCheck
       .from('bookings')
@@ -2537,7 +2568,7 @@ serve(async (req) => {
     }
 
     // Fire-and-forget: Start background task with skipTts flag
-    EdgeRuntime.waitUntil(processTranscription(bookingId, kixieUrl, skipTts));
+    EdgeRuntime.waitUntil(processTranscription(bookingId, recordingUrl, skipTts));
 
     // Return immediately
     return new Response(
