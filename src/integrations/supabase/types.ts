@@ -692,7 +692,7 @@ export type Database = {
           market_city: string | null
           market_state: string | null
           member_name: string
-          move_in_date: string
+          move_in_date: string | null
           move_in_day_reach_out: boolean | null
           notes: string | null
           original_booking_id: string | null
@@ -737,7 +737,7 @@ export type Database = {
           market_city?: string | null
           market_state?: string | null
           member_name: string
-          move_in_date: string
+          move_in_date?: string | null
           move_in_day_reach_out?: boolean | null
           notes?: string | null
           original_booking_id?: string | null
@@ -782,7 +782,7 @@ export type Database = {
           market_city?: string | null
           market_state?: string | null
           member_name?: string
-          move_in_date?: string
+          move_in_date?: string | null
           move_in_day_reach_out?: boolean | null
           notes?: string | null
           original_booking_id?: string | null
@@ -3274,6 +3274,16 @@ export type Database = {
           _user_id: string
         }
         Returns: boolean
+      }
+      invoice_platform_costs: {
+        Args: { p_end: string; p_start: string }
+        Returns: {
+          archived_research_cost: number
+          platform_cost: number
+          platform_rows: number
+          research_cost: number
+          research_rows: number
+        }[]
       }
       is_agent: { Args: { _user_id: string }; Returns: boolean }
       reap_stuck_transcriptions: { Args: never; Returns: Json }

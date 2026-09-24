@@ -1,42 +1,29 @@
-# P5-CLEAN — cost logging consolidation + dead code
+# P6-A — void invoices + research/platform AI cost in invoice internal cost
 
-Scope: cost logging only. Request/response shapes, auth guards and business behaviour stay exactly the same. Every new/changed cost write uses `_shared/costs.ts` `logApiCost` (awaited, never throws) and `tokensFromUsage(json, promptText, outputText)`. No prompts, transcripts or personal data in metadata (only `model`, latency, counts, ids already logged today). No migrations/config. Not published.
+Frontend only, three files. No migrations, SQL, edge functions, RLS or config. Not published. Existing invoices render the same numbers (history shows stored `raw_cost_usd` / `markup_usd` / `total_usd`, which are untouched). Billing stays super_admin only (Billing.tsx untouched; it passes `updateInvoiceStatus` straight through, so widening the type is enough).
 
-## 1) Remaining local cost math → shared module
+## 1) src/hooks/useBillingData.ts
+- Line 58: `status: 'draft' | 'sent' | 'paid' | 'void'`.
+- Lines 352–358 (createInvoice): if `error.code === '23P01'` throw `new Error('An invoice for this client already covers part of this period. Void the existing invoice first.')`; else `throw error` as today.
+- Line 373: `updateInvoiceStatus(id, status: 'draft' | 'sent' | 'paid' | 'void')`. Body unchanged (trigger errors are thrown as-is, so their message reaches the toast).
+- Lines 430–450 (fetchPeriodCounts): keep `internalCost` calculation, renamed `bookingInternalCost`. Add `supabase.rpc('invoice_platform_costs', { p_start: startDate, p_end: endDate })` (already typed in types.ts, line 3278; no cast needed). Read row 0: `researchCost`, `researchRows`, `platformCost`, `platformRows` (Number(), default 0). On error: one `console.warn('[Billing] invoice_platform_costs unavailable')` (no payload), costs 0, `platformCostsUnavailable: true`. Return adds `bookingInternalCost, researchCost, platformCost, researchRows, platformRows, platformCostsUnavailable`, and `totalInternalCost = bookingInternalCost + researchCost + platformCost`.
 
-| Function | Today | Change |
-|---|---|---|
-| batch-generate-qa-coaching | Local `logApiCost` at lines 9–49 (old flat rates). It is defined but never called (the function only hands work to other functions). | Delete lines 9–49. No call sites to change, so no new rows. |
-| compare-llm-providers | `DEEPSEEK_PRICING` / `GEMINI_PRICING` + cost helpers (lines 11–30); array insert (lines 324–352) | Delete the pricing blocks. Replace the insert with two awaited `logApiCost` calls using the same values (`ai_llm_comparison`, `compare-llm-providers`, `booking_id`, `triggered_by_user_id: user.id`, `is_internal: true`, providers lovable_ai / deepseek, model + latency in metadata). The console summary line and response use `llmCost(...)` for the same numbers. Token counts come from the existing usage parsing (lines 101–113, 156–168), switched to `tokensFromUsage`. |
-| reclassify-records | Inline insert with hard-coded flash rate (lines 251–262) | `logApiCost` with the same `reclassification` / `reclassify-records` / `booking_id: null` / `is_internal: true` / metadata. Tokens via `tokensFromUsage` in the AI helper (lines 60–90). |
+## 2) src/components/billing/InvoiceGenerator.tsx
+- Lines 20–28: PeriodCounts gets the new fields.
+- Lines 123–124: margin formula unchanged (`grandTotal − totalInternalCost`).
+- Lines 142–153: `cost_breakdown.internalCostBreakdown = { bookings, research, platform, researchRows, platformRows }`; `internalCost` stays `totalInternalCost`. No new line items; PDF unchanged.
+- Lines 161–162: catch shows `error.message` when it equals the overlap message, else 'Failed to generate invoice'.
+- Lines 303–306: after the existing "Internal Cost" total row, three indented muted rows: "Bookings processing", "Research & insights AI", "Platform AI (insights, translations)". If `platformCostsUnavailable`, a small muted note "Research/platform cost unavailable — internal cost shows bookings only".
 
-## 2) BIL-04 — add missing cost rows
-
-Missing (skipped): backfill-payment-experience-names, backfill-payment-experience-progress, backfill-survey-progress, batch-reanalyze-member-details.
-
-| Function | Model call (line) | service_type | Attribution | booking_id |
-|---|---|---|---|---|
-| backfill-markets-from-transcriptions | gateway flash-lite (46–63) | `market_backfill` | is_internal true, triggered_by = caller | yes (one record per call) |
-| backfill-pricing-data | gateway flash-lite (30–47) | `pricing_backfill` | is_internal true, triggered_by = caller | yes |
-| batch-extract-lifestyle-signals | gateway flash-lite (206–224) | `lifestyle_extraction` | is_internal true, triggered_by = caller or null | yes |
-| cluster-pe-open-ended | gateway flash, 2 call sites (190–216, 296–313) | `pe_open_ended_clustering` | caller from its own JWT check (353+): triggered_by = user id, is_internal = super_admin | no |
-| generate-audience-survey-executive-brief | `callModel` (96–114), can be called more than once (fallback) | `audience_executive_brief` | auth.ctx: userId / role==='super_admin' | no |
-| generate-coaching-quiz | gateway flash (128–162) | `coaching_quiz` | auth.ctx | yes (bookingId) |
-| generate-executive-brief | gateway flash (180–206) | `research_executive_brief` | auth.ctx | no |
-| generate-pe-executive-brief | `callModel` (125–147) | `pe_executive_brief` | auth.ctx | no |
-| parse-research-script | openai/gpt-5 (53–153) | `research_script_parse` | auth.ctx | no |
-| translate-script | gemini-3-flash-preview (64–134) | `research_script_translation` | user path: auth.ctx; public-token path: triggered_by null, is_internal false | no |
-| compare-stt-providers | ElevenLabs (31–47) + Deepgram (66–107) | `stt_comparison` (two rows: elevenlabs / deepgram, `audio_duration_seconds` = each provider's `durationSeconds`) | is_internal true, triggered_by = caller | yes (bookingId) |
-
-- Gateway rows: `service_provider: 'lovable_ai'`, model in metadata. Cost is logged only when a response body was parsed (successful or parse-failed reply), after the call and before returning.
-- Where auth.ctx is only in the handler, pass `{userId, isInternal}` into the helper that makes the call (a signature change inside the file only).
-- compare-stt-providers keeps its local display costs in the response unchanged (response shape rule); only the logged rows use `sttCost`.
-
-## 3) Dead code
-- `src/pages/MemberInsights.tsx`: nothing imports or routes it. App.tsx line 211 only redirects `/member-insights` → `/call-insights?tab=bookings` with `<Navigate>`, so the redirect keeps working. Delete it. Its `member-insights/*` component imports go with it (the components stay).
-- `src/components/audience-survey/AdAwarenessPanel.tsx`: **kept**. `AudienceSurveyDashboard.tsx` imports it (line 8) and renders it (line 88).
+## 3) src/components/billing/InvoiceHistory.tsx
+- Line 8: import `Ban`; add AlertDialog imports from `@/components/ui/alert-dialog`.
+- Lines 20, 40: status types accept `'void'`.
+- Lines 24–28: `void: { label: 'Void', icon: Ban, variant: 'destructive' }`; helper `getStatusConfig(s)` falls back to draft for unknown values (used at lines 111, 138–140).
+- Lines 40–47: toast error uses `error.message` when present, else the current text.
+- New state `pendingVoid: BillingInvoice | null`; choosing Void opens an AlertDialog "Void INV-xxx? A void invoice cannot be reopened." with Cancel / Void; confirming calls handleStatusChange(id, 'void').
+- Line 112/118: void cards get `opacity-60`; `isOverdue` false for void.
+- Lines 236–248: Select disabled when void; options Draft, Sent, Paid, Void; Draft and Sent disabled when status is paid.
 
 ## Verification
-- deno check every changed function (14). Deploy them. Unsigned POST {} → 401/403 each.
-- `tsgo --noEmit -p tsconfig.app.json`.
-- No paid calls; nothing published; roadmap.md updated.
+- `tsgo --noEmit -p tsconfig.app.json`; report exact changed line ranges per file.
+- No RPC call, no invoice created or changed; nothing published; roadmap.md updated.
