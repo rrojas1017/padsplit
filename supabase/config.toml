@@ -45,29 +45,13 @@ verify_jwt = true
 [functions.batch-generate-qa-coaching]
 verify_jwt = false
 
-[functions.batch-reanalyze-member-details]
-verify_jwt = false
 
-[functions.backfill-historical-costs]
-verify_jwt = false
 
-[functions.batch-generate-coaching-audio]
-verify_jwt = false
 
-[functions.check-elevenlabs-plan]
-verify_jwt = true
 
-[functions.check-deepgram-plan]
-verify_jwt = true
 
-[functions.recalculate-pro-pricing]
-verify_jwt = false
 
-[functions.batch-reanalyze-coaching]
-verify_jwt = false
 
-[functions.fix-incomplete-bookings]
-verify_jwt = false
 
 [functions.generate-coaching-quiz]
 verify_jwt = true
@@ -75,8 +59,6 @@ verify_jwt = true
 [functions.batch-retry-transcriptions]
 verify_jwt = false
 
-[functions.batch-enrich-contacts]
-verify_jwt = false
 
 [functions.compare-stt-providers]
 verify_jwt = true
@@ -123,8 +105,6 @@ verify_jwt = false
 [functions.parse-research-script]
 verify_jwt = false
 
-[functions.backfill-detected-issues]
-verify_jwt = false
 
 [functions.backfill-pricing-data]
 verify_jwt = false
@@ -138,11 +118,7 @@ verify_jwt = false
 [functions.translate-script]
 verify_jwt = false
 
-[functions.backfill-survey-progress]
-verify_jwt = false
 
-[functions.backfill-member-details]
-verify_jwt = false
 
 [functions.process-research-record]
 verify_jwt = true
@@ -153,8 +129,6 @@ verify_jwt = true
 [functions.batch-process-research-records]
 verify_jwt = true
 
-[functions.backfill-conversation-validation]
-verify_jwt = false
 
 [functions.generate-executive-brief]
 verify_jwt = true
