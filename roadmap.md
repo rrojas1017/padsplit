@@ -31,3 +31,4 @@
 - [x] P5-CLEAN: shared cost logging in 14 functions + delete MemberInsights page
 - [x] P6-A: void invoices + research/platform AI cost in invoice internal cost (3 billing files)
 - [x] P6-B: NULL move-in date (HubSpot import null, NULL-safe readers, 2 functions)
+- [x] P6-MIG: Phase 6 drift-log capture migration file written (#27–#30), not applied
