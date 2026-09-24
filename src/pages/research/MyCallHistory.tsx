@@ -42,6 +42,22 @@ export default function MyCallHistory() {
     return Array.from(map.entries());
   }, [myCalls]);
 
+  // campaign_id -> question label lookup (by question id, q_idx_<i>, and raw index)
+  const questionLabels = useMemo(() => {
+    const map = new Map<string, string>();
+    myCampaigns.forEach((c: any) => {
+      const qs = c.script?.questions || [];
+      qs.forEach((q: any, i: number) => {
+        const label = q.question ?? q.text ?? '';
+        if (!label) return;
+        if (q.id != null && q.id !== '') { map.set(String(q.id), label); }
+        map.set(`q_idx_${i}`, label);
+        map.set(String(i), label);
+      });
+    });
+    return map;
+  }, [myCampaigns]);
+
   return (
     <ResearchLayout title="Call History" subtitle="Your past survey calls">
       {/* Summary Cards */}
