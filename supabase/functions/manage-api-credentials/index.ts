@@ -1,9 +1,4 @@
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.49.1';
-
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-};
+import { requireUser, ADMINS, adminClient, corsHeaders } from '../_shared/auth.ts';
 
 async function sha256Hex(text: string): Promise<string> {
   const encoder = new TextEncoder();
@@ -20,78 +15,36 @@ function generateSecureToken(prefix: string, length = 32): string {
   return `${prefix}${hex}`;
 }
 
+const json = (status: number, body: unknown) =>
+  new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
 
+  const auth = await requireUser(req, ADMINS);
+  if (!auth.ok) return auth.response;
+  const userId = auth.ctx.userId;
+
   try {
-    const authHeader = req.headers.get('Authorization');
-    if (!authHeader?.startsWith('Bearer ')) {
-      return new Response(JSON.stringify({ error: 'Unauthorized' }), {
-        status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
-
-    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-    const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-    const anonKey = Deno.env.get('SUPABASE_ANON_KEY')!;
-
-    // Decode JWT to get user ID
-    const token = authHeader.replace('Bearer ', '');
-    let userId: string;
-    try {
-      const payloadBase64 = token.split('.')[1];
-      const payload = JSON.parse(atob(payloadBase64));
-      userId = payload.sub;
-      if (!userId) throw new Error('No sub in token');
-    } catch {
-      return new Response(JSON.stringify({ error: 'Unauthorized' }), {
-        status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
-
-    // Use service role for all DB ops
-    const adminClient = createClient(supabaseUrl, serviceRoleKey);
-
-    // Verify role
-    const { data: roleData } = await adminClient
-      .from('user_roles')
-      .select('role')
-      .eq('user_id', userId)
-      .single();
-
-    if (!roleData || !['super_admin', 'admin'].includes(roleData.role)) {
-      return new Response(JSON.stringify({ error: 'Forbidden: insufficient role' }), {
-        status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
-
+    const db = adminClient();
     const body = await req.json();
     const { action } = body;
 
-    // Helper to log to access_logs
     const logAction = async (logActionName: string, resource: string) => {
-      await adminClient.from('access_logs').insert({
-        action: logActionName,
-        user_id: userId,
-        resource,
-      });
+      await db.from('access_logs').insert({ action: logActionName, user_id: userId, resource });
     };
 
     if (action === 'create') {
       const { application_name, expires_at, rate_limit } = body;
-      if (!application_name?.trim()) {
-        return new Response(JSON.stringify({ error: 'application_name is required' }), {
-          status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        });
-      }
+      if (!application_name?.trim()) return json(400, { error: 'application_name is required' });
 
       const clientId = generateSecureToken('app_');
       const clientSecret = generateSecureToken('sk_');
       const secretHash = await sha256Hex(clientSecret);
 
-      const { data: credential, error } = await adminClient
+      const { data: credential, error } = await db
         .from('api_credentials')
         .insert({
           application_name: application_name.trim(),
@@ -104,28 +57,24 @@ Deno.serve(async (req) => {
         })
         .select()
         .single();
-
       if (error) throw error;
 
       await logAction('api_credential_created', `api_credentials:${credential.id}`);
-
-      return new Response(JSON.stringify({
-        credential: { ...credential, client_secret_hash: undefined },
-        client_secret: clientSecret,
-      }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      return json(200, { credential: { ...credential, client_secret_hash: undefined }, client_secret: clientSecret });
     }
 
     if (action === 'revoke') {
       const { id } = body;
-      const { error } = await adminClient
+      const { data, error } = await db
         .from('api_credentials')
         .update({ status: 'revoked' })
-        .eq('id', id);
+        .eq('id', id)
+        .is('deleted_at', null)
+        .select('id');
       if (error) throw error;
+      if (!data || data.length === 0) return json(404, { error: 'Credential not found' });
       await logAction('api_credential_revoked', `api_credentials:${id}`);
-      return new Response(JSON.stringify({ success: true }), {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
+      return json(200, { success: true });
     }
 
     if (action === 'regenerate') {
@@ -133,40 +82,36 @@ Deno.serve(async (req) => {
       const clientSecret = generateSecureToken('sk_');
       const secretHash = await sha256Hex(clientSecret);
 
-      const { data: credential, error } = await adminClient
+      const { data, error } = await db
         .from('api_credentials')
-        .update({ client_secret_hash: secretHash, status: 'active' })
+        .update({ client_secret_hash: secretHash })
         .eq('id', id)
-        .select()
-        .single();
+        .eq('status', 'active')
+        .is('deleted_at', null)
+        .select();
       if (error) throw error;
+      if (!data || data.length === 0) return json(404, { error: 'Credential not found or not active' });
       await logAction('api_credential_regenerated', `api_credentials:${id}`);
-      return new Response(JSON.stringify({
-        credential: { ...credential, client_secret_hash: undefined },
-        client_secret: clientSecret,
-      }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      return json(200, { credential: { ...data[0], client_secret_hash: undefined }, client_secret: clientSecret });
     }
 
     if (action === 'delete') {
       const { id } = body;
-      const { error } = await adminClient
+      const { data, error } = await db
         .from('api_credentials')
         .update({ deleted_at: new Date().toISOString() })
-        .eq('id', id);
+        .eq('id', id)
+        .is('deleted_at', null)
+        .select('id');
       if (error) throw error;
+      if (!data || data.length === 0) return json(404, { error: 'Credential not found' });
       await logAction('api_credential_deleted', `api_credentials:${id}`);
-      return new Response(JSON.stringify({ success: true }), {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
+      return json(200, { success: true });
     }
 
-    return new Response(JSON.stringify({ error: 'Unknown action' }), {
-      status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    });
+    return json(400, { error: 'Unknown action' });
   } catch (err) {
-    console.error('manage-api-credentials error:', err);
-    return new Response(JSON.stringify({ error: 'Internal server error' }), {
-      status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    });
+    console.error('manage-api-credentials error:', err instanceof Error ? err.message : 'unknown');
+    return json(500, { error: 'Internal server error' });
   }
 });

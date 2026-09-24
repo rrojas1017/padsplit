@@ -1,7 +1,4 @@
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version',
-};
+import { requireUser, STAFF, adminClient, canSeeBooking, corsHeaders } from '../_shared/auth.ts';
 
 interface SendSMSRequest {
   bookingId: string;
@@ -48,56 +45,21 @@ Deno.serve(async (req) => {
   }
 
   try {
-    // Validate authorization
-    const authHeader = req.headers.get('authorization');
-    if (!authHeader) {
-      return new Response(
-        JSON.stringify({ error: 'Missing authorization header' }),
-        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
+    const auth = await requireUser(req, STAFF);
+    if (!auth.ok) return auth.response;
+    const userId = auth.ctx.userId;
+    const perms = auth.ctx.profile;
 
-    // Decode JWT to get user ID
-    const token = authHeader.replace('Bearer ', '');
-    const payloadBase64 = token.split('.')[1];
-    const payload = JSON.parse(atob(payloadBase64));
-    const userId = payload.sub;
-
-    if (!userId) {
-      return new Response(
-        JSON.stringify({ error: 'Invalid token' }),
-        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-
-    // Create Supabase client with service role for permission checking
-    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-    
-    const { createClient } = await import('https://esm.sh/@supabase/supabase-js@2.49.1');
-    const supabase = createClient(supabaseUrl, supabaseServiceKey);
-
-    // Check if user has permission to send communications
-    const { data: profile, error: profileError } = await supabase
-      .from('profiles')
-      .select('can_send_communications, name')
-      .eq('id', userId)
-      .single();
-
-    if (profileError || !profile) {
-      console.error('Profile fetch error:', profileError);
-      return new Response(
-        JSON.stringify({ error: 'User profile not found' }),
-        { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-
-    if (!profile.can_send_communications) {
+    if (!(perms?.can_send_communications === true && perms?.can_send_sms === true)) {
       return new Response(
         JSON.stringify({ error: 'You do not have permission to send communications. Contact your administrator.' }),
         { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
+
+    const supabase = adminClient();
+    const { data: nameRow } = await supabase.from('profiles').select('name').eq('id', userId).maybeSingle();
+    const profile = { name: (nameRow as { name?: string } | null)?.name ?? null };
 
     // Parse request body
     const body: SendSMSRequest = await req.json();
@@ -109,6 +71,21 @@ Deno.serve(async (req) => {
         JSON.stringify({ error: 'Missing required fields: bookingId, recipientPhone, message' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
+    }
+
+    if (!(await canSeeBooking(auth.ctx, bookingId))) {
+      return new Response(JSON.stringify({ error: 'Booking not found' }),
+        { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
+    const { data: booking } = await supabase.from('bookings').select('contact_email, contact_phone').eq('id', bookingId).maybeSingle();
+    if (!booking) {
+      return new Response(JSON.stringify({ error: 'Booking not found' }),
+        { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
+    const last10 = (v: string | null | undefined) => (v ?? '').replace(/\D/g, '').slice(-10);
+    if (last10(booking.contact_phone).length < 10 || last10(recipientPhone) !== last10(booking.contact_phone)) {
+      return new Response(JSON.stringify({ error: 'Recipient does not match the booking contact' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
     // Validate phone number format
