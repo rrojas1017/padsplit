@@ -3,6 +3,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Play, Pause, Volume2, Loader2, CheckCircle, Sparkles, Target, Lock } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
+import { resolveCoachingAudioSrc } from '@/utils/coachingAudio';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/contexts/AuthContext';
@@ -45,6 +46,7 @@ export const QACoachingAudioPlayer: React.FC<QACoachingAudioPlayerProps> = ({
   const [progress, setProgress] = useState(0);
   const [duration, setDuration] = useState(0);
   const [currentAudioUrl, setCurrentAudioUrl] = useState(audioUrl);
+  const [resolvedSrc, setResolvedSrc] = useState<string | null>(null);
   const [hasListened, setHasListened] = useState(!!listenedAt);
   const [hasPassedQuiz, setHasPassedQuiz] = useState(!!quizPassedAt);
   const [showQuizModal, setShowQuizModal] = useState(false);
@@ -57,6 +59,17 @@ export const QACoachingAudioPlayer: React.FC<QACoachingAudioPlayerProps> = ({
     setHasListened(!!listenedAt);
     setHasPassedQuiz(!!quizPassedAt);
   }, [audioUrl, listenedAt, quizPassedAt]);
+
+  // Resolve a signed URL whenever the raw audio URL changes (works for public
+  // URLs, signed URLs, or bare paths; survives the bucket being made private).
+  useEffect(() => {
+    let cancelled = false;
+    setResolvedSrc(null);
+    resolveCoachingAudioSrc(currentAudioUrl).then((url) => {
+      if (!cancelled) setResolvedSrc(url);
+    });
+    return () => { cancelled = true; };
+  }, [currentAudioUrl]);
 
   const handlePlayPause = async () => {
     if (!audioRef.current || !currentAudioUrl) return;
@@ -191,7 +204,7 @@ export const QACoachingAudioPlayer: React.FC<QACoachingAudioPlayerProps> = ({
       <div className="flex items-center gap-2">
         <audio
           ref={audioRef}
-          src={currentAudioUrl || ''}
+          src={resolvedSrc || ''}
           onTimeUpdate={handleTimeUpdate}
           onLoadedMetadata={handleLoadedMetadata}
           onEnded={handleEnded}
@@ -310,7 +323,7 @@ export const QACoachingAudioPlayer: React.FC<QACoachingAudioPlayerProps> = ({
     <div className="space-y-2">
       <audio
         ref={audioRef}
-        src={currentAudioUrl}
+        src={resolvedSrc ?? undefined}
         onTimeUpdate={handleTimeUpdate}
         onLoadedMetadata={handleLoadedMetadata}
         onEnded={handleEnded}
