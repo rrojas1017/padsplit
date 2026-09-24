@@ -261,7 +261,7 @@ export function useMyGoal() {
           .from('agents')
           .select('id, name, site_id')
           .eq('user_id', user.id)
-          .single();
+          .maybeSingle();
 
         if (!agentData) {
           setGoal(null);
@@ -275,7 +275,7 @@ export function useMyGoal() {
           .select('*')
           .eq('agent_id', agentData.id)
           .eq('week_start', weekStartStr)
-          .single();
+          .maybeSingle();
 
         if (!goalData) {
           setGoal(null);
