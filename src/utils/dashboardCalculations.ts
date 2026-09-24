@@ -1,12 +1,13 @@
 import { Booking, Agent, KPIData, ChartDataPoint, LeaderboardEntry } from '@/types';
-import { startOfDay, startOfMonth, startOfWeek, subDays, addDays, format, isToday, isYesterday, parseISO, isWeekend, eachDayOfInterval } from 'date-fns';
+import { startOfDay, subDays, format, parseISO, isWeekend, eachDayOfInterval } from 'date-fns';
+import { resolveRange, businessToday, etMinutesOfDay, ymdToLocalDate, addDaysStr, startOfWeekStr, startOfMonthStr, presetLabel } from '@/utils/businessTime';
 
 // Helper to filter out Non Booking records from actual booking calculations
 const filterActualBookings = (bookings: Booking[]): Booking[] => {
   return bookings.filter(b => 
     b.status !== 'Non Booking' && 
     b.status !== 'Research' && 
-    b.recordType !== 'research'
+    (b.recordType === undefined || b.recordType === 'booking')
   );
 };
 
@@ -21,22 +22,24 @@ const getBookingDate = (booking: Booking): Date => {
     : parseISO(booking.bookingDate as unknown as string);
 };
 
-const filterBookingsByDate = (bookings: Booking[], date: Date): Booking[] => {
-  const targetStart = startOfDay(date);
-  return bookings.filter(b => {
-    const bookingDate = startOfDay(getBookingDate(b));
-    return bookingDate.getTime() === targetStart.getTime();
-  });
-};
+// bookingDate is a display Date built from the ET 'yyyy-MM-dd' string at local
+// midnight, so formatting its local fields gives back the stored string.
+const bookingYmd = (b: Booking): string => format(getBookingDate(b), 'yyyy-MM-dd');
 
-const filterBookingsByDateRange = (bookings: Booking[], start: Date, end: Date): Booking[] => {
-  const startDay = startOfDay(start);
-  const endDay = startOfDay(end);
-  return bookings.filter(b => {
-    const bookingDate = startOfDay(getBookingDate(b));
-    return bookingDate >= startDay && bookingDate <= endDay;
+const filterBookingsByYmd = (bookings: Booking[], day: string): Booking[] =>
+  bookings.filter(b => bookingYmd(b) === day);
+
+const filterBookingsByYmdRange = (bookings: Booking[], from: string | null, to: string): Booking[] =>
+  bookings.filter(b => {
+    const d = bookingYmd(b);
+    return (from === null || d >= from) && d <= to;
   });
-};
+
+const filterBookingsByDate = (bookings: Booking[], date: Date): Booking[] =>
+  filterBookingsByYmd(bookings, format(date, 'yyyy-MM-dd'));
+
+const filterBookingsByDateRange = (bookings: Booking[], start: Date, end: Date): Booking[] =>
+  filterBookingsByYmdRange(bookings, format(start, 'yyyy-MM-dd'), format(end, 'yyyy-MM-dd'));
 
 const getAgentsBySiteName = (agents: Agent[], siteName: string): Agent[] => {
   return agents.filter(a => 
@@ -56,40 +59,30 @@ export interface CustomDateRange {
   to: Date;
 }
 
-/** Returns current date/time anchored to US Eastern (America/New_York). */
+/** Current ET wall-clock time as a local Date (for display / hour maths). */
 export const getEasternNow = (): Date => {
   const eastern = new Date().toLocaleString('en-US', { timeZone: 'America/New_York' });
   return new Date(eastern);
 };
 
+/** Earliest booking date in the rows (for 'all'), else 2024-01-01. */
+const earliestYmd = (bookings?: Booking[]): string => {
+  let min: string | null = null;
+  for (const b of bookings ?? []) {
+    const d = bookingYmd(b);
+    if (min === null || d < min) min = d;
+  }
+  return min ?? '2024-01-01';
+};
+
 export const getDateRangeFromFilter = (
   filter: DateRangeFilter, 
-  customDates?: CustomDateRange
+  customDates?: CustomDateRange,
+  bookings?: Booking[],
 ): { start: Date; end: Date } => {
-  const today = startOfDay(getEasternNow());
-  
-  // Handle custom date range
-  if (filter === 'custom' && customDates) {
-    return { 
-      start: startOfDay(customDates.from), 
-      end: startOfDay(customDates.to) 
-    };
-  }
-  
-  switch (filter) {
-    case 'all':
-      return { start: new Date('2020-01-01'), end: today };
-    case 'yesterday':
-      return { start: subDays(today, 1), end: subDays(today, 1) };
-    case '7d':
-      return { start: subDays(today, 6), end: today };
-    case '30d':
-      return { start: subDays(today, 29), end: today };
-    case 'month':
-      return { start: startOfMonth(today), end: today };
-    default: // 'today'
-      return { start: today, end: today };
-  }
+  const r = resolveRange(filter, customDates);
+  const from = r.from ?? earliestYmd(bookings);
+  return { start: ymdToLocalDate(from), end: ymdToLocalDate(r.to) };
 };
 
 export const calculateKPIData = (
@@ -98,33 +91,26 @@ export const calculateKPIData = (
   dateFilter: DateRangeFilter = 'today',
   customDates?: CustomDateRange
 ): KPIData[] => {
-  const { start, end } = getDateRangeFromFilter(dateFilter, customDates);
-  const periodDays = Math.max(1, Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1);
-  
-  // Get previous period for comparison
-  const prevEnd = subDays(start, 1);
-  const prevStart = subDays(prevEnd, periodDays - 1);
+  const range = resolveRange(dateFilter, customDates);
+  const isAll = dateFilter === 'all';
 
   // Filter out Non Booking records from actual booking calculations
   const actualBookings = filterActualBookings(bookings);
-  let currentBookings = filterBookingsByDateRange(actualBookings, start, end);
-  let previousBookings = filterBookingsByDateRange(actualBookings, prevStart, prevEnd);
+  let currentBookings = filterBookingsByYmdRange(actualBookings, range.from, range.to);
+  let previousBookings = range.prevFrom && range.prevTo
+    ? filterBookingsByYmdRange(actualBookings, range.prevFrom, range.prevTo)
+    : [];
 
   // For "today" filter, use same-time comparison based on createdAt
   const useSameTimeComparison = dateFilter === 'today';
   if (useSameTimeComparison) {
-    const now = new Date();
-    const currentHour = now.getHours();
-    const currentMinutes = now.getMinutes();
+    const nowMinutes = etMinutesOfDay(new Date());
 
-    // Helper to check if booking was created by current time
+    // Helper to check if booking was created by the current ET time of day
     const createdByNow = (b: Booking): boolean => {
       if (!b.createdAt) return true; // Include if no timestamp (legacy imports)
       const createdAt = b.createdAt instanceof Date ? b.createdAt : new Date(b.createdAt);
-      const createdHour = createdAt.getHours();
-      const createdMinutes = createdAt.getMinutes();
-      return createdHour < currentHour || 
-             (createdHour === currentHour && createdMinutes <= currentMinutes);
+      return etMinutesOfDay(createdAt) <= nowMinutes;
     };
 
     currentBookings = currentBookings.filter(createdByNow);
@@ -147,6 +133,7 @@ export const calculateKPIData = (
   const previousPending = previousBookings.filter(b => b.status === 'Pending Move-In');
 
   const calculateChange = (current: number, previous: number): { change: number; changeType: 'increase' | 'decrease' | 'neutral' } => {
+    if (isAll) return { change: 0, changeType: 'neutral' };
     if (previous === 0) {
       return { change: current > 0 ? 100 : 0, changeType: current > 0 ? 'increase' : 'neutral' };
     }
@@ -163,11 +150,8 @@ export const calculateKPIData = (
   const padsplitChange = calculateChange(currentPadsplit.length, previousPadsplit.length);
   const pendingChange = calculateChange(currentPending.length, previousPending.length);
 
-  const periodLabel = dateFilter === 'today' ? 'Today' : 
-    dateFilter === 'yesterday' ? 'Yesterday' : 
-    dateFilter === '7d' ? 'Last 7 Days' : 
-    dateFilter === '30d' ? 'Last 30 Days' : 
-    dateFilter === 'custom' ? 'Custom Range' : 'This Month';
+  const periodLabel = presetLabel(dateFilter);
+  const hideChange = isAll ? true : undefined;
 
   const comparisonLabel = useSameTimeComparison ? 'at this time yesterday' : 'previous period';
 
@@ -184,6 +168,7 @@ export const calculateKPIData = (
       change: totalChange.change,
       changeType: totalChange.changeType,
       comparisonLabel,
+      hideChange,
       subtitle: totalSubtitle,
     },
     {
@@ -193,6 +178,7 @@ export const calculateKPIData = (
       change: rebookingsChange.change,
       changeType: rebookingsChange.changeType,
       comparisonLabel,
+      hideChange,
       subtitle: currentBookings.length > 0 
         ? `${Math.round((currentRebookings / currentBookings.length) * 100)}% of total`
         : undefined,
@@ -204,6 +190,7 @@ export const calculateKPIData = (
       change: vixicomChange.change,
       changeType: vixicomChange.changeType,
       comparisonLabel,
+      hideChange,
     },
     {
       label: 'PadSplit Internal',
@@ -212,6 +199,7 @@ export const calculateKPIData = (
       change: padsplitChange.change,
       changeType: padsplitChange.changeType,
       comparisonLabel,
+      hideChange,
     },
     {
       label: 'Pending Move-Ins',
@@ -220,6 +208,7 @@ export const calculateKPIData = (
       change: pendingChange.change,
       changeType: pendingChange.changeType,
       comparisonLabel,
+      hideChange,
     },
   ];
 };
@@ -231,7 +220,7 @@ export const calculateChartData = (
   customDates?: CustomDateRange
 ): ChartDataPoint[] => {
   const chartData: ChartDataPoint[] = [];
-  const { start, end } = getDateRangeFromFilter(dateFilter, customDates);
+  const { start, end } = getDateRangeFromFilter(dateFilter, customDates, bookings);
   
   // Filter out Non Booking records from chart calculations
   const actualBookings = filterActualBookings(bookings);
@@ -263,14 +252,15 @@ export const calculateLeaderboard = (
   dateFilter: DateRangeFilter = 'today',
   customDates?: CustomDateRange
 ): LeaderboardEntry[] => {
-  const { start, end } = getDateRangeFromFilter(dateFilter, customDates);
+  const range = resolveRange(dateFilter, customDates);
+  const { start, end } = getDateRangeFromFilter(dateFilter, customDates, bookings);
   const weekdaysInPeriod = countWeekdays(start, end);
 
   // Filter out Non Booking records from leaderboard calculations
   const actualBookings = filterActualBookings(bookings);
   
   // Get bookings from the selected period
-  const recentBookings = filterBookingsByDateRange(actualBookings, start, end);
+  const recentBookings = filterBookingsByYmdRange(actualBookings, range.from, range.to);
 
   // Group bookings by agent
   const agentBookings = new Map<string, Booking[]>();
@@ -293,21 +283,15 @@ export const calculateLeaderboard = (
     const rebookings = agentBookingsList.filter(b => b.isRebooking).length;
 
     // Calculate change: current period vs previous equivalent period
-    const periodDays = Math.max(1, Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1);
-    const prevEnd = subDays(start, 1);
-    const prevStart = subDays(prevEnd, periodDays - 1);
-
     // Current period bookings count (from agentBookingsList which is already filtered)
     const currentPeriodBookings = agentBookingsList.length;
 
     // Previous period bookings for this agent (using actualBookings)
-    const previousPeriodBookings = filterBookingsByDateRange(
-      actualBookings.filter(b => b.agentId === agent.id), 
-      prevStart, 
-      prevEnd
-    ).length;
+    const previousPeriodBookings = range.prevFrom && range.prevTo
+      ? filterBookingsByYmdRange(actualBookings.filter(b => b.agentId === agent.id), range.prevFrom, range.prevTo).length
+      : 0;
 
-    const change = currentPeriodBookings - previousPeriodBookings;
+    const change = dateFilter === 'all' ? 0 : currentPeriodBookings - previousPeriodBookings;
 
     leaderboardData.push({
       rank: 0,
@@ -339,10 +323,10 @@ export const calculateMarketData = (
   dateFilter: DateRangeFilter = 'today',
   customDates?: CustomDateRange
 ): { market: string; bookings: number }[] => {
-  const { start, end } = getDateRangeFromFilter(dateFilter, customDates);
+  const range = resolveRange(dateFilter, customDates);
   // Filter out Non Booking records from market calculations
   const actualBookings = filterActualBookings(bookings);
-  const filteredBookings = filterBookingsByDateRange(actualBookings, start, end);
+  const filteredBookings = filterBookingsByYmdRange(actualBookings, range.from, range.to);
   
   const marketCounts = new Map<string, number>();
 
@@ -390,36 +374,24 @@ export const calculateInsightsData = (
   const getAgentName = (agentId: string): string => 
     agents.find(a => a.id === agentId)?.name || 'Unknown Agent';
   const now = getEasternNow();
-  const currentHour = now.getHours();
-  const currentMinutes = now.getMinutes();
+  const nowMinutes = etMinutesOfDay(new Date());
   const currentTime = format(now, 'h:mm a');
   
-  const todayStart = startOfDay(now);
-  const yesterdayStart = subDays(todayStart, 1);
+  const today = businessToday();
+  const yesterday = addDaysStr(today, -1);
+  const createdByNow = (b: Booking): boolean => !b.createdAt || etMinutesOfDay(b.createdAt) <= nowMinutes;
   
   // Get today's bookings
-  const todaysBookings = filterBookingsByDate(actualBookings, now);
+  const todaysBookings = filterBookingsByYmd(actualBookings, today);
   
   // Filter by createdAt time for same-time comparison
-  const todayByNow = todaysBookings.filter(b => {
-    if (!b.createdAt) return true; // Include if no timestamp
-    const createdHour = b.createdAt.getHours();
-    const createdMinutes = b.createdAt.getMinutes();
-    return createdHour < currentHour || 
-           (createdHour === currentHour && createdMinutes <= currentMinutes);
-  }).length;
+  const todayByNow = todaysBookings.filter(createdByNow).length;
   
   // Get yesterday's bookings
-  const yesterdaysBookings = filterBookingsByDate(actualBookings, yesterdayStart);
+  const yesterdaysBookings = filterBookingsByYmd(actualBookings, yesterday);
   
   // Filter yesterday's bookings by same time
-  const yesterdayByNow = yesterdaysBookings.filter(b => {
-    if (!b.createdAt) return true;
-    const createdHour = b.createdAt.getHours();
-    const createdMinutes = b.createdAt.getMinutes();
-    return createdHour < currentHour || 
-           (createdHour === currentHour && createdMinutes <= currentMinutes);
-  }).length;
+  const yesterdayByNow = yesterdaysBookings.filter(createdByNow).length;
   
   // Calculate change percentage
   let change = 0;
@@ -433,8 +405,7 @@ export const calculateInsightsData = (
   }
   
   // Weekly calculations (always current week, Monday-today)
-  const weekStart = startOfWeek(now, { weekStartsOn: 1 }); // Monday
-  const weekBookings = filterBookingsByDateRange(actualBookings, weekStart, now);
+  const weekBookings = filterBookingsByYmdRange(actualBookings, startOfWeekStr(today), today); // Monday..today
   
   // Weekly Top Performer
   const agentCounts = new Map<string, { name: string; count: number }>();
@@ -461,17 +432,16 @@ export const calculateInsightsData = (
   const activeAgentsToday = new Set(todaysBookings.map(b => b.agentId)).size;
   
   // Pending move-ins this week (next 7 days from today)
-  const weekEnd = addDays(now, 7);
+  // HubSpot imports with move_in_date = booking_date are placeholders: skip here only.
+  const weekEnd = addDaysStr(today, 7);
   const pendingMoveInsThisWeek = actualBookings.filter(b => {
-    const moveInDate = b.moveInDate instanceof Date ? b.moveInDate : new Date(b.moveInDate);
-    return b.status === 'Pending Move-In' && 
-           moveInDate >= todayStart && 
-           moveInDate <= weekEnd;
+    const moveIn = format(b.moveInDate instanceof Date ? b.moveInDate : parseISO(String(b.moveInDate)), 'yyyy-MM-dd');
+    if (b.importBatchId && moveIn === bookingYmd(b)) return false;
+    return b.status === 'Pending Move-In' && moveIn >= today && moveIn <= weekEnd;
   }).length;
   
   // Conversion rate this month
-  const monthStart = startOfMonth(now);
-  const monthBookings = filterBookingsByDateRange(actualBookings, monthStart, now);
+  const monthBookings = filterBookingsByYmdRange(actualBookings, startOfMonthStr(today), today);
   const movedIn = monthBookings.filter(b => b.status === 'Moved In').length;
   const conversionRateThisMonth = monthBookings.length > 0 
     ? Math.round((movedIn / monthBookings.length) * 100) 
@@ -499,7 +469,7 @@ export const calculateNonBookingCount = (
   dateFilter: DateRangeFilter,
   customDates?: CustomDateRange
 ): number => {
-  const { start, end } = getDateRangeFromFilter(dateFilter, customDates);
-  const filtered = filterBookingsByDateRange(bookings, start, end);
+  const range = resolveRange(dateFilter, customDates);
+  const filtered = filterBookingsByYmdRange(bookings, range.from, range.to);
   return filtered.filter(b => b.status === 'Non Booking').length;
 };

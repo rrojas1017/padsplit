@@ -6,7 +6,8 @@ import { usePageTracking } from '@/hooks/usePageTracking';
 import { KPICard } from '@/components/dashboard/KPICard';
 import { DateRangeFilter, DateFilterValue, CustomDateRange } from '@/components/dashboard/DateRangeFilter';
 import { useAuth } from '@/contexts/AuthContext';
-import { useBookings } from '@/contexts/BookingsContext';
+import { useDashboardData } from '@/hooks/useDashboardData';
+import { resolveRange, businessToday, ymdToLocalDate } from '@/utils/businessTime';
 import { useAgents } from '@/contexts/AgentsContext';
 import { useCoachingData, CoachingBookingWithAudio } from '@/hooks/useCoachingData';
 import { useQACoachingData } from '@/hooks/useQACoachingData';
@@ -41,67 +42,6 @@ function getAudioExpirationInfo(generatedAt: string | null) {
   };
 }
 
-// Helper to get date range from filter
-function getDateRangeFromFilterLocal(filter: DateFilterValue, customDates?: CustomDateRange): { start: Date; end: Date } {
-  const today = new Date();
-  const end = endOfDay(today);
-  
-  if (filter === 'custom' && customDates) {
-    return { start: startOfDay(customDates.from), end: endOfDay(customDates.to) };
-  }
-  
-  switch (filter) {
-    case 'today':
-      return { start: startOfDay(today), end };
-    case 'yesterday':
-      const yesterday = subDays(today, 1);
-      return { start: startOfDay(yesterday), end: endOfDay(yesterday) };
-    case '7d':
-      return { start: startOfDay(subDays(today, 6)), end };
-    case '30d':
-      return { start: startOfDay(subDays(today, 29)), end };
-    case 'month':
-      return { start: startOfMonth(today), end };
-    case 'all':
-      return { start: new Date(0), end };
-    default:
-      return { start: startOfDay(today), end };
-  }
-}
-
-// Helper to get previous period for comparison
-function getPreviousPeriod(filter: DateFilterValue, customDates?: CustomDateRange): { start: Date; end: Date } {
-  const today = new Date();
-  
-  if (filter === 'custom' && customDates) {
-    const periodDays = Math.ceil((customDates.to.getTime() - customDates.from.getTime()) / (1000 * 60 * 60 * 24)) + 1;
-    const prevEnd = subDays(customDates.from, 1);
-    const prevStart = subDays(prevEnd, periodDays - 1);
-    return { start: startOfDay(prevStart), end: endOfDay(prevEnd) };
-  }
-  
-  switch (filter) {
-    case 'today':
-      const yesterday = subDays(today, 1);
-      return { start: startOfDay(yesterday), end: endOfDay(yesterday) };
-    case 'yesterday':
-      const dayBefore = subDays(today, 2);
-      return { start: startOfDay(dayBefore), end: endOfDay(dayBefore) };
-    case '7d':
-      return { start: startOfDay(subDays(today, 13)), end: endOfDay(subDays(today, 7)) };
-    case '30d':
-      return { start: startOfDay(subDays(today, 59)), end: endOfDay(subDays(today, 30)) };
-    case 'month':
-      const prevMonthEnd = subDays(startOfMonth(today), 1);
-      const prevMonthStart = startOfMonth(prevMonthEnd);
-      return { start: prevMonthStart, end: endOfDay(prevMonthEnd) };
-    case 'all':
-      return { start: new Date(0), end: new Date(0) }; // No comparison for all time
-    default:
-      return { start: startOfDay(subDays(today, 1)), end: endOfDay(subDays(today, 1)) };
-  }
-}
-
 // Helper to get filter label
 function getFilterLabel(filter: DateFilterValue): string {
   switch (filter) {
@@ -119,7 +59,6 @@ function getFilterLabel(filter: DateFilterValue): string {
 export default function MyPerformance() {
   usePageTracking('view_my_performance');
   const { user } = useAuth();
-  const { bookings, isLoading: bookingsLoading } = useBookings();
   const { agents, isLoading: agentsLoading } = useAgents();
   const [dateFilter, setDateFilter] = useSessionState<DateFilterValue>('myPerformance:dateRange', 'today');
   const [customDates, setCustomDates] = useSessionState<CustomDateRange | undefined>('myPerformance:customDates', undefined);
@@ -131,6 +70,13 @@ export default function MyPerformance() {
   
   // Find the agent linked to the current user
   const myAgent = agents.find(a => a.userId === user?.id);
+
+  // Bookings for the selected range + its previous period (agents: own rows only)
+  const isAgentUser = user?.role === 'agent';
+  const { bookings, isLoading: bookingsLoading } = useDashboardData(dateFilter, customDates, {
+    agentId: isAgentUser ? myAgent?.id : undefined,
+    enabled: !isAgentUser || !!myAgent,
+  });
   
   // Fetch coaching data for this specific agent
   const { coachingBookingsWithAudio, isLoading: coachingLoading } = useCoachingData({
@@ -149,9 +95,13 @@ export default function MyPerformance() {
   const isLoading = bookingsLoading || agentsLoading || coachingLoading || goalLoading || qaCoachingLoading;
   const { coachingBlocked } = useDailyCostGate();
   
-  const today = new Date();
-  const { start: periodStart, end: periodEnd } = getDateRangeFromFilterLocal(dateFilter, customDates);
-  const { start: prevStart, end: prevEnd } = getPreviousPeriod(dateFilter, customDates);
+  const today = ymdToLocalDate(businessToday());
+  const range = resolveRange(dateFilter, customDates);
+  const periodStart = ymdToLocalDate(range.from ?? '1970-01-01');
+  const periodEnd = endOfDay(ymdToLocalDate(range.to));
+  const ymd = (d: Date) => format(d, 'yyyy-MM-dd');
+  const inPeriod = (d: Date) => (range.from === null || ymd(d) >= range.from) && ymd(d) <= range.to;
+  const inPrev = (d: Date) => range.prevFrom !== null && range.prevTo !== null && ymd(d) >= range.prevFrom && ymd(d) <= range.prevTo;
   
   // Get agent's bookings (filter out Non Booking records for actual performance metrics)
   const myBookings = myAgent ? bookings.filter(b => b.agentId === myAgent.id && b.status !== 'Non Booking') : [];
@@ -161,20 +111,20 @@ export default function MyPerformance() {
   
   // Filter bookings for selected period
   const periodBookings = myBookings.filter(b => 
-    b.bookingDate >= periodStart && b.bookingDate <= periodEnd
+    inPeriod(b.bookingDate)
   );
   
   // Non-bookings for selected period
   const periodNonBookings = myNonBookings.filter(b => 
-    b.bookingDate >= periodStart && b.bookingDate <= periodEnd
+    inPeriod(b.bookingDate)
   );
   const prevPeriodNonBookings = dateFilter !== 'all' 
-    ? myNonBookings.filter(b => b.bookingDate >= prevStart && b.bookingDate <= prevEnd)
+    ? myNonBookings.filter(b => inPrev(b.bookingDate))
     : [];
   
   // Filter bookings for previous period (for comparison)
   const prevPeriodBookings = dateFilter !== 'all' 
-    ? myBookings.filter(b => b.bookingDate >= prevStart && b.bookingDate <= prevEnd)
+    ? myBookings.filter(b => inPrev(b.bookingDate))
     : [];
   
   // Calculate rank among all active agents for the selected period (exclude Non Booking records)
@@ -182,7 +132,7 @@ export default function MyPerformance() {
   const allAgentBookings = activeAgents.map(a => ({
     agent: a,
     bookings: bookings.filter(b => 
-      b.agentId === a.id && b.status !== 'Non Booking' && b.bookingDate >= periodStart && b.bookingDate <= periodEnd
+      b.agentId === a.id && b.status !== 'Non Booking' && inPeriod(b.bookingDate)
     ).length
   })).sort((a, b) => {
     if (b.bookings !== a.bookings) {

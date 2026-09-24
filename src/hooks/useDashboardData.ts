@@ -1,10 +1,8 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Booking } from '@/types';
 import { supabase } from '@/integrations/supabase/client';
-import { useBookings } from '@/contexts/BookingsContext';
-import { DateRangeFilter as DateRangeFilterType, CustomDateRange } from '@/utils/dashboardCalculations';
-import { format } from 'date-fns';
-import { getDateRangeFromFilter } from '@/utils/dashboardCalculations';
+import { DateRangeFilter as DateRangeFilterType } from '@/utils/dashboardCalculations';
+import { resolveRange, type CustomRangeInput } from '@/utils/businessTime';
 
 const LIGHTWEIGHT_COLUMNS = `
   id, member_name, booking_date, move_in_date, agent_id, status,
@@ -16,7 +14,7 @@ const LIGHTWEIGHT_COLUMNS = `
   is_rebooking, original_booking_id,
   contact_email, contact_phone,
   email_verified, email_verified_at, email_verification_status,
-  record_type
+  record_type, import_batch_id
 `;
 
 function transformRow(b: any): Booking {
@@ -58,106 +56,104 @@ function transformRow(b: any): Booking {
     emailVerifiedAt: b.email_verified_at ? new Date(b.email_verified_at) : undefined,
     emailVerificationStatus: b.email_verification_status as Booking['emailVerificationStatus'],
     recordType: b.record_type as Booking['recordType'],
+    importBatchId: b.import_batch_id || undefined,
   };
 }
 
-function needsDirectQuery(dateRange: DateRangeFilterType): boolean {
-  // Only "today" is safe to use from context (most recent data always present)
-  return dateRange !== 'today';
+interface FetchBounds {
+  lower: string | null; // inclusive, null = no lower bound
+  upper: string;        // inclusive
 }
 
 /**
- * Fetches all rows using .range() pagination to bypass Supabase's 1000-row default limit.
+ * Fetches every actual-booking-table row (record_type = 'booking') in the
+ * bounds, 1000 rows per page, no row cap. Stable order: booking_date desc, id desc.
  */
-async function fetchAllBookings(dateFilter?: { from: string; to: string }): Promise<Booking[]> {
+async function fetchAllBookings(bounds: FetchBounds, agentId?: string): Promise<Booking[]> {
   const PAGE_SIZE = 1000;
-  let allRows: any[] = [];
+  const rows: Booking[] = [];
   let from = 0;
-  let hasMore = true;
-
-  while (hasMore) {
+  for (;;) {
     let query = supabase
       .from('bookings')
       .select(LIGHTWEIGHT_COLUMNS)
+      .eq('record_type', 'booking')
+      .lte('booking_date', bounds.upper);
+    if (bounds.lower) query = query.gte('booking_date', bounds.lower);
+    if (agentId) query = query.eq('agent_id', agentId);
+    const { data, error } = await query
       .order('booking_date', { ascending: false })
+      .order('id', { ascending: false })
       .range(from, from + PAGE_SIZE - 1);
-
-    if (dateFilter) {
-      query = query.gte('booking_date', dateFilter.from).lte('booking_date', dateFilter.to);
-    }
-
-    const { data, error } = await query;
     if (error) throw error;
-
-    allRows = allRows.concat(data || []);
-    hasMore = (data?.length || 0) === PAGE_SIZE;
+    const page = data || [];
+    for (const r of page) rows.push(transformRow(r));
+    if (page.length < PAGE_SIZE) break;
     from += PAGE_SIZE;
-
-    // Safety cap at 25,000
-    if (allRows.length >= 25000) break;
   }
-
-  return allRows.map(transformRow);
+  return rows;
 }
 
-export function useDashboardData(dateRange: DateRangeFilterType, customDates?: CustomDateRange) {
-  const { bookings: contextBookings, isLoading: contextLoading } = useBookings();
-  const [directBookings, setDirectBookings] = useState<Booking[] | null>(null);
-  const [isDirectLoading, setIsDirectLoading] = useState(false);
+/** Loads one booking by id (used when it is outside the context's 90-day window). */
+export async function fetchBookingById(id: string): Promise<Booking | null> {
+  const { data, error } = await supabase
+    .from('bookings')
+    .select(LIGHTWEIGHT_COLUMNS)
+    .eq('id', id)
+    .maybeSingle();
+  if (error) throw error;
+  return data ? transformRow(data) : null;
+}
+
+export interface DashboardDataOptions {
+  agentId?: string;
+  skipPrevious?: boolean;
+  enabled?: boolean;
+}
+
+export function useDashboardData(
+  dateRange: DateRangeFilterType,
+  customDates?: CustomRangeInput,
+  options: DashboardDataOptions = {},
+) {
+  const { agentId, skipPrevious = false, enabled = true } = options;
+  const [bookings, setBookings] = useState<Booking[] | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
   const cacheRef = useRef<{ key: string; data: Booking[] } | null>(null);
 
-  const cacheKey = dateRange === 'custom' && customDates
-    ? `custom-${format(customDates.from, 'yyyy-MM-dd')}-${format(customDates.to, 'yyyy-MM-dd')}`
-    : dateRange;
-
-  const fetchDirect = useCallback(async () => {
-    // Check cache
-    if (cacheRef.current?.key === cacheKey) {
-      setDirectBookings(cacheRef.current.data);
-      return;
-    }
-
-    setIsDirectLoading(true);
-    try {
-      const { start, end } = getDateRangeFromFilter(dateRange, customDates);
-      const dateFilter = dateRange === 'all'
-        ? undefined // 'all' = no date filter
-        : { from: format(start, 'yyyy-MM-dd'), to: format(end, 'yyyy-MM-dd') };
-
-      const data = await fetchAllBookings(dateFilter);
-      cacheRef.current = { key: cacheKey, data };
-      setDirectBookings(data);
-    } catch (error) {
-      console.error('[useDashboardData] Direct query failed:', error);
-    } finally {
-      setIsDirectLoading(false);
-    }
-  }, [cacheKey, dateRange, customDates]);
+  const range = resolveRange(dateRange, customDates);
+  const lower = skipPrevious ? range.from : (range.prevFrom ?? range.from);
+  const bounds: FetchBounds = { lower: dateRange === 'all' ? null : lower, upper: range.to };
+  const cacheKey = `${bounds.lower ?? 'none'}|${bounds.upper}|${agentId ?? ''}`;
 
   useEffect(() => {
-    if (needsDirectQuery(dateRange)) {
-      fetchDirect();
-    } else {
-      setDirectBookings(null);
+    if (!enabled) return;
+    if (cacheRef.current?.key === cacheKey) {
+      setBookings(cacheRef.current.data);
+      return;
     }
-  }, [dateRange, customDates, fetchDirect]);
+    let cancelled = false;
+    setIsLoading(true);
+    const [lowerKey, upperKey, agentKey] = cacheKey.split('|');
+    fetchAllBookings({ lower: lowerKey === 'none' ? null : lowerKey, upper: upperKey }, agentKey || undefined)
+      .then((data) => {
+        if (cancelled) return;
+        cacheRef.current = { key: cacheKey, data };
+        setBookings(data);
+      })
+      .catch((error: unknown) => {
+        console.error('[useDashboardData] Query failed:', error);
+        if (!cancelled) setBookings([]);
+      })
+      .finally(() => {
+        if (!cancelled) setIsLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [cacheKey, enabled]);
 
-  const useDirect = needsDirectQuery(dateRange);
-
-  // Fix: when we need direct data but haven't fetched yet, show loading
-  const effectiveLoading = useDirect 
-    ? (isDirectLoading || directBookings === null) 
-    : contextLoading;
-
-  const effectiveBookings = useDirect ? (directBookings || []) : contextBookings;
-
-  // Debug logging for data discrepancies
-  if (!effectiveLoading && useDirect && directBookings) {
-    console.log(`[useDashboardData] ${dateRange}: fetched ${directBookings.length} total rows`);
-  }
-
+  const stale = cacheRef.current?.key !== cacheKey;
   return {
-    bookings: effectiveBookings,
-    isLoading: effectiveLoading,
+    bookings: stale ? [] : (bookings || []),
+    isLoading: enabled && (isLoading || bookings === null || stale),
   };
 }

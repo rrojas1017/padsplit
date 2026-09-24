@@ -43,11 +43,14 @@ export function KPICard({ data, icon, delay = 0 }: KPICardProps) {
           {data.subtitle && (
             <p className="text-xs text-muted-foreground mt-0.5">{data.subtitle}</p>
           )}
+          {!data.hideChange && (
           <p className="text-sm text-muted-foreground mt-1">
             vs {previousValue} {comparisonLabel || 'yesterday'}
           </p>
+          )}
         </div>
         
+        {!data.hideChange && (
         <div className={cn(
           "flex items-center gap-1 px-2 py-1 rounded-full text-sm font-medium",
           changeColor[changeType]
@@ -55,6 +58,7 @@ export function KPICard({ data, icon, delay = 0 }: KPICardProps) {
           {changeIcon[changeType]}
           <span>{change > 0 ? '+' : ''}{change}%</span>
         </div>
+        )}
       </div>
     </div>
   );

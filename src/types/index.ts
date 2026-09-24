@@ -92,6 +92,7 @@ export interface AgentFeedback {
 
 export interface Booking {
   id: string;
+  importBatchId?: string;
   moveInDate: Date;
   bookingDate: Date;
   memberName: string;
@@ -175,6 +176,7 @@ export interface KPIData {
   changeType: 'increase' | 'decrease' | 'neutral';
   comparisonLabel?: string;
   subtitle?: string;
+  hideChange?: boolean;
 }
 
 export interface ChartDataPoint {
