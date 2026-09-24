@@ -449,14 +449,24 @@ export default function UserManagement() {
     if (!editingResearcher) return;
     try {
       // Update profile
-      const { error: profileError } = await supabase
+      const { data: profileData, error: profileError } = await supabase
         .from('profiles')
         .update({
           name: editingResearcher.name,
           site_id: editingResearcher.siteId || null,
         })
-        .eq('id', editingResearcher.id);
-      if (profileError) throw profileError;
+        .eq('id', editingResearcher.id)
+        .select('id');
+
+      // RLS denials surface as an error OR as an empty returned array (0 rows updated)
+      if (profileError || !profileData || profileData.length === 0) {
+        toast({
+          title: 'Error',
+          description: "You don't have permission to edit this user",
+          variant: 'destructive',
+        });
+        return; // keep dialog open; do NOT update/create the agent record
+      }
 
       // Check if researcher has an existing agent record
       const linkedAgent = agents.find(a => a.userId === editingResearcher.id);
@@ -707,12 +717,21 @@ export default function UserManagement() {
       const newValue = !currentValue;
       
       // Update profile - master toggle
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from('profiles')
         .update({ can_send_communications: newValue })
-        .eq('id', userId);
+        .eq('id', userId)
+        .select('id');
 
-      if (error) throw error;
+      // RLS denials surface as an error OR as an empty returned array (0 rows updated)
+      if (error || !data || data.length === 0) {
+        toast({
+          title: 'Error',
+          description: "You don't have permission to change this user's permissions",
+          variant: 'destructive',
+        });
+        return;
+      }
 
       // Log the action
       await supabase.from('access_logs').insert({
@@ -751,12 +770,21 @@ export default function UserManagement() {
       const columnName = `can_send_${channel}`;
       
       // Update profile
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from('profiles')
         .update({ [columnName]: newValue })
-        .eq('id', userId);
+        .eq('id', userId)
+        .select('id');
 
-      if (error) throw error;
+      // RLS denials surface as an error OR as an empty returned array (0 rows updated)
+      if (error || !data || data.length === 0) {
+        toast({
+          title: 'Error',
+          description: "You don't have permission to change this user's permissions",
+          variant: 'destructive',
+        });
+        return;
+      }
 
       // Log the action
       const channelLabel = channel === 'email' ? 'Email' : channel === 'sms' ? 'SMS' : 'Voice';
@@ -817,6 +845,13 @@ export default function UserManagement() {
     : isSupervisor
       ? ['agent']
       : ['supervisor', 'agent', 'researcher'];
+
+  // Whether the signed-in admin/super_admin may edit communication permissions for this row.
+  const canEditComms = (user: UserWithRole) =>
+    isSuperAdmin ||
+    (isAdmin &&
+      (user.id === currentUser?.id ||
+        ['supervisor', 'agent', 'researcher'].includes(user.role)));
 
   return (
     <DashboardLayout 
@@ -994,6 +1029,7 @@ export default function UserManagement() {
                               canSendVoice={user.can_send_voice ?? false}
                               onToggleMaster={handleToggleCommunicationPermission}
                               onToggleChannel={handleToggleChannelPermission}
+                              disabled={!canEditComms(user)}
                             />
                           </td>
                         )}
@@ -1005,7 +1041,7 @@ export default function UserManagement() {
                               </Button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
-                              {isSuperAdmin && (
+                              {(isSuperAdmin || (isAdmin && ['supervisor', 'agent', 'researcher'].includes(user.role))) && (
                                 <DropdownMenuItem onClick={() => handleOpenEditUserDialog(user)}>
                                   <Pencil className="w-4 h-4 mr-2" />
                                   Edit User
@@ -1253,6 +1289,7 @@ export default function UserManagement() {
                                       canSendVoice={user.can_send_voice ?? false}
                                       onToggleMaster={handleToggleCommunicationPermission}
                                       onToggleChannel={handleToggleChannelPermission}
+                                      disabled={!canEditComms(user)}
                                     />
                                   </td>
                                 )}

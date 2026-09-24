@@ -15,6 +15,7 @@ interface CommunicationPermissionsCellProps {
   canSendVoice: boolean;
   onToggleMaster: (userId: string, userName: string, currentValue: boolean) => void;
   onToggleChannel: (userId: string, userName: string, channel: 'email' | 'sms' | 'voice', currentValue: boolean) => void;
+  disabled?: boolean;
 }
 
 export function CommunicationPermissionsCell({
@@ -26,6 +27,7 @@ export function CommunicationPermissionsCell({
   canSendVoice,
   onToggleMaster,
   onToggleChannel,
+  disabled = false,
 }: CommunicationPermissionsCellProps) {
   const [isOpen, setIsOpen] = useState(false);
 
@@ -39,6 +41,7 @@ export function CommunicationPermissionsCell({
           <Switch
             checked={canSendCommunications}
             onCheckedChange={() => onToggleMaster(userId, userName, canSendCommunications)}
+            disabled={disabled}
           />
           <CollapsibleTrigger asChild>
             <Button
@@ -71,6 +74,7 @@ export function CommunicationPermissionsCell({
                   checked={canSendEmail}
                   onCheckedChange={() => onToggleChannel(userId, userName, 'email', canSendEmail)}
                   className="h-3.5 w-3.5"
+                  disabled={disabled}
                 />
                 <Mail className="h-3 w-3 text-muted-foreground" />
                 <span className="text-xs text-muted-foreground">Email</span>
@@ -80,6 +84,7 @@ export function CommunicationPermissionsCell({
                   checked={canSendSMS}
                   onCheckedChange={() => onToggleChannel(userId, userName, 'sms', canSendSMS)}
                   className="h-3.5 w-3.5"
+                  disabled={disabled}
                 />
                 <MessageSquare className="h-3 w-3 text-muted-foreground" />
                 <span className="text-xs text-muted-foreground">SMS</span>
@@ -89,6 +94,7 @@ export function CommunicationPermissionsCell({
                   checked={canSendVoice}
                   onCheckedChange={() => onToggleChannel(userId, userName, 'voice', canSendVoice)}
                   className="h-3.5 w-3.5"
+                  disabled={disabled}
                 />
                 <Mic className="h-3 w-3 text-muted-foreground" />
                 <span className="text-xs text-muted-foreground">Voice</span>

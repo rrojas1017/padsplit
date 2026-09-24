@@ -39,3 +39,4 @@
 - [x] BUG-003 Phase A: form/runtime research bookings has_valid_conversation + survey_progress, early ends kept, Reports per-script filter/labels/Ended-early badge, Submissions tab
 - [x] BUG-003 Phase B: generate-research-insights script mode (script_<id8>), AI Summary tab, real scale_min/scale_max in script insights
 - [x] BUG-003 capture: drift #34 cron jobs file written, not applied
+- [x] CR-001: admins can edit supervisor/agent/researcher users (Edit User menu, researcher save denial check, comms disabled prop + denial checks)
