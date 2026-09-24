@@ -5,7 +5,8 @@ import { usePageTracking } from '@/hooks/usePageTracking';
 import { LeaderboardTable } from '@/components/dashboard/LeaderboardTable';
 import { DateRangeFilter, DateFilterValue, CustomDateRange } from '@/components/dashboard/DateRangeFilter';
 import { SiteFilter } from '@/components/dashboard/SiteFilter';
-import { useBookings } from '@/contexts/BookingsContext';
+import { useDashboardData } from '@/hooks/useDashboardData';
+import { presetLabel } from '@/utils/businessTime';
 import { useAgents } from '@/contexts/AgentsContext';
 import { calculateLeaderboard, calculateNonBookingCount, DateRangeFilter as DateRangeFilterType, CustomDateRange as CalcCustomDateRange } from '@/utils/dashboardCalculations';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -13,7 +14,6 @@ import { Calendar, Sparkles, RotateCcw, Users, PhoneOff } from 'lucide-react';
 
 export default function Leaderboard() {
   usePageTracking('view_leaderboard');
-  const { bookings, isLoading: bookingsLoading } = useBookings();
   const { agents, isLoading: agentsLoading } = useAgents();
   const [dateRange, setDateRange] = useSessionState<DateRangeFilterType>('leaderboard:dateRange', 'today');
   const [customDates, setCustomDates] = useSessionState<CalcCustomDateRange | undefined>('leaderboard:customDates', undefined);
@@ -24,6 +24,7 @@ export default function Leaderboard() {
   };
 
   const isLoading = bookingsLoading || agentsLoading;
+  const { bookings, isLoading: bookingsLoading } = useDashboardData(dateRange, customDates);
   const leaderboard = calculateLeaderboard(bookings, agents, dateRange, customDates);
   const nonBookingCount = calculateNonBookingCount(bookings, dateRange, customDates);
 
@@ -117,7 +118,7 @@ export default function Leaderboard() {
             </div>
           </div>
 
-          <LeaderboardTable data={leaderboard} showAll />
+          <LeaderboardTable data={leaderboard} showAll subtitle={presetLabel(dateRange)} />
         </>
       )}
     </DashboardLayout>

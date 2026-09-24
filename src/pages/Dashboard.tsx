@@ -12,6 +12,7 @@ import { CalendarDays, Users, Clock, CheckCircle2, DollarSign, Timer, FileCheck,
 import { useAuth } from '@/contexts/AuthContext';
 import { useAgents } from '@/contexts/AgentsContext';
 import { useDashboardData } from '@/hooks/useDashboardData';
+import { presetLabel, businessToday, addDaysStr, startOfWeekStr, startOfMonthStr } from '@/utils/businessTime';
 import { Navigate, Link } from 'react-router-dom';
 import { calculateKPIData, calculateChartData, calculateLeaderboard, calculateMarketData, calculateInsightsData, calculateNonBookingCount, DateRangeFilter as DateRangeFilterType, CustomDateRange as CalcCustomDateRange } from '@/utils/dashboardCalculations';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -76,7 +77,7 @@ export default function Dashboard() {
   const chartData = calculateChartData(filteredBookings, filteredAgents, dateRange, customDates);
   const leaderboard = calculateLeaderboard(filteredBookings, filteredAgents, dateRange, customDates);
   const marketData = calculateMarketData(filteredBookings, dateRange, customDates);
-  const insights = calculateInsightsData(filteredBookings, filteredAgents);
+  const insights = calculateInsightsData(filteredInsightBookings, filteredAgents);
   const nonBookingCount = calculateNonBookingCount(filteredBookings, dateRange, customDates);
 
   const kpiIcons = [
@@ -154,7 +155,7 @@ export default function Dashboard() {
       </div>
 
       {/* Leaderboard */}
-      <LeaderboardTable data={leaderboard} />
+      <LeaderboardTable data={leaderboard} subtitle={presetLabel(dateRange)} />
 
       {/* Insights */}
       <div className="mt-6 p-6 rounded-xl bg-card border border-border animate-slide-up" style={{ animationDelay: '500ms' }}>

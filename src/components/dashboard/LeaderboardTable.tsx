@@ -5,9 +5,10 @@ import { cn } from '@/lib/utils';
 interface LeaderboardTableProps {
   data: LeaderboardEntry[];
   showAll?: boolean;
+  subtitle?: string;
 }
 
-export function LeaderboardTable({ data, showAll = false }: LeaderboardTableProps) {
+export function LeaderboardTable({ data, showAll = false, subtitle = 'Top performers this week' }: LeaderboardTableProps) {
   const displayData = showAll ? data : data.slice(0, 5);
 
   const getRankIcon = (rank: number) => {
@@ -27,7 +28,7 @@ export function LeaderboardTable({ data, showAll = false }: LeaderboardTableProp
     <div className="bg-card rounded-xl border border-border shadow-card animate-slide-up" style={{ animationDelay: '300ms' }}>
       <div className="p-6 border-b border-border">
         <h3 className="text-lg font-semibold text-foreground">Agent Leaderboard</h3>
-        <p className="text-sm text-muted-foreground">Top performers this week</p>
+        <p className="text-sm text-muted-foreground">{subtitle}</p>
       </div>
       
       <div className="overflow-x-auto">
