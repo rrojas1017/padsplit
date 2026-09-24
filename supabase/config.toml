@@ -175,3 +175,6 @@ verify_jwt = true
 [functions.generate-audience-survey-executive-brief]
 verify_jwt = true
 
+
+[functions.notify-moved-in]
+verify_jwt = false

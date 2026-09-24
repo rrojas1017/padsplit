@@ -1,9 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-};
+import { requireUserOrInternal, ADMINS, corsHeaders } from '../_shared/auth.ts';
 
 interface CallKeyPoints {
   summary: string;
@@ -965,6 +962,9 @@ Deno.serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
+  const auth = await requireUserOrInternal(req, ADMINS);
+  if (!auth.ok) return auth.response;
+
   try {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -973,25 +973,10 @@ Deno.serve(async (req) => {
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
     // Parse request body
-    const { analysis_period = 'manual', date_range_start, date_range_end, created_by } = await req.json();
+    const { analysis_period = 'manual', date_range_start, date_range_end } = await req.json();
 
-    // Detect if triggered by super_admin
-    let triggeredByUserId: string | null = null;
-    let isInternal = false;
-    const authHeader = req.headers.get('Authorization');
-    if (authHeader) {
-      try {
-        const anonClient = createClient(supabaseUrl, Deno.env.get('SUPABASE_ANON_KEY')!);
-        const token = authHeader.replace('Bearer ', '');
-        const { data: { user } } = await anonClient.auth.getUser(token);
-        if (user) {
-          triggeredByUserId = user.id;
-          const { data: roleData } = await supabase.from('user_roles').select('role').eq('user_id', user.id).single();
-          isInternal = roleData?.role === 'super_admin';
-          if (isInternal) console.log('[Internal] Request triggered by super_admin, marking costs as internal');
-        }
-      } catch (e) { console.log('[Internal] Could not determine user role:', e); }
-    }
+    const triggeredByUserId: string | null = auth.ctx.kind === 'user' ? auth.ctx.userId : null;
+    const isInternal = auth.ctx.kind === 'user' && auth.ctx.role === 'super_admin';
 
     console.log(`Starting ${analysis_period} member insights analysis from ${date_range_start} to ${date_range_end}`);
 
@@ -1004,7 +989,7 @@ Deno.serve(async (req) => {
         date_range_end,
         status: 'processing',
         total_calls_analyzed: 0,
-        created_by
+        created_by: triggeredByUserId
       })
       .select()
       .single();
