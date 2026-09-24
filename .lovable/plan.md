@@ -1,48 +1,44 @@
-# Security Fix P4 — Authorize 6 AI-pipeline functions
+# Security Fix P5: Authorize 6 batch functions
 
-Scope: only the 6 functions below. No changes to src/**, SQL, RLS, migrations, config.toml, other functions, prompts, models, provider weights or cost logic. All 6 stay `verify_jwt = true`.
+Scope: only the 6 functions below. No changes to src/**, SQL, RLS, migrations, config.toml, other functions, prompts, models or cost logic.
 
-Each function's local `const corsHeaders = {...}` is replaced by the shared `corsHeaders` import from `../_shared/auth.ts` (superset, also allows `x-internal-secret`). Guards go right after the OPTIONS branch.
+In every function the local `const corsHeaders = {...}` is replaced by the shared import from `../_shared/auth.ts`, and the guard `const auth = await <guard>; if (!auth.ok) return auth.response;` goes right after the OPTIONS return.
 
-## 1. transcribe-call (2565 lines)
-- Imports: `requireUserOrInternal, canSeeBooking, jsonResponse, corsHeaders, STAFF` from `../_shared/auth.ts`; `isAllowedRecordingUrl` from `../_shared/url.ts`. Remove local corsHeaders (line 10).
-- Entry, lines 2468-2471 replaced:
-  - `const auth = await requireUserOrInternal(req, STAFF); if (!auth.ok) return auth.response;`
-  - `const { bookingId, skipTts = false } = await req.json();` (a `kixieUrl` field in the body is accepted and ignored)
-  - `if (!bookingId) return jsonResponse(400, { error: 'Missing bookingId' })`
-  - `if (!(await canSeeBooking(auth.ctx, bookingId))) return jsonResponse(404, { error: 'Booking not found' })`
-  - Load `kixie_link` from `bookings` with the service-role client; if missing or `!isAllowedRecordingUrl(url)` → `jsonResponse(400, { error: 'Recording URL missing or not allowed' })`.
-- Line 2540: `processTranscription(bookingId, recordingUrl, skipTts)` uses the DB URL.
-- Background download (line 1557): `redirect: 'manual'`; on 3xx read `Location`, resolve against the current URL, follow at most 3 hops only if each passes `isAllowedRecordingUrl`, otherwise throw `Audio download redirect not allowed`.
-- Downstream calls to generate-qa-scores / process-research-record (line 2233-2237) already send the service-role bearer, so no change is needed.
+## Per function
 
-## 2. process-research-record (1368 lines)
-- Replace local corsHeaders (line 3). After OPTIONS (line 1027): `const auth = await requireInternal(req); if (!auth.ok) return auth.response;`. Nothing else changes.
+| # | Function | Local corsHeaders removed | Guard after OPTIONS | config.toml (unchanged) |
+|---|---|---|---|---|
+| 1 | batch-generate-qa-scores | lines 4-7 | `requireUser(req, MANAGERS)` (after line 71) | false |
+| 2 | batch-generate-qa-coaching | lines 5-8 | `requireUser(req, ADMINS)` (after line 55) | false |
+| 3 | batch-process-research-records | lines 3-6 | `requireUserOrInternal(req, MANAGERS)` (after line 18) | true |
+| 4 | bulk-transcription-processor | lines 9-12 | `requireUserOrInternal(req, ADMINS)` (after line 461) | true |
+| 5 | batch-extract-lifestyle-signals | lines 4-7 | `requireUserOrInternal(req, ['super_admin'])` (after line 12) | false |
+| 6 | reclassify-records | lines 3-6 | `requireUserOrInternal(req, MANAGERS)` (after line 96) | no block (gateway default) |
 
-## 3. generate-qa-scores (284 lines)
-- Replace local corsHeaders (line 4). After OPTIONS: `requireInternal(req)`.
-- Lines 76-90 (manual getUser attribution) replaced with `const triggeredByUserId: string | null = null; const isInternal = false;`. That matches what happens today for its only caller (transcribe-call, which uses the service-role bearer, so it never resolves to a user). The cost logging at lines 217-218 is unchanged.
+Details:
+- **batch-extract-lifestyle-signals:** lines 28-52 change.
+  - Removed: the `authHeader` read, the anon-client `getUser`, the `user_roles` lookup, and the 401/403 responses.
+  - The condition `if (authHeader && !jobId)` becomes `if (!jobId)`. The job-creation branch (count, insert job, first self-invoke) is otherwise unchanged.
+  - The guard now runs on every call, so a user call that sends a `jobId` must still be super_admin.
+- **batch-generate-qa-coaching:** its fan-out to generate-qa-coaching-audio (lines 103-106) keeps the service-role bearer.
+- **batch-generate-qa-scores:** no auth code exists today. It calls the AI gateway directly (line 163), with no other function call. Only the guard is added.
 
-## 4. generate-coaching-audio (496 lines)
-- Replace local corsHeaders (line 4). After OPTIONS: `requireUserOrInternal(req, STAFF)`.
-- After `bookingId` is read (line 95) and its existing missing check: `canSeeBooking` → 404 `{error:'Booking not found'}`.
-- Lines 107-120 replaced: `triggeredByUserId = auth.ctx.kind === 'user' ? auth.ctx.userId : null`; `isInternal = auth.ctx.kind === 'user' && auth.ctx.role === 'super_admin'`. Cost logging at 319-320 and 427-428 is unchanged.
+## Self-chain and function-to-function calls (verified in the code)
 
-## 5. generate-qa-coaching-audio (565 lines)
-- Same as 4 (corsHeaders line 5, guard after OPTIONS, canSeeBooking after line 97).
-- Lines 111-140 replaced with the same auth.ctx attribution. The atob "JWT decode fallback" (lines 127-139) is removed entirely.
+Every call below sends the service-role bearer, which `checkInternal` accepts:
 
-## 6. reanalyze-call (889 lines)
-- Replace local corsHeaders (line 5). After OPTIONS: `requireUserOrInternal(req, MANAGERS)`; after `bookingId` (line 757): `canSeeBooking` → 404.
-- Lines 768-782 replaced with the auth.ctx attribution. The values passed at lines 841-842 are unchanged.
+- batch-process-research-records calls process-research-record (line 147-150) and itself (line 191-194). Both send `Authorization: Bearer ${supabaseServiceKey}`.
+- bulk-transcription-processor calls transcribe-call (line 212-216) and itself (line 427-431). Both send `Bearer ${supabaseServiceKey}`.
+- batch-extract-lifestyle-signals calls itself (line 96-101 and line 323-327). Both send `Bearer ${supabaseServiceKey}`.
+- reclassify-records calls itself (line 277-280) with `Bearer ${serviceKey}`.
+- batch-generate-qa-coaching calls generate-qa-coaching-audio (line 103-106) with `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`.
+
+Functions 1 and 2 use `requireUser`, which rejects internal callers. Neither one calls itself, so nothing breaks.
 
 ## Deploy and test
-Deploy the 6 functions. Then send an anon-key POST to each. Expected result: 401 for all 6.
+Deploy the 6 functions. Then send each one an anon-key POST with body `{}`. Expected result: 401 for all 6, and nothing starts.
 
-## Findings and flags
-- Current recording hosts in `bookings.kixie_link`: recordings.vixicom.com (49,200), calls.kixie.com (6,584), *.hubspotusercontent-na1.net (171), five9, app.kixie.com and app.hubspot.com (a few). All of these pass the allowlist. There are 121 non-URL values and 1 `sf2.vixicom.local`. Those rows will now get 400 instead of a failed transcription.
-- `CallDetailsModal.tsx` also calls transcribe-call with the user JWT. It keeps working for STAFF roles.
-- I disagree with leaving one path open. `validateAudioUrl` (line 808) sends a HEAD request that follows redirects by default, so it could still be steered to an internal host through a redirect. I recommend applying the same `redirect: 'manual'` plus 3-hop allowlist check there (a small shared helper inside transcribe-call). I'll include this unless you say no.
-- Deepgram URL mode (line 1553) has Deepgram's servers fetch the URL, not ours. The initial allowlist check covers it.
-- Agents: STAFF must include `agent` for agents to keep generating coaching audio, as your spec intends. `canSeeBooking` limits agents to their own bookings.
-- The anon-key test is the only test I can run. Preview auth is signed out, so the signed-in flow and the internal chain need a real run to confirm.
+## Notes
+- The app callers are already signed-in users with matching roles: QADashboard, Settings (Katty QA), ResearchInsights (batch + reclassify), useBulkProcessingJobs, and CrossSellOpportunitiesTab.
+- Error messages change slightly: the lifestyle function's old 403 text "Forbidden: super_admin only" becomes the shared guard's standard 403 message.
+- Only anon-key tests are possible from here, because preview auth is signed out.
