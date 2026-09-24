@@ -1,118 +1,39 @@
-# P9 — Coaching audio players use signed URLs (frontend step 1 toward private bucket)
+# P-C — Research pipeline fixes (4 edge functions only)
 
-## Goal
-The coaching-audio Storage bucket is currently public, so every Jeff/Katty coaching MP3 is world-readable by URL. The DB columns `booking_transcriptions.coaching_audio_url` and `qa_coaching_audio_url` store full **public** URLs, and the `generate-coaching-audio` / `generate-qa-coaching-audio` edge functions also return public URLs (via `.getPublicUrl()`). This step makes the two audio players stop feeding the stored/returned URL straight into `<audio src>`, and instead mint a 1-hour **signed URL** through `supabase.storage.from('coaching-audio').createSignedUrl`.
+Scope: only the 4 files below. No migrations, RLS, config.toml, src/**, prompts, models or cost logging. Existing auth guards stay byte-identical. Response fields only added, never renamed/removed.
 
-This must work BOTH with the current public bucket AND after the bucket is made private, and must accept stored values that are a full public URL, a signed URL, or a bare object path. No edge-function, SQL, RLS, migration, bucket, or other-UI changes.
+## 1. process-research-record/index.ts
+- Before `try {` (line 1036): add `let bookingId: string | undefined;`.
+- Line 1037 `const { bookingId } = await req.json();` becomes:
+  `const body = await req.json().catch(() => ({}));` and `bookingId = body?.bookingId;` (the `Missing bookingId` throw on 1038 stays).
+- Lines 1091-1094 (mark processing): payload becomes `{ research_processing_status: 'processing', updated_at: new Date().toISOString() }`.
+- Lines 1311-1318 (completed payload): add `updated_at: new Date().toISOString()`.
+- Lines 1352-1362 (catch): delete the `req.clone().json()` block; replace with: if `bookingId`, `update({ research_processing_status: 'failed', updated_at: now }).eq('booking_id', bookingId).eq('research_processing_status', 'processing')`, wrapped in try/catch. 500 response unchanged.
 
-## File 1 (NEW): `src/utils/coachingAudio.ts`
+## 2. batch-process-research-records/index.ts
+- Lines 74 and 113: replace the `.or('...is.null,...eq.failed', {referencedTable})` with `.is('booking_transcriptions.research_processing_status', null)`.
+- Line 126 in-memory filter: only `!t?.research_processing_status`.
+- Line 89 stale reset: `update({ research_processing_status: 'failed', updated_at: now })`.
+- Body flag: `const includeFailed = body.includeFailed === true;` (after line 26). dryRun branch unchanged (runs first). When `includeFailed`, `EdgeRuntime.waitUntil(runFailedOnce(...))` instead of `runOneBatch`; same response shape (`success`, `message`).
+- New `runFailedOnce`: select up to 5 research bookings (same valid-conversation + non-empty transcript filters) with `research_processing_status = 'failed'`, call process-research-record for each (same fetch/headers/parallel pattern as lines 139-170), log counts, and never call `selfRetrigger`. Extract the existing per-record call loop into a shared helper so both paths use it unchanged.
 
-```ts
-import { supabase } from '@/integrations/supabase/client';
+## 3. generate-research-insights/index.ts (initial path, lines 1042-1066)
+- Add `survey_progress` to the embedded `booking_transcriptions!inner (...)` select.
+- Line 1061 compares `research_call_id` to a campaign id — replace: if `campaignId`, fetch `research_calls.id` where `campaign_id = campaignId` (paged by 1000); if none, treat as zero records (existing empty-records handling); else `.in('research_call_id', ids)` (chunked to 500 ids per request if needed, results concatenated).
+- Replace the single `await query` (line 1065) with a loop: build the query per page and `.order('id').range(from, from + 999)` until a page returns < 1000 rows; concatenate into `records`. Error handling unchanged.
 
-/**
- * Resolve a stored coaching-audio value into a 1-hour signed URL.
- * Accepts any of:
- *   - full public URL:  .../storage/v1/object/public/coaching-audio/<file>.mp3
- *   - full signed URL:  .../storage/v1/object/sign/coaching-audio/<file>.mp3?token=...
- *   - bare object path: coaching-audio/<file>.mp3  OR  <file>.mp3
- * Returns null for empty input or on failure (logs a short message without tokens).
- */
-export async function resolveCoachingAudioSrc(
-  stored: string | null | undefined,
-): Promise<string | null> {
-  if (!stored) return null;
+## 4. persist-research-raw-answers/index.ts
+Guard block (lines 13-46: requireUser(RESEARCH) + researcher owns call) untouched. Then:
+- Load `research_calls` (service role): `id, campaign_id, researcher_id, caller_name, caller_phone, researcher_notes, call_duration_seconds, language, call_outcome`; missing → 404 `{error:'Research call not found'}`.
+- Find booking by `research_call_id` (existing lookup, lines 48-64). If none:
+  a) if caller_phone: last-10 digits; select research bookings with `research_call_id IS NULL`, `contact_phone ilike %<digits>` (digits-only value, safe), newest first, limit 5; pick first with `member_name` starting "API Submission" or `import_batch_id='api-submission'`; update `member_name, research_call_id, notes, call_duration_seconds`.
+  b) else, only if `call_outcome` is `'completed'` or null: first active agent; insert `{record_type:'research', research_call_id, member_name: caller_name, booking_date/move_in_date: today, booking_type:'Research', status:'Research', agent_id, contact_phone, created_by: auth.ctx.userId, notes, call_duration_seconds}` → `created_booking = true`.
+  c) still no booking → keep today's `{ok:true, merged:false, reason:'no_booking'}`.
+- booking_transcriptions: if no row → insert `{booking_id, research_extraction:{ raw_script_answers }}`; else today's merge (existing keys win).
+- script_responses (skip entirely if `campaign_id` missing, or the campaign has no `script_id`): if any rows already exist for `session_id = research_call_id` → skip. Else load `research_scripts.questions`, map question id → `order`; for each entry in raw_script_answers insert `{script_id, session_id, question_order, response_value, response_options: selected_option_labels, response_numeric: scale_value, metadata:{question_id, question_type, source:'agent_runtime', language}}`; then update the script `total_responses + 1`, `last_response_at = now()` (read-then-write). Failures here are logged, non-fatal.
+- Response: existing `ok, merged, booking_id, count` plus optional `created_booking`.
 
-  let path = stored;
-  const pubMarker = '/object/public/coaching-audio/';
-  const signMarker = '/object/sign/coaching-audio/';
-
-  if (path.includes(pubMarker)) {
-    path = path.split(pubMarker)[1] ?? '';
-  } else if (path.includes(signMarker)) {
-    path = path.split(signMarker)[1] ?? '';
-  } else if (path.startsWith('coaching-audio/')) {
-    path = path.slice('coaching-audio/'.length);
-  }
-  // strip any query string (signed-URL token) — createSignedUrl issues a fresh one
-  path = path.split('?')[0];
-
-  if (!path) return null;
-
-  try {
-    const { data, error } = await supabase.storage
-      .from('coaching-audio')
-      .createSignedUrl(path, 3600);
-
-    if (error || !data?.signedUrl) {
-      console.error('coachingAudio: failed to create signed URL', error?.message ?? 'no url');
-      return null;
-    }
-    return data.signedUrl;
-  } catch (err) {
-    console.error('coachingAudio: signed-url error', err instanceof Error ? err.message : err);
-    return null;
-  }
-}
-```
-
-## File 2: `src/components/coaching/CoachingAudioPlayer.tsx`
-
-Jeff coaching. `currentAudioUrl` stays the source of truth for existence checks / quiz gating / listened logic. A new `resolvedSrc` state feeds `<audio src>`.
-
-- **Import** (after line 4): `import { resolveCoachingAudioSrc } from '@/utils/coachingAudio';`
-- **State** (after line 45 `currentAudioUrl` state):
-  ```ts
-  const [resolvedSrc, setResolvedSrc] = useState<string | null>(null);
-  ```
-- **Resolve effect** (after the existing `useEffect` that syncs `currentAudioUrl`, ~line 60):
-  ```ts
-  useEffect(() => {
-    let cancelled = false;
-    setResolvedSrc(null);
-    resolveCoachingAudioSrc(currentAudioUrl).then((url) => {
-      if (!cancelled) setResolvedSrc(url);
-    });
-    return () => { cancelled = true; };
-  }, [currentAudioUrl]);
-  ```
-- **`<audio>` src** (line 301): change `src={currentAudioUrl}` → `src={resolvedSrc ?? undefined}`.
-
-No change to: `handleGenerateAudio` (still calls `setCurrentAudioUrl(data.audioUrl)` — the effect resolves it), `handleEnded`, quiz/listened logic, blocked/paused states, variants.
-
-## File 3: `src/components/qa/QACoachingAudioPlayer.tsx`
-
-Katty QA coaching. Same pattern.
-
-- **Import** (after line 5): `import { resolveCoachingAudioSrc } from '@/utils/coachingAudio';`
-- **State** (after line 47 `currentAudioUrl` state):
-  ```ts
-  const [resolvedSrc, setResolvedSrc] = useState<string | null>(null);
-  ```
-- **Resolve effect** (after the existing `useEffect` syncing `currentAudioUrl`/listened/quiz, ~line 59):
-  ```ts
-  useEffect(() => {
-    let cancelled = false;
-    setResolvedSrc(null);
-    resolveCoachingAudioSrc(currentAudioUrl).then((url) => {
-      if (!cancelled) setResolvedSrc(url);
-    });
-    return () => { cancelled = true; };
-  }, [currentAudioUrl]);
-  ```
-- **`<audio>` src**:
-  - Button variant (line 194): `src={currentAudioUrl || ''}` → `src={resolvedSrc || ''}`
-  - Card variant (line 313): `src={currentAudioUrl}` → `src={resolvedSrc ?? undefined}`
-
-No change to: `handleGenerateAudio` (still `setCurrentAudioUrl(data.audioUrl)` — effect resolves), `markAsListened`, quiz/listened logic, blocked states.
-
-## What is NOT changed
-- Edge functions (generate-coaching-audio / generate-qa-coaching-audio still return public URLs — resolved client-side).
-- `config.toml`, SQL, RLS, migrations, the `coaching-audio` bucket or its policies.
-- Callers of the two players (`MyPerformance`, `CoachingHub`, `QADashboard`, `MyQA`, `CallInsights`) — they still pass stored DB URLs.
-- Components that only check existence of an audio URL (banners, engagement/report hooks) — untouched.
-
-## Verification (no auth needed from here, but the bucket is still public)
-- `tsgo`/typecheck the three files.
-- Manual reasoning: with bucket public, `createSignedUrl` returns a working signed URL (same object). After bucket is made private, signed URL still works for any signed-in role thanks to the existing SELECT policy. A stored public URL, stored signed URL, or bare path all resolve to the same object path.
-- Not testable from here without a signed-in session: actually loading an MP3 in the preview after this change. Stays a manual check for the user.
+## Technical notes / assumptions
+- `research_calls.campaign_id` → `research_campaigns.script_id` is how the script is found (the call has no script column).
+- `response_value`: text answer, or the joined option labels / numeric string when no free text.
+- Deploy: `deno check` on all 4, deploy all 4, anon-key POST `{}` each (expected 401).
