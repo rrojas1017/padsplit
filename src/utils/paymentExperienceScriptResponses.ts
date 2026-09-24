@@ -7,11 +7,8 @@
 import { resolveAnswer, resolvedAutopay, resolvedBarrier, resolvedCadence, resolvedClarity, resolvedFriction } from '@/utils/paymentExperienceNormalize';
 import {
   type PaymentExperienceRecord,
-  CADENCE_NORMALIZATION_MAP,
   CADENCE_LABELS,
-  FRICTION_THEME_MAP,
   FRICTION_THEME_LABELS,
-  AUTOPAY_BARRIER_MAP,
   AUTOPAY_BARRIER_LABELS,
 } from '@/hooks/usePaymentExperienceResponses';
 
@@ -208,6 +205,17 @@ function getAnswer(rec: PaymentExperienceRecord, q: PEQuestionDef): any {
       const a = resolvedAutopay(rec);
       return a === 'unanswered' ? null : a;
     }
+    case 'autopay_barrier': {
+      if (resolvedAutopay(rec) !== 'no') return null;
+      const k = resolvedBarrier(rec);
+      return k ? [k] : null;
+    }
+    case 'top_friction_theme': {
+      const k = resolvedFriction(rec);
+      return k ? [k] : null;
+    }
+    case 'move_in_cost_clarity':
+      return resolvedClarity(rec);
   }
 
   const raw: any = ext.raw_script_answers && typeof ext.raw_script_answers === 'object'
@@ -282,17 +290,6 @@ function getAnswer(rec: PaymentExperienceRecord, q: PEQuestionDef): any {
       const method = firstNonEmptyString(cm.method);
       if (!method) return null;
       return [method.toLowerCase()];
-    }
-    case 'autopay_barrier': {
-      if (ext.autopay_status !== 'not_enrolled') return null;
-      const k = lookupNormalized(AUTOPAY_BARRIER_MAP, ext.autopay_barrier_category);
-      return k ? [k] : null;
-    }
-    case 'move_in_cost_clarity':
-      return typeof ext.move_in_cost_clarity_1to5 === 'number' ? ext.move_in_cost_clarity_1to5 : null;
-    case 'top_friction_theme': {
-      const k = lookupNormalized(FRICTION_THEME_MAP, ext.top_friction_theme);
-      return k ? [k] : null;
     }
     case 'overdue_threshold': {
       const v = ext.overdue_threshold_belief_usd;
@@ -504,32 +501,30 @@ function summarizeQuestion(
         distribution.push({ key: String(v), label: String(v), count: c, percentage: pct(c, denom) });
       }
     } else {
-      // Half-open buckets [lo, nextLo) so decimals are never dropped; the
-      // last in-range bucket includes max. Out-of-range rows catch the rest,
-      // so every numeric answer lands in exactly one row.
+      // Half-open buckets [lo, nextLo) so decimals are never dropped. Dues
+      // add "Below $50"/"Above $300", overdue adds "Above $2,000"; for other
+      // scales the first/last bucket are open-ended. Every numeric answer
+      // lands in exactly one row.
       const bucketsCount = 10;
       const span = (max - min + 1) / bucketsCount;
       const isUsd = q.id === 'dues_amount_stated_usd';
       const isOverdue = q.id === 'overdue_threshold';
-      const money = (n: number) => `$${n.toLocaleString('en-US')}`;
-      const fmt = (n: number) => (isUsd || isOverdue ? money(n) : String(n));
       const los: number[] = [];
       for (let i = 0; i < bucketsCount; i++) los.push(Math.round(min + i * span));
       if (isUsd) {
-        const c = nums.filter((n) => n < 50).length;
-        distribution.push({ key: 'below-50', label: 'Below $50', count: c, percentage: pct(c, denom) });
+        const c = nums.filter((n) => n < min).length;
+        distribution.push({ key: `below-${min}`, label: `Below $${min}`, count: c, percentage: pct(c, denom) });
       }
-      const lowerEdge = isUsd ? 50 : Number.NEGATIVE_INFINITY;
-      const upperEdge = isUsd ? 300 : isOverdue ? 2000 : max;
       for (let i = 0; i < bucketsCount; i++) {
         const lo = los[i];
+        const isFirst = i === 0;
         const isLast = i === bucketsCount - 1;
-        const nextLo = isLast ? max : los[i + 1];
-        const hiLabel = isLast ? max : nextLo - 1;
-        const c = nums.filter((n) =>
-          n >= Math.max(lo, lowerEdge) && (isLast ? n <= Math.min(max, upperEdge) : n < nextLo) && n <= upperEdge &&
-          (i > 0 || n >= lo || !isFinite(lowerEdge) ? true : false),
-        ).length;
+        const hiLabel = isLast ? max : los[i + 1] - 1;
+        const c = nums.filter((n) => {
+          const aboveLo = isFirst && !isUsd ? true : n >= lo;
+          const belowHi = isLast ? (isUsd || isOverdue ? n <= max : true) : n < los[i + 1];
+          return aboveLo && belowHi;
+        }).length;
         distribution.push({
           key: `${lo}-${hiLabel}`,
           label: isUsd ? `$${lo}–$${hiLabel}` : `${lo}–${hiLabel}`,
@@ -538,9 +533,13 @@ function summarizeQuestion(
         });
       }
       if (isUsd || isOverdue) {
-        const edge = upperEdge;
-        const c = nums.filter((n) => n > edge).length;
-        distribution.push({ key: `above-${edge}`, label: `Above ${fmt(edge)}`, count: c, percentage: pct(c, denom) });
+        const c = nums.filter((n) => n > max).length;
+        distribution.push({
+          key: `above-${max}`,
+          label: `Above $${max.toLocaleString('en-US')}`,
+          count: c,
+          percentage: pct(c, denom),
+        });
       }
     }
     if (q.id === 'dues_amount_stated_usd' && unsureCount > 0) {
