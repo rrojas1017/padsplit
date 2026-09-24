@@ -1,4 +1,5 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { requireUser, MANAGERS } from '../_shared/auth.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -8,18 +9,6 @@ const corsHeaders = {
 // Valid roles enum
 const VALID_ROLES = ['super_admin', 'admin', 'supervisor', 'agent', 'researcher'] as const;
 type ValidRole = typeof VALID_ROLES[number];
-
-// Decode JWT to get user info (JWT is already verified by verify_jwt=true in config.toml)
-function decodeJWT(token: string): { sub: string; email?: string } | null {
-  try {
-    const parts = token.split('.')
-    if (parts.length !== 3) return null
-    const payload = JSON.parse(atob(parts[1]))
-    return payload
-  } catch {
-    return null
-  }
-}
 
 // Validation functions
 function isValidEmail(email: string): boolean {
@@ -69,51 +58,20 @@ Deno.serve(async (req) => {
   }
 
   try {
-    // Get the authorization header to verify the requesting user
-    const authHeader = req.headers.get('Authorization')
-    if (!authHeader) {
-      console.log('Missing authorization header');
-      return new Response(JSON.stringify({ error: 'Missing authorization header' }), {
-        status: 401,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      })
+    const auth = await requireUser(req, MANAGERS)
+    if (!auth.ok) {
+      const b = await auth.response.text()
+      return new Response(b, { status: auth.response.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
     }
+    const requestingUserId = auth.ctx.userId
 
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
 
-    // Extract the token and decode it (JWT is already verified by gateway)
-    const token = authHeader.replace('Bearer ', '')
-    const decoded = decodeJWT(token)
-    
-    if (!decoded || !decoded.sub) {
-      console.log('Failed to decode JWT');
-      return new Response(JSON.stringify({ error: 'Unauthorized' }), {
-        status: 401,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      })
-    }
-
-    const requestingUserId = decoded.sub
-
     // Service role client for privileged database operations
     const adminClient = createClient(supabaseUrl, supabaseServiceKey)
 
-    // Check if user has appropriate role
-    const { data: userRole } = await adminClient
-      .from('user_roles')
-      .select('role')
-      .eq('user_id', requestingUserId)
-      .single()
-
-    // Allow super_admin, admin, and supervisor
-    if (!userRole || !['super_admin', 'admin', 'supervisor'].includes(userRole.role)) {
-      console.log(`Insufficient permissions for user ${requestingUserId}`);
-      return new Response(JSON.stringify({ error: 'Insufficient permissions' }), {
-        status: 403,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      })
-    }
+    const userRole = { role: auth.ctx.role as string }
 
     // Get supervisor's site_id if they are a supervisor
     let supervisorSiteId: string | null = null;
@@ -160,7 +118,7 @@ Deno.serve(async (req) => {
 
     // Validate email format
     if (typeof email !== 'string' || !isValidEmail(email)) {
-      console.log(`Invalid email format: ${email}`);
+      console.log('Invalid email format');
       return new Response(JSON.stringify({ error: 'Invalid email format or email too long (max 255 characters)' }), {
         status: 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -187,7 +145,7 @@ Deno.serve(async (req) => {
 
     // Validate name
     if (typeof name !== 'string' || !isValidName(name)) {
-      console.log(`Invalid name: ${name}`);
+      console.log('Invalid name');
       return new Response(JSON.stringify({ error: 'Name must be between 1 and 100 characters' }), {
         status: 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -284,7 +242,7 @@ Deno.serve(async (req) => {
     }
 
     // Create the user with admin API
-    console.log(`Creating user with email: ${email}, role: ${role}`);
+    console.log(`Creating user with role: ${role}`);
     const { data: newUser, error: createError } = await adminClient.auth.admin.createUser({
       email,
       password,

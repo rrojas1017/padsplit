@@ -1,20 +1,9 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { requireUser, ADMINS } from '../_shared/auth.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-}
-
-// Decode JWT to get user info (JWT is already verified by verify_jwt=true in config.toml)
-function decodeJWT(token: string): { sub: string; email?: string } | null {
-  try {
-    const parts = token.split('.')
-    if (parts.length !== 3) return null
-    const payload = JSON.parse(atob(parts[1]))
-    return payload
-  } catch {
-    return null
-  }
 }
 
 Deno.serve(async (req) => {
