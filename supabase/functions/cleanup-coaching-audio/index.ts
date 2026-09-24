@@ -1,9 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-};
+import { requireInternal, corsHeaders } from '../_shared/auth.ts';
 
 const RETENTION_DAYS = 60;
 const BATCH_LIMIT = 500;
@@ -89,6 +86,9 @@ Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
+
+  const auth = await requireInternal(req);
+  if (!auth.ok) return auth.response;
 
   try {
     console.log(`Starting coaching + QA audio cleanup (retention: ${RETENTION_DAYS} days)...`);

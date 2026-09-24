@@ -4,10 +4,7 @@ declare const EdgeRuntime: {
   waitUntil: (promise: Promise<unknown>) => void;
 };
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-};
+import { requireUserOrInternal, MANAGERS, corsHeaders } from '../_shared/auth.ts';
 
 // Cost logging
 async function logApiCost(supabase: any, params: {
@@ -1006,6 +1003,9 @@ Deno.serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
+  const auth = await requireUserOrInternal(req, MANAGERS);
+  if (!auth.ok) return auth.response;
+
   const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
   const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
   const lovableApiKey = Deno.env.get('LOVABLE_API_KEY')!;
@@ -1037,16 +1037,7 @@ Deno.serve(async (req) => {
     const analysisPeriod = body.analysisPeriod || body.analysis_period || null;
     const campaignType = body.campaignType || body.campaign_type || 'move_out_survey';
 
-    // Get user ID from JWT
-    const authHeader = req.headers.get('Authorization') || '';
-    let triggeredByUserId: string | null = null;
-    if (authHeader.startsWith('Bearer ')) {
-      try {
-        const token = authHeader.replace('Bearer ', '');
-        const payload = JSON.parse(atob(token.split('.')[1]));
-        triggeredByUserId = payload.sub || null;
-      } catch { /* ignore */ }
-    }
+    const triggeredByUserId: string | null = auth.ctx.kind === 'user' ? auth.ctx.userId : null;
 
     // Fetch processed research records filtered by campaign type
     let query = supabase

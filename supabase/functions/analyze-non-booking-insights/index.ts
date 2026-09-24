@@ -2,10 +2,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 
 declare const EdgeRuntime: { waitUntil: (promise: Promise<unknown>) => void };
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-};
+import { requireUserOrInternal, ADMINS, corsHeaders } from '../_shared/auth.ts';
 
 const BATCH_SIZE = 500;
 const FUNCTION_TIMEOUT_MS = 120000; // 2 minutes safety margin from 150s limit
@@ -458,6 +455,11 @@ Return JSON:
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
+
+  const auth = await requireUserOrInternal(req, ADMINS);
+  if (!auth.ok) return auth.response;
+  const triggeredByUserId: string | null = auth.ctx.kind === 'user' ? auth.ctx.userId : null;
+  const isInternal = auth.ctx.kind === 'user' && auth.ctx.role === 'super_admin';
   
   try {
     const { analysis_period, date_range_start, date_range_end } = await req.json();
@@ -505,7 +507,7 @@ Deno.serve(async (req) => {
     console.log(`[Handler] Created insight record: ${data.id}, starting background processing`);
     
     // Start background processing
-    EdgeRuntime.waitUntil(processAnalysis(url, key, apiKey, data.id, analysis_period, date_range_start, date_range_end));
+    EdgeRuntime.waitUntil(processAnalysis(url, key, apiKey, data.id, analysis_period, date_range_start, date_range_end, triggeredByUserId, isInternal));
     
     return new Response(
       JSON.stringify({ success: true, insight_id: data.id }), 
