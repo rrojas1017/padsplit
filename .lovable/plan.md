@@ -1,73 +1,204 @@
-# BUG-003 Phase B — AI summaries for scripts without a dashboard, plus the scale fix
+# CR-001 — Admins can edit supervisor, agent and researcher users in User Management
 
-No migrations, no RLS changes, no new dependencies, no publish. Files not touched: Leaderboard, SiteFilter, useAgentGoals, Reports files, and the two submission functions. The only function deployed is generate-research-insights.
+Frontend-only. Two files: `src/pages/UserManagement.tsx` and `src/components/user-management/CommunicationPermissionsCell.tsx`. No database, RLS, migration, edge function, route, query key, audit action name, or other file changes.
 
-Checked beforehand: the two scripts exist, are active and have no slug. Their resolved types are `script_c24c5e6b` (30-Day Member Experience) and `script_827b23ef` (Non-Booking Conversion).
+The RLS policy + trigger already live in production (admin can UPDATE `profiles` for supervisor/agent/researcher rows, limited to name, site_id, and the four `can_send_*` columns; super_admin and admin rows are 0 rows; status/email changes error 42501). We only wire the UI to use it and to detect denials.
 
-## 1. supabase/functions/generate-research-insights/index.ts
+---
 
-### How move-out and audience stay untouched
-- The new code is a separate function, `runScriptMode(...)`, added above `Deno.serve` (before line 988).
-- In `Deno.serve` there is one early branch, placed right after the `resume` block (after line 1020) and before line 1022 ("INITIAL path"):
-  ```ts
-  const rawType = body.campaignType || body.campaign_type;
-  if (typeof rawType === 'string' && /^script_[0-9a-f]{8}$/.test(rawType)) {
-    return await runScriptMode(supabase, lovableApiKey, auth.ctx, body, rawType);
-  }
-  ```
-- `move_out_survey`, `audience_survey`, `payment_experience`, a missing type (which defaults to move-out) and `resume` never match the regex. They run the existing lines 1022–1302 byte-for-byte unchanged.
-- The auth guard stays the same: `requireUserOrInternal(req, MANAGERS)` at line 993, still before the branch. The nightly cron with `x-internal-secret` works exactly as today.
-- No existing helper, prompt or gate is edited. The new code reuses `callLovableAI` (line 682) and `logApiCost` as they are.
+## File 1 — `src/components/user-management/CommunicationPermissionsCell.tsx`
 
-### How runScriptMode works
-1. **Check the request.** `script_id` must be a UUID, otherwise 400. Load `research_scripts` (id, name, slug, questions) with the service-role client; if not found, 404. If `resolveResearchCampaignType(script) !== campaign_type`, return 400 "campaign_type does not match script". A local copy of the same rule goes in the function file: the move-out and payment ID map, then slug, then `script_<id8>`.
-2. **Load records.** `bookings.select('id, booking_date, created_at, research_call_id, booking_transcriptions!inner(research_extraction, survey_progress, call_summary, updated_at, research_campaign_type)')` filtered on `record_type='research'`, `has_valid_conversation=true` and `booking_transcriptions.research_campaign_type = campaign_type`. Paged with `.range()` in steps of 1000 until a short page. No filter on processing status or classification.
-3. **Gate.**
-   - Fewer than 3 eligible records: return `{ skipped: true, reason: 'not_enough_records', eligible }`.
-   - Unless `force === true`: find the latest `research_insights` row with this campaign_type and status 'completed'. If it exists and no record has `created_at` or transcription `updated_at` later than its `generated_at`, return `{ skipped: true, reason: 'no_new_records', eligible, last_insight_id }`.
-   - Log one line, same style as today, e.g. `[Gate] script skipped reason=...` or `[Gate] script ran reason=forced|new_records|no_previous`. No personal data in the log.
-4. **Stats, computed in code.** Uses the script questions minus `is_internal`, matched to answers by stable id (`q.id`, else index, same as the answer writers).
-   - multiple_choice, multiple_select, yes_no: counts per label.
-   - scale: n, average (2 decimals), distribution from `scale_min` (default 1) to `scale_max` (default 10).
-   - open_ended: trimmed texts, at most 300 characters each and 150 per question.
-   - Totals: records, completed vs ended early (from `survey_progress.ended_early`), average answered and average total.
-   - `other_notes`: `call_summary` of records that have no raw answers, at most 100.
-5. **Prompt.** Load `research_prompts` where `prompt_key = 'aggregation_' + campaign_type` (optional). Its `prompt_text` is the survey focus; its model and temperature override the defaults `google/gemini-2.5-flash` and 0.2.
-   - System prompt holds the fixed instructions you listed plus the required JSON shape.
-   - User prompt holds the script name, focus text, stats JSON (open answers removed) and the open answers grouped by question.
-6. **Save and call the AI.**
-   - Insert a `research_insights` row: campaign_type, insight_type 'aggregate', caller_type 'all', status 'processing', analysis_period 'allTime', total_records_analyzed, created_by (caller id, or null for internal calls), `data: { mode: 'script', script_id }`.
-   - Then run `callLovableAI` and log the cost with `logApiCost` (service_type 'research_aggregation', `metadata { model, prompt: 'script_mode', campaign_type }`, triggered_by_user_id, is_internal). The cost is only logged when the AI replied.
-7. **Validate.** Strip code fences and parse the JSON, then check the shape: executive_summary is a string; each list is an array with the listed fields; strength, severity and priority come from the allowed values; share_pct is a number or null; data_quality_notes is a string.
-   - Valid: update the row to 'completed' with `data: { mode, script_id, stats, report }` and `generated_at = now()`.
-   - Invalid, or the AI call errors: update to 'failed' with a short error_message.
-   - Return `{ success: true, insight_id }` or `{ success: false, insight_id, error }`.
-   - This runs in the same request with no background chaining. The data is small and one call is enough.
+**3a. New optional `disabled` prop (default false)**
+- Add `disabled?: boolean;` to `CommunicationPermissionsCellProps` (interface, lines 9–18).
+- Destructure `disabled = false,` in the component params (lines 20–29).
 
-## 2. src/components/research-insights/ScriptInsightsPanel.tsx
-- **Scale fix.** The questions mapping (lines ~49–62) also carries `id: q.id`, `scale_min: q.scale_min ?? undefined` and `scale_max: q.scale_max ?? undefined`, keeping every current field. ScriptResultsOverview (line 36) and DynamicQuestionCard (lines 48 and 92) already read `scale_max`, so "Avg Rating x/5" follows with no change to those files.
-- **New "AI Summary" tab**, shown to super_admin, admin and supervisor.
-  - `campaignType = resolveResearchCampaignType(script)` from `src/utils/researchCampaignType.ts`.
-  - Query the latest `research_insights` row (id, status, error_message, generated_at, total_records_analyzed, data) by campaign_type, ordered by created_at desc, limit 1. `refetchInterval` is 5 s while status is 'processing' and polling is under 3 minutes.
-  - Shows: generated time (ET) and records analysed, then the executive summary, key findings with a strength badge, section insights with quotes, top issues with share and severity, recommendations with priority, and the data-quality note.
-  - Failed row: show its error. No row: "No AI summary yet".
-  - The report is read defensively: missing or odd fields are skipped, never a crash.
-- **"Generate / Refresh" button**, super_admin and admin only.
-  - It sends `supabase.functions.invoke('generate-research-insights', { body: { campaign_type, script_id, force: true } })`.
-  - Skip replies become toasts: not_enough_records shows "At least 3 submissions are needed"; others show the reason.
-  - Errors show the JSON error. Success refetches the row.
-- Existing tabs, the Submissions tab and the empty-state logic are unchanged.
+**Disable only the Switch and the 3 Checkboxes — no new styles/colors/layout**
+- `Switch` (lines 39–42): add `disabled={disabled}`.
+- Email `Checkbox` (lines 70–74): add `disabled={disabled}`.
+- SMS `Checkbox` (lines 79–83): add `disabled={disabled}`.
+- Voice `Checkbox` (lines 88–92): add `disabled={disabled}`.
+- The `CollapsibleTrigger` Button and labels are left untouched (per the ticket: only the Switch and the 3 Checkboxes).
 
-## 3. roadmap.md
-One Done line for BUG-003 Phase B.
+---
 
-## Verification
-- tsgo clean. deno check generate-research-insights: I expect only its 4 existing errors (the `description`, `details`, `booking_ids` and `reason_codes_included` reads on `object`) and no new ones.
-- Deploy only generate-research-insights. An unsigned POST {} should return 401.
-- A wrong script_id and campaign_type pair should return 400. This makes no AI call, so I can test it with a signed-in session.
-- I will not make the paid forced run or the second no-force call. You run those, plus the move-out nightly check.
+## File 2 — `src/pages/UserManagement.tsx`
 
-## Notes and possible conflicts
-- Supervisor access to `research_insights` in the database was not checked. If their access rule blocks the read, supervisors will see "No AI summary yet".
-- The gate in this mode compares against the latest completed row for the campaign_type, whatever its analysis_period, as your spec says.
-- `callLovableAI` sends `max_tokens` and a json_object response format. That is today's helper and works for Gemini; it is reused as is.
+### Shared helper (new, local to the component, above the return at ~line 815)
+
+```ts
+const canEditComms = (user: UserWithRole) =>
+  isSuperAdmin ||
+  (isAdmin &&
+    (user.id === currentUser?.id ||
+      ['supervisor', 'agent', 'researcher'].includes(user.role)));
+```
+
+`isSuperAdmin`, `isAdmin`, and `currentUser` already exist (lines 135–137, 77). No new state.
+
+---
+
+### Item 1 — Non-Agents tab "Edit User" menu visibility
+
+Lines 1008–1013 today: `{isSuperAdmin && (`.
+
+Change the guard to:
+
+```tsx
+{(isSuperAdmin || (isAdmin && ['supervisor', 'agent', 'researcher'].includes(user.role))) && (
+  <DropdownMenuItem onClick={() => handleOpenEditUserDialog(user)}>
+    <Pencil className="w-4 h-4 mr-2" />
+    Edit User
+  </DropdownMenuItem>
+)}
+```
+
+Exact condition: `isSuperAdmin || (isAdmin && ['supervisor','agent','researcher'].includes(user.role))`.
+
+On the Non-Agents tab the only rows present are super_admin/admin/supervisor (filter at line 835), so for an admin this opens Edit User only on supervisor rows. The Edit User dialog body (lines 1713–1786) is unchanged: Name required + trimmed, Email read-only/disabled, Site select shown only when `editingUser.role === 'supervisor'`, otherwise "All Sites". The "Reset password" section inside the dialog stays `isSuperAdmin &&` (line 1770) — unchanged.
+
+---
+
+### Item 2 — Agents tab "Edit Researcher": detect permission failure in `handleSaveResearcher`
+
+Lines 448–489. Today the profile update at lines 452–459 has no `.select('id')` and throws on error.
+
+Replace:
+
+```ts
+const { error: profileError } = await supabase
+  .from('profiles')
+  .update({
+    name: editingResearcher.name,
+    site_id: editingResearcher.siteId || null,
+  })
+  .eq('id', editingResearcher.id);
+if (profileError) throw profileError;
+```
+
+with:
+
+```ts
+const { data: profileData, error: profileError } = await supabase
+  .from('profiles')
+  .update({
+    name: editingResearcher.name,
+    site_id: editingResearcher.siteId || null,
+  })
+  .eq('id', editingResearcher.id)
+  .select('id');
+
+// RLS denials surface as an error OR as an empty returned array (0 rows updated)
+if (profileError || !profileData || profileData.length === 0) {
+  toast({
+    title: 'Error',
+    description: "You don't have permission to edit this user",
+    variant: 'destructive',
+  });
+  return; // keep dialog open; do NOT update/create the agent record
+}
+```
+
+On a confirmed 1-row update, fall through to the existing linked-agent update/create block (lines 462–480) and the success toast + close, unchanged. This matches the pattern `handleSaveUser` already uses (lines 514–528).
+
+---
+
+### Item 3 — Communication permissions
+
+#### 3a/3b. Pass `disabled` to both `CommunicationPermissionsCell` instances
+
+Non-Agents tab cell (lines 988–997) and Agents tab cell (lines 1247–1256): add
+
+```tsx
+disabled={!canEditComms(user)}
+```
+
+So for admins the cell is read-only on super_admin rows and on other admins' rows (unless it's the current admin's own row), and enabled on the current user and on supervisor/agent/researcher rows. For super_admin it is always enabled.
+
+#### 3c. `handleToggleCommunicationPermission` (lines 705–740)
+
+Replace the update + error check (lines 710–715)
+
+```ts
+const { error } = await supabase
+  .from('profiles')
+  .update({ can_send_communications: newValue })
+  .eq('id', userId);
+
+if (error) throw error;
+```
+
+with
+
+```ts
+const { data, error } = await supabase
+  .from('profiles')
+  .update({ can_send_communications: newValue })
+  .eq('id', userId)
+  .select('id');
+
+if (error || !data || data.length === 0) {
+  toast({
+    title: 'Error',
+    description: "You don't have permission to change this user's permissions",
+    variant: 'destructive',
+  });
+  return;
+}
+```
+
+Only after a confirmed 1-row update: keep the existing `access_logs` insert with action `communication_permission_grant` / `communication_permission_revoke` (unchanged names), the existing success toast, and `fetchUsers()`. On denial: no access_logs row, no "Permission Updated" toast, dialog stays consistent with the disabled control.
+
+#### 3c. `handleToggleChannelPermission` (lines 743–785)
+
+Same pattern. Replace (lines 754–759)
+
+```ts
+const { error } = await supabase
+  .from('profiles')
+  .update({ [columnName]: newValue })
+  .eq('id', userId);
+
+if (error) throw error;
+```
+
+with
+
+```ts
+const { data, error } = await supabase
+  .from('profiles')
+  .update({ [columnName]: newValue })
+  .eq('id', userId)
+  .select('id');
+
+if (error || !data || data.length === 0) {
+  toast({
+    title: 'Error',
+    description: "You don't have permission to change this user's permissions",
+    variant: 'destructive',
+  });
+  return;
+}
+```
+
+Keep the existing `access_logs` insert with action `channel_permission_grant` / `channel_permission_revoke` (unchanged names) and success toast on confirmed update only.
+
+---
+
+## What does NOT change (confirmation)
+
+- Deactivate/Reactivate login (menu items + confirmation dialog + `admin-set-user-status`): still `isSuperAdmin`-only.
+- The status switch on the Agents tab (`disabled={!isSuperAdmin || user.id === currentUser?.id}`, line 1233): unchanged.
+- Password reset / `ResetPasswordSection` in every edit dialog: still `isSuperAdmin`-only (lines 1626, 1696, 1770).
+- "Change Role" menu item visibility (lines 1014–1019, 1279–1284): unchanged.
+- "Delete User" visibility (lines 1033–1044, 1298–1309): unchanged.
+- "Edit Agent" dialog and `handleSaveAgent` (lines 402–434, 1577–1645): unchanged.
+- The Edit User dialog body, the Edit Researcher dialog body (except the handler), and the Create User dialog: unchanged.
+- Supervisors, agents, and researchers see nothing new — no new menu items, no new enabled controls, no new tabs.
+- No route, audit action name, query key, or `user_preferences` key changes.
+- No other files touched; no database changes; nothing published.
+
+## Verification (after build approval)
+
+- `tsgo --noEmit -p tsconfig.app.json` is clean.
+- No edge functions are changed, so no `deno check`/deploy needed.
+- Browser check as an admin on `/users`: Edit User appears on supervisor rows (Non-Agents) and researcher rows without a linked agent (Agents tab); it does not appear on super_admin/other admin rows. Editing a supervisor's name saves; the comms toggles are enabled on self/supervisor/agent/researcher rows and disabled (read-only) on other admins'/super_admins' rows. Attempting a comms toggle on a row the admin can't write (simulated by a row whose role is super_admin, where the cell is disabled) does not fire a request because the control is disabled.
