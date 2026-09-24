@@ -163,6 +163,7 @@ export const FUNCTION_LABELS: Record<string, string> = {
   'batch-generate-qa-scores': 'Batch QA Scoring',
   'batch-generate-qa-coaching': 'Batch Katty Audio',
   'batch-regenerate-coaching': 'Batch Coaching',
+  'archived_monthly_summary': 'Archived costs (monthly summary, before Jun 23 2026)',
 };
 
 export const CALCULATOR_PRICING = {
