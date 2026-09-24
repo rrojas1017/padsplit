@@ -16,3 +16,4 @@
 - [x] PIPE-2 reanalyze parity + Kixie webhook cleanup
 - [x] P-G1 cost gate, nightly insights dates, deepseek model, drift file
 - [x] P-G2 frontend cleanup (7 files)
+- [ ] P-G3 translate merge by key, per-script research mode, wizard defaults

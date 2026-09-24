@@ -165,15 +165,8 @@ Deno.serve(async (req) => {
     // Kept in sync with SCRIPT_ID_MAP in supabase/functions/process-research-record/index.ts.
     const SCRIPT_ID_MAP: Record<string, string> = {
       'c701a243-1c66-425a-8f79-99a290ec5b6b': 'payment_experience',
+      '6397bb7f-ac6a-49ea-90ad-9ca6ec046434': 'move_out_survey',
     };
-    function mapScriptCampaignType(t: string | null | undefined): string | null {
-      switch (t) {
-        case 'audience_survey': return 'audience_survey';
-        case 'payment_experience': return 'payment_experience';
-        case 'satisfaction': return 'move_out_survey';
-        default: return null;
-      }
-    }
     let resolvedCampaignType: string | null = null;
     if (matchedScriptId) {
       const { data: script } = await adminClient
@@ -186,8 +179,8 @@ Deno.serve(async (req) => {
           resolvedCampaignType = SCRIPT_ID_MAP[script.id];
         } else if (script.slug && ['payment_experience', 'audience_survey'].includes(script.slug)) {
           resolvedCampaignType = script.slug;
-        } else if (script.campaign_type) {
-          resolvedCampaignType = mapScriptCampaignType(script.campaign_type);
+        } else {
+          resolvedCampaignType = script.slug || `script_${String(script.id).slice(0, 8)}`;
         }
       }
     }

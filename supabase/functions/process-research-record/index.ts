@@ -109,9 +109,16 @@ async function parseJsonWithRetry(
 // Known script IDs mapped to campaign types (mirrors src/utils/campaign-detection.ts)
 const SCRIPT_ID_MAP: Record<string, string> = {
   'c701a243-1c66-425a-8f79-99a290ec5b6b': 'payment_experience',
+  '6397bb7f-ac6a-49ea-90ad-9ca6ec046434': 'move_out_survey',
 };
 
+// Campaign types with dedicated prompt modes. Any other stamp is a per-script generic mode.
+const KNOWN_CAMPAIGN_TYPES = ['move_out_survey', 'payment_experience', 'audience_survey'];
+
 interface CampaignContext {
+  mode: 'legacy' | 'generic';
+  scriptSlug: string | null;
+  scriptQuestions: any[];
   campaignType: string;
   scriptId: string | null;
   scriptAiPrompt: string | null;
@@ -124,6 +131,9 @@ interface CampaignContext {
 async function detectCampaignContext(supabase: any, bookingId: string): Promise<CampaignContext> {
   const ctx: CampaignContext = {
     campaignType: 'move_out_survey',
+    mode: 'legacy',
+    scriptSlug: null,
+    scriptQuestions: [],
     scriptId: null,
     scriptAiPrompt: null,
     scriptModel: null,
@@ -149,7 +159,8 @@ async function detectCampaignContext(supabase: any, bookingId: string): Promise<
       .maybeSingle();
 
     // 0a. script_id_route is the highest-precedence stamp — never reclassify.
-    if (preTagged?.retag_source === 'script_id_route' && preTagged?.research_campaign_type) {
+    if (preTagged?.retag_source === 'script_id_route' && preTagged?.research_campaign_type &&
+        KNOWN_CAMPAIGN_TYPES.includes(preTagged.research_campaign_type)) {
       ctx.campaignType = preTagged.research_campaign_type;
       console.log(`[CampaignDetect] Honoring script_id_route stamp → ${ctx.campaignType} for ${bookingId}`);
       return ctx;
@@ -157,7 +168,8 @@ async function detectCampaignContext(supabase: any, bookingId: string): Promise<
 
     // 0b. Pre-set non-default campaign type (e.g. validation backfill).
     if (preTagged?.research_campaign_type &&
-        preTagged.research_campaign_type !== 'move_out_survey') {
+        preTagged.research_campaign_type !== 'move_out_survey' &&
+        KNOWN_CAMPAIGN_TYPES.includes(preTagged.research_campaign_type)) {
       ctx.campaignType = preTagged.research_campaign_type;
       console.log(`[CampaignDetect] Using pre-set campaign_type=${ctx.campaignType} (retag_source=${preTagged.retag_source ?? 'null'}) for ${bookingId}`);
       return ctx;
@@ -192,7 +204,7 @@ async function detectCampaignContext(supabase: any, bookingId: string): Promise<
     if (scriptId) {
       const { data: script } = await supabase
         .from('research_scripts')
-        .select('id, slug, campaign_type, ai_prompt, ai_model, ai_temperature')
+        .select('id, slug, campaign_type, ai_prompt, ai_model, ai_temperature, questions')
         .eq('id', scriptId)
         .maybeSingle();
 
@@ -202,13 +214,16 @@ async function detectCampaignContext(supabase: any, bookingId: string): Promise<
         ctx.scriptModel = script.ai_model || null;
         ctx.scriptTemperature = typeof script.ai_temperature === 'number' ? script.ai_temperature : null;
 
-        // Resolution waterfall: id map → slug → campaign_type
+        // Resolution waterfall: id map → PE/audience slug → per-script generic mode
         if (SCRIPT_ID_MAP[script.id]) {
           ctx.campaignType = SCRIPT_ID_MAP[script.id];
         } else if (script.slug && ['payment_experience', 'audience_survey'].includes(script.slug)) {
           ctx.campaignType = script.slug;
-        } else if (script.campaign_type) {
-          ctx.campaignType = mapCampaignType(script.campaign_type);
+        } else {
+          ctx.mode = 'generic';
+          ctx.campaignType = script.slug || `script_${String(script.id).slice(0, 8)}`;
+          ctx.scriptSlug = script.slug || null;
+          ctx.scriptQuestions = Array.isArray(script.questions) ? script.questions : [];
         }
         ctx.retagSource = 'script_id_route';
         console.log(`[CampaignDetect] Script-id route ${script.id} (slug=${script.slug}, type=${script.campaign_type}) → ${ctx.campaignType}`);
@@ -253,13 +268,32 @@ async function detectCampaignContext(supabase: any, bookingId: string): Promise<
   }
 }
 
-function mapCampaignType(scriptCampaignType: string): string {
-  switch (scriptCampaignType) {
-    case 'audience_survey': return 'audience_survey';
-    case 'payment_experience': return 'payment_experience';
-    case 'satisfaction': return 'move_out_survey';
-    default: return 'move_out_survey';
-  }
+function normalizeGatewayModel(model: string | null): string | null {
+  if (!model) return null;
+  return model.includes('/') ? model : `google/${model}`;
+}
+
+function buildGenericScriptPrompt(questions: any[]): string {
+  const list = (questions || []).map((q: any, i: number) => ({
+    question_id: (q?.id ?? '') !== '' ? String(q.id) : `q_idx_${i}`,
+    question: q?.question ?? q?.text ?? '',
+    type: q?.type ?? null,
+    options: Array.isArray(q?.options) ? q.options : [],
+  }));
+  return `You analyze a phone survey transcript between an agent and a respondent.
+The survey script questions are:
+${JSON.stringify(list, null, 2)}
+
+For each question, extract the respondent's answer using only evidence from the transcript.
+Use null when a question was not asked or not answered.
+Respond ONLY with a JSON object of this exact shape:
+{
+  "raw_script_answers": [
+    { "question_id": "<question_id from the list>", "answer_text": "<string or null>", "selected_options": ["<option>"] , "scale_value": <number or null> }
+  ],
+  "summary": "<2-4 sentence summary of the conversation>",
+  "human_review_recommended": <true|false>
+}`;
 }
 
 // ── Payment Experience fallback prompt (used only if script has no ai_prompt) ──
@@ -1059,7 +1093,7 @@ Deno.serve(async (req) => {
     // Fetch transcript
     const { data: transcription, error: fetchError } = await supabase
       .from('booking_transcriptions')
-      .select('id, call_transcription, research_processing_status, updated_at')
+      .select('id, call_transcription, research_processing_status, updated_at, research_extraction')
       .eq('booking_id', bookingId)
       .maybeSingle();
 
@@ -1098,7 +1132,49 @@ Deno.serve(async (req) => {
     let extraction: any;
     let classification: any;
 
-    if (campaignType === 'payment_experience') {
+    if (ctx.mode === 'generic') {
+      // ── PER-SCRIPT GENERIC MODE ──
+      const systemPrompt = ctx.scriptAiPrompt || buildGenericScriptPrompt(ctx.scriptQuestions);
+      const model = normalizeGatewayModel(ctx.scriptModel) || 'google/gemini-2.5-flash';
+      const temperature = ctx.scriptTemperature ?? 0.2;
+      const userPrompt = `Here is the transcript to analyze:\n\n${transcription.call_transcription}`;
+
+      console.log(`[Research] Running GENERIC script prompt (${model}${ctx.scriptAiPrompt ? ', script' : ', generated'}) for ${bookingId}, script=${ctx.scriptId}`);
+      const result = await callLovableAI(lovableApiKey, model, temperature, systemPrompt, userPrompt);
+      const parsed = await parseJsonWithRetry(result.content, lovableApiKey, model, temperature, systemPrompt, userPrompt);
+
+      const aiMap: Record<string, any> = {};
+      const aiAnswers = Array.isArray(parsed?.raw_script_answers) ? parsed.raw_script_answers : [];
+      for (const a of aiAnswers) {
+        if (!a || a.question_id === undefined || a.question_id === null || a.question_id === '') continue;
+        aiMap[String(a.question_id)] = {
+          answer_text: a.answer_text ?? null,
+          selected_options: Array.isArray(a.selected_options) ? a.selected_options : [],
+          scale_value: typeof a.scale_value === 'number' ? a.scale_value : null,
+          source: 'ai_extraction',
+        };
+      }
+      const existingRaw = (transcription as any).research_extraction?.raw_script_answers;
+      const existingMap = existingRaw && typeof existingRaw === 'object' && !Array.isArray(existingRaw) ? existingRaw : {};
+      const mergedRaw = { ...aiMap, ...existingMap };
+
+      extraction = { raw_script_answers: mergedRaw, summary: parsed?.summary ?? null };
+      classification = { human_review_recommended: parsed?.human_review_recommended === true, source: 'script_survey' };
+
+      console.log(`[Research] Generic script complete for ${bookingId}: ai_answers=${Object.keys(aiMap).length}, existing=${Object.keys(existingMap).length}, merged=${Object.keys(mergedRaw).length}`);
+
+      await logApiCost(supabase, {
+        service_provider: 'lovable_ai',
+        service_type: 'research_script_survey',
+        edge_function: 'process-research-record',
+        booking_id: bookingId,
+        input_tokens: result.inputTokens,
+        output_tokens: result.outputTokens,
+        metadata: { model, prompt: ctx.scriptAiPrompt ? 'script' : 'generic', campaign_type: campaignType, script_id: ctx.scriptId },
+        is_internal: false,
+      });
+
+    } else if (campaignType === 'payment_experience') {
       // ── PAYMENT EXPERIENCE MODE ──
       const systemPrompt = ctx.scriptAiPrompt || PAYMENT_EXPERIENCE_FALLBACK_PROMPT;
       const model = ctx.scriptModel || 'google/gemini-2.5-flash';
