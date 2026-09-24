@@ -81,8 +81,13 @@ function buildRawScriptAnswers(
         break;
       }
       case 'yes_no': {
-        const v = String(answer).trim().toLowerCase();
-        const label = v.startsWith('y') ? 'Yes' : v.startsWith('n') ? 'No' : null;
+        let label: string | null = null;
+        if (typeof answer === 'boolean') {
+          label = answer ? 'Yes' : 'No';
+        } else {
+          const v = String(answer).trim().toLowerCase();
+          label = v.startsWith('y') ? 'Yes' : v.startsWith('n') ? 'No' : null;
+        }
         if (!label) return;
         base.question_type = 'yes_no';
         base.selected_option_labels = [label];
@@ -108,6 +113,24 @@ function buildRawScriptAnswers(
   return out;
 }
 
+const json = (status: number, payload: unknown) =>
+  new Response(JSON.stringify(payload), {
+    status, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+  });
+
+function hasLongString(v: unknown, max: number, depth = 0): boolean {
+  if (depth > 10) return false;
+  if (typeof v === 'string') return v.length > max;
+  if (Array.isArray(v)) return v.some((x) => hasLongString(x, max, depth + 1));
+  if (v && typeof v === 'object') return Object.values(v as Record<string, unknown>).some((x) => hasLongString(x, max, depth + 1));
+  return false;
+}
+
+async function sha256Hex(input: string): Promise<string> {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(input));
+  return Array.from(new Uint8Array(buf)).map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
 // --- Handler ---
 
 Deno.serve(async (req) => {
@@ -119,7 +142,12 @@ Deno.serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
     );
 
-    const body = await req.json().catch(() => ({}));
+    const rawBody = await req.text().catch(() => '');
+    if (new TextEncoder().encode(rawBody).length > 100_000) {
+      return json(413, { error: 'Payload too large' });
+    }
+    let body: any = {};
+    try { body = rawBody ? JSON.parse(rawBody) : {}; } catch { body = {}; }
     const {
       token,
       responses,
@@ -130,12 +158,25 @@ Deno.serve(async (req) => {
       durationSeconds,
       callerName,
       language,
+      declined,
+      submission_id,
     } = body || {};
+    const submissionId: string | null =
+      typeof submission_id === 'string' && submission_id.trim() !== '' && submission_id.length <= 100
+        ? submission_id.trim() : null;
 
     if (!token || typeof token !== 'string') {
       return new Response(JSON.stringify({ error: 'token is required' }), {
         status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
+    }
+
+    // Abuse controls (before any DB work)
+    if (responses && typeof responses === 'object' && Object.keys(responses).length > 200) {
+      return json(400, { error: 'Too many responses' });
+    }
+    if (hasLongString(responses, 5000) || hasLongString(probeNotes, 5000) || hasLongString(agentNotes, 5000)) {
+      return json(400, { error: 'Response too long' });
     }
 
     // Validate token
@@ -165,7 +206,7 @@ Deno.serve(async (req) => {
     // Resolve script + most recent campaign for this script (if any)
     const { data: script, error: scriptErr } = await admin
       .from('research_scripts')
-      .select('id, questions, questions_es')
+      .select('id, questions, questions_es, is_active')
       .eq('id', tokenRow.script_id)
       .maybeSingle();
 
@@ -173,6 +214,10 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ error: 'Script not found' }), {
         status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
+    }
+
+    if (script.is_active === false) {
+      return json(409, { error: 'Script is not active' });
     }
 
     const questions = (language === 'es' && Array.isArray(script.questions_es) && script.questions_es.length > 0)
@@ -184,7 +229,10 @@ Deno.serve(async (req) => {
     const rawResponses = (responses && typeof responses === 'object') ? responses as Record<string, unknown> : {};
     (questions as any[]).forEach((q, idx) => {
       const stableId = getStableId(q, idx);
-      const v = rawResponses[String(idx)] ?? rawResponses[stableId] ?? (q?.id !== undefined ? rawResponses[String(q.id)] : undefined);
+      // New client (sends submission_id) keys by stable id; old client keys by index.
+      const v = submissionId
+        ? (rawResponses[stableId] ?? (q?.id !== undefined ? rawResponses[String(q.id)] : undefined) ?? rawResponses[String(idx)])
+        : (rawResponses[String(idx)] ?? rawResponses[stableId] ?? (q?.id !== undefined ? rawResponses[String(q.id)] : undefined));
       if (v !== undefined) normalizedResponses[stableId] = v;
     });
 
@@ -192,19 +240,81 @@ Deno.serve(async (req) => {
 
     // Resolve a campaign for this script (most recent active one). Required by
     // the research_calls.campaign_id NOT NULL constraint.
-    const { data: campaign } = await admin
+    let { data: campaign } = await admin
       .from('research_campaigns')
       .select('id')
       .eq('script_id', script.id)
+      .eq('status', 'active')
       .order('created_at', { ascending: false })
       .limit(1)
       .maybeSingle();
+    if (!campaign) {
+      const fallback = await admin
+        .from('research_campaigns')
+        .select('id')
+        .eq('script_id', script.id)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      campaign = fallback.data;
+    }
 
     if (!campaign) {
       return new Response(JSON.stringify({ error: 'No campaign linked to this script' }), {
         status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
+
+    const answeredCount = Object.keys(rawScriptAnswers).length;
+
+    // Client fingerprint (never logged).
+    const clientIp = (req.headers.get('x-forwarded-for') ?? '').split(',')[0].trim();
+    const clientHash = await sha256Hex(clientIp + (Deno.env.get('SUPABASE_URL') ?? ''));
+
+    // Idempotency: same submission_id for this campaign returns the existing call.
+    if (submissionId) {
+      const { data: existing } = await admin
+        .from('research_calls')
+        .select('id')
+        .eq('campaign_id', campaign.id)
+        .eq('responses->>_submission_id', submissionId)
+        .limit(1)
+        .maybeSingle();
+      if (existing) {
+        const { data: linked } = await admin
+          .from('bookings').select('id').eq('research_call_id', existing.id).limit(1).maybeSingle();
+        return json(200, {
+          ok: true,
+          research_call_id: existing.id,
+          booking_id: linked?.id ?? null,
+          raw_answers_count: answeredCount,
+        });
+      }
+    }
+
+    // Rate limits
+    const hourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+    const { count: tokenCount } = await admin
+      .from('research_calls')
+      .select('id', { count: 'exact', head: true })
+      .eq('responses->>_token_id', tokenRow.id)
+      .gte('created_at', hourAgo);
+    if ((tokenCount ?? 0) >= 60) {
+      return json(429, { error: 'Too many submissions, try again later' });
+    }
+    if (clientIp) {
+      const tenMinAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+      const { count: clientCount } = await admin
+        .from('research_calls')
+        .select('id', { count: 'exact', head: true })
+        .eq('responses->>_client_hash', clientHash)
+        .gte('created_at', tenMinAgo);
+      if ((clientCount ?? 0) >= 10) {
+        return json(429, { error: 'Too many submissions, try again later' });
+      }
+    }
+
+    const callOutcome = declined ? 'refused' : endedEarly ? 'ended_early' : (answeredCount === 0 ? 'refused' : 'completed');
 
     // Insert research_calls row (anonymous public submission).
     const enrichedResponses: Record<string, unknown> = {
@@ -213,6 +323,9 @@ Deno.serve(async (req) => {
       _agent_notes: agentNotes || {},
       _early_disposition: endedEarly ? (earlyDisposition || 'ended_early') : null,
       _source: 'public_script',
+      _token_id: tokenRow.id,
+      _client_hash: clientHash,
+      _submission_id: submissionId,
     };
 
     const { data: callRow, error: callErr } = await admin
@@ -224,7 +337,7 @@ Deno.serve(async (req) => {
         caller_phone: null,
         caller_type: 'public',
         caller_status: null,
-        call_outcome: endedEarly ? 'ended_early' : 'completed',
+        call_outcome: callOutcome,
         call_duration_seconds: typeof durationSeconds === 'number' ? durationSeconds : null,
         responses: enrichedResponses,
         language: language || 'en',
@@ -242,7 +355,7 @@ Deno.serve(async (req) => {
     // Create a research booking and a booking_transcriptions row carrying the
     // durable raw_script_answers under research_extraction.
     let bookingId: string | null = null;
-    try {
+    if (callOutcome === 'completed') try {
       const { data: anyAgent } = await admin
         .from('agents').select('id').eq('active', true).limit(1).maybeSingle();
       const today = new Date().toISOString().split('T')[0];
@@ -278,6 +391,49 @@ Deno.serve(async (req) => {
     } catch (bookErr) {
       console.error('submit-public-script: booking/transcription persist failed', bookErr);
       // Non-fatal — research_calls row was saved.
+    }
+
+    // script_responses rows (completed only; non-fatal).
+    if (callOutcome === 'completed' && answeredCount > 0) {
+      try {
+        const rows = (questions as any[]).map((q, idx) => {
+          const a = rawScriptAnswers[getStableId(q, idx)];
+          if (!a) return null;
+          const labels = a.selected_option_labels ?? null;
+          const value = a.raw_text_answer ?? (labels ? labels.join(', ') : (a.scale_value != null ? String(a.scale_value) : null));
+          return {
+            script_id: script.id,
+            session_id: callRow.id,
+            question_order: typeof q?.order === 'number' ? q.order : idx,
+            response_value: value,
+            response_options: labels,
+            response_numeric: a.scale_value ?? null,
+            respondent_id: null,
+            metadata: {
+              question_id: a.question_id,
+              question_type: a.question_type,
+              source: 'public_script',
+              language: language || 'en',
+              token_id: tokenRow.id,
+            },
+          };
+        }).filter(Boolean);
+        if (rows.length > 0) {
+          const { error: srErr } = await admin.from('script_responses').insert(rows as any[]);
+          if (srErr) console.error('submit-public-script: script_responses insert failed', srErr.message);
+          else {
+            const { data: sc } = await admin
+              .from('research_scripts').select('total_responses').eq('id', script.id).maybeSingle();
+            const { error: upErr } = await admin
+              .from('research_scripts')
+              .update({ total_responses: (sc?.total_responses ?? 0) + 1, last_response_at: new Date().toISOString() })
+              .eq('id', script.id);
+            if (upErr) console.error('submit-public-script: script counter update failed', upErr.message);
+          }
+        }
+      } catch (srEx) {
+        console.error('submit-public-script: script_responses step failed', srEx);
+      }
     }
 
     // Touch last_accessed_at (fire and forget).
