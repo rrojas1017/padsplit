@@ -462,7 +462,13 @@ Deno.serve(async (req) => {
   const isInternal = auth.ctx.kind === 'user' && auth.ctx.role === 'super_admin';
   
   try {
-    const { analysis_period, date_range_start, date_range_end } = await req.json();
+    const body = await req.json();
+    let { analysis_period, date_range_start, date_range_end } = body;
+    if ((!date_range_start || !date_range_end) && (!analysis_period || analysis_period === 'allTime')) {
+      date_range_start = '2024-01-01';
+      date_range_end = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York' }).format(new Date());
+      analysis_period = 'allTime';
+    }
     
     if (!analysis_period || !date_range_start || !date_range_end) {
       return new Response(

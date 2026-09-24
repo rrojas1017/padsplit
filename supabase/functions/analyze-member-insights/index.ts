@@ -973,7 +973,13 @@ Deno.serve(async (req) => {
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
     // Parse request body
-    const { analysis_period = 'manual', date_range_start, date_range_end } = await req.json();
+    const body = await req.json();
+    let { analysis_period = 'manual', date_range_start, date_range_end } = body;
+    if ((!date_range_start || !date_range_end) && (!body?.analysis_period || analysis_period === 'allTime')) {
+      date_range_start = '2024-01-01';
+      date_range_end = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York' }).format(new Date());
+      analysis_period = 'allTime';
+    }
 
     const triggeredByUserId: string | null = auth.ctx.kind === 'user' ? auth.ctx.userId : null;
     const isInternal = auth.ctx.kind === 'user' && auth.ctx.role === 'super_admin';

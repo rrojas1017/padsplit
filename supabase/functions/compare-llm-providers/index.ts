@@ -136,7 +136,7 @@ function buildAnalysisPrompt(transcription: string): { system: string; user: str
        "Content-Type": "application/json",
      },
      body: JSON.stringify({
-       model: "deepseek-chat",
+       model: "deepseek-v4-flash",
        messages: [
          { role: "system", content: systemPrompt },
          { role: "user", content: userPrompt },
@@ -165,7 +165,7 @@ function buildAnalysisPrompt(transcription: string): { system: string; user: str
  
    return {
      analysis,
-     model: "deepseek-chat",
+     model: "deepseek-v4-flash",
      inputTokens: result.usage?.prompt_tokens || 0,
      outputTokens: result.usage?.completion_tokens || 0,
      latencyMs,
@@ -282,7 +282,7 @@ function buildAnalysisPrompt(transcription: string): { system: string; user: str
         })),
         callDeepSeek(deepseekSystemPrompt, userPrompt).catch(err => ({
           analysis: { error: err.message },
-          model: "deepseek-chat",
+          model: "deepseek-v4-flash",
           inputTokens: 0,
           outputTokens: 0,
           latencyMs: 0,

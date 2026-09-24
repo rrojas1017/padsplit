@@ -162,6 +162,23 @@ serve(async (req) => {
       );
     }
 
+    const isSuperAdminCaller = auth.ctx.kind === 'user' && auth.ctx.role === 'super_admin';
+    if (!isSuperAdminCaller) {
+      const { data: gateRows, error: gateErr } = await supabase.rpc('get_daily_coaching_gate');
+      if (gateErr) {
+        console.error('[CostGate] RPC failed, continuing (fail-open):', gateErr.message);
+      } else {
+        const gate: any = Array.isArray(gateRows) ? gateRows[0] : gateRows;
+        if (gate?.is_blocked) {
+          return new Response(
+            JSON.stringify({ success: false, blocked: true, reason: 'daily_cost_gate',
+              todayAvg: Number(gate.today_avg ?? 0), recordCount: Number(gate.record_count ?? 0) }),
+            { status: 429, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+      }
+    }
+
     const agentFeedback = transcriptionData.agent_feedback as AgentFeedback;
     const agentName = (booking.agents as any)?.name || "Agent";
     const memberName = booking.member_name || "the member";
@@ -174,6 +191,7 @@ serve(async (req) => {
       objections?: string[];
       moveInReadiness?: { score?: number; assessment?: string };
       sentiment?: string;
+      callSentiment?: string;
     } | null;
 
     console.log(`Generating call-specific coaching audio for agent: ${agentName}, member: ${memberName}, transcript length: ${callTranscript.length}`);
@@ -182,7 +200,7 @@ serve(async (req) => {
     const concerns = callKeyPoints?.memberConcerns?.slice(0, 3).join("; ") || "";
     const objections = callKeyPoints?.objections?.slice(0, 3).join("; ") || "";
     const preferences = callKeyPoints?.memberPreferences?.slice(0, 3).join("; ") || "";
-    const sentiment = callKeyPoints?.sentiment || "positive";
+    const sentiment = callKeyPoints?.callSentiment ?? callKeyPoints?.sentiment ?? 'neutral';
 
     // Identify weakest areas for focused coaching
     const scores = agentFeedback.scores || { communication: 7, productKnowledge: 7, objectionHandling: 7, closingSkills: 7 };

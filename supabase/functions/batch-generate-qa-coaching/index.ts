@@ -4,6 +4,8 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 import { requireUser, corsHeaders, ADMINS } from "../_shared/auth.ts";
 
+declare const EdgeRuntime: { waitUntil(p: Promise<unknown>): void };
+
 // Cost logging helper
 async function logApiCost(supabase: any, params: {
   service_provider: 'elevenlabs' | 'lovable_ai';
@@ -66,12 +68,26 @@ serve(async (req) => {
 
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
+    const { data: gateRows, error: gateErr } = await supabase.rpc('get_daily_coaching_gate');
+    if (gateErr) {
+      console.error('[CostGate] RPC failed, continuing (fail-open):', gateErr.message);
+    } else {
+      const gate: any = Array.isArray(gateRows) ? gateRows[0] : gateRows;
+      if (gate?.is_blocked) {
+        return new Response(
+          JSON.stringify({ success: false, blocked: true, queued: 0, message: 'Daily cost gate active' }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+    }
+
     // Find all transcriptions with QA scores but no QA coaching audio
     const { data: transcriptions, error: fetchError } = await supabase
       .from('booking_transcriptions')
       .select('booking_id, qa_scores')
       .not('qa_scores', 'is', null)
       .is('qa_coaching_audio_url', null)
+      .is('qa_coaching_audio_generated_at', null)
       .limit(100); // Process max 100 at a time
 
     if (fetchError) {
@@ -109,6 +125,12 @@ serve(async (req) => {
             body: JSON.stringify({ bookingId: transcription.booking_id }),
           });
 
+          if (response.status === 429) {
+            await response.text();
+            console.log('[CostGate] Blocked mid-batch, stopping');
+            break;
+          }
+
           if (response.ok) {
             successCount++;
             console.log(`Successfully generated QA coaching for booking ${transcription.booking_id}`);
@@ -133,7 +155,7 @@ serve(async (req) => {
     };
 
     // Start processing in background
-    processInBackground();
+    EdgeRuntime.waitUntil(processInBackground());
 
     // Return immediately
     return new Response(
