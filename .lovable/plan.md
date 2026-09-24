@@ -1,41 +1,42 @@
-# P5-GATE — nightly "skip when nothing new" + drift file
+# P5-CLEAN — cost logging consolidation + dead code
 
-Files: `generate-research-insights/index.ts`, `analyze-member-insights/index.ts`, `analyze-non-booking-insights/index.ts`, new `supabase/migrations/20260924060000_capture_phase4_5_direct_changes.sql`. Nothing else. Auth guards untouched (lines 976 / 919 / 486 stay byte-identical). No SQL executed.
+Scope: cost logging only. Request/response shapes, auth guards and business behaviour stay exactly the same. Every new/changed cost write uses `_shared/costs.ts` `logApiCost` (awaited, never throws) and `tokensFromUsage(json, promptText, outputText)`. No prompts, transcripts or personal data in metadata (only `model`, latency, counts, ids already logged today). No migrations/config. Not published.
 
-## Gate conditions (all three)
-- `gated = body.automated === true && body.force !== true`
-- Reason for the log line: `force === true` → `forced`; not automated → `manual`; no previous row → `no_previous`; otherwise `new_records`; skip → `no_new_records`.
-- One line per request: `[Gate] skipped reason=no_new_records` or `[Gate] ran reason=<...>`. No ids of people, no names.
-- Skip response: `200 {success:true, skipped:true, reason:'no_new_records', last_insight_id}` with corsHeaders; nothing inserted, no AI call.
-- If a gate query errors: log `[Gate] ran reason=new_records` (fail-open — run as today).
+## 1) Remaining local cost math → shared module
 
-## "Latest change" computation (via the client, no SQL)
-`max(greatest(created_at, coalesce(updated_at,created_at), coalesce(x,created_at)))` equals the max of the individual column maxima (nulls ignored). So each is computed as up to three `order(col, {ascending:false, nullsFirst:false}).limit(1)` queries and the largest non-null timestamp wins (compared as `Date.getTime()`).
+| Function | Today | Change |
+|---|---|---|
+| batch-generate-qa-coaching | Local `logApiCost` at lines 9–49 (old flat rates). It is defined but never called (the function only hands work to other functions). | Delete lines 9–49. No call sites to change, so no new rows. |
+| compare-llm-providers | `DEEPSEEK_PRICING` / `GEMINI_PRICING` + cost helpers (lines 11–30); array insert (lines 324–352) | Delete the pricing blocks. Replace the insert with two awaited `logApiCost` calls using the same values (`ai_llm_comparison`, `compare-llm-providers`, `booking_id`, `triggered_by_user_id: user.id`, `is_internal: true`, providers lovable_ai / deepseek, model + latency in metadata). The console summary line and response use `llmCost(...)` for the same numbers. Token counts come from the existing usage parsing (lines 101–113, 156–168), switched to `tokensFromUsage`. |
+| reclassify-records | Inline insert with hard-coded flash rate (lines 251–262) | `logApiCost` with the same `reclassification` / `reclassify-records` / `booking_id: null` / `is_internal: true` / metadata. Tokens via `tokensFromUsage` in the AI helper (lines 60–90). |
 
-## 1) generate-research-insights (initial path only)
-Insert a gate block between line 1092 (end of the `processedRecords.length === 0` return) and line 1094 (`const classifications`), i.e. after processedRecords, before any AI/insert (insert at 1186). Resume path (line 988) untouched.
-- Previous: `research_insights` `.select('id, created_at, total_records_analyzed').eq('campaign_type', campaignType).eq('analysis_period', analysisPeriod).eq('status','completed').is('campaign_id', null).is('date_range_start', null).order('created_at',{ascending:false}).limit(1).maybeSingle()`
-- (a) `booking_transcriptions` `.eq('research_campaign_type', campaignType).eq('research_processing_status','completed')` — max of `created_at`, `updated_at`, `research_processed_at`.
-- (b) `research_prompts` max `updated_at` (none → -infinity, i.e. ignored).
-- Skip when prev exists AND `prev.total_records_analyzed === processedRecords.length` AND `prev.created_at > a` AND `prev.created_at > b`. (If (a) has no rows, it counts as -infinity.)
+## 2) BIL-04 — add missing cost rows
 
-## 2) analyze-member-insights
-Insert gate after the INS-42 defaults and the start log (after line 941), before the processing-row insert at line 944.
-- Previous: `member_insights` `.select('id, created_at').eq('analysis_period','allTime').eq('status','completed').order('created_at',{ascending:false}).limit(1).maybeSingle()`
-- Scope = exactly today's fetch filters (lines 222–228): `transcription_status='completed'`, `record_type='booking'`, `status` not `Non Booking`/`Research`, `booking_date` between `date_range_start` and `date_range_end`.
-- Latest change: max of `bookings.created_at`, `bookings.updated_at` (bookings query with `booking_transcriptions!inner(id)` + scope filters) and `booking_transcriptions.updated_at` (bt query with `bookings!inner(id)` + the same filters on `bookings.*`).
-- Skip when prev exists AND `prev.created_at > latest`.
+Missing (skipped): backfill-payment-experience-names, backfill-payment-experience-progress, backfill-survey-progress, batch-reanalyze-member-details.
 
-## 3) analyze-non-booking-insights
-Insert gate after the missing-params check (after line 505) and before the insert at line 521.
-- Previous: `non_booking_insights` same shape as member.
-- Scope: `bookings.status='Non Booking'` inner-joined to booking_transcriptions (as specified; date bounds from the INS-42 defaults applied too, matching what is analysed).
-- Same latest-change and skip rule.
+| Function | Model call (line) | service_type | Attribution | booking_id |
+|---|---|---|---|---|
+| backfill-markets-from-transcriptions | gateway flash-lite (46–63) | `market_backfill` | is_internal true, triggered_by = caller | yes (one record per call) |
+| backfill-pricing-data | gateway flash-lite (30–47) | `pricing_backfill` | is_internal true, triggered_by = caller | yes |
+| batch-extract-lifestyle-signals | gateway flash-lite (206–224) | `lifestyle_extraction` | is_internal true, triggered_by = caller or null | yes |
+| cluster-pe-open-ended | gateway flash, 2 call sites (190–216, 296–313) | `pe_open_ended_clustering` | caller from its own JWT check (353+): triggered_by = user id, is_internal = super_admin | no |
+| generate-audience-survey-executive-brief | `callModel` (96–114), can be called more than once (fallback) | `audience_executive_brief` | auth.ctx: userId / role==='super_admin' | no |
+| generate-coaching-quiz | gateway flash (128–162) | `coaching_quiz` | auth.ctx | yes (bookingId) |
+| generate-executive-brief | gateway flash (180–206) | `research_executive_brief` | auth.ctx | no |
+| generate-pe-executive-brief | `callModel` (125–147) | `pe_executive_brief` | auth.ctx | no |
+| parse-research-script | openai/gpt-5 (53–153) | `research_script_parse` | auth.ctx | no |
+| translate-script | gemini-3-flash-preview (64–134) | `research_script_translation` | user path: auth.ctx; public-token path: triggered_by null, is_internal false | no |
+| compare-stt-providers | ElevenLabs (31–47) + Deepgram (66–107) | `stt_comparison` (two rows: elevenlabs / deepgram, `audio_duration_seconds` = each provider's `durationSeconds`) | is_internal true, triggered_by = caller | yes (bookingId) |
 
-## 4) Migration file
-Write `supabase/migrations/20260924060000_capture_phase4_5_direct_changes.sql` with exactly the supplied content via a quoted heredoc (`<<'EOF'`), then verify with `diff` against the supplied text. Not applied.
+- Gateway rows: `service_provider: 'lovable_ai'`, model in metadata. Cost is logged only when a response body was parsed (successful or parse-failed reply), after the call and before returning.
+- Where auth.ctx is only in the handler, pass `{userId, isInternal}` into the helper that makes the call (a signature change inside the file only).
+- compare-stt-providers keeps its local display costs in the response unchanged (response shape rule); only the logged rows use `sttCost`.
+
+## 3) Dead code
+- `src/pages/MemberInsights.tsx`: nothing imports or routes it. App.tsx line 211 only redirects `/member-insights` → `/call-insights?tab=bookings` with `<Navigate>`, so the redirect keeps working. Delete it. Its `member-insights/*` component imports go with it (the components stay).
+- `src/components/audience-survey/AdAwarenessPanel.tsx`: **kept**. `AudienceSurveyDashboard.tsx` imports it (line 8) and renders it (line 88).
 
 ## Verification
-- `deno check` the 3 functions (generate-research-insights' 4 pre-existing errors expected, no new ones).
-- Deploy the 3; unsigned `POST {}` → 401 each.
-- No automated/real runs — the user runs those. Nothing published.
+- deno check every changed function (14). Deploy them. Unsigned POST {} → 401/403 each.
+- `tsgo --noEmit -p tsconfig.app.json`.
+- No paid calls; nothing published; roadmap.md updated.
