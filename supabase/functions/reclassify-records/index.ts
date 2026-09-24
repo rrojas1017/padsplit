@@ -1,6 +1,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 import { requireUserOrInternal, corsHeaders, MANAGERS } from "../_shared/auth.ts";
+import { tokensFromUsage, logApiCost } from "../_shared/costs.ts";
 
 const BATCH_SIZE = 20;
 
@@ -56,7 +57,7 @@ Respond in JSON format:
 async function callLovableAI(
   apiKey: string,
   transcript: string
-): Promise<{ content: string; inputTokens: number; outputTokens: number }> {
+): Promise<{ content: string; inputTokens: number; outputTokens: number; tokenSource: 'usage' | 'estimate' }> {
   const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
     method: 'POST',
     headers: {
@@ -80,11 +81,9 @@ async function callLovableAI(
   }
 
   const result = await response.json();
-  return {
-    content: result.choices?.[0]?.message?.content || '',
-    inputTokens: result.usage?.prompt_tokens || 0,
-    outputTokens: result.usage?.completion_tokens || 0,
-  };
+  const content = result.choices?.[0]?.message?.content || '';
+  const t = tokensFromUsage(result, CLASSIFICATION_PROMPT + transcript.substring(0, 10000), content);
+  return { content, inputTokens: t.inputTokens, outputTokens: t.outputTokens, tokenSource: t.source };
 }
 
 Deno.serve(async (req) => {
@@ -249,14 +248,15 @@ Deno.serve(async (req) => {
         });
 
         // Log cost
-        await supabase.from('api_costs').insert({
+        await logApiCost(supabase, {
           service_provider: 'lovable_ai',
           service_type: 'reclassification',
           edge_function: 'reclassify-records',
           booking_id: null,
           input_tokens: aiResult.inputTokens,
           output_tokens: aiResult.outputTokens,
-          estimated_cost_usd: ((aiResult.inputTokens * 0.0000003) + (aiResult.outputTokens * 0.0000025)),
+          model: 'google/gemini-2.5-flash',
+          token_source: aiResult.tokenSource,
           is_internal: true,
           metadata: { record_id: record.id, model: 'google/gemini-2.5-flash', old_code: oldCode, new_code: newCode },
         });

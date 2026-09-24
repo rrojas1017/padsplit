@@ -1,5 +1,6 @@
  import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
  import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { llmCost, tokensFromUsage, logApiCost } from "../_shared/costs.ts";
  
  const corsHeaders = {
    "Access-Control-Allow-Origin": "*",
@@ -7,28 +8,6 @@
      "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
  };
  
- // DeepSeek pricing per 1M tokens
- const DEEPSEEK_PRICING = {
-   input: 0.27,
-   output: 1.10,
- };
- 
- // Gemini pricing per 1M tokens (Flash)
- const GEMINI_PRICING = {
-   input: 0.30,
-   output: 2.50,
- };
- 
- function calculateDeepSeekCost(inputTokens: number, outputTokens: number): number {
-   return (inputTokens / 1_000_000) * DEEPSEEK_PRICING.input + 
-          (outputTokens / 1_000_000) * DEEPSEEK_PRICING.output;
- }
- 
-function calculateGeminiCost(inputTokens: number, outputTokens: number): number {
-  return (inputTokens / 1_000_000) * GEMINI_PRICING.input + 
-         (outputTokens / 1_000_000) * GEMINI_PRICING.output;
-}
-
 async function getProviderPromptEnhancements(
   supabase: any,
   providerName: 'deepseek' | 'lovable_ai'
@@ -69,6 +48,7 @@ function buildAnalysisPrompt(transcription: string): { system: string; user: str
    inputTokens: number;
    outputTokens: number;
    latencyMs: number;
+   tokenSource?: 'usage' | 'estimate';
  }> {
    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
    if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY not configured");
@@ -111,8 +91,7 @@ function buildAnalysisPrompt(transcription: string): { system: string; user: str
    return {
      analysis,
      model: "google/gemini-2.5-flash",
-     inputTokens: result.usage?.prompt_tokens || 0,
-     outputTokens: result.usage?.completion_tokens || 0,
+     ...(() => { const t = tokensFromUsage(result, systemPrompt + userPrompt, content); return { inputTokens: t.inputTokens, outputTokens: t.outputTokens, tokenSource: t.source }; })(),
      latencyMs,
    };
  }
@@ -123,6 +102,7 @@ function buildAnalysisPrompt(transcription: string): { system: string; user: str
    inputTokens: number;
    outputTokens: number;
    latencyMs: number;
+   tokenSource?: 'usage' | 'estimate';
  }> {
    const DEEPSEEK_API_KEY = Deno.env.get("DEEPSEEK_API_KEY");
    if (!DEEPSEEK_API_KEY) throw new Error("DEEPSEEK_API_KEY not configured");
@@ -166,8 +146,7 @@ function buildAnalysisPrompt(transcription: string): { system: string; user: str
    return {
      analysis,
      model: "deepseek-v4-flash",
-     inputTokens: result.usage?.prompt_tokens || 0,
-     outputTokens: result.usage?.completion_tokens || 0,
+     ...(() => { const t = tokensFromUsage(result, systemPrompt + userPrompt, content); return { inputTokens: t.inputTokens, outputTokens: t.outputTokens, tokenSource: t.source }; })(),
      latencyMs,
    };
  }
@@ -289,8 +268,8 @@ function buildAnalysisPrompt(transcription: string): { system: string; user: str
         })),
       ]);
  
-     const geminiCost = calculateGeminiCost(geminiResult.inputTokens, geminiResult.outputTokens);
-     const deepseekCost = calculateDeepSeekCost(deepseekResult.inputTokens, deepseekResult.outputTokens);
+     const geminiCost = llmCost(geminiResult.model, geminiResult.inputTokens, geminiResult.outputTokens, "lovable_ai");
+     const deepseekCost = llmCost(deepseekResult.model, deepseekResult.inputTokens, deepseekResult.outputTokens, "deepseek");
  
       // Store comparison result with enhancement tracking
       const { data: comparison, error: insertError } = await supabase
@@ -322,34 +301,32 @@ function buildAnalysisPrompt(transcription: string): { system: string; user: str
      }
  
     // Log costs to api_costs table - compare-llm is always triggered by super_admin (already verified above)
-    const costEntries = [
-      {
-        service_provider: "lovable_ai",
-        service_type: "ai_llm_comparison",
-        edge_function: "compare-llm-providers",
-        booking_id: bookingId || null,
-        input_tokens: geminiResult.inputTokens,
-        output_tokens: geminiResult.outputTokens,
-        estimated_cost_usd: geminiCost,
-        metadata: { model: geminiResult.model, latency_ms: geminiResult.latencyMs },
-        triggered_by_user_id: user.id,
-        is_internal: true,
-      },
-      {
-        service_provider: "deepseek",
-        service_type: "ai_llm_comparison",
-        edge_function: "compare-llm-providers",
-        booking_id: bookingId || null,
-        input_tokens: deepseekResult.inputTokens,
-        output_tokens: deepseekResult.outputTokens,
-        estimated_cost_usd: deepseekCost,
-        metadata: { model: deepseekResult.model, latency_ms: deepseekResult.latencyMs },
-        triggered_by_user_id: user.id,
-        is_internal: true,
-      },
-    ];
- 
-     await supabase.from("api_costs").insert(costEntries);
+    await logApiCost(supabase, {
+      service_provider: "lovable_ai",
+      service_type: "ai_llm_comparison",
+      edge_function: "compare-llm-providers",
+      booking_id: bookingId || null,
+      input_tokens: geminiResult.inputTokens,
+      output_tokens: geminiResult.outputTokens,
+      model: geminiResult.model,
+      token_source: geminiResult.tokenSource,
+      metadata: { model: geminiResult.model, latency_ms: geminiResult.latencyMs },
+      triggered_by_user_id: user.id,
+      is_internal: true,
+    });
+    await logApiCost(supabase, {
+      service_provider: "deepseek",
+      service_type: "ai_llm_comparison",
+      edge_function: "compare-llm-providers",
+      booking_id: bookingId || null,
+      input_tokens: deepseekResult.inputTokens,
+      output_tokens: deepseekResult.outputTokens,
+      model: deepseekResult.model,
+      token_source: deepseekResult.tokenSource,
+      metadata: { model: deepseekResult.model, latency_ms: deepseekResult.latencyMs },
+      triggered_by_user_id: user.id,
+      is_internal: true,
+    });
  
      console.log(`Comparison complete. Gemini: ${geminiResult.latencyMs}ms / $${geminiCost.toFixed(6)}, DeepSeek: ${deepseekResult.latencyMs}ms / $${deepseekCost.toFixed(6)}`);
  
