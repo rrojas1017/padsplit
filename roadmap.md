@@ -26,3 +26,4 @@
 - [x] BIL-COSTS: shared _shared/costs.ts price list, 10 functions switched, deploy + 401 checks
 - [x] BIL-COSTS correction: deepseek-flash alias + DeepSeek fallback
 - [x] P5-SEC: internal-only continuation paths + requireUser in create/delete/update-user-role
+- [x] P5-SEC correction: bulk-transcription-processor continue guard moved before job lookup (403 for user callers)
