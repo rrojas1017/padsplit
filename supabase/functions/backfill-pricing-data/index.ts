@@ -2,10 +2,15 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 import { requireUser, corsHeaders, ADMINS } from "../_shared/auth.ts";
+import { tokensFromUsage, logApiCost } from "../_shared/costs.ts";
+
+// deno-lint-ignore no-explicit-any
+type CostCtx = { admin: any; booking_id?: string | null; triggered_by_user_id?: string | null };
 
 async function extractPricingFromTranscription(
   transcription: string,
-  lovableApiKey: string
+  lovableApiKey: string,
+  cost?: CostCtx
 ): Promise<{ mentioned: boolean; details: string; agentInitiated: boolean; quotedRoomPrice: number | null } | null> {
   const prompt = `Analyze this PadSplit call transcription and extract pricing discussion information.
 
@@ -46,6 +51,16 @@ Rules:
 
     const result = await response.json();
     const content = result.choices?.[0]?.message?.content || '';
+    if (cost) {
+      const t = tokensFromUsage(result, prompt, content);
+      await logApiCost(cost.admin, {
+        service_provider: 'lovable_ai', service_type: 'pricing_backfill',
+        edge_function: 'backfill-pricing-data',
+        booking_id: cost.booking_id ?? null, triggered_by_user_id: cost.triggered_by_user_id ?? null,
+        input_tokens: t.inputTokens, output_tokens: t.outputTokens, token_source: t.source,
+        model: 'google/gemini-2.5-flash-lite', is_internal: true,
+      });
+    }
     
     let cleaned = content.trim();
     if (cleaned.startsWith('```json')) cleaned = cleaned.slice(7);
@@ -167,7 +182,7 @@ serve(async (req) => {
       
       const promises = chunk.map(async (record) => {
         try {
-          const pricing = await extractPricingFromTranscription(record.call_transcription!, lovableApiKey);
+          const pricing = await extractPricingFromTranscription(record.call_transcription!, lovableApiKey, { admin: supabase, booking_id: record.booking_id, triggered_by_user_id: auth.ctx.kind === 'user' ? auth.ctx.userId : null });
           if (!pricing) return false;
 
           const existingKp = (record.call_key_points || {}) as Record<string, unknown>;

@@ -2,6 +2,10 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 import { requireUser, corsHeaders, ADMINS } from "../_shared/auth.ts";
+import { tokensFromUsage, logApiCost } from "../_shared/costs.ts";
+
+// deno-lint-ignore no-explicit-any
+type CostCtx = { admin: any; booking_id?: string | null; triggered_by_user_id?: string | null };
 
 interface ProcessingResult {
   bookingId: string;
@@ -14,7 +18,8 @@ interface ProcessingResult {
 async function extractMarketFromTranscription(
   callSummary: string | null,
   propertyAddress: string | null,
-  lovableApiKey: string
+  lovableApiKey: string,
+  cost?: CostCtx
 ): Promise<{ city: string | null; state: string | null }> {
   if (!callSummary && !propertyAddress) {
     return { city: null, state: null };
@@ -62,6 +67,16 @@ Return ONLY a JSON object (no markdown, no explanation):
 
     const result = await response.json();
     const content = result.choices?.[0]?.message?.content || '';
+    if (cost) {
+      const t = tokensFromUsage(result, prompt, content);
+      await logApiCost(cost.admin, {
+        service_provider: 'lovable_ai', service_type: 'market_backfill',
+        edge_function: 'backfill-markets-from-transcriptions',
+        booking_id: cost.booking_id ?? null, triggered_by_user_id: cost.triggered_by_user_id ?? null,
+        input_tokens: t.inputTokens, output_tokens: t.outputTokens, token_source: t.source,
+        model: 'google/gemini-2.5-flash-lite', is_internal: true,
+      });
+    }
     
     let cleanedContent = content.trim();
     if (cleanedContent.startsWith('```json')) cleanedContent = cleanedContent.slice(7);
@@ -85,7 +100,8 @@ async function processChunk(
   chunk: any[],
   supabase: any,
   lovableApiKey: string,
-  dryRun: boolean
+  dryRun: boolean,
+  userId: string | null
 ): Promise<ProcessingResult[]> {
   const promises = chunk.map(async (booking) => {
     try {
@@ -94,7 +110,7 @@ async function processChunk(
       const callKeyPoints = transcription?.call_key_points;
       const propertyAddress = callKeyPoints?.memberDetails?.propertyAddress || null;
 
-      const { city, state } = await extractMarketFromTranscription(callSummary, propertyAddress, lovableApiKey);
+      const { city, state } = await extractMarketFromTranscription(callSummary, propertyAddress, lovableApiKey, { admin: supabase, booking_id: booking.id, triggered_by_user_id: userId });
 
       if (!dryRun) {
         const updateData: Record<string, unknown> = { market_backfill_checked: true };
@@ -185,7 +201,7 @@ serve(async (req) => {
     
     for (let i = 0; i < bookingsToProcess.length; i += CONCURRENCY) {
       const chunk = bookingsToProcess.slice(i, i + CONCURRENCY);
-      const chunkResults = await processChunk(chunk, supabase, lovableApiKey, dryRun);
+      const chunkResults = await processChunk(chunk, supabase, lovableApiKey, dryRun, auth.ctx.kind === 'user' ? auth.ctx.userId : null);
       results.push(...chunkResults);
       
       // Brief delay between concurrent groups
