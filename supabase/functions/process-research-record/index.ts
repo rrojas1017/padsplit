@@ -11,7 +11,7 @@ async function callLovableAI(
   temperature: number,
   systemPrompt: string,
   userPrompt: string
-): Promise<{ content: string; inputTokens: number; outputTokens: number }> {
+): Promise<{ content: string; inputTokens: number; outputTokens: number; tokenSource?: 'usage' | 'estimate' }> {
   const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
     method: 'POST',
     headers: {

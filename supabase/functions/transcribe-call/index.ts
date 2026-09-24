@@ -458,7 +458,7 @@ async function transcribeWithElevenLabs(
 async function polishTranscript(
   rawTranscript: string,
   lovableApiKey: string
-): Promise<{ polished: string; inputTokens: number; outputTokens: number }> {
+): Promise<{ polished: string; inputTokens: number; outputTokens: number; tokenSource?: 'usage' | 'estimate' }> {
   const prompt = `Polish this call transcript for readability. DO NOT change any words or meaning except for the specific corrections below.
 
 CRITICAL BRAND/COMPANY NAME FIXES (always apply these):
