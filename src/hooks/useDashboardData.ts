@@ -1,8 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
 import { Booking } from '@/types';
 import { supabase } from '@/integrations/supabase/client';
-import { DateRangeFilter as DateRangeFilterType, CustomDateRange } from '@/utils/dashboardCalculations';
-import { resolveRange } from '@/utils/businessTime';
+import { DateRangeFilter as DateRangeFilterType } from '@/utils/dashboardCalculations';
+import { resolveRange, type CustomRangeInput } from '@/utils/businessTime';
 
 const LIGHTWEIGHT_COLUMNS = `
   id, member_name, booking_date, move_in_date, agent_id, status,
@@ -102,7 +102,7 @@ export interface DashboardDataOptions {
 
 export function useDashboardData(
   dateRange: DateRangeFilterType,
-  customDates?: CustomDateRange,
+  customDates?: CustomRangeInput,
   options: DashboardDataOptions = {},
 ) {
   const { agentId, skipPrevious = false, enabled = true } = options;
