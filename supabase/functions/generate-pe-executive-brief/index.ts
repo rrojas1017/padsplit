@@ -4,10 +4,7 @@
 //  - Uses Gemini 2.5 Pro for executive prose
 //  - Stateless: aggregates are passed in the request body (no DB snapshot)
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
+import { corsHeaders, requireUser, MANAGERS } from "../_shared/auth.ts";
 
 const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY")!;
 
