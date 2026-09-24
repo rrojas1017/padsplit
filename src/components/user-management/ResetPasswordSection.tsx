@@ -56,7 +56,7 @@ export function ResetPasswordSection({ userId, userName }: ResetPasswordSectionP
         toast({ title: 'Password not updated', description: message, variant: 'destructive' });
         return;
       }
-      toast({ title: `Password updated for ${userName}. Share it with the user securely.` });
+      toast({ title: `Password updated for ${userName}. They were signed out everywhere and must choose a new password at next sign-in.` });
       reset();
     } finally {
       setSubmitting(false);

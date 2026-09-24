@@ -155,3 +155,9 @@ verify_jwt = false
 
 [functions.admin-reset-password]
 verify_jwt = true
+
+[functions.admin-set-user-status]
+verify_jwt = true
+
+[functions.change-own-password]
+verify_jwt = true
