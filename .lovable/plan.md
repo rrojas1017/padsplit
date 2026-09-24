@@ -1,99 +1,49 @@
-# BKG-P3 — Dashboard, leaderboard and one timezone rule
+# BIL-FE — Billing totals + usage PDF rates
 
-Frontend only. No migrations, RLS, triggers, DB functions or edge functions. Nothing is published.
+Frontend only. Three files changed: `src/hooks/useBillingData.ts`, `src/pages/Billing.tsx`, `src/components/billing/UsageDetailPDFGenerator.ts`. No DB, edge function, RLS or dependency changes. Nothing published.
 
-## Verified current state
-- `BookingsContext` loads only the last 90 days (lines 44-67). Leaderboard (line 16), MyPerformance (line 122) and EditBooking (line 38) read only that context, so they are empty today.
-- `useDashboardData` has no `record_type` filter, stops at 25,000 rows (line 97), and uses the context for 'today' (lines 63-66). It fetches only `[start, end]`, so the "previous period" rows the KPI and leaderboard maths look for are never loaded, and every change shows +100%.
-- The same-time "today" comparison uses browser hours (dashboardCalculations lines 116-128).
-- MyPerformance has its own preset logic based on `new Date()` (lines 45-102) and builds its chart from `today = new Date()` (lines 152, 209-218).
-- `LeaderboardTable` subtitle is hard-coded to "Top performers this week" (line 30).
-- `Booking` has no `importBatchId`, and the dashboard doesn't select `import_batch_id`.
+## 1. BIL-18 — Costs tab totals from `billing_cost_summary` (useBillingData.ts)
 
-## (a) New: src/utils/businessTime.ts
-- `BUSINESS_TZ = 'America/New_York'`.
-- `businessToday(): string` — the ET calendar date as `yyyy-MM-dd`, from `Intl.DateTimeFormat('en-CA', { timeZone })`.
-- Pure string date maths on UTC-noon Date objects: `addDaysStr`, `daysBetween` and `startOfWeekStr` (weeks start Monday). Dates are never parsed as local midnight.
-- `resolveRange(preset, custom?) → { from: string | null, to, prevFrom: string | null, prevTo: string | null }`, all ends inclusive:
-  - today: previous = yesterday.
-  - yesterday: previous = the day before.
-  - 7d: today-6..today; previous = the 7 days before.
-  - 30d: today-29..today; previous = the 30 days before.
-  - month: 1st..today; previous = previous month days 1..min(day of month, length of previous month).
-  - all: from = null, no previous.
-  - custom: the picked calendar dates, read from the Date's local Y/M/D (they come from the date picker). Previous = the same number of days immediately before.
-- `presetLabel(preset)` returns the picker labels ("Today", "Yesterday", "Last 7 days", "Last 30 days", "This month", "All Time", "Custom range").
-- `etMinutesOfDay(date: Date): number` gives the minutes since ET midnight.
-- `ymdToLocalDate(s)` is display only, built as `new Date(s + 'T00:00:00')`.
+- **Date range (lines 104–127, `getDateRange`)**: replace the date-fns preset logic. The hook accepts the existing `DateRangeType` plus the custom dates. It maps them to `resolveRange` presets (today, yesterday, thisWeek→Monday..today in ET, thisMonth→month, last7Days→7d, last30Days→30d, allTime→all, custom→custom). It returns `from`/`to` as 'yyyy-MM-dd' ET strings.
+- **New helper, local to the hook**: `etMidnightIso(ymd)` returns the ISO instant of 00:00 America/New_York on that day. The offset (-04:00 or -05:00) comes from `Intl.DateTimeFormat` with `timeZoneName: 'longOffset'`, so the change to and from daylight saving time is handled. Values:
+  - `p_start` = etMidnightIso(from)
+  - `p_end` = etMidnightIso(to + 1 day), exclusive
+  - All Time: `p_start` = '2020-01-01T00:00:00-05:00', `p_end` = etMidnightIso(today + 1)
+- **The existing row query (lines 143–150)** uses the same instants: `.gte(p_start).lt(p_end)` instead of the browser-local start and end.
+- **fetchData**: runs `supabase.rpc('billing_cost_summary', { p_start, p_end })` alongside the row query, typed with a local `CostSummaryRow` interface (no `any`). The result goes into new state `rpcSummary: CostSummaryRow[] | null`.
+  - If the call errors with a message containing 'forbidden', or with any other error, `rpcSummary` stays null (the old behaviour) and the error is logged.
+- **Totals (lines 206, 230–250)**: when `rpcSummary` is present, these are summed from its rows:
+  - `totalCost`, `byProvider`, `byServiceType`, `byFunction` (count = `rows`, cost = `cost_usd`)
+  - `excludeTTS` applies the same filter to the RPC rows (service_type starting with `tts_` or equal to `qa_script_generation`).
+  - Otherwise the current client-side sums from the loaded rows are kept.
+  - `costPerBooking` and `costPerMinute` keep using the RPC total over the row-based counts (unchanged when the RPC is unavailable).
+- **Row-level figures** (daily trend, per-agent, voice/text record counts, unique bookings, talk time) stay row-based.
+- **New return fields**: `costsCapped: boolean` (true when the rows loaded equal the server's row cap, detected as `costsRaw.length >= 1000`), `totalsSource: 'rpc' | 'rows'` and `archivedCost: number` (the sum of rows where source = 'archived').
 
-## (b) Data hook: src/hooks/useDashboardData.ts
-- **Lines 9-20:** add `import_batch_id` to the columns. **Line 60:** map it to `importBatchId`.
-- **Lines 63-66:** delete `needsDirectQuery`. Every preset, including 'today', queries the database.
-- **Lines 71-101 `fetchAllBookings(bounds, agentId?)`:**
-  - `.eq('record_type','booking')`.
-  - `.gte('booking_date', prevFrom ?? from)` when there is a lower bound, and `.lte('booking_date', to)`.
-  - `.eq('agent_id', agentId)` when an agent id is given.
-  - `.order('booking_date', { ascending: false }).order('id', { ascending: false })`, paginated by 1000 with no row cap.
-- **Lines 103-163:** signature `useDashboardData(dateRange, customDates?, options?: { agentId?: string; skipPrevious?: boolean; enabled?: boolean })`.
-  - The return shape stays `{ bookings, isLoading }`.
-  - The cache key includes the bounds and agent id.
-  - `useBookings` is no longer used here.
+## 2. Billing.tsx — preset mapping (lines 36–45) and cap label
 
-## Calculations: src/utils/dashboardCalculations.ts
-- **Lines 1-2 and 51-93:**
-  - `getEasternNow` stays exported but is built on `businessToday()` plus the ET time.
-  - `getDateRangeFromFilter` keeps its signature. It wraps `resolveRange` and returns `start`/`end` Dates made from the strings with `ymdToLocalDate`.
-  - For 'all', the start is the earliest `bookingDate` in the rows when given, otherwise `2024-01-01`, so the chart doesn't loop from 2020.
-- **Lines 32-39 `filterBookingsByDateRange` and 24-30 `filterBookingsByDate`:** compare `format(bookingDate,'yyyy-MM-dd')` strings with the range strings.
-- **Lines 4-11 `filterActualBookings`:** add `b.recordType === 'booking'` (rule 3).
-- **Lines 95-225 `calculateKPIData`:**
-  - The previous period comes from `resolveRange` (prevFrom/prevTo).
-  - The same-time "today" rule uses `etMinutesOfDay(createdAt) <= etMinutesOfDay(now)`.
-  - For 'all', every KPI gets `hideChange: true`, change 0, and the period label "All Time".
-  - Period labels come from `presetLabel`.
-- **Lines 260-335 `calculateLeaderboard`:** the previous period comes from `resolveRange`; for 'all', change = 0.
-- **Lines 382-495 `calculateInsightsData`:**
-  - today, yesterday, week start (Monday) and month start are all `resolveRange`/`businessToday` strings.
-  - "Pending move-ins next 7 days" leaves out rows where `importBatchId` is set and `moveInDate` = `bookingDate` (HubSpot placeholders). This applies to that insight only.
-- **Line 497 `calculateNonBookingCount`:** uses the same string range. Non-Booking rows still pass, because the fetch keeps `record_type='booking'`.
+- Add a `'last7Days'` value to `DateRangeType` in the hook (additive, so existing callers keep working).
+- Mapping: '7d'→last7Days, '30d'→last30Days; the rest are unchanged. All presets resolve through `resolveRange` inside the hook (section 1). This keeps Billing.tsx limited to the preset mapping.
+- The "latest 1,000 rows" label: the detail tables are rendered in child components, which are outside scope. Only the preset mapping changes in Billing.tsx. I will add the label only if a detail table header lives inside Billing.tsx itself; otherwise `costsCapped` is exposed and a follow-up adds the label.
 
-## Types and KPI card (small, additive)
-- **`src/types/index.ts`:** `Booking` (line 93) gains `importBatchId?: string`, and `KPIData` (line 170) gains `hideChange?: boolean`.
-- **`src/components/dashboard/KPICard.tsx` lines 47-56:** when `hideChange` is set, the "vs previous" line and the % pill are not rendered. Everything else looks the same.
+## 3. BIL-14 — Usage PDF rates from the invoice snapshot (UsageDetailPDFGenerator.ts)
 
-## Pages
-- **`src/pages/Dashboard.tsx`:**
-  - Line 43 stays `useDashboardData(dateRange, customDates)`.
-  - Add a second call for the insights panel: `useDashboardData('custom', { from: min(monthStart, weekStart, yesterday), to: today }, { skipPrevious: true })`. The "today vs yesterday", "this week" and "pending move-ins" cards then stay correct for any selected range.
-  - Line 79 `calculateInsightsData` uses those rows.
-  - Line 157 becomes `<LeaderboardTable data={leaderboard} subtitle={presetLabel(dateRange)} />`.
-- **`src/pages/Leaderboard.tsx`:**
-  - Line 16: replace `useBookings()` with `useDashboardData(dateRange, customDates)`, and drop the unused import at line 8.
-  - Line 120: add `subtitle={presetLabel(dateRange)}`.
-- **`src/pages/MyPerformance.tsx`:**
-  - Lines 45-102: delete `getDateRangeFromFilterLocal`/`getPreviousPeriod`.
-  - Line 122: use `useDashboardData(dateFilter, customDates, { agentId: myAgent?.id, enabled: !!myAgent || user.role !== 'agent' })`. For agents the agent filter is added. Admins and supervisors keep all visible rows, so rank still works for them.
-  - Lines 152-165 and 175-205: period filters compare `yyyy-MM-dd` strings from `resolveRange`.
-  - Lines 208-218: the chart walks back from `businessToday()`.
-  - The existing `dateFilter === 'all'` checks already hide the change.
-  - `getFilterLabel` stays as it is (copy unchanged).
-- **`src/components/dashboard/LeaderboardTable.tsx` lines 5-10 and 30:** new optional `subtitle` prop that defaults to the current text.
-- **`src/pages/EditBooking.tsx` line 62:**
-  - `booking = contextBooking ?? fetchedBooking`.
-  - A new effect loads the row by id with `supabase.from('bookings').select(...).eq('id', id).maybeSingle()` when it isn't in the context, then maps it the same way the context does.
-  - A loading state shows while fetching. "Booking not found" appears only after the fetch returns nothing.
-  - On save, the existing `updateBooking` still runs.
+- **Rates, now fetched instead of hard-coded (lines 16–21)**: `SOW_RATES` stays as the last-resort default. A new async `resolveRates(invoiceNumber)`:
+  1. Looks up `billing_invoices.id` by `invoice_number`, then its `invoice_line_items` (`service_category`, `unit_rate`).
+  2. For each of voice_processing, text_processing, email_delivery and sms_delivery, it uses the line item's `unit_rate`.
+  3. If there is no line item for a category, it uses the active `sow_pricing_config.unit_rate` (or the column that holds the rate) for that category.
+  4. If neither exists, it uses the hard-coded default.
+  - This needs no signature change, so `InvoiceHistory.tsx` stays untouched.
+- **Rates passed through the drawing functions**: `rates: Record<string, number>` is threaded into the cover (lines 203–206), the communications page (line 395), the reconciliation (lines 446–449) and the main export (lines 506–549, the voice and text detail calls).
+- **Invoice totals are unchanged**: invoice totals come from the invoice rows, not from this PDF, and the PDF now matches the stored line-item rates.
 
-## Pages still using their own date logic (not changed now)
-components/audience-survey/generateAudienceSurveyReport.ts, components/billing/InvoiceGenerator.tsx, components/call-insights/BookingInsightsTab.tsx, CrossSellOpportunitiesTab.tsx, NonBookingAnalysisTab.tsx, NonBookingTrendChart.tsx, components/dashboard/DateRangePicker.tsx, components/research-insights/ReasonCodeChart.tsx, hooks/useBillingData.ts, hooks/useMyBookingsData.ts, hooks/usePromoCodes.ts, pages/MemberInsights.tsx, pages/MyQA.tsx, pages/PublicWallboard.tsx, pages/QADashboard.tsx, pages/Wallboard.tsx, plus `contexts/BookingsContext.tsx` (90-day window, still used by Reports and other pages).
+## Checks after implementation
 
-## Acceptance (custom 2026-05-01..2026-05-31)
-- Total bookings 253 (+23% vs 205).
-- All Time total 3,795, with the % change hidden.
-- Leaderboard: Anel 100, Emmanuel 79, Megane 74.
-- EditBooking opens a booking dated 2026-05-15.
+- `npx tsgo --noEmit -p tsconfig.app.json` must pass clean.
+- A read-only SQL comparison for Aug 2026 (ET) and All Time. The RPC itself needs super_admin, so the numbers are confirmed with an equivalent direct sum.
+- The report lists anything not verifiable from here.
 
-## After implementation
-- `npx tsgo --noEmit -p tsconfig.app.json` clean.
-- Read-only SQL spot-checks of the targets.
-- Report the results.
+## Assumptions
+
+- The PostgREST server cap is 1,000 rows, even though the code asks for 5,000, which is why All Time shows $31.91.
+- The `sow_pricing_config` rate column name is confirmed by a read before coding. It is used only as the fallback.
