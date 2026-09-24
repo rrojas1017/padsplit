@@ -55,7 +55,7 @@ export interface BillingInvoice {
   markup_usd: number;
   total_usd: number;
   cost_breakdown: Record<string, any>;
-  status: 'draft' | 'sent' | 'paid';
+  status: 'draft' | 'sent' | 'paid' | 'void';
   notes: string | null;
   created_by: string | null;
   created_at: string;
@@ -355,7 +355,12 @@ export function useBillingData(dateRange: DateRangeType = 'thisMonth', customSta
       .select()
       .single();
     
-    if (error) throw error;
+    if (error) {
+      if (error.code === '23P01') {
+        throw new Error('An invoice for this client already covers part of this period. Void the existing invoice first.');
+      }
+      throw error;
+    }
 
     // Insert line items if provided
     if (line_items && line_items.length > 0 && data) {
@@ -370,7 +375,7 @@ export function useBillingData(dateRange: DateRangeType = 'thisMonth', customSta
     return data;
   };
 
-  const updateInvoiceStatus = async (id: string, status: 'draft' | 'sent' | 'paid') => {
+  const updateInvoiceStatus = async (id: string, status: 'draft' | 'sent' | 'paid' | 'void') => {
     const { error } = await supabase
       .from('billing_invoices')
       .update({ status })
@@ -427,7 +432,29 @@ export function useBillingData(dateRange: DateRangeType = 'thisMonth', customSta
     const telephonyMins = periodCosts
       .filter(c => c.booking_id && platformBookingIds.has(c.booking_id))
       .reduce((sum, c) => sum + (c.audio_duration_seconds || 0), 0) / 60;
-    const internalCost = periodCosts.reduce((sum, c) => sum + Number(c.estimated_cost_usd || 0), 0);
+    const bookingInternalCost = periodCosts.reduce((sum, c) => sum + Number(c.estimated_cost_usd || 0), 0);
+
+    let researchCost = 0;
+    let researchRows = 0;
+    let platformCost = 0;
+    let platformRows = 0;
+    let platformCostsUnavailable = false;
+    const { data: platformData, error: pErr } = await supabase.rpc('invoice_platform_costs', {
+      p_start: startDate,
+      p_end: endDate,
+    });
+    if (pErr) {
+      console.warn('[Billing] invoice_platform_costs unavailable');
+      platformCostsUnavailable = true;
+    } else {
+      const row = Array.isArray(platformData) ? platformData[0] : platformData;
+      if (row) {
+        researchCost = Number(row.research_cost) || 0;
+        researchRows = Number(row.research_rows) || 0;
+        platformCost = Number(row.platform_cost) || 0;
+        platformRows = Number(row.platform_rows) || 0;
+      }
+    }
 
     const { data: commsData } = await supabase
       .from('contact_communications')
@@ -446,7 +473,13 @@ export function useBillingData(dateRange: DateRangeType = 'thisMonth', customSta
       emailDeliveryCount: emailCount,
       smsDeliveryCount: smsCount,
       telephonyMinutes: telephonyMins,
-      totalInternalCost: internalCost,
+      bookingInternalCost,
+      researchCost,
+      platformCost,
+      researchRows,
+      platformRows,
+      platformCostsUnavailable,
+      totalInternalCost: bookingInternalCost + researchCost + platformCost,
     };
   };
 

@@ -5,7 +5,17 @@ import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
-import { FileText, Check, Send, Clock, Download, ChevronDown, AlertCircle, BarChart3, ClipboardList } from 'lucide-react';
+import { FileText, Check, Send, Clock, Download, ChevronDown, AlertCircle, BarChart3, ClipboardList, Ban } from 'lucide-react';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { format, parseISO, isPast } from 'date-fns';
 import { BillingInvoice, Client, InvoiceLineItem } from '@/hooks/useBillingData';
 import { formatCurrency, SOW_CATEGORY_LABELS } from '@/utils/billingCalculations';
@@ -14,10 +24,12 @@ import { generateInvoicePDF } from '@/components/billing/InvoicePDFGenerator';
 import { generateUsageDetailPDF } from '@/components/billing/UsageDetailPDFGenerator';
 import { generateRecordsProcessingPDF } from '@/components/billing/RecordsProcessingPDFGenerator';
 
+type InvoiceStatus = 'draft' | 'sent' | 'paid' | 'void';
+
 interface InvoiceHistoryProps {
   invoices: BillingInvoice[];
   clients: Client[];
-  onUpdateStatus: (id: string, status: 'draft' | 'sent' | 'paid') => Promise<void>;
+  onUpdateStatus: (id: string, status: InvoiceStatus) => Promise<void>;
   onFetchLineItems: (invoiceId: string) => Promise<InvoiceLineItem[]>;
 }
 
@@ -25,24 +37,30 @@ const statusConfig = {
   draft: { label: 'Draft', icon: Clock, variant: 'secondary' as const },
   sent: { label: 'Sent', icon: Send, variant: 'default' as const },
   paid: { label: 'Paid', icon: Check, variant: 'outline' as const },
+  void: { label: 'Void', icon: Ban, variant: 'destructive' as const },
 };
+
+const getStatusConfig = (status: string) =>
+  statusConfig[status as InvoiceStatus] ?? statusConfig.draft;
 
 const InvoiceHistory = ({ invoices, clients, onUpdateStatus, onFetchLineItems }: InvoiceHistoryProps) => {
   const [expandedInvoice, setExpandedInvoice] = useState<string | null>(null);
   const [lineItemsCache, setLineItemsCache] = useState<Record<string, InvoiceLineItem[]>>({});
   const [generatingUsageReport, setGeneratingUsageReport] = useState<string | null>(null);
   const [generatingProcessingReport, setGeneratingProcessingReport] = useState<string | null>(null);
+  const [pendingVoid, setPendingVoid] = useState<BillingInvoice | null>(null);
 
   const getClientName = (clientId: string) => {
     return clients.find(c => c.id === clientId)?.name || 'Unknown';
   };
 
-  const handleStatusChange = async (invoiceId: string, newStatus: 'draft' | 'sent' | 'paid') => {
+  const handleStatusChange = async (invoiceId: string, newStatus: InvoiceStatus) => {
     try {
       await onUpdateStatus(invoiceId, newStatus);
       toast.success(`Invoice marked as ${newStatus}`);
     } catch (error) {
-      toast.error('Failed to update invoice status');
+      const message = (error as { message?: unknown } | null)?.message;
+      toast.error(typeof message === 'string' && message ? message : 'Failed to update invoice status');
     }
   };
 
@@ -108,14 +126,17 @@ const InvoiceHistory = ({ invoices, clients, onUpdateStatus, onFetchLineItems }:
           <ScrollArea className="h-[500px] pr-4">
             <div className="space-y-3">
               {invoices.map((invoice) => {
-                const StatusIcon = statusConfig[invoice.status].icon;
-                const isOverdue = invoice.due_date && isPast(parseISO(invoice.due_date)) && invoice.status !== 'paid';
+                const cfg = getStatusConfig(invoice.status);
+                const StatusIcon = cfg.icon;
+                const isVoid = invoice.status === 'void';
+                const isPaid = invoice.status === 'paid';
+                const isOverdue = !isVoid && invoice.due_date && isPast(parseISO(invoice.due_date)) && !isPaid;
                 const items = lineItemsCache[invoice.id];
 
                 return (
                   <div
                     key={invoice.id}
-                    className="border rounded-lg p-4 space-y-3 hover:bg-muted/50 transition-colors"
+                    className={`border rounded-lg p-4 space-y-3 hover:bg-muted/50 transition-colors${isVoid ? ' opacity-60' : ''}`}
                   >
                     <div className="flex items-start justify-between">
                       <div>
@@ -135,9 +156,9 @@ const InvoiceHistory = ({ invoices, clients, onUpdateStatus, onFetchLineItems }:
                             Overdue
                           </Badge>
                         )}
-                        <Badge variant={statusConfig[invoice.status].variant} className="flex items-center gap-1">
+                        <Badge variant={cfg.variant} className="flex items-center gap-1">
                           <StatusIcon className="h-3 w-3" />
-                          {statusConfig[invoice.status].label}
+                          {cfg.label}
                         </Badge>
                       </div>
                     </div>
@@ -235,15 +256,24 @@ const InvoiceHistory = ({ invoices, clients, onUpdateStatus, onFetchLineItems }:
                         </Button>
                         <Select
                           value={invoice.status}
-                          onValueChange={(value) => handleStatusChange(invoice.id, value as any)}
+                          disabled={isVoid}
+                          onValueChange={(value) => {
+                            const next = value as InvoiceStatus;
+                            if (next === 'void') {
+                              setPendingVoid(invoice);
+                            } else {
+                              handleStatusChange(invoice.id, next);
+                            }
+                          }}
                         >
                           <SelectTrigger className="w-[120px] h-8 text-xs">
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="draft">Draft</SelectItem>
-                            <SelectItem value="sent">Sent</SelectItem>
+                            <SelectItem value="draft" disabled={isPaid}>Draft</SelectItem>
+                            <SelectItem value="sent" disabled={isPaid}>Sent</SelectItem>
                             <SelectItem value="paid">Paid</SelectItem>
+                            <SelectItem value="void">Void</SelectItem>
                           </SelectContent>
                         </Select>
                       </div>
@@ -260,6 +290,25 @@ const InvoiceHistory = ({ invoices, clients, onUpdateStatus, onFetchLineItems }:
             <p className="text-sm">Generate your first invoice from the left panel</p>
           </div>
         )}
+        <AlertDialog open={pendingVoid !== null} onOpenChange={(open) => { if (!open) setPendingVoid(null); }}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Void {pendingVoid?.invoice_number || 'INV-—'}?</AlertDialogTitle>
+              <AlertDialogDescription>A void invoice cannot be reopened.</AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={() => {
+                  if (pendingVoid) handleStatusChange(pendingVoid.id, 'void');
+                  setPendingVoid(null);
+                }}
+              >
+                Void
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </CardContent>
     </Card>
   );
