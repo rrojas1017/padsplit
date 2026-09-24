@@ -28,12 +28,17 @@ function filterByDateRange<T extends { booking_date: string }>(records: T[], ran
   } else { // last3months
     start = new Date(now.getFullYear(), now.getMonth() - 3, 1);
   }
+  // booking_date is a 'yyyy-MM-dd' ET string: compare strings against local
+  // 'yyyy-MM-dd' bounds (start inclusive, end exclusive) — never parse it.
+  const ymd = (d: Date) =>
+    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  const startKey = ymd(start);
+  const endKey = end ? ymd(end) : null;
   return records.filter((r) => {
-    if (!r.booking_date) return false;
-    const d = new Date(r.booking_date);
-    if (isNaN(d.getTime())) return false;
-    if (d < start) return false;
-    if (end && d >= end) return false;
+    const d = typeof r.booking_date === 'string' ? r.booking_date.slice(0, 10) : '';
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return false;
+    if (d < startKey) return false;
+    if (endKey && d >= endKey) return false;
     return true;
   });
 }
@@ -41,6 +46,7 @@ function filterByDateRange<T extends { booking_date: string }>(records: T[], ran
 import {
   usePaymentExperienceResponses,
   deriveKPIs,
+  computeEligibilityStats,
   aggregateFrictionThemes,
   aggregateAutopayBarriers,
   type KPIMetric,
@@ -174,7 +180,7 @@ export const PaymentExperienceInsightsDashboard = forwardRef<
 ) {
   const {
     records: allRecords, eligibleRecords: allEligible, eligibilityStats,
-    topFrictionThemes: allFrictionThemes, frictionSummary: allFrictionSummary,
+    topFrictionThemes: allFrictionThemes,
     autopayBarriers: allBarriers, isLoading,
   } = usePaymentExperienceResponses();
 
@@ -188,12 +194,14 @@ export const PaymentExperienceInsightsDashboard = forwardRef<
 
   // Recompute KPIs and aggregates from the date-filtered eligible set
   const { kpis, topFrictionThemes, autopayBarriers } = useMemo(() => ({
-    kpis: { ...deriveKPIs(eligibleRecords as any), totalRouted: records.length },
-    topFrictionThemes: aggregateFrictionThemes(eligibleRecords as any).themes,
-    autopayBarriers: aggregateAutopayBarriers(eligibleRecords as any),
+    kpis: { ...deriveKPIs(eligibleRecords), totalRouted: records.length },
+    topFrictionThemes: aggregateFrictionThemes(eligibleRecords).themes,
+    autopayBarriers: aggregateAutopayBarriers(eligibleRecords),
   }), [eligibleRecords, records]);
 
-  const frictionSummary = allFrictionSummary; // headline copy unaffected
+  // Banner + funnel footer use the date-filtered, corrected values.
+  const frictionSummary = useMemo(() => aggregateFrictionThemes(eligibleRecords).summary, [eligibleRecords]);
+  const filteredEligibility = useMemo(() => computeEligibilityStats(records), [records]);
   const { insight } = usePaymentExperienceAIInsight({
     kpis,
     topFriction: topFrictionThemes,
@@ -257,7 +265,7 @@ export const PaymentExperienceInsightsDashboard = forwardRef<
     );
   }
 
-  const routedTotal = eligibilityStats.eligible + eligibilityStats.excluded;
+  const routedTotal = filteredEligibility.eligible + filteredEligibility.excluded;
 
   return (
     <div className="space-y-3">
@@ -362,12 +370,12 @@ export const PaymentExperienceInsightsDashboard = forwardRef<
           <SurveyFunnelSection
             steps={analytics.surveyFunnel}
             eligibility={{
-              eligible: eligibilityStats.eligible,
+              eligible: filteredEligibility.eligible,
               routedTotal,
-              excluded: eligibilityStats.excluded,
-              voicemail: eligibilityStats.voicemail,
-              tooShort: eligibilityStats.tooShort,
-              insufficientExtraction: eligibilityStats.insufficientExtraction,
+              excluded: filteredEligibility.excluded,
+              voicemail: filteredEligibility.voicemail,
+              tooShort: filteredEligibility.tooShort,
+              insufficientExtraction: filteredEligibility.insufficientExtraction,
             }}
           />
         </>
