@@ -81,37 +81,6 @@ serve(async (req) => {
       );
     }
 
-    // Atomic claim via RPC to bypass PostgREST schema cache issues (error 42703).
-    // The RPC function uses raw SQL which always works regardless of cache state.
-    try {
-      const { data: claimedId, error: claimError } = await supabase
-        .rpc('claim_booking_for_transcription', { p_booking_id: bookingId });
-
-      if (claimError) {
-        console.error(`[check-auto-transcription] Claim RPC error:`, claimError);
-        return new Response(
-          JSON.stringify({ triggered: false, reason: `Claim error: ${claimError.message}` }),
-          { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
-      }
-      
-      if (!claimedId) {
-        console.log(`[check-auto-transcription] Booking ${bookingId} already claimed by another invocation, skipping`);
-        return new Response(
-          JSON.stringify({ triggered: false, reason: 'Already claimed by another invocation' }),
-          { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
-      }
-      
-      console.log(`[check-auto-transcription] Successfully claimed booking ${bookingId} for transcription`);
-    } catch (e) {
-      console.error(`[check-auto-transcription] Unexpected claim exception:`, e);
-      return new Response(
-        JSON.stringify({ triggered: false, reason: 'Claim exception' }),
-        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-
     // Fetch all active rules ordered by priority
     const { data: rules, error: rulesError } = await supabase
       .from('transcription_auto_rules')
@@ -184,6 +153,37 @@ serve(async (req) => {
       );
     }
 
+    // Atomic claim via RPC to bypass PostgREST schema cache issues (error 42703).
+    // The RPC function uses raw SQL which always works regardless of cache state.
+    try {
+      const { data: claimedId, error: claimError } = await supabase
+        .rpc('claim_booking_for_transcription', { p_booking_id: bookingId });
+
+      if (claimError) {
+        console.error(`[check-auto-transcription] Claim RPC error:`, claimError);
+        return new Response(
+          JSON.stringify({ triggered: false, reason: `Claim error: ${claimError.message}` }),
+          { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+      
+      if (!claimedId) {
+        console.log(`[check-auto-transcription] Booking ${bookingId} already claimed by another invocation, skipping`);
+        return new Response(
+          JSON.stringify({ triggered: false, reason: 'Already claimed by another invocation' }),
+          { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+      
+      console.log(`[check-auto-transcription] Successfully claimed booking ${bookingId} for transcription`);
+    } catch (e) {
+      console.error(`[check-auto-transcription] Unexpected claim exception:`, e);
+      return new Response(
+        JSON.stringify({ triggered: false, reason: 'Claim exception' }),
+        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
     const siteName = bookingData.agents?.sites?.name || '';
     const isVixicom = siteName.toLowerCase().includes('vixicom');
     const isImported = !!bookingData.import_batch_id;
@@ -207,6 +207,20 @@ serve(async (req) => {
     if (!transcribeResponse.ok) {
       const errorText = await transcribeResponse.text();
       console.error(`[check-auto-transcription] Failed to trigger transcription:`, errorText);
+      if (transcribeResponse.status !== 409) {
+        try {
+          await supabase
+            .from('bookings')
+            .update({
+              transcription_status: 'failed',
+              transcription_error_message: `Dispatch failed: ${transcribeResponse.status}`,
+            })
+            .eq('id', bookingId)
+            .eq('transcription_status', 'queued');
+        } catch (e) {
+          console.error(`[check-auto-transcription] Failed to mark dispatch failure:`, e instanceof Error ? e.message : e);
+        }
+      }
       return new Response(
         JSON.stringify({ triggered: false, reason: 'Failed to trigger transcription' }),
         { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }

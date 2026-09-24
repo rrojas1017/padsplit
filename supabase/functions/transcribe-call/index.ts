@@ -2523,8 +2523,11 @@ serve(async (req) => {
 
   try {
     // A `kixieUrl` body field is accepted for compatibility but ignored.
-    const { bookingId, skipTts = false } = await req.json();
+    const { bookingId, callId, skipTts = false } = await req.json();
 
+    if (callId && !bookingId) {
+      return jsonResponse(400, { success: false, error: 'callId is not supported; send bookingId' });
+    }
     if (!bookingId) {
       return jsonResponse(400, { error: 'Missing bookingId' });
     }
@@ -2533,6 +2536,19 @@ serve(async (req) => {
     }
     
     console.log(`Received transcription request for booking ${bookingId} (skipTts: ${skipTts})`);
+
+    // Validate required env vars before starting
+    const elevenLabsApiKey = Deno.env.get('ELEVENLABS_API_KEY');
+    const deepgramApiKey = Deno.env.get('DEEPGRAM_API_KEY');
+    const lovableApiKey = Deno.env.get('LOVABLE_API_KEY');
+    
+    // At least one STT provider must be configured
+    if (!elevenLabsApiKey && !deepgramApiKey) {
+      throw new Error('No STT provider configured. Set ELEVENLABS_API_KEY or DEEPGRAM_API_KEY');
+    }
+    if (!lovableApiKey) {
+      throw new Error('LOVABLE_API_KEY not configured');
+    }
 
     // === ATOMIC DEDUP CLAIM: only one invocation can proceed ===
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
@@ -2590,19 +2606,6 @@ serve(async (req) => {
     }
 
     console.log(`[transcribe-call] Successfully claimed booking ${bookingId} for processing`);
-
-    // Validate required env vars before starting
-    const elevenLabsApiKey = Deno.env.get('ELEVENLABS_API_KEY');
-    const deepgramApiKey = Deno.env.get('DEEPGRAM_API_KEY');
-    const lovableApiKey = Deno.env.get('LOVABLE_API_KEY');
-    
-    // At least one STT provider must be configured
-    if (!elevenLabsApiKey && !deepgramApiKey) {
-      throw new Error('No STT provider configured. Set ELEVENLABS_API_KEY or DEEPGRAM_API_KEY');
-    }
-    if (!lovableApiKey) {
-      throw new Error('LOVABLE_API_KEY not configured');
-    }
 
     // Fire-and-forget: Start background task with skipTts flag
     EdgeRuntime.waitUntil(processTranscription(bookingId, recordingUrl, skipTts));
