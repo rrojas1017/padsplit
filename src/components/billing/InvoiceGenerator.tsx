@@ -17,6 +17,8 @@ import { formatCurrency, SOW_CATEGORY_LABELS, SOW_UNIT_LABELS, SOWPricingConfig,
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 
+const OVERLAP_MESSAGE = 'An invoice for this client already covers part of this period. Void the existing invoice first.';
+
 interface PeriodCounts {
   voiceRecordCount: number;
   textRecordCount: number;
@@ -24,6 +26,12 @@ interface PeriodCounts {
   emailDeliveryCount: number;
   smsDeliveryCount: number;
   telephonyMinutes: number;
+  bookingInternalCost: number;
+  researchCost: number;
+  platformCost: number;
+  researchRows: number;
+  platformRows: number;
+  platformCostsUnavailable: boolean;
   totalInternalCost: number;
 }
 
@@ -151,6 +159,13 @@ const InvoiceGenerator = ({
           textRecords: periodData?.textRecordCount || 0,
           
           internalCost: totalInternalCost,
+          internalCostBreakdown: {
+            bookings: periodData?.bookingInternalCost || 0,
+            research: periodData?.researchCost || 0,
+            platform: periodData?.platformCost || 0,
+            researchRows: periodData?.researchRows || 0,
+            platformRows: periodData?.platformRows || 0,
+          },
         },
         notes: notes || undefined,
         payment_terms: paymentTerms,
@@ -159,7 +174,8 @@ const InvoiceGenerator = ({
       toast.success('Invoice generated successfully');
       setNotes('');
     } catch (error) {
-      toast.error('Failed to generate invoice');
+      const message = error instanceof Error ? error.message : '';
+      toast.error(message === OVERLAP_MESSAGE ? message : 'Failed to generate invoice');
     } finally {
       setIsGenerating(false);
     }
@@ -303,6 +319,23 @@ const InvoiceGenerator = ({
               <div className="flex justify-between text-sm">
                 <span className="text-muted-foreground">Internal Cost:</span>
                 <span>{formatCurrency(totalInternalCost)}</span>
+              </div>
+              <div className="pl-3 space-y-1 text-xs text-muted-foreground">
+                <div className="flex justify-between">
+                  <span>Bookings processing</span>
+                  <span>{formatCurrency(periodData?.bookingInternalCost || 0)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Research &amp; insights AI</span>
+                  <span>{formatCurrency(periodData?.researchCost || 0)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Platform AI (insights, translations)</span>
+                  <span>{formatCurrency(periodData?.platformCost || 0)}</span>
+                </div>
+                {periodData?.platformCostsUnavailable && (
+                  <p className="italic">Research/platform cost unavailable — internal cost shows bookings only</p>
+                )}
               </div>
               <div className="flex justify-between text-sm">
                 <span className="text-muted-foreground">Margin:</span>
