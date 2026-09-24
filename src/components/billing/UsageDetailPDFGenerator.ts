@@ -13,12 +13,41 @@ const CLIENT = {
   name: 'PadSplit, Inc.',
 };
 
-const SOW_RATES: Record<string, number> = {
+const DEFAULT_SOW_RATES: Record<string, number> = {
   voice_processing: 0.15,
   text_processing: 0.04,
   email_delivery: 0.03,
   sms_delivery: 0.05,
 };
+
+type Rates = Record<string, number>;
+
+/** Unit rates: invoice line-item snapshot → active SOW pricing → hard-coded default. */
+async function resolveRates(invoiceNumber?: string): Promise<Rates> {
+  const rates: Rates = { ...DEFAULT_SOW_RATES };
+  const categories = Object.keys(DEFAULT_SOW_RATES);
+  const fromInvoice = new Set<string>();
+  if (invoiceNumber) {
+    const { data: inv } = await supabase.from('billing_invoices').select('id').eq('invoice_number', invoiceNumber).maybeSingle();
+    if (inv?.id) {
+      const { data: items } = await supabase.from('invoice_line_items').select('service_category, unit_rate').eq('invoice_id', inv.id);
+      (items ?? []).forEach((li) => {
+        if (categories.includes(li.service_category) && li.unit_rate != null) {
+          rates[li.service_category] = Number(li.unit_rate);
+          fromInvoice.add(li.service_category);
+        }
+      });
+    }
+  }
+  const missing = categories.filter((c) => !fromInvoice.has(c));
+  if (missing.length > 0) {
+    const { data: sow } = await supabase.from('sow_pricing_config').select('service_category, base_rate, is_active').in('service_category', missing);
+    (sow ?? []).forEach((row) => {
+      if (row.is_active !== false && row.base_rate != null) rates[row.service_category] = Number(row.base_rate);
+    });
+  }
+  return rates;
+}
 
 const fmtCurrency = (amount: number, decimals = 2) =>
   new Intl.NumberFormat('en-US', {
