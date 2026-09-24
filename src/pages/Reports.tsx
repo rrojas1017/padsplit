@@ -19,6 +19,7 @@ import { TranscriptionModal } from '@/components/booking/TranscriptionModal';
 import { Booking } from '@/types';
 import { getAgentName } from '@/utils/agentUtils';
 import { maskEmail, maskPhone, shouldMaskContactInfo } from '@/utils/contactPrivacy';
+import { researchCampaignLabel } from '@/utils/researchCampaignType';
 import {
   DropdownMenu,
   DropdownMenuContent,
