@@ -2250,6 +2250,30 @@ export type Database = {
         }
         Relationships: []
       }
+      qa_backups: {
+        Row: {
+          id: number
+          payload: Json
+          ref_id: string | null
+          source: string
+          taken_at: string
+        }
+        Insert: {
+          id?: number
+          payload: Json
+          ref_id?: string | null
+          source: string
+          taken_at?: string
+        }
+        Update: {
+          id?: number
+          payload?: Json
+          ref_id?: string | null
+          source?: string
+          taken_at?: string
+        }
+        Relationships: []
+      }
       qa_coaching_settings: {
         Row: {
           always_emphasize: string[] | null
