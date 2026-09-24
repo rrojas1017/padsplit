@@ -133,6 +133,18 @@ async function sha256Hex(input: string): Promise<string> {
 
 // --- Handler ---
 
+// Same routing rule as process-research-record (RES-16): label rows by their script.
+const ROUTE_SCRIPT_ID_MAP: Record<string, string> = {
+  '6397bb7f-ac6a-49ea-90ad-9ca6ec046434': 'move_out_survey',
+  'c701a243-1c66-425a-8f79-99a290ec5b6b': 'payment_experience',
+};
+function resolveResearchCampaignType(script: { id: string; slug?: string | null } | null): string | null {
+  if (!script?.id) return null;
+  if (ROUTE_SCRIPT_ID_MAP[script.id]) return ROUTE_SCRIPT_ID_MAP[script.id];
+  if (script.slug && ['payment_experience', 'audience_survey'].includes(script.slug)) return script.slug;
+  return script.slug || `script_${String(script.id).slice(0, 8)}`;
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders });
 
@@ -206,7 +218,7 @@ Deno.serve(async (req) => {
     // Resolve script + most recent campaign for this script (if any)
     const { data: script, error: scriptErr } = await admin
       .from('research_scripts')
-      .select('id, questions, questions_es, is_active')
+      .select('id, questions, questions_es, is_active, slug')
       .eq('id', tokenRow.script_id)
       .maybeSingle();
 
@@ -381,11 +393,13 @@ Deno.serve(async (req) => {
       }
 
       if (bookingId && Object.keys(rawScriptAnswers).length > 0) {
+        const routedType = resolveResearchCampaignType(script);
         await admin
           .from('booking_transcriptions')
           .insert({
             booking_id: bookingId,
             research_extraction: { raw_script_answers: rawScriptAnswers },
+            ...(routedType ? { research_campaign_type: routedType, retag_source: 'script_id_route' } : {}),
           });
       }
     } catch (bookErr) {
