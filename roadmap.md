@@ -32,3 +32,4 @@
 - [x] P6-A: void invoices + research/platform AI cost in invoice internal cost (3 billing files)
 - [x] P6-B: NULL move-in date (HubSpot import null, NULL-safe readers, 2 functions)
 - [x] P6-MIG: Phase 6 drift-log capture migration file written (#27–#30), not applied
+- [x] BUG-001: Edit User dialog on Non-Agents tab (UserManagement.tsx only) — state, handlers, super_admin-gated menu item, dialog

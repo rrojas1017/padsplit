@@ -83,6 +83,17 @@ export default function UserManagement() {
   const [isEditResearcherDialogOpen, setIsEditResearcherDialogOpen] = useState(false);
   const [editingResearcher, setEditingResearcher] = useState<{ id: string; name: string; siteId: string; dialerAgentUser: string } | null>(null);
 
+  // Edit non-agent user state (super_admin/admin/supervisor rows on the Non-Agents tab)
+  const [isEditUserDialogOpen, setIsEditUserDialogOpen] = useState(false);
+  const [editingUser, setEditingUser] = useState<{
+    id: string;
+    name: string;
+    email: string;
+    role: string;
+    siteId: string;
+  } | null>(null);
+  const [isSavingUser, setIsSavingUser] = useState(false);
+
   // Form state
   const [newUserName, setNewUserName] = useState('');
   const [newUserEmail, setNewUserEmail] = useState('');
@@ -468,6 +479,60 @@ export default function UserManagement() {
       fetchUsers();
     } catch (error) {
       toast({ title: 'Error', description: 'Failed to update researcher', variant: 'destructive' });
+    }
+  };
+
+  const handleOpenEditUserDialog = (user: UserWithRole) => {
+    setEditingUser({
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+      siteId: user.site_id || '',
+    });
+    setIsEditUserDialogOpen(true);
+  };
+
+  const handleSaveUser = async () => {
+    if (!editingUser) return;
+    const trimmedName = editingUser.name.trim();
+    if (!trimmedName) return; // save button is disabled for empty names
+
+    setIsSavingUser(true);
+    try {
+      const updates: { name: string; site_id?: string | null } = { name: trimmedName };
+      if (editingUser.role === 'supervisor') {
+        updates.site_id = editingUser.siteId || null;
+      }
+
+      const { data, error } = await supabase
+        .from('profiles')
+        .update(updates)
+        .eq('id', editingUser.id)
+        .select('id');
+
+      // RLS denials surface as an error OR as an empty returned array (0 rows updated)
+      if (error || !data || data.length === 0) {
+        toast({
+          title: 'Error',
+          description: "You don't have permission to edit this user",
+          variant: 'destructive',
+        });
+        return; // keep dialog open
+      }
+
+      toast({ title: 'Success', description: 'User updated' });
+      setIsEditUserDialogOpen(false);
+      setEditingUser(null);
+      fetchUsers();
+    } catch (error) {
+      toast({
+        title: 'Error',
+        description: "You don't have permission to edit this user",
+        variant: 'destructive',
+      });
+    } finally {
+      setIsSavingUser(false);
     }
   };
 
@@ -914,7 +979,12 @@ export default function UserManagement() {
                               </Button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
-                              <DropdownMenuItem>Edit User</DropdownMenuItem>
+                              {isSuperAdmin && (
+                                <DropdownMenuItem onClick={() => handleOpenEditUserDialog(user)}>
+                                  <Pencil className="w-4 h-4 mr-2" />
+                                  Edit User
+                                </DropdownMenuItem>
+                              )}
                               {(isSuperAdmin || isAdmin) && user.id !== currentUser?.id && (
                                 <DropdownMenuItem onClick={() => handleOpenEditRoleDialog(user)}>
                                   <Pencil className="w-4 h-4 mr-2" />
@@ -1563,6 +1633,75 @@ export default function UserManagement() {
               Cancel
             </Button>
             <Button onClick={handleSaveResearcher}>
+              Save Changes
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit User Dialog (Non-Agents tab) */}
+      <Dialog open={isEditUserDialogOpen} onOpenChange={setIsEditUserDialogOpen}>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle>Edit User</DialogTitle>
+            <DialogDescription>
+              Update user details.
+            </DialogDescription>
+          </DialogHeader>
+          {editingUser && (
+            <div className="grid gap-4 py-4">
+              <div className="grid gap-2">
+                <Label htmlFor="editUserName">Name *</Label>
+                <Input
+                  id="editUserName"
+                  value={editingUser.name}
+                  onChange={(e) => setEditingUser({ ...editingUser, name: e.target.value })}
+                  placeholder="Enter full name"
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="editUserEmail">Email</Label>
+                <Input
+                  id="editUserEmail"
+                  value={editingUser.email}
+                  readOnly
+                  disabled
+                  className="bg-muted/50 text-muted-foreground"
+                />
+                <p className="text-xs text-muted-foreground">
+                  The login email is managed in auth and cannot be changed here.
+                </p>
+              </div>
+              <div className="grid gap-2">
+                <Label>Site</Label>
+                {editingUser.role === 'supervisor' ? (
+                  <Select
+                    value={editingUser.siteId}
+                    onValueChange={(value) => setEditingUser({ ...editingUser, siteId: value })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select a site" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {sites.map(site => (
+                        <SelectItem key={site.id} value={site.id}>
+                          {site.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                ) : (
+                  <p className="text-sm text-primary font-medium">All Sites</p>
+                )}
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsEditUserDialogOpen(false)} disabled={isSavingUser}>
+              Cancel
+            </Button>
+            <Button onClick={handleSaveUser} disabled={isSavingUser || !editingUser?.name.trim()}>
+              {isSavingUser && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
               Save Changes
             </Button>
           </DialogFooter>
