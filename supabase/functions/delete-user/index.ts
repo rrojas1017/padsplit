@@ -13,55 +13,19 @@ Deno.serve(async (req) => {
   }
 
   try {
-    // Get the authorization header
-    const authHeader = req.headers.get('Authorization')
-    if (!authHeader) {
-      console.log('No authorization header provided')
-      return new Response(
-        JSON.stringify({ error: 'No authorization header' }),
-        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      )
+    const auth = await requireUser(req, ADMINS)
+    if (!auth.ok) {
+      const b = await auth.response.text()
+      return new Response(b, { status: auth.response.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
     }
+    const requestingUserId = auth.ctx.userId
 
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
 
-    // Extract the token and decode it (JWT is already verified by gateway)
-    const token = authHeader.replace('Bearer ', '')
-    const decoded = decodeJWT(token)
-    
-    if (!decoded || !decoded.sub) {
-      console.log('Failed to decode JWT')
-      return new Response(
-        JSON.stringify({ error: 'Invalid token' }),
-        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      )
-    }
-
-    const requestingUserId = decoded.sub
-    const requestingUserEmail = decoded.email
-
-    console.log('Requesting user:', requestingUserId, requestingUserEmail)
-
     // Service role client for privileged database operations
     const adminClient = createClient(supabaseUrl, supabaseServiceKey)
-
-    // Check if requesting user is super_admin or admin
-    const { data: roleData, error: roleError } = await adminClient
-      .from('user_roles')
-      .select('role')
-      .eq('user_id', requestingUserId)
-      .single()
-
-    console.log(`Requesting user role: ${roleData?.role}`)
-
-    if (roleError || !roleData) {
-      console.error('Role check error:', roleError)
-      return new Response(
-        JSON.stringify({ error: 'Could not verify user role' }),
-        { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      )
-    }
+    const roleData = { role: auth.ctx.role as string }
 
     if (!['super_admin', 'admin'].includes(roleData.role)) {
       console.log('User does not have admin privileges:', roleData.role)
