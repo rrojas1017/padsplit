@@ -83,6 +83,17 @@ export default function UserManagement() {
   const [isEditResearcherDialogOpen, setIsEditResearcherDialogOpen] = useState(false);
   const [editingResearcher, setEditingResearcher] = useState<{ id: string; name: string; siteId: string; dialerAgentUser: string } | null>(null);
 
+  // Edit non-agent user state (super_admin/admin/supervisor rows on the Non-Agents tab)
+  const [isEditUserDialogOpen, setIsEditUserDialogOpen] = useState(false);
+  const [editingUser, setEditingUser] = useState<{
+    id: string;
+    name: string;
+    email: string;
+    role: string;
+    siteId: string;
+  } | null>(null);
+  const [isSavingUser, setIsSavingUser] = useState(false);
+
   // Form state
   const [newUserName, setNewUserName] = useState('');
   const [newUserEmail, setNewUserEmail] = useState('');
