@@ -30,4 +30,4 @@
 - [x] P5-GATE: nightly skip-when-nothing-new gate (3 insight functions) + drift migration file #21-#25 (written, not applied)
 - [x] P5-CLEAN: shared cost logging in 14 functions + delete MemberInsights page
 - [x] P6-A: void invoices + research/platform AI cost in invoice internal cost (3 billing files)
-- [ ] P6-B: NULL move-in date (HubSpot import null, NULL-safe readers, 2 functions)
+- [x] P6-B: NULL move-in date (HubSpot import null, NULL-safe readers, 2 functions)
