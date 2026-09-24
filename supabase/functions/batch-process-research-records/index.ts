@@ -25,6 +25,7 @@ Deno.serve(async (req) => {
     const body = await req.json().catch(() => ({}));
     const dryRun = body.dryRun === true;
     const action = body.action || 'start';
+    const includeFailed = body.includeFailed === true;
 
     if (dryRun) {
       // Count unprocessed with same criteria used in processing
@@ -38,7 +39,11 @@ Deno.serve(async (req) => {
     console.log(`[Backfill] Invoked with action="${action}"`);
 
     // Run processing in background so the HTTP response returns immediately
-    EdgeRuntime.waitUntil(runOneBatch(supabaseUrl, supabaseServiceKey, supabase));
+    EdgeRuntime.waitUntil(
+      includeFailed
+        ? runFailedOnce(supabaseUrl, supabaseServiceKey, supabase)
+        : runOneBatch(supabaseUrl, supabaseServiceKey, supabase)
+    );
 
     return new Response(
       JSON.stringify({
@@ -71,7 +76,7 @@ async function countRemaining(supabase: any): Promise<number> {
     .eq('has_valid_conversation', true)
     .not('booking_transcriptions.call_transcription', 'is', null)
     .neq('booking_transcriptions.call_transcription', '')
-    .or('research_processing_status.is.null,research_processing_status.eq.failed', { referencedTable: 'booking_transcriptions' });
+    .is('booking_transcriptions.research_processing_status', null);
 
   if (error) {
     console.error('[Backfill] countRemaining error:', error.message);
@@ -86,7 +91,7 @@ async function runOneBatch(supabaseUrl: string, supabaseServiceKey: string, supa
     const fifteenMinutesAgo = new Date(Date.now() - 15 * 60 * 1000).toISOString();
     const { data: resetData } = await supabase
       .from('booking_transcriptions')
-      .update({ research_processing_status: null })
+      .update({ research_processing_status: 'failed', updated_at: new Date().toISOString() })
       .eq('research_processing_status', 'processing')
       .lt('updated_at', fifteenMinutesAgo)
       .select('id');
@@ -110,7 +115,7 @@ async function runOneBatch(supabaseUrl: string, supabaseServiceKey: string, supa
       .eq('has_valid_conversation', true)
       .not('booking_transcriptions.call_transcription', 'is', null)
       .neq('booking_transcriptions.call_transcription', '')
-      .or('research_processing_status.is.null,research_processing_status.eq.failed', { referencedTable: 'booking_transcriptions' })
+      .is('booking_transcriptions.research_processing_status', null)
       .limit(fetchLimit);
 
     if (fetchError) {
@@ -123,7 +128,7 @@ async function runOneBatch(supabaseUrl: string, supabaseServiceKey: string, supa
       .filter((r: any) => {
         const t = Array.isArray(r.booking_transcriptions) ? r.booking_transcriptions[0] : r.booking_transcriptions;
         return t?.call_transcription?.trim()?.length > 0 &&
-          (!t?.research_processing_status || t?.research_processing_status === 'failed');
+          !t?.research_processing_status;
       })
       .slice(0, BATCH_SIZE);
 
@@ -135,40 +140,7 @@ async function runOneBatch(supabaseUrl: string, supabaseServiceKey: string, supa
     }
 
     // 3) Process in parallel chunks of PARALLEL_SIZE
-    let processed = 0;
-    let failed = 0;
-
-    for (let i = 0; i < toProcess.length; i += PARALLEL_SIZE) {
-      const chunk = toProcess.slice(i, i + PARALLEL_SIZE);
-      console.log(`[Backfill] Processing chunk: ${chunk.map((r: any) => r.id).join(', ')}`);
-
-      const results = await Promise.allSettled(
-        chunk.map(async (record: any) => {
-          const response = await fetch(`${supabaseUrl}/functions/v1/process-research-record`, {
-            method: 'POST',
-            headers: {
-              'Authorization': `Bearer ${supabaseServiceKey}`,
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({ bookingId: record.id }),
-          });
-
-          if (response.ok) {
-            console.log(`[Backfill] ✓ Processed ${record.id}`);
-            return { id: record.id, success: true };
-          } else {
-            const errorText = await response.text();
-            console.error(`[Backfill] ✗ Failed ${record.id}: ${response.status} - ${errorText}`);
-            throw new Error(errorText);
-          }
-        })
-      );
-
-      for (const result of results) {
-        if (result.status === 'fulfilled') processed++;
-        else failed++;
-      }
-    }
+    const { processed, failed } = await processRecords(supabaseUrl, supabaseServiceKey, toProcess);
 
     // 4) Count remaining and decide whether to continue
     const remainingCount = await countRemaining(supabase);
@@ -215,5 +187,82 @@ async function selfRetrigger(supabaseUrl: string, supabaseServiceKey: string, at
       await new Promise(r => setTimeout(r, 3000));
       await selfRetrigger(supabaseUrl, supabaseServiceKey, attempt + 1);
     }
+  }
+}
+
+async function processRecords(supabaseUrl: string, supabaseServiceKey: string, toProcess: any[]) {
+    let processed = 0;
+    let failed = 0;
+
+    for (let i = 0; i < toProcess.length; i += PARALLEL_SIZE) {
+      const chunk = toProcess.slice(i, i + PARALLEL_SIZE);
+      console.log(`[Backfill] Processing chunk: ${chunk.map((r: any) => r.id).join(', ')}`);
+
+      const results = await Promise.allSettled(
+        chunk.map(async (record: any) => {
+          const response = await fetch(`${supabaseUrl}/functions/v1/process-research-record`, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${supabaseServiceKey}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ bookingId: record.id }),
+          });
+
+          if (response.ok) {
+            console.log(`[Backfill] ✓ Processed ${record.id}`);
+            return { id: record.id, success: true };
+          } else {
+            const errorText = await response.text();
+            console.error(`[Backfill] ✗ Failed ${record.id}: ${response.status} - ${errorText}`);
+            throw new Error(errorText);
+          }
+        })
+      );
+
+      for (const result of results) {
+        if (result.status === 'fulfilled') processed++;
+        else failed++;
+      }
+    }
+  return { processed, failed };
+}
+
+// Retry up to BATCH_SIZE 'failed' records ONCE. Never self-retriggers.
+async function runFailedOnce(supabaseUrl: string, supabaseServiceKey: string, supabase: any) {
+  try {
+    const { data, error } = await supabase
+      .from('bookings')
+      .select(`
+        id,
+        booking_transcriptions!inner (
+          call_transcription,
+          research_processing_status
+        )
+      `)
+      .eq('record_type', 'research')
+      .eq('has_valid_conversation', true)
+      .not('booking_transcriptions.call_transcription', 'is', null)
+      .neq('booking_transcriptions.call_transcription', '')
+      .eq('booking_transcriptions.research_processing_status', 'failed')
+      .limit(BATCH_SIZE * 3);
+    if (error) {
+      console.error(`[Backfill] includeFailed fetch error: ${error.message}`);
+      return;
+    }
+    const toProcess = (data || [])
+      .filter((r: any) => {
+        const t = Array.isArray(r.booking_transcriptions) ? r.booking_transcriptions[0] : r.booking_transcriptions;
+        return t?.call_transcription?.trim()?.length > 0 && t?.research_processing_status === 'failed';
+      })
+      .slice(0, BATCH_SIZE);
+    if (toProcess.length === 0) {
+      console.log('[Backfill] includeFailed: no failed records to retry.');
+      return;
+    }
+    const { processed, failed } = await processRecords(supabaseUrl, supabaseServiceKey, toProcess);
+    console.log(`[Backfill] includeFailed: processed ${processed}, failed ${failed}. Not retriggering.`);
+  } catch (error) {
+    console.error('[Backfill] runFailedOnce error:', error instanceof Error ? error.message : error);
   }
 }

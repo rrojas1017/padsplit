@@ -1033,8 +1033,10 @@ Deno.serve(async (req) => {
   const lovableApiKey = Deno.env.get('LOVABLE_API_KEY')!;
   const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
+  let bookingId: string | undefined;
   try {
-    const { bookingId } = await req.json();
+    const body = await req.json().catch(() => ({}));
+    bookingId = body?.bookingId;
     if (!bookingId) throw new Error('Missing bookingId');
 
     console.log(`[Research] Processing record for booking ${bookingId}`);
@@ -1090,7 +1092,7 @@ Deno.serve(async (req) => {
     // Mark as processing
     await supabase
       .from('booking_transcriptions')
-      .update({ research_processing_status: 'processing' })
+      .update({ research_processing_status: 'processing', updated_at: new Date().toISOString() })
       .eq('booking_id', bookingId);
 
     let extraction: any;
@@ -1313,6 +1315,7 @@ Deno.serve(async (req) => {
       research_classification: classification,
       research_processed_at: new Date().toISOString(),
       research_processing_status: 'completed',
+      updated_at: new Date().toISOString(),
       research_human_review: classification.human_review_recommended === true,
       research_campaign_type: campaignType,
     };
@@ -1351,12 +1354,12 @@ Deno.serve(async (req) => {
 
     // Try to update status to failed
     try {
-      const { bookingId } = await req.clone().json();
       if (bookingId) {
         await supabase
           .from('booking_transcriptions')
-          .update({ research_processing_status: 'failed' })
-          .eq('booking_id', bookingId);
+          .update({ research_processing_status: 'failed', updated_at: new Date().toISOString() })
+          .eq('booking_id', bookingId)
+          .eq('research_processing_status', 'processing');
       }
     } catch { /* ignore */ }
 
