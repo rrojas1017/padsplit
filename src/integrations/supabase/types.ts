@@ -3209,10 +3209,11 @@ export type Database = {
       get_my_role: { Args: never; Returns: string }
       get_my_site_id: { Args: never; Returns: string }
       get_non_booking_stats: {
-        Args: { start_date?: string }
+        Args: { end_date?: string; start_date?: string }
         Returns: {
           avg_duration_seconds: number
           high_readiness_calls: number
+          hot_leads: number
           total_calls: number
           transcribed_calls: number
         }[]

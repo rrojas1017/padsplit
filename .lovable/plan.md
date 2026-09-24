@@ -1,49 +1,25 @@
-# P-G4 (RES-16b): label public and agent-logged answers with the right survey
+# LP-4 — Non-Booking numbers
 
-Only these 2 files change: `supabase/functions/submit-public-script/index.ts` and `supabase/functions/persist-research-raw-answers/index.ts`. Auth guards and abuse controls stay byte-identical. No migrations, RLS or config changes. Nothing is published. The only live requests are anon POST {} checks.
+## Verified before planning
+- `non_booking_insights` has `created_by` and `error_message`, but **no** `triggered_by_user_id` or `is_internal` columns (live DB query). Writing them would make the insert fail, so only `created_by` is saved on the row. `triggered_by_user_id` / `is_internal` already go into the `api_costs` rows (lines 428-437), which stay as they are.
+- The tab has **no custom date range**. Its options are thisWeek / lastMonth / thisMonth / last3months / allTime (line 20). The "custom 2025-12-01..2025-12-31" check can't be done in the UI. I'll check it with the RPC call instead, and in the UI with Last Month (currently Aug 2026). Adding a custom picker is out of scope.
+- Both child components already accept the props: `NonBookingSummaryCards` takes `stats.hotLeads` (line 9), and the missed-opportunities panel takes `hotLeadsCount` (line 18). Today nothing passes them, so they show 0. **Neither component file changes.**
 
-Each file gets the same small helper, because edge functions cannot share code with process-research-record. It is copied into each file rather than added to a shared module, so nothing outside the two files changes.
-```ts
-const ROUTE_SCRIPT_ID_MAP: Record<string, string> = {
-  '6397bb7f-ac6a-49ea-90ad-9ca6ec046434': 'move_out_survey',
-  'c701a243-1c66-425a-8f79-99a290ec5b6b': 'payment_experience',
-};
-function resolveResearchCampaignType(script: { id: string; slug?: string | null } | null): string | null {
-  if (!script?.id) return null;
-  if (ROUTE_SCRIPT_ID_MAP[script.id]) return ROUTE_SCRIPT_ID_MAP[script.id];
-  if (script.slug && ['payment_experience', 'audience_survey'].includes(script.slug)) return script.slug;
-  return script.slug || `script_${String(script.id).slice(0, 8)}`;
-}
-```
+## 1) src/components/call-insights/NonBookingAnalysisTab.tsx
+- **Lines 69-106 `getDateRangeParams`:** build "today" from the America/New_York calendar date using `Intl.DateTimeFormat('en-CA',{timeZone:'America/New_York'})`, parsed into a local `Date(y, m-1, d)`. Do not use `new Date('yyyy-MM-dd')`. allTime start becomes `new Date(2024, 0, 1)`. The rest of the date-fns logic and the `format(...,'yyyy-MM-dd')` output stay the same, and the end date stays inclusive.
+- **Lines 108-113:** replace `getStatsStartDate` with `getStatsBounds(option)`, which returns `{ start_date, end_date }` (both `null` for allTime).
+- **Lines 116-135 stats query:** call `rpc('get_non_booking_stats', { start_date, end_date })`. Read `hot_leads` into `hotLeads`, and use a typed fallback row that includes `hot_leads: 0`. If the generated RPC types don't list `end_date`/`hot_leads` yet, add a narrow local type for the args and result instead of using `any`.
+- **Lines 193-203 auto-select:** keep the current selection if it is in `previousInsights`. Otherwise select `previousInsights[0]?.id ?? null`. The dependency on `selectedInsightId` is read through the functional setter, so the effect doesn't loop.
+- **Line 399:** `stats` now carries `hotLeads`, so `<NonBookingSummaryCards stats={stats} />` stays unchanged.
+- **Lines 408-412:** add `hotLeadsCount={stats.hotLeads}`.
 
-## 1. submit-public-script/index.ts
-- **Helper:** added above `Deno.serve`, after the imports and constants at the top of the file.
-- **Line 209 (script select):** add `slug`, giving `'id, questions, questions_es, is_active, slug'`.
-- **Lines 386-389 (booking_transcriptions insert):** add the label fields:
-  ```ts
-  const routedType = resolveResearchCampaignType(script);
-  ...insert({ booking_id, research_extraction: {...},
-    ...(routedType ? { research_campaign_type: routedType, retag_source: 'script_id_route' } : {}) })
-  ```
-  The script always exists at this point, so the label is always set. The hard-coded `'move_out_survey'` from the report is not in this insert today; the database default applies because the column is omitted. Setting it explicitly fixes this.
-- The response shape and every other path are unchanged.
+## 2) supabase/functions/analyze-non-booking-insights/index.ts
+- **Lines 370-377 parse:** track `parseOk`. After parsing, if `!parseOk` or `rejection_reasons` is not a non-empty array, update the row to `status='failed', error_message='AI response could not be parsed'` (plus `raw_analysis` length only; nothing is logged), then return. It no longer falls through to 'completed'. The api_costs logging for the AI call still runs as today, so the call is still recorded.
+- **Lines 496-501 insert:** add `created_by: triggeredByUserId`. This comes from the existing guard: user → userId, internal/cron → null.
+- Auth guard (lines 459-462) and the INS-42 date defaults stay byte-identical.
 
-## 2. persist-research-raw-answers/index.ts
-- **Helper:** added after the imports (after line 8).
-- **Just before line 139 (before the transcription lookup):** resolve the script once, as a non-fatal lookup:
-  - `research_campaigns.script_id` via `call.campaign_id`, then `research_scripts` `id, slug`.
-  - `routedType = resolveResearchCampaignType(script)`, or `null` when there is no campaign or script.
-  - Errors are logged by message only and leave `routedType` as `null`.
-- **Line 141 (existing-row select):** add `research_campaign_type`.
-- **Line 148 (insert when missing):** add `research_campaign_type: routedType, retag_source: 'script_id_route'` only when `routedType` is set.
-- **Lines 160-163 (update of an existing row):** also relabel when `routedType` is set, `routedType !== 'move_out_survey'`, and the existing `research_campaign_type` is null or `'move_out_survey'`. In that case add `research_campaign_type: routedType, retag_source: 'script_id_route'` to the same update. Existing payment_experience, audience_survey or script_* labels are never touched.
-- The later script_responses block (lines 172-220) keeps its own lookup unchanged. It is left alone to keep the change minimal, which means one duplicate script query.
-- Logs contain ids and labels only, never answers, names or phone numbers.
-
-## Not included (needs your call)
-The already mislabelled public 30-Day submission (and any similar rows) stays labelled `move_out_survey`. Fixing existing rows is a data change. I can list the affected rows with a read-only query and give you the correction SQL separately, if you want.
-
-## Verification
-- `deno check` on both functions.
-- Deploy both.
-- anon POST {}: submit-public-script should return the same invalid-request error as today (400/403); persist-research-raw-answers should return 401.
+## Checks after implementation
+- `npx tsgo --noEmit -p tsconfig.app.json` clean.
+- deno check + deploy analyze-non-booking-insights; anon POST {} → 401.
+- Read-only RPC checks: Dec 2025 → 387 / 387 / 138 / 340.9 s / 98 hot. All time → hot 846.
+- No real analysis run, nothing published.
