@@ -17,3 +17,4 @@
 - [x] P-G1 cost gate, nightly insights dates, deepseek model, drift file
 - [x] P-G2 frontend cleanup (7 files)
 - [x] P-G3 translate merge by key, per-script research mode, wizard defaults
+- [ ] P-G4 research_campaign_type routing for public/agent-logged answers

@@ -7,6 +7,18 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { corsHeaders, requireUser, RESEARCH } from '../_shared/auth.ts';
 
+// Same routing rule as process-research-record (RES-16): label rows by their script.
+const ROUTE_SCRIPT_ID_MAP: Record<string, string> = {
+  '6397bb7f-ac6a-49ea-90ad-9ca6ec046434': 'move_out_survey',
+  'c701a243-1c66-425a-8f79-99a290ec5b6b': 'payment_experience',
+};
+function resolveResearchCampaignType(script: { id: string; slug?: string | null } | null): string | null {
+  if (!script?.id) return null;
+  if (ROUTE_SCRIPT_ID_MAP[script.id]) return ROUTE_SCRIPT_ID_MAP[script.id];
+  if (script.slug && ['payment_experience', 'audience_survey'].includes(script.slug)) return script.slug;
+  return script.slug || `script_${String(script.id).slice(0, 8)}`;
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders });
 
@@ -136,16 +148,37 @@ Deno.serve(async (req) => {
       return json({ ok: true, merged: false, reason: 'no_booking' });
     }
 
+    // Resolve the survey label from the call's script (non-fatal).
+    let routedType: string | null = null;
+    try {
+      if (call.campaign_id) {
+        const { data: routeCampaign } = await admin
+          .from('research_campaigns').select('script_id').eq('id', call.campaign_id).maybeSingle();
+        if (routeCampaign?.script_id) {
+          const { data: routeScript } = await admin
+            .from('research_scripts').select('id, slug').eq('id', routeCampaign.script_id).maybeSingle();
+          routedType = resolveResearchCampaignType(routeScript ?? null);
+        }
+      }
+    } catch (e) {
+      console.error('persist-raw-answers: campaign type resolve failed', e instanceof Error ? e.message : 'unknown');
+      routedType = null;
+    }
+
     const { data: existing } = await admin
       .from('booking_transcriptions')
-      .select('id, research_extraction')
+      .select('id, research_extraction, research_campaign_type')
       .eq('booking_id', booking.id)
       .maybeSingle();
 
     if (!existing) {
       const { error: tInsErr } = await admin
         .from('booking_transcriptions')
-        .insert({ booking_id: booking.id, research_extraction: { raw_script_answers } });
+        .insert({
+          booking_id: booking.id,
+          research_extraction: { raw_script_answers },
+          ...(routedType ? { research_campaign_type: routedType, retag_source: 'script_id_route' } : {}),
+        });
       if (tInsErr) {
         console.error('persist-raw-answers: transcription insert failed', tInsErr.message);
         return json({ error: 'Update failed' }, 500);
@@ -159,7 +192,12 @@ Deno.serve(async (req) => {
 
       const { error: updErr } = await admin
         .from('booking_transcriptions')
-        .update({ research_extraction: nextExtraction })
+        .update({
+          research_extraction: nextExtraction,
+          ...(routedType && routedType !== 'move_out_survey' &&
+              (existing.research_campaign_type == null || existing.research_campaign_type === 'move_out_survey')
+            ? { research_campaign_type: routedType, retag_source: 'script_id_route' } : {}),
+        })
         .eq('id', existing.id);
 
       if (updErr) {
