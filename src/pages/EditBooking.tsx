@@ -63,6 +63,7 @@ export default function EditBooking() {
   const contextBooking = bookings.find(b => b.id === id);
   const [fetchedBooking, setFetchedBooking] = useState<Booking | null>(null);
   const [isFetchingBooking, setIsFetchingBooking] = useState(false);
+  const [triedId, setTriedId] = useState<string | null>(null);
   useEffect(() => {
     if (!id || bookingsLoading || contextBooking || fetchedBooking?.id === id) return;
     let cancelled = false;
@@ -70,7 +71,7 @@ export default function EditBooking() {
     fetchBookingById(id)
       .then((b) => { if (!cancelled) setFetchedBooking(b); })
       .catch((err: unknown) => { console.error('[EditBooking] Failed to load booking:', err); })
-      .finally(() => { if (!cancelled) setIsFetchingBooking(false); });
+      .finally(() => { if (!cancelled) { setIsFetchingBooking(false); setTriedId(id); } });
     return () => { cancelled = true; };
   }, [id, bookingsLoading, contextBooking, fetchedBooking?.id]);
   const booking = contextBooking ?? (fetchedBooking?.id === id ? fetchedBooking : undefined);
@@ -184,7 +185,8 @@ export default function EditBooking() {
     }
   };
 
-  if (bookingsLoading || isFetchingBooking) {
+  const awaitingFetch = !!id && !contextBooking && triedId !== id;
+  if (bookingsLoading || isFetchingBooking || awaitingFetch) {
     return (
       <DashboardLayout title="Edit Booking" subtitle="Loading...">
         <div className="flex items-center justify-center py-12">
