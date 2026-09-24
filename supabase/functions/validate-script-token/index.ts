@@ -66,7 +66,7 @@ Deno.serve(async (req) => {
     // Fetch the script
     const { data: script, error: scriptError } = await supabaseAdmin
       .from('research_scripts')
-      .select('id, name, description, campaign_type, target_audience, questions, intro_script, rebuttal_script, closing_script, is_active')
+      .select('id, name, description, campaign_type, target_audience, questions, intro_script, rebuttal_script, closing_script, is_active, questions_es, intro_script_es, closing_script_es, rebuttal_script_es, translation_status')
       .eq('id', tokenRow.script_id)
       .maybeSingle();
 
@@ -78,6 +78,13 @@ Deno.serve(async (req) => {
       );
     }
 
+    if (script.is_active === false) {
+      return new Response(
+        JSON.stringify({ valid: false, error: 'This script is no longer active' }),
+        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
     // Update last_accessed_at (fire and forget)
     supabaseAdmin
       .from('script_access_tokens')
@@ -85,7 +92,7 @@ Deno.serve(async (req) => {
       .eq('id', tokenRow.id)
       .then(() => {});
 
-    console.log('Script token validated successfully for script:', script.name);
+    console.log('Script token validated');
 
     return new Response(
       JSON.stringify({
@@ -100,6 +107,11 @@ Deno.serve(async (req) => {
           intro_script: script.intro_script,
           rebuttal_script: script.rebuttal_script,
           closing_script: script.closing_script,
+          questions_es: script.questions_es,
+          intro_script_es: script.intro_script_es,
+          closing_script_es: script.closing_script_es,
+          rebuttal_script_es: script.rebuttal_script_es,
+          translation_status: script.translation_status,
         },
       }),
       { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
