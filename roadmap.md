@@ -21,4 +21,4 @@
 - [x] LP-4 Non-Booking numbers (stats bounds, hot leads, failed parse, created_by)
 - [x] LP-1 Payment Experience KPI correctness (shared resolver/normalizer)
 - [x] BKG-P3 Dashboard/leaderboard/timezone (businessTime, useDashboardData, EditBooking fetch)
-- [ ] BIL-FE: billing totals via billing_cost_summary, 7d preset, usage PDF rates from invoice line items
+- [x] BIL-FE: billing totals via billing_cost_summary, 7d preset, usage PDF rates from invoice line items
