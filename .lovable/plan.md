@@ -1,216 +1,52 @@
-# BUG-001: Add a working "Edit User" dialog to the Non-Agents tab
+# BUG-001b — super_admin sets a new password from the User Management edit dialogs
 
-One file only: `src/pages/UserManagement.tsx`. No database/RLS/edge-function changes, no new dependency, no publish.
+## Files
+1. NEW `supabase/functions/admin-reset-password/index.ts`
+2. `supabase/config.toml` — append `[functions.admin-reset-password]` / `verify_jwt = true` only
+3. NEW `src/components/user-management/ResetPasswordSection.tsx`
+4. NEW `supabase/migrations/20260924171500_capture_bug001_access_logs_password_reset.sql` — exact supplied content, written only, never run
+5. `src/pages/UserManagement.tsx` — import + three render sites
+6. `roadmap.md` — one Done line
 
-## Current state (confirmed by reading the file)
+No other file changes. No change to `_shared/auth.ts`, no other function, no RLS, no migration executed, no new dependency.
 
-- The Non-Agents tab renders users whose role is `super_admin`, `admin` or `supervisor` (line 747).
-- The row menu's "Edit User" item at line 917 is `<DropdownMenuItem>Edit User</DropdownMenuItem>` — no icon, no onClick, and no backing dialog. Clicking it does nothing.
-- The existing **Edit Researcher** flow is the pattern to mirror: state vars (lines 83-84), `handleEditResearcher` open handler (lines 419-429), `handleSaveResearcher` save handler (lines 431-472), and the `<Dialog>` JSX (lines 1513-1570).
-- `sites` (local `Site[]`, lines 70 / 270-278) is already populated and already used by the Non-Agents tab's site filter Select (lines 796-800) — reuse it for the supervisor Site field.
-- `isSuperAdmin` (line 118) is already derived.
+## Function handler flow (admin-reset-password)
+Imports from `../_shared/auth.ts`: `requireUser`, `adminClient`, `jsonResponse`, `corsHeaders`.
 
-## Changes
+1. `OPTIONS` → `new Response('ok', { headers: corsHeaders })` (200).
+2. Method not `POST` → 405 `{ error: 'Method not allowed' }`.
+3. `const auth = await requireUser(req, ['super_admin']); if (!auth.ok) return auth.response;` (no header → 401; other role / inactive / no role → 403).
+4. `await req.json()` in try/catch → 400 `{ error: 'Invalid JSON body' }`; non-object body treated the same.
+5. `userId` string matching the UUID regex, else 400 `{ error: 'Invalid userId' }`.
+6. `userId === auth.ctx.userId` → 400 `{ error: 'You cannot reset your own password here' }`.
+7. `newPassword` must be a string; run the copied rule set: length 8–128, `/[A-Z]/`, `/[a-z]/`, `/\d/`, the special-char regex from passwordValidation.ts, not in the copied `COMMON_PASSWORDS` (case-insensitive). Any unmet → 400 `{ error: 'Password does not meet requirements', unmet: [labels] }` (labels same wording as the frontend, plus "At most 128 characters").
+8. `adminClient().from('user_roles').select('role').eq('user_id', userId).limit(1)`; error → 500 generic; empty → 404 `{ error: 'User not found' }`.
+9. Load names (adminClient, `profiles` `name,email` for caller and target, `maybeSingle`); failure only degrades the audit text.
+10. `adminClient().auth.admin.updateUserById(userId, { password: newPassword })`; error → `console.error('[admin-reset-password] update failed:', error.message)` and 500 `{ error: 'Failed to update password' }`.
+11. Insert `access_logs` `{ user_id: caller id, user_name: caller name ?? caller email, action: 'password_reset', resource: 'Password reset for <target name ?? email ?? "unknown"> (<userId>)' }` — in try/catch; on error `console.error` with the message only, request still succeeds.
+12. 200 `{ success: true }`.
 
-### 1. New state variables (insert near line 84, next to the researcher state)
+Never logs or returns the password, tokens, or the request body. One unexpected-error catch around the whole flow → 500 generic.
 
-```ts
-// Edit non-agent user state
-const [isEditUserDialogOpen, setIsEditUserDialogOpen] = useState(false);
-const [editingUser, setEditingUser] = useState<{
-  id: string;
-  name: string;
-  email: string;
-  role: string;
-  siteId: string;
-} | null>(null);
-const [isSavingUser, setIsSavingUser] = useState(false);
-```
+## ResetPasswordSection
+- Props `{ userId: string; userName: string }`. Local state: `expanded`, `pw`, `confirm`, `show`, `submitting`.
+- Collapsed: outline Button with `KeyRound` icon, "Reset password" (`type="button"`).
+- Expanded: "New password" / "Confirm password" Inputs (type toggles via an Eye/EyeOff ghost button), `<PasswordStrengthIndicator result={validatePassword(pw)} show={pw.length > 0} />`, a small "Passwords do not match" hint when confirm is non-empty and differs, buttons "Set password" and "Cancel".
+- "Set password" disabled unless `validatePassword(pw).isValid && pw === confirm && pw.length <= 128 && !submitting`.
+- Submit: `supabase.functions.invoke('admin-reset-password', { body: { userId, newPassword: pw } })`. On error: if `error instanceof FunctionsHttpError`, `await error.context.json()` → use its `error` (and append `unmet` list if present); else generic message; destructive toast. On success: toast "Password updated for <userName>. Share it with the user securely.", clear fields, collapse.
+- Cancel: clear + collapse. Fully separate from "Save Changes".
 
-### 2. Open handler (insert after `handleEditResearcher`'s save handler, ~line 472)
+## UserManagement.tsx render sites (only when `isSuperAdmin`)
+Wrapper: `<div className="border-t pt-4 space-y-2"><h4 className="text-sm font-medium">Password</h4><ResetPasswordSection .../></div>`, placed directly above `<DialogFooter>` in:
+- Edit Agent dialog (footer ~line 1571): `userId = agents.find(a => a.id === editingAgent.id)?.userId`; rendered only if truthy.
+- Edit Researcher dialog (footer ~line 1631): `editingResearcher.id`, `editingResearcher.name`, guarded by `editingResearcher &&`.
+- Edit User dialog (footer ~line 1699): `editingUser.id`, `editingUser.name`, guarded by `editingUser &&`.
+Plus one import line. Save handlers, Change Role, Deactivate, Delete User and the Edit User gating are untouched.
 
-```ts
-const handleOpenEditUserDialog = (user: UserWithRole) => {
-  setEditingUser({
-    id: user.id,
-    name: user.name,
-    email: user.email,
-    role: user.role,
-    siteId: user.site_id || '',
-  });
-  setIsEditUserDialogOpen(true);
-};
-```
+## Verification
+- `tsgo --noEmit -p tsconfig.app.json` clean; `deno check` the new function; deploy only admin-reset-password.
+- Unsigned POST `{}` → 401. The 403 / 400-own-id / 200 + access_logs checks need real sessions and a real password change, so they are left for you to run.
+- Browser check as super_admin: the section appears in all three dialogs, and Set password stays disabled for weak or mismatched input (no submit).
 
-### 3. Save handler (insert immediately after the open handler)
-
-```ts
-const handleSaveUser = async () => {
-  if (!editingUser) return;
-  const trimmedName = editingUser.name.trim();
-  if (!trimmedName) return; // save button is disabled for empty names
-
-  setIsSavingUser(true);
-  try {
-    const updates: { name: string; site_id?: string | null } = { name: trimmedName };
-    if (editingUser.role === 'supervisor') {
-      updates.site_id = editingUser.siteId || null;
-    }
-
-    const { data, error } = await supabase
-      .from('profiles')
-      .update(updates)
-      .eq('id', editingUser.id)
-      .select('id');
-
-    // RLS denials surface as an error OR as an empty returned array (0 rows updated)
-    if (error || !data || data.length === 0) {
-      toast({
-        title: 'Error',
-        description: "You don't have permission to edit this user",
-        variant: 'destructive',
-      });
-      return; // keep dialog open
-    }
-
-    toast({ title: 'Success', description: 'User updated' });
-    setIsEditUserDialogOpen(false);
-    setEditingUser(null);
-    fetchUsers();
-  } catch (error) {
-    toast({
-      title: 'Error',
-      description: "You don't have permission to edit this user",
-      variant: 'destructive',
-    });
-  } finally {
-    setIsSavingUser(false);
-  }
-};
-```
-
-Notes:
-- Only `name` and (supervisors only) `site_id` are written — no other profile columns.
-- `select('id')` is appended so a 0-row RLS denial is detectable as an empty array.
-- On denial the toast is destructive and the dialog stays open (no close, no `fetchUsers`).
-
-### 4. Wire + gate the menu item (replace line 917)
-
-Replace:
-```tsx
-<DropdownMenuItem>Edit User</DropdownMenuItem>
-```
-with:
-```tsx
-{isSuperAdmin && (
-  <DropdownMenuItem onClick={() => handleOpenEditUserDialog(user)}>
-    <Pencil className="w-4 h-4 mr-2" />
-    Edit User
-  </DropdownMenuItem>
-)}
-```
-
-- Visible to `super_admin` only (DB only lets super_admin update another profile; admins would get a silent no-op).
-- Adds the `Pencil` icon to match the sibling items ("Change Role", "Delete User").
-- No other menu items change.
-
-### 5. Edit User dialog JSX (insert after the Edit Researcher Dialog, ~line 1570, before the Delete dialog)
-
-```tsx
-{/* Edit User Dialog */}
-<Dialog open={isEditUserDialogOpen} onOpenChange={setIsEditUserDialogOpen}>
-  <DialogContent className="sm:max-w-[425px]">
-    <DialogHeader>
-      <DialogTitle>Edit User</DialogTitle>
-      <DialogDescription>
-        Update user details.
-      </DialogDescription>
-    </DialogHeader>
-    {editingUser && (
-      <div className="grid gap-4 py-4">
-        <div className="grid gap-2">
-          <Label htmlFor="editUserName">Name *</Label>
-          <Input
-            id="editUserName"
-            value={editingUser.name}
-            onChange={(e) => setEditingUser({ ...editingUser, name: e.target.value })}
-            placeholder="Enter full name"
-          />
-        </div>
-        <div className="grid gap-2">
-          <Label htmlFor="editUserEmail">Email</Label>
-          <Input
-            id="editUserEmail"
-            value={editingUser.email}
-            readOnly
-            disabled
-            className="bg-muted/50 text-muted-foreground"
-          />
-          <p className="text-xs text-muted-foreground">
-            The login email is managed in auth and cannot be changed here.
-          </p>
-        </div>
-        <div className="grid gap-2">
-          <Label>Site</Label>
-          {editingUser.role === 'supervisor' ? (
-            <Select
-              value={editingUser.siteId}
-              onValueChange={(value) => setEditingUser({ ...editingUser, siteId: value })}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Select a site" />
-              </SelectTrigger>
-              <SelectContent>
-                {sites.map(site => (
-                  <SelectItem key={site.id} value={site.id}>
-                    {site.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          ) : (
-            <p className="text-sm text-primary font-medium">All Sites</p>
-          )}
-        </div>
-      </div>
-    )}
-    <DialogFooter>
-      <Button variant="outline" onClick={() => setIsEditUserDialogOpen(false)} disabled={isSavingUser}>
-        Cancel
-      </Button>
-      <Button onClick={handleSaveUser} disabled={isSavingUser || !editingUser?.name.trim()}>
-        {isSavingUser && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-        Save Changes
-      </Button>
-    </DialogFooter>
-  </DialogContent>
-</Dialog>
-```
-
-- Email is read-only (rendered in a disabled Input), not editable.
-- Site Select appears only for supervisors; super_admin/admin see "All Sites".
-- Save button disabled when the trimmed name is empty, and while saving.
-
-## Summary of edits
-
-| Location | Change |
-|---|---|
-| ~line 84 (after researcher state) | Add `isEditUserDialogOpen`, `editingUser`, `isSavingUser` state |
-| ~line 472 (after `handleSaveResearcher`) | Add `handleOpenEditUserDialog` + `handleSaveUser` |
-| Line 917 | Replace bare `<DropdownMenuItem>Edit User</DropdownMenuItem>` with a gated, wired item (super_admin only, Pencil icon, onClick) |
-| ~line 1570 (after Edit Researcher Dialog) | Add Edit User `<Dialog>` |
-
-## Out of scope (unchanged)
-
-- No DB migration / RLS / policy / edge function / config.toml changes; no new dependency.
-- Deactivate, Change Role, Delete User, the Agents tab, Edit Agent, Edit Researcher, CommunicationPermissionsCell, and every other file are untouched.
-- No profile columns other than `name` and (supervisors) `site_id` are written by this dialog.
-
-## Other files
-
-None. Only `src/pages/UserManagement.tsx`.
-
-## Verification after approval
-
-- Run `tsgo --noEmit -p tsconfig.app.json` — must be clean.
-- No runtime check in plan mode. On build: as super_admin, Non-Agents → ⋮ → Edit User opens a prefilled dialog; name/email/site display; saving updates the row and refreshes the table; cancelling changes nothing; empty name disables Save; as admin the item is not shown; no console errors.
+## Note
+The frontend `passwordValidation.ts` has no 128-character maximum. The section adds that limit to its enable check, and that file stays unchanged.
