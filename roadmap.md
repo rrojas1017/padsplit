@@ -4,7 +4,7 @@
 (none)
 
 ## Open
-- [ ] BIL-FE correction: archived null edge_function → key 'archived_monthly_summary' + static label
+(none)
 
 ## Done
 - [P9] Coaching audio players use signed URLs (frontend step 1 toward private bucket) — done
