@@ -356,8 +356,10 @@ async function callDeepSeekForAnalysis(
 
   const result = await response.json();
   const content = result.choices?.[0]?.message?.content || '';
-  const inputTokens = result.usage?.prompt_tokens || Math.ceil(userPrompt.length / 4);
-  const outputTokens = result.usage?.completion_tokens || Math.ceil(content.length / 4);
+  const tk = tokensFromUsage(result, userPrompt, content);
+  const inputTokens = tk.inputTokens;
+  const outputTokens = tk.outputTokens;
+  const tokenSource = tk.source;
 
   console.log(`[DeepSeek] Response received: ${inputTokens} input, ${outputTokens} output, ${latencyMs}ms`);
 
@@ -366,6 +368,7 @@ async function callDeepSeekForAnalysis(
     model: result.model || 'deepseek-v4-flash',
     inputTokens,
     outputTokens,
+    tokenSource,
     latencyMs,
   };
 }
@@ -560,12 +563,13 @@ Return ONLY the polished transcript, no explanation.`;
     const result = await response.json();
     const polished = result.choices?.[0]?.message?.content?.trim() || rawTranscript;
     
-    const inputTokens = Math.ceil(prompt.length / 4);
-    const outputTokens = Math.ceil(polished.length / 4);
+    const tk = tokensFromUsage(result, prompt, polished);
+    const inputTokens = tk.inputTokens;
+    const outputTokens = tk.outputTokens;
     
     console.log(`[Polish] Transcript polished: ${rawTranscript.length} chars → ${polished.length} chars`);
     
-    return { polished, inputTokens, outputTokens };
+    return { polished, inputTokens, outputTokens, tokenSource: tk.source };
   } catch (error) {
     console.error('[Polish] Error polishing transcript:', error);
     return { 
@@ -1639,7 +1643,7 @@ async function processTranscription(bookingId: string, kixieUrl: string, skipTts
             booking_id: bookingId,
             agent_id: agentId || undefined,
             site_id: siteId || undefined,
-            input_tokens: polishResult.inputTokens,
+            input_tokens: polishResult.inputTokens, token_source: polishResult.tokenSource,
             output_tokens: polishResult.outputTokens,
             metadata: { 
               model: 'google/gemini-2.5-flash-lite',
@@ -1695,6 +1699,7 @@ async function processTranscription(bookingId: string, kixieUrl: string, skipTts
 
     let aiContent = '';
     let estimatedInputTokens = 0;
+    let summaryTokenSource: 'usage' | 'estimate' = 'estimate';
     let estimatedOutputTokens = 0;
 
     let llmProviderUsed: LLMProviderName = llmSelection.provider;
@@ -1724,8 +1729,10 @@ async function processTranscription(bookingId: string, kixieUrl: string, skipTts
 
       const aiResult = await aiResponse.json();
       aiContent = aiResult.choices?.[0]?.message?.content || '';
-      estimatedInputTokens = Math.ceil(summaryPrompt.length / 4);
-      estimatedOutputTokens = Math.ceil(aiContent.length / 4);
+      const summaryTk = tokensFromUsage(aiResult, summaryPrompt, aiContent);
+      estimatedInputTokens = summaryTk.inputTokens;
+      estimatedOutputTokens = summaryTk.outputTokens;
+      summaryTokenSource = summaryTk.source;
 
       // Log Lovable AI cost
       await logApiCost(supabase, {
@@ -1736,6 +1743,7 @@ async function processTranscription(bookingId: string, kixieUrl: string, skipTts
         agent_id: agentId || undefined,
         site_id: siteId || undefined,
         input_tokens: estimatedInputTokens,
+        token_source: summaryTokenSource,
         output_tokens: estimatedOutputTokens,
         metadata: { 
           model: geminiModel, 
@@ -1762,6 +1770,7 @@ async function processTranscription(bookingId: string, kixieUrl: string, skipTts
       aiContent = deepseekResult.content;
       estimatedInputTokens = deepseekResult.inputTokens;
       estimatedOutputTokens = deepseekResult.outputTokens;
+      summaryTokenSource = deepseekResult.tokenSource;
       // Validate the DeepSeek output parses as JSON (same fence stripping as below)
       let probe = (aiContent || '').trim();
       if (probe.startsWith('```json')) probe = probe.slice(7);
@@ -1778,6 +1787,7 @@ async function processTranscription(bookingId: string, kixieUrl: string, skipTts
         agent_id: agentId || undefined,
         site_id: siteId || undefined,
         input_tokens: estimatedInputTokens,
+        token_source: summaryTokenSource,
         output_tokens: estimatedOutputTokens,
         metadata: { 
           model: deepseekResult.model, 
@@ -1963,6 +1973,7 @@ Be generous in matching — if the topic of a question was discussed even partia
               let surveyContent = surveyResult.choices?.[0]?.message?.content || '';
               // Clean markdown fencing
               surveyContent = surveyContent.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+              const surveyTk = tokensFromUsage(surveyResult, surveyPrompt, surveyContent);
               const parsed = JSON.parse(surveyContent);
               surveyProgress = {
                 answered: parsed.answered || 0,
@@ -1979,8 +1990,9 @@ Be generous in matching — if the topic of a question was discussed even partia
                 booking_id: bookingId,
                 agent_id: agentId || undefined,
                 site_id: siteId || undefined,
-                input_tokens: Math.ceil(surveyPrompt.length / 4),
-                output_tokens: Math.ceil(surveyContent.length / 4),
+                input_tokens: surveyTk.inputTokens,
+                output_tokens: surveyTk.outputTokens,
+                token_source: surveyTk.source,
                 metadata: { model: 'google/gemini-2.5-flash', campaign: 'unknown' }
               });
             } else {

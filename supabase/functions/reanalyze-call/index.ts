@@ -187,8 +187,10 @@ async function callDeepSeekForAnalysis(
 
   const result = await response.json();
   const content = result.choices?.[0]?.message?.content || '';
-  const inputTokens = result.usage?.prompt_tokens || Math.ceil(userPrompt.length / 4);
-  const outputTokens = result.usage?.completion_tokens || Math.ceil(content.length / 4);
+  const tk = tokensFromUsage(result, userPrompt, content);
+  const inputTokens = tk.inputTokens;
+  const outputTokens = tk.outputTokens;
+  const tokenSource = tk.source;
 
   console.log(`[DeepSeek] Response received: ${inputTokens} input, ${outputTokens} output, ${latencyMs}ms`);
 
@@ -197,6 +199,7 @@ async function callDeepSeekForAnalysis(
     model: result.model || 'deepseek-v4-flash',
     inputTokens,
     outputTokens,
+    tokenSource,
     latencyMs,
   };
 }
@@ -622,6 +625,7 @@ async function callAIWithRetry(
       
       let aiContent = '';
       let inputTokens = 0;
+      let tokenSource: 'usage' | 'estimate' = 'estimate';
       let outputTokens = 0;
 
       const runGemini = async (geminiModel: string, geminiFallbackReason?: string) => {
@@ -647,8 +651,10 @@ async function callAIWithRetry(
 
         const aiResult = await aiResponse.json();
         aiContent = aiResult.choices?.[0]?.message?.content || '';
-        inputTokens = Math.ceil(prompt.length / 4);
-        outputTokens = Math.ceil(aiContent.length / 4);
+        const tk = tokensFromUsage(aiResult, prompt, aiContent);
+        inputTokens = tk.inputTokens;
+        outputTokens = tk.outputTokens;
+        tokenSource = tk.source;
         
         // Log Lovable AI cost
         if (attempt === 0 || attempt === maxRetries) {
@@ -660,6 +666,7 @@ async function callAIWithRetry(
             agent_id: agentId || undefined,
             site_id: siteId || undefined,
             input_tokens: inputTokens,
+            token_source: tokenSource,
             output_tokens: outputTokens,
             metadata: { 
               model: geminiModel, 
@@ -698,6 +705,7 @@ async function callAIWithRetry(
         aiContent = deepseekResult.content;
         inputTokens = deepseekResult.inputTokens;
         outputTokens = deepseekResult.outputTokens;
+        tokenSource = deepseekResult.tokenSource;
 
         // Log DeepSeek cost
         if (attempt === 0 || attempt === maxRetries) {
@@ -709,6 +717,7 @@ async function callAIWithRetry(
             agent_id: agentId || undefined,
             site_id: siteId || undefined,
             input_tokens: inputTokens,
+            token_source: tokenSource,
             output_tokens: outputTokens,
             metadata: { 
               model: deepseekResult.model, 

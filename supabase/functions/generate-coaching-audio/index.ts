@@ -250,8 +250,9 @@ Generate ONLY the spoken script, no stage directions or formatting.`;
     console.log("Generated script:", coachingScript.substring(0, 100) + "...");
 
     // Log Lovable AI cost for script generation
-    const estimatedInputTokens = Math.ceil(scriptPrompt.length / 4);
-    const estimatedOutputTokens = Math.ceil(coachingScript.length / 4);
+    const tk = tokensFromUsage(aiData, scriptPrompt, coachingScript);
+    const estimatedInputTokens = tk.inputTokens;
+    const estimatedOutputTokens = tk.outputTokens;
     await logApiCost(supabase, {
       service_provider: 'lovable_ai',
       service_type: 'tts_script_generation',
@@ -260,6 +261,7 @@ Generate ONLY the spoken script, no stage directions or formatting.`;
       agent_id: agentId,
       site_id: siteId,
       input_tokens: estimatedInputTokens,
+      token_source: tk.source,
       output_tokens: estimatedOutputTokens,
       metadata: { model: 'google/gemini-2.5-flash', script_length: coachingScript.length },
       triggered_by_user_id: triggeredByUserId || undefined,

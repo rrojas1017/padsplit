@@ -146,8 +146,9 @@ ${categories.map(cat => `    "${cat.name}": <score 0-${cat.maxPoints}>`).join(',
     const content = aiData.choices?.[0]?.message?.content || '';
     
     // Log AI cost
-    const inputTokens = Math.ceil(prompt.length / 4);
-    const outputTokens = Math.ceil(content.length / 4);
+    const tk = tokensFromUsage(aiData, prompt, content);
+    const inputTokens = tk.inputTokens;
+    const outputTokens = tk.outputTokens;
     await logApiCost(supabase, {
       service_provider: 'lovable_ai',
       service_type: 'ai_qa_scoring',
@@ -156,6 +157,7 @@ ${categories.map(cat => `    "${cat.name}": <score 0-${cat.maxPoints}>`).join(',
       agent_id: agentId,
       site_id: siteId,
       input_tokens: inputTokens,
+      token_source: tk.source,
       output_tokens: outputTokens,
       metadata: { model: 'google/gemini-2.5-flash' },
       triggered_by_user_id: triggeredByUserId || undefined,

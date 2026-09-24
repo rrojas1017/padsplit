@@ -701,6 +701,7 @@ CRITICAL: Your response must start with { and end with }. Return ONLY the JSON o
     let analysisText = '';
     let inputTokens = 0;
     let outputTokens = 0;
+    let tokenSource: 'usage' | 'estimate' = 'estimate';
 
     while (retryCount <= maxRetries) {
       const aiResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
@@ -729,8 +730,10 @@ CRITICAL: Your response must start with { and end with }. Return ONLY the JSON o
       analysisText = aiData.choices?.[0]?.message?.content || '';
       
       // Calculate tokens for cost logging
-      inputTokens = Math.ceil(aiPrompt.length / 4);
-      outputTokens = Math.ceil(analysisText.length / 4);
+      const tk = tokensFromUsage(aiData, aiPrompt, analysisText);
+      inputTokens = tk.inputTokens;
+      outputTokens = tk.outputTokens;
+      tokenSource = tk.source;
 
       try {
         const jsonMatch = analysisText.match(/\{[\s\S]*\}/);
@@ -762,6 +765,7 @@ CRITICAL: Your response must start with { and end with }. Return ONLY the JSON o
       service_type: 'ai_member_insights',
       edge_function: 'analyze-member-insights',
       input_tokens: inputTokens,
+      token_source: tokenSource,
       output_tokens: outputTokens,
       metadata: { 
         model: 'google/gemini-2.5-pro', 

@@ -693,10 +693,13 @@ async function callLovableAI(
   }
 
   const result = await response.json();
+  const content = result.choices?.[0]?.message?.content || '';
+  const tk = tokensFromUsage(result, userPrompt, content);
   return {
-    content: result.choices?.[0]?.message?.content || '',
-    inputTokens: result.usage?.prompt_tokens || Math.ceil(userPrompt.length / 4),
-    outputTokens: result.usage?.completion_tokens || Math.ceil((result.choices?.[0]?.message?.content || '').length / 4),
+    content,
+    inputTokens: tk.inputTokens,
+    outputTokens: tk.outputTokens,
+    tokenSource: tk.source,
   };
 }
 
@@ -801,7 +804,7 @@ async function processOneChunk(
         await logApiCost(supabase, {
           service_provider: 'lovable_ai', service_type: 'research_aggregation',
           edge_function: 'generate-research-insights',
-          input_tokens: retryResult.inputTokens, output_tokens: retryResult.outputTokens,
+          input_tokens: retryResult.inputTokens, token_source: retryResult.tokenSource, output_tokens: retryResult.outputTokens,
           metadata: { model, prompt: 'C_retry', chunk: chunkIndex + 1, totalChunks },
           triggered_by_user_id: triggeredByUserId || undefined, is_internal: false,
         });
@@ -813,7 +816,7 @@ async function processOneChunk(
     await logApiCost(supabase, {
       service_provider: 'lovable_ai', service_type: 'research_aggregation',
       edge_function: 'generate-research-insights',
-      input_tokens: result.inputTokens, output_tokens: result.outputTokens,
+      input_tokens: result.inputTokens, token_source: result.tokenSource, output_tokens: result.outputTokens,
       metadata: { model, prompt: 'C', chunk: chunkIndex + 1, totalChunks },
       triggered_by_user_id: triggeredByUserId || undefined, is_internal: false,
     });
@@ -896,7 +899,7 @@ async function processOneChunk(
           await logApiCost(supabase, {
             service_provider: 'lovable_ai', service_type: 'research_aggregation_synthesis',
             edge_function: 'generate-research-insights',
-            input_tokens: synthesisResult.inputTokens, output_tokens: synthesisResult.outputTokens,
+            input_tokens: synthesisResult.inputTokens, token_source: synthesisResult.tokenSource, output_tokens: synthesisResult.outputTokens,
             metadata: { model: synthesisModel, prompt: 'C_synthesis' },
             triggered_by_user_id: triggeredByUserId || undefined, is_internal: false,
           });
