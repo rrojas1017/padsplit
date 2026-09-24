@@ -29,4 +29,4 @@
 - [x] P5-SEC correction: bulk-transcription-processor continue guard moved before job lookup (403 for user callers)
 - [x] P5-GATE: nightly skip-when-nothing-new gate (3 insight functions) + drift migration file #21-#25 (written, not applied)
 - [x] P5-CLEAN: shared cost logging in 14 functions + delete MemberInsights page
-- [ ] P6-A: void invoices + research/platform AI cost in invoice internal cost (3 billing files)
+- [x] P6-A: void invoices + research/platform AI cost in invoice internal cost (3 billing files)
