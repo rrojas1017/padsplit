@@ -1,65 +1,50 @@
-# Security Fix P1 — Edge Function Authorization + Disable Public Sign-ups
+# Security Fix P2: Remove 24 Unused, Unauthenticated Edge Functions
 
-Scope: edge functions, `supabase/config.toml`, and the auth sign-up setting only. No `src/**`, SQL, RLS, or migration changes.
+## Reference re-check (done before planning)
+I searched `src/**`, `supabase/functions/**` (excluding each function's own folder) and `supabase/migrations/**` for each of the 24 names. No real caller was found. The only matches are harmless:
+- `backfill-payment-experience` and `-eligible-only`: these hits are word-prefix matches inside the sibling `backfill-payment-experience-*` folders, which are all being deleted too. They are self-invocation URLs and comments like "superseded by ...-eligible-only". None of them is outside the deletion set.
+- `fix-incomplete-bookings`: `batch-retry-transcriptions/index.ts:449` only mentions the name inside a user-facing text string ("Use fix-incomplete-bookings for those."). It never calls the function. I am leaving that string alone because the rules say no other function may change. It will just be stale wording.
 
-## Pre-checks done
-- `supabase/functions/_shared/` does not exist yet (will be created).
-- `public.get_internal_function_secret()` exists (present in generated types).
-- `profiles.can_send_email` / `can_send_sms` and `bookings.contact_email` / `contact_phone` exist.
-- `batch-retry-transcriptions` is only invoked from `src/pages/Settings.tsx` (user JWT) — no cron/internal caller found, so `requireUser(ADMINS)` will not break a scheduler.
+Result: nothing is excluded, and all 24 are deleted. `cleanup-coaching-audio` and every other function are untouched.
 
-## Files
+## What gets deleted
 
-Create
-- `supabase/functions/_shared/auth.ts` — exact content provided (Task 1).
-- `supabase/functions/_shared/url.ts` — exact content provided (Task 2), not imported yet.
+| # | Function | Folder | config.toml block |
+|---|---|---|---|
+| 1 | backfill-conversation-validation | yes | yes |
+| 2 | backfill-detected-issues | yes | yes |
+| 3 | backfill-deterministic-linkage | yes | none |
+| 4 | backfill-historical-costs | yes | yes |
+| 5 | backfill-member-details | yes | yes |
+| 6 | backfill-payment-experience | yes | none |
+| 7 | backfill-payment-experience-dues-day | yes | none |
+| 8 | backfill-payment-experience-eligible-only | yes | none |
+| 9 | backfill-payment-experience-names | yes | none |
+| 10 | backfill-payment-experience-progress | yes | none |
+| 11 | backfill-payment-experience-raw-script-answers | yes | none |
+| 12 | backfill-payment-experience-stated-answers | yes | none |
+| 13 | backfill-survey-progress | yes | yes |
+| 14 | batch-enrich-contacts | yes | yes |
+| 15 | batch-generate-coaching-audio | yes | yes |
+| 16 | batch-reanalyze-coaching | yes | yes |
+| 17 | batch-reanalyze-member-details | yes | yes |
+| 18 | check-deepgram-plan | yes | yes |
+| 19 | check-elevenlabs-plan | yes | yes |
+| 20 | fix-incomplete-bookings | yes | yes |
+| 21 | phase4-repair-pe-artifacts | yes | none |
+| 22 | recalculate-pro-pricing | yes | yes |
+| 23 | reclassify-other-records | yes | none |
+| 24 | validate-payment-keyword-backfill | yes | none |
 
-Modify
-- `supabase/functions/manage-api-credentials/index.ts`
-- `supabase/functions/send-follow-up-email/index.ts`
-- `supabase/functions/send-follow-up-sms/index.ts`
-- `supabase/functions/validate-login-ip/index.ts`
-- `supabase/functions/batch-retry-transcriptions/index.ts`
-- `supabase/config.toml`
+## Steps
+1. Delete the 24 deployed functions with the delete-edge-function tool, all in one call.
+2. Remove the 24 `supabase/functions/<name>/` folders.
+3. Remove the 13 matching `[functions.<name>]` blocks (header plus `verify_jwt` line) from `supabase/config.toml`. No other entry changes.
+4. Verify: call each function with a POST using the anon key and expect 404. Re-run the grep so that only the known string in `batch-retry-transcriptions` remains.
+5. Report per function: folder removed, config entry removed or not applicable, deployed function deleted, and the anon call status code.
 
-## Per-function changes
+## Out of scope
+No changes to `src/**`, SQL, RLS, migrations, or any other function or config entry.
 
-**manage-api-credentials**
-- Delete local `corsHeaders`, the `Bearer` check, atob decode, and `user_roles` `.single()` lookup.
-- Import `requireUser, ADMINS, adminClient, corsHeaders` from `../_shared/auth.ts`.
-- After OPTIONS: `const auth = await requireUser(req, ADMINS); if (!auth.ok) return auth.response; const userId = auth.ctx.userId;` DB via `adminClient()`.
-- `regenerate`: `.update(...).eq('id', id).eq('status','active').is('deleted_at', null).select()`; 0 rows → 404 `{error:'Credential not found or not active'}`. The status stays `active` (no longer used to re-activate revoked keys).
-- `revoke` / `delete`: add `.select('id')`; 0 rows → 404 `{error:'Credential not found'}`. Also guard `.is('deleted_at', null)` so deleted rows aren't touched.
-- Hashing (`sha256Hex`, `sk_`/`app_` prefixes) and success response shapes are unchanged.
-
-**send-follow-up-email / send-follow-up-sms**
-- Remove local `corsHeaders`, atob decode, and the profile permission query.
-- `const auth = await requireUser(req, STAFF)`; `profile = auth.ctx.profile`.
-- Email: `can_send_communications === true && can_send_email === true`; SMS: `can_send_communications === true && can_send_sms === true`; otherwise 403 with the existing message.
-- After required-field validation: `canSeeBooking(auth.ctx, bookingId)` (RLS as caller) → else 404 `{error:'Booking not found'}`.
-- Load `contact_email, contact_phone` with `adminClient()`. Email compares trimmed lowercased values; SMS compares last 10 digits (a null/short contact value means no match). Mismatch → 400 `{error:'Recipient does not match the booking contact'}`.
-- `user_name` for the log comes from a small `profiles.name` lookup (the shared profile type has no `name`); `user_id: auth.ctx.userId`. SendGrid/ClickSend calls and responses are unchanged.
-
-**validate-login-ip**
-- Replace atob with `requireUser(req, ANY_ROLE, { allowNoRole: true, allowInactive: true })`.
-- `!auth.ok` → 200 `{blocked:false, message:'Unauthenticated, skipping IP check'}` with no `access_logs` insert.
-- `userId = auth.ctx.userId`; `role = auth.ctx.role ?? 'agent'`. The existing role lookup is replaced by this; the rest of the logic is unchanged. Local `corsHeaders` is swapped for the shared one.
-
-**batch-retry-transcriptions**
-- After OPTIONS: `const auth = await requireUser(req, ADMINS); if (!auth.ok) return auth.response;`. Everything else stays the same. Internal calls to `transcribe-call` keep the service-role bearer. The local `corsHeaders` stays (the shared one is a superset; kept to limit changes).
-
-## config.toml
-Set `verify_jwt = true` on these 5 entries only: `manage-api-credentials`, `send-follow-up-email`, `send-follow-up-sms`, `validate-login-ip`, `batch-retry-transcriptions`. No other lines change.
-
-## Disabling public sign-ups
-Call the auth configuration tool with `disable_signup: true`. Other settings stay as they are: `auto_confirm_email: false`, `external_anonymous_users_enabled: false`, and the current password-leak (HIBP) setting (read first and passed through unchanged). Email+password login keeps working. `create-user` (`auth.admin.createUser`, service role) is unaffected.
-
-## Deploy
-Deploy the 5 functions. If the bundler rejects `../_shared/auth.ts`, stop and report without inlining. Then run smoke tests with the anon key: each function should return 401 (validate-login-ip should return 200 `blocked:false`), and nothing should log a token.
-
-## Concerns and limits
-1. **validate-login-ip + verify_jwt=true:** it runs right after sign-in with the user JWT, so this is fine. A call with no token is now rejected by the gateway (401) before the function's 200 fallback runs. Your 200 fallback therefore only applies to invalid/expired JWTs that are properly signed. If the login page ever calls it without a session, that call will now fail. I'm flagging this rather than changing the frontend.
-2. **Preview auth is signed out:** I can only verify the 401/403 paths with the anon key. I can't run an authenticated end-to-end test (such as sending a real email or SMS) unless I mint a session. If you want that, I'll mint one with the approval step.
-3. **Legacy-JWT gateway:** earlier in this project, deploys hit "Invalid JWT" 401s from the gateway on `verify_jwt=true`. If signing keys cause gateway-level 401s for real users after deploy, the safe fallback is `verify_jwt=false`, since in-code `getUser` does the real check. I'll report it rather than change it on my own.
-4. **Response shapes:** the new 404 on revoke/delete/regenerate and the recipient-mismatch 400 are new non-2xx paths, as you requested. The frontend already surfaces `error` strings.
-5. `access_logs` inserts and the other helper behavior are otherwise unchanged. No secrets are added, and the internal secret is only read via the RPC.
+## Caveat
+The per-function "ran recently" check is based on your audit, which covered pg_cron and triggers. I did not re-query pg_cron or triggers myself. I can add that read-only check as step 0 if you want it.
