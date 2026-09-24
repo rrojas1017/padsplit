@@ -127,6 +127,11 @@ export function useResearchScripts() {
       closing_script: script.closing_script || null,
       is_active: script.is_active,
       created_by: user?.id || null,
+      ...(script.script_type !== undefined ? { script_type: script.script_type } : {}),
+      ...(script.slug !== undefined ? { slug: script.slug } : {}),
+      ...(script.ai_prompt !== undefined ? { ai_prompt: script.ai_prompt } : {}),
+      ...(script.ai_model !== undefined ? { ai_model: script.ai_model } : {}),
+      ...(script.ai_temperature !== undefined ? { ai_temperature: script.ai_temperature } : {}),
     }).select('id').single();
     if (error) {
       toast.error('Failed to create script');

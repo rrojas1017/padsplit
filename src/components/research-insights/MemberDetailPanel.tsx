@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, Fragment } from 'react';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
@@ -167,7 +167,11 @@ export function MemberDetailPanel({ open, onOpenChange, transcriptionId, onAudit
   const highlightText = useCallback((text: string) => {
     if (!transcriptSearch.trim()) return text;
     const regex = new RegExp(`(${transcriptSearch.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
-    return text.replace(regex, '<mark class="bg-yellow-200 rounded px-0.5">$1</mark>');
+    return text.split(regex).map((part, i) =>
+      i % 2 === 1
+        ? <mark key={i} className="bg-yellow-200 rounded px-0.5">{part}</mark>
+        : <Fragment key={i}>{part}</Fragment>
+    );
   }, [transcriptSearch]);
 
   return (
@@ -313,10 +317,9 @@ export function MemberDetailPanel({ open, onOpenChange, transcriptionId, onAudit
                             }`}>
                               {line.speaker === 'agent' ? 'Agent' : line.speaker === 'member' ? 'Member' : ''}
                             </p>
-                            <p
-                              className="text-sm text-foreground leading-relaxed"
-                              dangerouslySetInnerHTML={{ __html: highlightText(line.text) }}
-                            />
+                            <p className="text-sm text-foreground leading-relaxed">
+                              {highlightText(line.text)}
+                            </p>
                           </div>
                         </div>
                       ))}

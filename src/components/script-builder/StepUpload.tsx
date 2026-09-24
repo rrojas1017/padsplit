@@ -21,7 +21,6 @@ const CAMPAIGN_TYPES = [
   { value: 'market_research', label: 'Market Research' },
   { value: 'retention', label: 'Retention Check-in' },
   { value: 'audience_survey', label: 'Audience Survey' },
-  { value: 'move_out_survey', label: 'Move-Out Survey' },
 ];
 
 const TARGET_AUDIENCES = [

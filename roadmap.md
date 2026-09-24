@@ -15,4 +15,4 @@
 - [x] P-B public script submissions (PublicScriptView + submit-public-script + validate-script-token)
 - [x] PIPE-2 reanalyze parity + Kixie webhook cleanup
 - [x] P-G1 cost gate, nightly insights dates, deepseek model, drift file
-- [ ] P-G2 frontend cleanup (7 files)
+- [x] P-G2 frontend cleanup (7 files)
