@@ -76,7 +76,7 @@ export default function PublicWallboard() {
       // Transform bookings to match our Booking type
       const transformedBookings: Booking[] = (data.bookings || []).map((b: any) => ({
         id: b.id,
-        moveInDate: new Date(b.move_in_date + 'T00:00:00'),
+        moveInDate: b.move_in_date ? new Date(b.move_in_date + 'T00:00:00') : null,
         bookingDate: new Date(b.booking_date + 'T00:00:00'),
         memberName: b.member_name,
         bookingType: b.booking_type,

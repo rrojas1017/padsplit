@@ -100,7 +100,7 @@ Deno.serve(async (req) => {
     while (true) {
       let q = supabase
         .from("bookings")
-        .select("id, market_city, market_state, status, booking_date, move_in_date, call_duration_seconds, communication_method, booking_type")
+        .select("id, market_city, market_state, status, booking_date, call_duration_seconds, communication_method, booking_type")
         .range(offset, offset + BATCH_SIZE - 1);
       if (dateFrom) q = q.gte("booking_date", dateFrom);
       if (dateTo) q = q.lte("booking_date", dateTo);

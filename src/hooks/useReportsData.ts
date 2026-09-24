@@ -362,7 +362,7 @@ export function useReportsData(
         return {
           id: row.id,
           bookingDate: new Date(row.booking_date + 'T00:00:00'),
-          moveInDate: new Date(row.move_in_date + 'T00:00:00'),
+          moveInDate: row.move_in_date ? new Date(row.move_in_date + 'T00:00:00') : null,
           memberName: row.member_name,
           agentId: row.agent_id,
           agentName: agents.find(a => a.id === row.agent_id)?.name || 'Unknown',

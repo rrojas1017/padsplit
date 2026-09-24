@@ -31,7 +31,7 @@ interface SendEmailDialogProps {
   memberName: string;
   marketCity?: string;
   marketState?: string;
-  moveInDate?: Date;
+  moveInDate?: Date | null;
   status?: string;
   onEmailSent?: () => void;
 }

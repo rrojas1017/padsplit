@@ -30,7 +30,7 @@ interface SendSMSDialogProps {
   memberName: string;
   marketCity?: string;
   marketState?: string;
-  moveInDate?: Date;
+  moveInDate?: Date | null;
   status?: string;
   onSMSSent?: () => void;
 }

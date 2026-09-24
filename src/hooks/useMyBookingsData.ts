@@ -104,7 +104,7 @@ export function useMyBookingsData(): MyBookingsDataReturn {
           id: row.id,
           memberName: row.member_name,
           bookingDate: new Date(row.booking_date + 'T00:00:00'),
-          moveInDate: new Date(row.move_in_date + 'T00:00:00'),
+          moveInDate: row.move_in_date ? new Date(row.move_in_date + 'T00:00:00') : null,
           agentId: row.agent_id,
           agentName: myAgent.name,
           status: row.status as Booking['status'],
@@ -162,7 +162,7 @@ export function useMyBookingsData(): MyBookingsDataReturn {
     if (updates.status !== undefined) dbUpdates.status = updates.status;
     if (updates.moveInDate !== undefined) dbUpdates.move_in_date = updates.moveInDate instanceof Date 
       ? updates.moveInDate.toISOString().split('T')[0] 
-      : updates.moveInDate;
+      : (updates.moveInDate ?? null);
     if (updates.isRebooking !== undefined) dbUpdates.is_rebooking = updates.isRebooking;
     if (updates.originalBookingId !== undefined) dbUpdates.original_booking_id = updates.originalBookingId;
 

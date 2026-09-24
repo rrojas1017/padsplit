@@ -73,8 +73,8 @@ Deno.serve(async (req) => {
     const agentName = (booking.agents as { name: string } | null)?.name ?? 'Unknown';
     const market = [booking.market_city, booking.market_state].filter(Boolean).join(', ') || 'N/A';
 
-    const formatDate = (dateStr: string | null) => {
-      if (!dateStr) return 'N/A';
+    const formatDate = (dateStr: string | null, missing = 'N/A') => {
+      if (!dateStr) return missing;
       const d = new Date(dateStr + 'T00:00:00');
       return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
     };
@@ -88,7 +88,7 @@ Deno.serve(async (req) => {
       { label: 'Agent', value: agentName },
       { label: 'Market', value: market },
       { label: 'Booking Date', value: formatDate(booking.booking_date) },
-      { label: 'Move-In Date', value: formatDate(booking.move_in_date) },
+      { label: 'Move-In Date', value: formatDate(booking.move_in_date, 'Not recorded') },
       { label: 'Communication', value: booking.communication_method ?? 'N/A' },
     ];
 
@@ -183,7 +183,7 @@ Deno.serve(async (req) => {
           if (booking.contact_email) coverallParams.append('email', booking.contact_email);
           if (booking.market_city) coverallParams.append('city', booking.market_city);
           if (booking.market_state) coverallParams.append('state', booking.market_state);
-          coverallParams.append('description', `Moved In on ${formatDate(booking.move_in_date)}. Agent: ${agentName}. Communication: ${booking.communication_method ?? 'N/A'}.`);
+          coverallParams.append('description', `Moved In on ${formatDate(booking.move_in_date, 'Not recorded')}. Agent: ${agentName}. Communication: ${booking.communication_method ?? 'N/A'}.`);
 
           const coverallRes = await fetch('https://app.coverallhc.com/api/leads', {
             method: 'POST',

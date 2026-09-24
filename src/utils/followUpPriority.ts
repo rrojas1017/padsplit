@@ -10,7 +10,7 @@ export interface FollowUpPriority {
 
 export interface BookingForPriority {
   status: string;
-  moveInDate: Date;
+  moveInDate: Date | null;
   bookingDate: Date;
   callKeyPoints?: CallKeyPoints;
   transcriptionStatus?: 'pending' | 'processing' | 'completed' | 'failed' | 'unavailable';
