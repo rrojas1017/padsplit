@@ -579,9 +579,6 @@ serve(async (req) => {
       }
       
       case 'continue': {
-        if (auth.ctx.kind !== 'internal') {
-          return new Response(JSON.stringify({ error: 'Forbidden' }), { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-        }
         // Internal action - just start the next chunk
         EdgeRuntime.waitUntil(
           runProcessingLoop(supabase, jobId, supabaseUrl, supabaseServiceKey)
