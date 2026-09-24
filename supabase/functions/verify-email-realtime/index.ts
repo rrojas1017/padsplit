@@ -1,9 +1,6 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version',
-};
+import { corsHeaders, requireUser, STAFF } from "../_shared/auth.ts";
 
 interface EmailListVerifyResponse {
   is_deliverable?: boolean;
@@ -20,6 +17,9 @@ Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
   }
+
+  const auth = await requireUser(req, STAFF);
+  if (!auth.ok) return auth.response;
 
   try {
     const { email } = await req.json();
@@ -49,7 +49,7 @@ Deno.serve(async (req) => {
       );
     }
 
-    console.log(`[verify-email-realtime] Verifying: ${email}`);
+    console.log('[verify-email-realtime] Verifying email');
 
     const apiResponse = await fetch(
       `https://apps.emaillistverify.com/api/verifyEmail?secret=${apiKey}&email=${encodeURIComponent(email.trim())}`

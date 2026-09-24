@@ -1,9 +1,7 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.49.1';
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version',
-};
+import { corsHeaders, adminClient as sharedAdmin } from '../_shared/auth.ts';
+import { isAllowedRecordingUrl } from '../_shared/url.ts';
 
 async function sha256Hex(text: string): Promise<string> {
   const encoder = new TextEncoder();
@@ -43,7 +41,7 @@ Deno.serve(async (req) => {
 
     const { data: credential, error: credError } = await adminClient
       .from('api_credentials')
-      .select('id, status, expires_at')
+      .select('id, status, expires_at, rate_limit')
       .eq('client_id', clientId)
       .eq('client_secret_hash', secretHash)
       .is('deleted_at', null)
@@ -67,6 +65,27 @@ Deno.serve(async (req) => {
       });
     }
 
+    // --- Rate limit (fail open if the limiter itself errors) ---
+    let rateRemaining: number | null = null;
+    {
+      const { data: rlRows, error: rlErr } = await sharedAdmin().rpc('api_rate_limit_hit', {
+        p_client_id: clientId,
+        p_limit: credential.rate_limit ?? 60,
+      });
+      const rl = Array.isArray(rlRows) ? rlRows[0] : rlRows;
+      if (rlErr) {
+        console.error('[submit] rate limiter error, continuing:', rlErr.message);
+      } else if (rl && rl.allowed === false) {
+        const retry = Math.max(1, Math.ceil((new Date(rl.reset_at).getTime() - Date.now()) / 1000));
+        return new Response(JSON.stringify({ error: 'Rate limit exceeded' }), {
+          status: 429,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json', 'Retry-After': String(retry), 'X-RateLimit-Remaining': '0' },
+        });
+      } else if (rl) {
+        rateRemaining = rl.remaining;
+      }
+    }
+
     // Update last_used_at
     await adminClient.from('api_credentials').update({ last_used_at: new Date().toISOString() }).eq('id', credential.id);
 
@@ -84,6 +103,18 @@ Deno.serve(async (req) => {
 
     if (errors.length > 0) {
       return new Response(JSON.stringify({ error: 'Validation failed', details: errors }), {
+        status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    if (!isAllowedRecordingUrl(audioUrl)) {
+      return new Response(JSON.stringify({ error: 'audioUrl host not allowed' }), {
+        status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+    // deno-lint-ignore no-control-regex
+    if (campaign.length > 200 || /[\u0000-\u001f\u007f]/.test(campaign)) {
+      return new Response(JSON.stringify({ error: 'Invalid campaign' }), {
         status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
@@ -107,11 +138,19 @@ Deno.serve(async (req) => {
     let matchedCampaignId: string | null = null;
     let matchedScriptId: string | null = null;
     {
-      const { data: campaignData } = await adminClient
+      // Parameterized lookups (no string-built filters): campaign_key first, then id when UUID.
+      let { data: campaignData } = await adminClient
         .from('research_campaigns')
         .select('id, script_id')
-        .or(isUuid ? `id.eq.${campaign},campaign_key.eq.${campaign}` : `campaign_key.eq.${campaign}`)
+        .eq('campaign_key', campaign)
         .maybeSingle();
+      if (!campaignData && isUuid) {
+        ({ data: campaignData } = await adminClient
+          .from('research_campaigns')
+          .select('id, script_id')
+          .eq('id', campaign)
+          .maybeSingle());
+      }
 
       if (campaignData) {
         matchedCampaignId = campaignData.id;
@@ -258,7 +297,10 @@ Deno.serve(async (req) => {
       resolvedCampaignType,
       matchedAgent: { id: agent.id, name: agent.name },
     }), {
-      status: 201, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      status: 201, headers: {
+        ...corsHeaders, 'Content-Type': 'application/json',
+        ...(rateRemaining !== null ? { 'X-RateLimit-Remaining': String(rateRemaining) } : {}),
+      },
     });
 
   } catch (err) {
