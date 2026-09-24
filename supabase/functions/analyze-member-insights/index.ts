@@ -1,6 +1,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 
 import { requireUserOrInternal, ADMINS, corsHeaders } from '../_shared/auth.ts';
+import { logApiCost, tokensFromUsage } from "../_shared/costs.ts";
 
 interface CallKeyPoints {
   summary: string;
@@ -41,57 +42,6 @@ interface PainPointWithSources {
   is_emerging?: boolean;
 }
 
-// Cost logging helper
-async function logApiCost(supabase: any, params: {
-  service_provider: 'elevenlabs' | 'lovable_ai';
-  service_type: string;
-  edge_function: string;
-  booking_id?: string;
-  agent_id?: string;
-  site_id?: string;
-  input_tokens?: number;
-  output_tokens?: number;
-  audio_duration_seconds?: number;
-  character_count?: number;
-  metadata?: Record<string, any>;
-  triggered_by_user_id?: string;
-  is_internal?: boolean;
-}) {
-  try {
-    let cost = 0;
-    if (params.service_provider === 'elevenlabs') {
-      if (params.audio_duration_seconds) {
-        cost += (params.audio_duration_seconds / 60) * 0.10;
-      }
-      if (params.character_count) {
-        cost += params.character_count * 0.0003;
-      }
-    } else if (params.service_provider === 'lovable_ai') {
-      const model = params.metadata?.model || 'google/gemini-2.5-flash';
-      let inputRate = 0.0001;
-      let outputRate = 0.0003;
-      
-      if (model.includes('gemini-2.5-pro')) {
-        inputRate = 0.00125;
-        outputRate = 0.005;
-      }
-      
-      const inputCost = ((params.input_tokens || 0) / 1000) * inputRate;
-      const outputCost = ((params.output_tokens || 0) / 1000) * outputRate;
-      cost = inputCost + outputCost;
-    }
-
-    await supabase.from('api_costs').insert({
-      ...params,
-      estimated_cost_usd: cost,
-      triggered_by_user_id: params.triggered_by_user_id || null,
-      is_internal: params.is_internal || false,
-    });
-    console.log(`[Cost] Logged ${params.service_type}: $${cost.toFixed(4)}`);
-  } catch (error) {
-    console.error('[Cost] Failed to log cost:', error);
-  }
-}
 
 // Fetch previous analysis for trend comparison
 async function fetchPreviousAnalysis(supabase: any, analysisPeriod: string, currentDateEnd: string) {
@@ -751,6 +701,7 @@ CRITICAL: Your response must start with { and end with }. Return ONLY the JSON o
     let analysisText = '';
     let inputTokens = 0;
     let outputTokens = 0;
+    let tokenSource: 'usage' | 'estimate' = 'estimate';
 
     while (retryCount <= maxRetries) {
       const aiResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
@@ -779,8 +730,10 @@ CRITICAL: Your response must start with { and end with }. Return ONLY the JSON o
       analysisText = aiData.choices?.[0]?.message?.content || '';
       
       // Calculate tokens for cost logging
-      inputTokens = Math.ceil(aiPrompt.length / 4);
-      outputTokens = Math.ceil(analysisText.length / 4);
+      const tk = tokensFromUsage(aiData, aiPrompt, analysisText);
+      inputTokens = tk.inputTokens;
+      outputTokens = tk.outputTokens;
+      tokenSource = tk.source;
 
       try {
         const jsonMatch = analysisText.match(/\{[\s\S]*\}/);
@@ -807,11 +760,12 @@ CRITICAL: Your response must start with { and end with }. Return ONLY the JSON o
     }
 
     // Log AI cost
-    logApiCost(supabase, {
+    await logApiCost(supabase, {
       service_provider: 'lovable_ai',
       service_type: 'ai_member_insights',
       edge_function: 'analyze-member-insights',
       input_tokens: inputTokens,
+      token_source: tokenSource,
       output_tokens: outputTokens,
       metadata: { 
         model: 'google/gemini-2.5-pro', 

@@ -1,42 +1,8 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 import { requireInternal, corsHeaders } from "../_shared/auth.ts";
+import { logApiCost, tokensFromUsage } from "../_shared/costs.ts";
 
-// Cost logging helper
-async function logApiCost(supabase: any, params: {
-  service_provider: string;
-  service_type: string;
-  edge_function: string;
-  booking_id?: string;
-  input_tokens?: number;
-  output_tokens?: number;
-  metadata?: Record<string, any>;
-  triggered_by_user_id?: string;
-  is_internal?: boolean;
-}) {
-  try {
-    let cost = 0;
-    if (params.service_provider === 'lovable_ai') {
-      const model = params.metadata?.model || 'google/gemini-2.5-pro';
-      let inputRate = 0.00000125;
-      let outputRate = 0.00001;
-      if (model.includes('flash')) {
-        inputRate = 0.0000003;
-        outputRate = 0.0000025;
-      }
-      cost = ((params.input_tokens || 0) * inputRate) + ((params.output_tokens || 0) * outputRate);
-    }
-    await supabase.from('api_costs').insert({
-      ...params,
-      estimated_cost_usd: cost,
-      triggered_by_user_id: params.triggered_by_user_id || null,
-      is_internal: params.is_internal || false,
-    });
-    console.log(`[Cost] Logged ${params.service_type}: $${cost.toFixed(6)}`);
-  } catch (error) {
-    console.error('[Cost] Failed to log cost:', error);
-  }
-}
 
 // Call Lovable AI gateway
 async function callLovableAI(
@@ -45,7 +11,7 @@ async function callLovableAI(
   temperature: number,
   systemPrompt: string,
   userPrompt: string
-): Promise<{ content: string; inputTokens: number; outputTokens: number }> {
+): Promise<{ content: string; inputTokens: number; outputTokens: number; tokenSource?: 'usage' | 'estimate' }> {
   const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
     method: 'POST',
     headers: {
@@ -69,10 +35,13 @@ async function callLovableAI(
   }
 
   const result = await response.json();
+  const content = result.choices?.[0]?.message?.content || '';
+  const tk = tokensFromUsage(result, userPrompt, content);
   return {
-    content: result.choices?.[0]?.message?.content || '',
-    inputTokens: result.usage?.prompt_tokens || Math.ceil(userPrompt.length / 4),
-    outputTokens: result.usage?.completion_tokens || Math.ceil((result.choices?.[0]?.message?.content || '').length / 4),
+    content,
+    inputTokens: tk.inputTokens,
+    outputTokens: tk.outputTokens,
+    tokenSource: tk.source,
   };
 }
 
@@ -1168,7 +1137,7 @@ Deno.serve(async (req) => {
         service_type: 'research_script_survey',
         edge_function: 'process-research-record',
         booking_id: bookingId,
-        input_tokens: result.inputTokens,
+        input_tokens: result.inputTokens, token_source: result.tokenSource,
         output_tokens: result.outputTokens,
         metadata: { model, prompt: ctx.scriptAiPrompt ? 'script' : 'generic', campaign_type: campaignType, script_id: ctx.scriptId },
         is_internal: false,
@@ -1222,7 +1191,7 @@ Deno.serve(async (req) => {
         service_type: 'research_payment_experience',
         edge_function: 'process-research-record',
         booking_id: bookingId,
-        input_tokens: result.inputTokens,
+        input_tokens: result.inputTokens, token_source: result.tokenSource,
         output_tokens: result.outputTokens,
         metadata: { model, prompt: 'payment_experience', campaign_type: campaignType, script_id: ctx.scriptId },
         is_internal: false,
@@ -1270,7 +1239,7 @@ Deno.serve(async (req) => {
         service_type: 'research_audience_survey',
         edge_function: 'process-research-record',
         booking_id: bookingId,
-        input_tokens: result.inputTokens,
+        input_tokens: result.inputTokens, token_source: result.tokenSource,
         output_tokens: result.outputTokens,
         metadata: { model, prompt: customAudiencePrompt ? 'custom_audience' : 'audience_survey', campaign_type: campaignType },
         is_internal: false,
@@ -1331,7 +1300,7 @@ Deno.serve(async (req) => {
           service_type: 'research_merged',
           edge_function: 'process-research-record',
           booking_id: bookingId,
-          input_tokens: result.inputTokens,
+          input_tokens: result.inputTokens, token_source: result.tokenSource,
           output_tokens: result.outputTokens,
           metadata: { model, prompt: 'merged', campaign_type: campaignType },
           is_internal: false,
@@ -1361,7 +1330,7 @@ Deno.serve(async (req) => {
         await logApiCost(supabase, {
           service_provider: 'lovable_ai', service_type: 'research_extraction',
           edge_function: 'process-research-record', booking_id: bookingId,
-          input_tokens: extractionResult.inputTokens, output_tokens: extractionResult.outputTokens,
+          input_tokens: extractionResult.inputTokens, token_source: extractionResult.tokenSource, output_tokens: extractionResult.outputTokens,
           metadata: { model: extractionModel, prompt: 'A', campaign_type: campaignType }, is_internal: false,
         });
 
@@ -1379,7 +1348,7 @@ Deno.serve(async (req) => {
         await logApiCost(supabase, {
           service_provider: 'lovable_ai', service_type: 'research_classification',
           edge_function: 'process-research-record', booking_id: bookingId,
-          input_tokens: classificationResult.inputTokens, output_tokens: classificationResult.outputTokens,
+          input_tokens: classificationResult.inputTokens, token_source: classificationResult.tokenSource, output_tokens: classificationResult.outputTokens,
           metadata: { model: classificationModel, prompt: 'B', campaign_type: campaignType }, is_internal: false,
         });
       }

@@ -5,41 +5,8 @@ declare const EdgeRuntime: {
 };
 
 import { requireUserOrInternal, MANAGERS, corsHeaders } from '../_shared/auth.ts';
+import { logApiCost, tokensFromUsage } from "../_shared/costs.ts";
 
-// Cost logging
-async function logApiCost(supabase: any, params: {
-  service_provider: string;
-  service_type: string;
-  edge_function: string;
-  input_tokens?: number;
-  output_tokens?: number;
-  metadata?: Record<string, any>;
-  triggered_by_user_id?: string;
-  is_internal?: boolean;
-}) {
-  try {
-    let cost = 0;
-    if (params.service_provider === 'lovable_ai') {
-      const model = params.metadata?.model || 'google/gemini-2.5-pro';
-      let inputRate = 0.00000125;
-      let outputRate = 0.00001;
-      if (model.includes('flash')) {
-        inputRate = 0.0000003;
-        outputRate = 0.0000025;
-      }
-      cost = ((params.input_tokens || 0) * inputRate) + ((params.output_tokens || 0) * outputRate);
-    }
-    await supabase.from('api_costs').insert({
-      ...params,
-      estimated_cost_usd: cost,
-      triggered_by_user_id: params.triggered_by_user_id || null,
-      is_internal: params.is_internal || false,
-    });
-    console.log(`[Cost] Logged ${params.service_type}: $${cost.toFixed(6)}`);
-  } catch (error) {
-    console.error('[Cost] Failed to log cost:', error);
-  }
-}
 
 const DEFAULT_AGGREGATION_PROMPT = `You are a strategic analyst for PadSplit's Member Experience and Operations leadership. You are reviewing a batch of classified move-out cases to identify systemic patterns, operational blind spots, and prioritized actionable recommendations.
 
@@ -701,7 +668,7 @@ async function callLovableAI(
   temperature: number,
   systemPrompt: string,
   userPrompt: string
-): Promise<{ content: string; inputTokens: number; outputTokens: number }> {
+): Promise<{ content: string; inputTokens: number; outputTokens: number; tokenSource?: 'usage' | 'estimate' }> {
   const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
     method: 'POST',
     headers: {
@@ -726,10 +693,13 @@ async function callLovableAI(
   }
 
   const result = await response.json();
+  const content = result.choices?.[0]?.message?.content || '';
+  const tk = tokensFromUsage(result, userPrompt, content);
   return {
-    content: result.choices?.[0]?.message?.content || '',
-    inputTokens: result.usage?.prompt_tokens || Math.ceil(userPrompt.length / 4),
-    outputTokens: result.usage?.completion_tokens || Math.ceil((result.choices?.[0]?.message?.content || '').length / 4),
+    content,
+    inputTokens: tk.inputTokens,
+    outputTokens: tk.outputTokens,
+    tokenSource: tk.source,
   };
 }
 
@@ -834,7 +804,7 @@ async function processOneChunk(
         await logApiCost(supabase, {
           service_provider: 'lovable_ai', service_type: 'research_aggregation',
           edge_function: 'generate-research-insights',
-          input_tokens: retryResult.inputTokens, output_tokens: retryResult.outputTokens,
+          input_tokens: retryResult.inputTokens, token_source: retryResult.tokenSource, output_tokens: retryResult.outputTokens,
           metadata: { model, prompt: 'C_retry', chunk: chunkIndex + 1, totalChunks },
           triggered_by_user_id: triggeredByUserId || undefined, is_internal: false,
         });
@@ -846,7 +816,7 @@ async function processOneChunk(
     await logApiCost(supabase, {
       service_provider: 'lovable_ai', service_type: 'research_aggregation',
       edge_function: 'generate-research-insights',
-      input_tokens: result.inputTokens, output_tokens: result.outputTokens,
+      input_tokens: result.inputTokens, token_source: result.tokenSource, output_tokens: result.outputTokens,
       metadata: { model, prompt: 'C', chunk: chunkIndex + 1, totalChunks },
       triggered_by_user_id: triggeredByUserId || undefined, is_internal: false,
     });
@@ -929,7 +899,7 @@ async function processOneChunk(
           await logApiCost(supabase, {
             service_provider: 'lovable_ai', service_type: 'research_aggregation_synthesis',
             edge_function: 'generate-research-insights',
-            input_tokens: synthesisResult.inputTokens, output_tokens: synthesisResult.outputTokens,
+            input_tokens: synthesisResult.inputTokens, token_source: synthesisResult.tokenSource, output_tokens: synthesisResult.outputTokens,
             metadata: { model: synthesisModel, prompt: 'C_synthesis' },
             triggered_by_user_id: triggeredByUserId || undefined, is_internal: false,
           });

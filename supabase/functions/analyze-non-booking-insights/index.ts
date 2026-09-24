@@ -3,6 +3,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 declare const EdgeRuntime: { waitUntil: (promise: Promise<unknown>) => void };
 
 import { requireUserOrInternal, ADMINS, corsHeaders } from '../_shared/auth.ts';
+import { logApiCost, tokensFromUsage } from "../_shared/costs.ts";
 
 const BATCH_SIZE = 500;
 const FUNCTION_TIMEOUT_MS = 120000; // 2 minutes safety margin from 150s limit
@@ -387,14 +388,14 @@ Return JSON:
         status: 'failed',
         error_message: 'AI response could not be parsed',
       }).eq('id', id);
-      const fIn = Math.ceil(prompt.length / 4), fOut = Math.ceil(txt.length / 4);
-      await supabase.from('api_costs').insert({
+      const fTk = tokensFromUsage(aiResponse, prompt, txt);
+      await logApiCost(supabase, {
         service_provider: 'lovable_ai',
         service_type: 'ai_non_booking_insights',
         edge_function: 'analyze-non-booking-insights',
-        input_tokens: fIn,
-        output_tokens: fOut,
-        estimated_cost_usd: (fIn / 1000) * 0.00015 + (fOut / 1000) * 0.0006,
+        input_tokens: fTk.inputTokens,
+        output_tokens: fTk.outputTokens,
+        token_source: fTk.source,
         metadata: { model: 'google/gemini-2.5-flash', total_calls: total, parse_failed: true },
         triggered_by_user_id: triggeredByUserId || null,
         is_internal: isInternal,
@@ -450,14 +451,14 @@ Return JSON:
     console.log(`[ProcessAnalysis] SUCCESS: Analysis complete for ${total} calls in ${totalElapsed}ms`);
 
     // Log API costs
-    const inTok = Math.ceil(prompt.length / 4), outTok = Math.ceil(txt.length / 4);
-    await supabase.from('api_costs').insert({
-      service_provider: 'lovable_ai', 
+    const tk = tokensFromUsage(aiResponse, prompt, txt);
+    await logApiCost(supabase, {
+      service_provider: 'lovable_ai',
       service_type: 'ai_non_booking_insights',
-      edge_function: 'analyze-non-booking-insights', 
-      input_tokens: inTok, 
-      output_tokens: outTok,
-      estimated_cost_usd: (inTok / 1000) * 0.00015 + (outTok / 1000) * 0.0006,
+      edge_function: 'analyze-non-booking-insights',
+      input_tokens: tk.inputTokens,
+      output_tokens: tk.outputTokens,
+      token_source: tk.source,
       metadata: { model: 'google/gemini-2.5-flash', total_calls: total, processing_time_ms: totalElapsed },
       triggered_by_user_id: triggeredByUserId || null,
       is_internal: isInternal,

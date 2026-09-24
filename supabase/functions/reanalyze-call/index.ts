@@ -3,6 +3,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 import { requireUserOrInternal, canSeeBooking, jsonResponse, corsHeaders, MANAGERS } from "../_shared/auth.ts";
+import { logApiCost, tokensFromUsage } from "../_shared/costs.ts";
 
 // Types for call type configuration
 interface CallTypeConfig {
@@ -51,12 +52,6 @@ interface LLMProviderSelection {
   model: string;
   fallbackReason?: string;
 }
-
-// DeepSeek pricing: $0.14/1M input, $0.28/1M output (cache miss)
-const DEEPSEEK_PRICING = {
-  inputRate: 0.00000014,   // $0.14 per 1M tokens
-  outputRate: 0.00000028,  // $0.28 per 1M tokens
-};
 
 // Fetch provider-specific prompt enhancements from database
 async function getProviderPromptEnhancements(
@@ -159,6 +154,7 @@ async function callDeepSeekForAnalysis(
   model: string;
   inputTokens: number;
   outputTokens: number;
+  tokenSource: 'usage' | 'estimate';
   latencyMs: number;
 }> {
   const DEEPSEEK_API_KEY = Deno.env.get('DEEPSEEK_API_KEY');
@@ -192,8 +188,10 @@ async function callDeepSeekForAnalysis(
 
   const result = await response.json();
   const content = result.choices?.[0]?.message?.content || '';
-  const inputTokens = result.usage?.prompt_tokens || Math.ceil(userPrompt.length / 4);
-  const outputTokens = result.usage?.completion_tokens || Math.ceil(content.length / 4);
+  const tk = tokensFromUsage(result, userPrompt, content);
+  const inputTokens = tk.inputTokens;
+  const outputTokens = tk.outputTokens;
+  const tokenSource = tk.source;
 
   console.log(`[DeepSeek] Response received: ${inputTokens} input, ${outputTokens} output, ${latencyMs}ms`);
 
@@ -202,65 +200,11 @@ async function callDeepSeekForAnalysis(
     model: result.model || 'deepseek-v4-flash',
     inputTokens,
     outputTokens,
+    tokenSource,
     latencyMs,
   };
 }
 
-// Cost logging helper
-async function logApiCost(supabase: any, params: {
-  service_provider: 'elevenlabs' | 'lovable_ai' | 'deepseek';
-  service_type: string;
-  edge_function: string;
-  booking_id?: string;
-  agent_id?: string;
-  site_id?: string;
-  input_tokens?: number;
-  output_tokens?: number;
-  audio_duration_seconds?: number;
-  character_count?: number;
-  metadata?: Record<string, any>;
-  triggered_by_user_id?: string;
-  is_internal?: boolean;
-}) {
-  try {
-    let cost = 0;
-    if (params.service_provider === 'elevenlabs') {
-      if (params.audio_duration_seconds) {
-        cost += (params.audio_duration_seconds / 60) * 0.10;
-      }
-      if (params.character_count) {
-        cost += params.character_count * 0.0003;
-      }
-    } else if (params.service_provider === 'deepseek') {
-      const inputCost = (params.input_tokens || 0) * DEEPSEEK_PRICING.inputRate;
-      const outputCost = (params.output_tokens || 0) * DEEPSEEK_PRICING.outputRate;
-      cost = inputCost + outputCost;
-    } else if (params.service_provider === 'lovable_ai') {
-      const model = params.metadata?.model || 'google/gemini-2.5-flash';
-      let inputRate = 0.0001;
-      let outputRate = 0.0003;
-      
-      if (model.includes('gemini-2.5-pro')) {
-        inputRate = 0.00125;
-        outputRate = 0.005;
-      }
-      
-      const inputCost = ((params.input_tokens || 0) / 1000) * inputRate;
-      const outputCost = ((params.output_tokens || 0) / 1000) * outputRate;
-      cost = inputCost + outputCost;
-    }
-
-    await supabase.from('api_costs').insert({
-      ...params,
-      estimated_cost_usd: cost,
-      triggered_by_user_id: params.triggered_by_user_id || null,
-      is_internal: params.is_internal || false,
-    });
-    console.log(`[Cost] Logged ${params.service_type}: $${cost.toFixed(4)}`);
-  } catch (error) {
-    console.error('[Cost] Failed to log cost:', error);
-  }
-}
 
 // Fetch call type configuration from database
 async function fetchCallTypeConfig(
@@ -682,6 +626,7 @@ async function callAIWithRetry(
       
       let aiContent = '';
       let inputTokens = 0;
+      let tokenSource: 'usage' | 'estimate' = 'estimate';
       let outputTokens = 0;
 
       const runGemini = async (geminiModel: string, geminiFallbackReason?: string) => {
@@ -707,12 +652,14 @@ async function callAIWithRetry(
 
         const aiResult = await aiResponse.json();
         aiContent = aiResult.choices?.[0]?.message?.content || '';
-        inputTokens = Math.ceil(prompt.length / 4);
-        outputTokens = Math.ceil(aiContent.length / 4);
+        const tk = tokensFromUsage(aiResult, prompt, aiContent);
+        inputTokens = tk.inputTokens;
+        outputTokens = tk.outputTokens;
+        tokenSource = tk.source;
         
         // Log Lovable AI cost
         if (attempt === 0 || attempt === maxRetries) {
-          logApiCost(supabase, {
+          await logApiCost(supabase, {
             service_provider: 'lovable_ai',
             service_type: 'ai_reanalysis',
             edge_function: 'reanalyze-call',
@@ -720,6 +667,7 @@ async function callAIWithRetry(
             agent_id: agentId || undefined,
             site_id: siteId || undefined,
             input_tokens: inputTokens,
+            token_source: tokenSource,
             output_tokens: outputTokens,
             metadata: { 
               model: geminiModel, 
@@ -758,10 +706,11 @@ async function callAIWithRetry(
         aiContent = deepseekResult.content;
         inputTokens = deepseekResult.inputTokens;
         outputTokens = deepseekResult.outputTokens;
+        tokenSource = deepseekResult.tokenSource;
 
         // Log DeepSeek cost
         if (attempt === 0 || attempt === maxRetries) {
-          logApiCost(supabase, {
+          await logApiCost(supabase, {
             service_provider: 'deepseek',
             service_type: 'ai_reanalysis',
             edge_function: 'reanalyze-call',
@@ -769,6 +718,7 @@ async function callAIWithRetry(
             agent_id: agentId || undefined,
             site_id: siteId || undefined,
             input_tokens: inputTokens,
+            token_source: tokenSource,
             output_tokens: outputTokens,
             metadata: { 
               model: deepseekResult.model, 
