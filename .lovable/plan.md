@@ -1,44 +1,57 @@
-# Security Fix P5: Authorize 6 batch functions
+# Security Fix P6: Authorize 6 AI/utility functions
 
-Scope: only the 6 functions below. No changes to src/**, SQL, RLS, migrations, config.toml, other functions, prompts, models or cost logic.
+Scope: the 6 functions below, `_shared/url.ts`, transcribe-call (helper move only), and two small frontend edits. No SQL, RLS, migrations, config.toml, prompts, models, cost logic or other functions.
 
-In every function the local `const corsHeaders = {...}` is replaced by the shared import from `../_shared/auth.ts`, and the guard `const auth = await <guard>; if (!auth.ok) return auth.response;` goes right after the OPTIONS return.
+Pattern in each function: delete the local `const corsHeaders = {...}`, import from `../_shared/auth.ts`, and add `const auth = await <guard>; if (!auth.ok) return auth.response;` right after the OPTIONS return.
 
 ## Per function
 
-| # | Function | Local corsHeaders removed | Guard after OPTIONS | config.toml (unchanged) |
+| # | Function | Local corsHeaders removed | Guard inserted after | config.toml (unchanged) |
 |---|---|---|---|---|
-| 1 | batch-generate-qa-scores | lines 4-7 | `requireUser(req, MANAGERS)` (after line 71) | false |
-| 2 | batch-generate-qa-coaching | lines 5-8 | `requireUser(req, ADMINS)` (after line 55) | false |
-| 3 | batch-process-research-records | lines 3-6 | `requireUserOrInternal(req, MANAGERS)` (after line 18) | true |
-| 4 | bulk-transcription-processor | lines 9-12 | `requireUserOrInternal(req, ADMINS)` (after line 461) | true |
-| 5 | batch-extract-lifestyle-signals | lines 4-7 | `requireUserOrInternal(req, ['super_admin'])` (after line 12) | false |
-| 6 | reclassify-records | lines 3-6 | `requireUserOrInternal(req, MANAGERS)` (after line 96) | no block (gateway default) |
+| 1 | backfill-markets-from-transcriptions | lines 4-7 | line 130: `requireUser(req, ADMINS)` | false |
+| 2 | backfill-pricing-data | lines 4-7 | line 86: `requireUser(req, ADMINS)` | false |
+| 3 | aggregate-market-data | lines 3-6 | line 66: `requireUser(req, ADMINS)` | true |
+| 4 | compare-stt-providers | lines 5-8 | line 144: `requireUser(req, ADMINS)` | true |
+| 5 | parse-research-script | lines 3-7 | line 12: `requireUser(req, ADMINS)` | false |
+| 6 | translate-script | lines 3-6 | line 9: custom guard (below) | false |
 
-Details:
-- **batch-extract-lifestyle-signals:** lines 28-52 change.
-  - Removed: the `authHeader` read, the anon-client `getUser`, the `user_roles` lookup, and the 401/403 responses.
-  - The condition `if (authHeader && !jobId)` becomes `if (!jobId)`. The job-creation branch (count, insert job, first self-invoke) is otherwise unchanged.
-  - The guard now runs on every call, so a user call that sends a `jobId` must still be super_admin.
-- **batch-generate-qa-coaching:** its fan-out to generate-qa-coaching-audio (lines 103-106) keeps the service-role bearer.
-- **batch-generate-qa-scores:** no auth code exists today. It calls the AI gateway directly (line 163), with no other function call. Only the guard is added.
+### 4. compare-stt-providers (extra)
+- After the `!kixieUrl` check (lines 149-151), add: `if (!isAllowedRecordingUrl(kixieUrl)) return jsonResponse(400, { error: 'Recording URL not allowed' });`
+- `downloadAudio` (line 120): `fetch(kixieUrl, {...})` becomes `safeRecordingFetch(kixieUrl, {...})`, headers unchanged.
+- Imports: `isAllowedRecordingUrl, safeRecordingFetch` from `../_shared/url.ts`.
 
-## Self-chain and function-to-function calls (verified in the code)
+### 6. translate-script (custom guard)
+- Replace line 1 import with `serve` + `requireUser, adminClient, jsonResponse, corsHeaders, RESEARCH` from `../_shared/auth.ts`.
+- Line 12: parse the body once as `body`, then take `{ intro, closing, rebuttal, questions, targetLanguage, scriptToken }`. Body is read before the guard because the token lives in it.
+- Size cap: if `JSON.stringify({intro, closing, rebuttal, questions}).length > 100000`, return 413 `{error:'Input too large'}`.
+- Access check:
+  - If `scriptToken` is a non-empty string: look up `script_access_tokens` with `adminClient()` (`select id, is_active, expires_at` `.eq('token', scriptToken).maybeSingle()`). The row must exist, `is_active` must be true, and `expires_at` must be null or in the future. Otherwise return 401.
+  - Otherwise: `requireUser(req, RESEARCH)`. If that fails, return its 401/403.
+- Order: OPTIONS, then parse (bad JSON goes to the existing catch and returns 500, same as today), then size cap, then access check, then the unchanged logic.
+- The token is never logged.
 
-Every call below sends the service-role bearer, which `checkInternal` accepts:
+## _shared/url.ts
+- Line 2: add `".amazonaws.com", ".cloudfront.net", ".googleapis.com"` to `DEFAULT_SUFFIXES`. The https-only, no-IP and no-.local checks stay as they are.
+- New export `safeRecordingFetch(url, init)`: a byte-identical move of transcribe-call lines 13-30 (manual redirect, max 3 hops, every hop checked with `isAllowedRecordingUrl`, same error messages).
 
-- batch-process-research-records calls process-research-record (line 147-150) and itself (line 191-194). Both send `Authorization: Bearer ${supabaseServiceKey}`.
-- bulk-transcription-processor calls transcribe-call (line 212-216) and itself (line 427-431). Both send `Bearer ${supabaseServiceKey}`.
-- batch-extract-lifestyle-signals calls itself (line 96-101 and line 323-327). Both send `Bearer ${supabaseServiceKey}`.
-- reclassify-records calls itself (line 277-280) with `Bearer ${serviceKey}`.
-- batch-generate-qa-coaching calls generate-qa-coaching-audio (line 103-106) with `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`.
+## transcribe-call (helper move only)
+- Delete lines 13-30, the local `safeRecordingFetch`.
+- Line 11 becomes `import { isAllowedRecordingUrl, safeRecordingFetch } from "../_shared/url.ts";`.
+- Call sites at lines 825 and 1574 are unchanged. Behaviour stays identical except for the wider suffix list, which is item 7 and applies to both functions.
 
-Functions 1 and 2 use `requireUser`, which rejects internal callers. Neither one calls itself, so nothing breaks.
+## Frontend (only allowed edits)
+- `src/hooks/useScriptTranslation.ts`: `translateScript(script, targetLanguage, scriptToken?: string)`. The invoke body (lines 41-47) adds `...(scriptToken ? { scriptToken } : {})`. `translateAndStore` is unchanged, because signed-in Script Builder users pass the role check.
+- `src/pages/PublicScriptView.tsx` line 439: `translateScript(script, 'es', token)`.
 
 ## Deploy and test
-Deploy the 6 functions. Then send each one an anon-key POST with body `{}`. Expected result: 401 for all 6, and nothing starts.
+Deploy these 7 functions: the 6 above plus transcribe-call. Then send anon-key POSTs:
+- Functions 1-5 with `{}`: expect 401.
+- translate-script with `{}`: expect 401.
+- translate-script with `{"scriptToken":"fake"}`: expect 401.
+
+Nothing paid can start in these tests, because every check runs before any AI call or download.
 
 ## Notes
-- The app callers are already signed-in users with matching roles: QADashboard, Settings (Katty QA), ResearchInsights (batch + reclassify), useBulkProcessingJobs, and CrossSellOpportunitiesTab.
-- Error messages change slightly: the lifestyle function's old 403 text "Forbidden: super_admin only" becomes the shared guard's standard 403 message.
-- Only anon-key tests are possible from here, because preview auth is signed out.
+- Existing app callers are signed-in admins (Market Intelligence, Settings AI management, Script Builder), or public survey pages that hold a valid token.
+- A public survey page whose token was deactivated or has expired will lose on-the-fly translation, with the existing "Proceeding in English" message. Scripts marked ES: Ready don't call the function at all.
+- aggregate-market-data and compare-stt-providers stay `verify_jwt=true`, as requested.
