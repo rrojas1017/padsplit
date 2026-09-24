@@ -94,6 +94,17 @@ async function fetchAllBookings(bounds: FetchBounds, agentId?: string): Promise<
   return rows;
 }
 
+/** Loads one booking by id (used when it is outside the context's 90-day window). */
+export async function fetchBookingById(id: string): Promise<Booking | null> {
+  const { data, error } = await supabase
+    .from('bookings')
+    .select(LIGHTWEIGHT_COLUMNS)
+    .eq('id', id)
+    .maybeSingle();
+  if (error) throw error;
+  return data ? transformRow(data) : null;
+}
+
 export interface DashboardDataOptions {
   agentId?: string;
   skipPrevious?: boolean;

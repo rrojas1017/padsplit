@@ -15,6 +15,7 @@ import {
 import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { useBookings } from '@/contexts/BookingsContext';
+import { fetchBookingById } from '@/hooks/useDashboardData';
 import { useAuth } from '@/contexts/AuthContext';
 import { useAgents } from '@/contexts/AgentsContext';
 import { Booking } from '@/types';
@@ -58,8 +59,21 @@ export default function EditBooking() {
   const [originalBookingId, setOriginalBookingId] = useState<string | undefined>();
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Find the booking
-  const booking = bookings.find(b => b.id === id);
+  // Find the booking: context first (last 90 days), else load it by id
+  const contextBooking = bookings.find(b => b.id === id);
+  const [fetchedBooking, setFetchedBooking] = useState<Booking | null>(null);
+  const [isFetchingBooking, setIsFetchingBooking] = useState(false);
+  useEffect(() => {
+    if (!id || bookingsLoading || contextBooking || fetchedBooking?.id === id) return;
+    let cancelled = false;
+    setIsFetchingBooking(true);
+    fetchBookingById(id)
+      .then((b) => { if (!cancelled) setFetchedBooking(b); })
+      .catch((err: unknown) => { console.error('[EditBooking] Failed to load booking:', err); })
+      .finally(() => { if (!cancelled) setIsFetchingBooking(false); });
+    return () => { cancelled = true; };
+  }, [id, bookingsLoading, contextBooking, fetchedBooking?.id]);
+  const booking = contextBooking ?? (fetchedBooking?.id === id ? fetchedBooking : undefined);
 
   // Check if user can edit this booking
   const canEdit = (() => {
@@ -170,7 +184,7 @@ export default function EditBooking() {
     }
   };
 
-  if (bookingsLoading) {
+  if (bookingsLoading || isFetchingBooking) {
     return (
       <DashboardLayout title="Edit Booking" subtitle="Loading...">
         <div className="flex items-center justify-center py-12">
