@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { useParams } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { Badge } from '@/components/ui/badge';
@@ -114,6 +114,10 @@ export default function PublicScriptView() {
   const [isLoading, setIsLoading] = useState(true);
 
   const [phase, setPhase] = useState<Phase>('start');
+  const startedAtRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (phase !== 'start' && startedAtRef.current === null) startedAtRef.current = Date.now();
+  }, [phase]);
   const [questionIndex, setQuestionIndex] = useState(0);
   const [visitedStack, setVisitedStack] = useState<number[]>([]);
   const [responses, setResponses] = useState<Record<string, unknown>>({});
@@ -176,6 +180,9 @@ export default function PublicScriptView() {
           language: surveyLanguage,
           declined,
           submission_id: submissionId,
+          durationSeconds: startedAtRef.current !== null
+            ? Math.max(0, Math.round((Date.now() - startedAtRef.current) / 1000))
+            : undefined,
         },
       });
       if (fnError) {
