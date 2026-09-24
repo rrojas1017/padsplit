@@ -239,7 +239,7 @@ export default function PublicScriptView() {
   }
 
   const sortedQuestions = translatedContent?.questions || [...(script.questions || [])].sort(
-    (a, b) => (a.order ?? a.id ?? 0) - (b.order ?? b.id ?? 0)
+    (a, b) => Number(a.order ?? a.id ?? 0) - Number(b.order ?? b.id ?? 0)
   );
 
   // Stable response key: question id, else q_idx_<index in the original questions array>.
