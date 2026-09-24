@@ -327,6 +327,8 @@ Deno.serve(async (req) => {
     }
 
     const callOutcome = declined ? 'refused' : endedEarly ? 'ended_early' : (answeredCount === 0 ? 'refused' : 'completed');
+    const createBooking = callOutcome === 'completed' || (callOutcome === 'ended_early' && answeredCount > 0);
+    const totalQuestions = (questions as any[]).filter((q) => q?.is_internal !== true).length;
 
     // Insert research_calls row (anonymous public submission).
     const enrichedResponses: Record<string, unknown> = {
@@ -367,7 +369,7 @@ Deno.serve(async (req) => {
     // Create a research booking and a booking_transcriptions row carrying the
     // durable raw_script_answers under research_extraction.
     let bookingId: string | null = null;
-    if (callOutcome === 'completed') try {
+    if (createBooking) try {
       const { data: anyAgent } = await admin
         .from('agents').select('id').eq('active', true).limit(1).maybeSingle();
       const today = new Date().toISOString().split('T')[0];
@@ -386,6 +388,7 @@ Deno.serve(async (req) => {
             agent_id: anyAgent.id,
             contact_phone: null,
             call_duration_seconds: typeof durationSeconds === 'number' ? durationSeconds : null,
+            has_valid_conversation: true,
           })
           .select('id')
           .single();
@@ -399,6 +402,13 @@ Deno.serve(async (req) => {
           .insert({
             booking_id: bookingId,
             research_extraction: { raw_script_answers: rawScriptAnswers },
+            survey_progress: {
+              answered: answeredCount,
+              total: totalQuestions,
+              ended_early: callOutcome === 'ended_early',
+              disposition: endedEarly ? (earlyDisposition || null) : null,
+              source: 'public_script',
+            },
             ...(routedType ? { research_campaign_type: routedType, retag_source: 'script_id_route' } : {}),
           });
       }
@@ -407,8 +417,8 @@ Deno.serve(async (req) => {
       // Non-fatal — research_calls row was saved.
     }
 
-    // script_responses rows (completed only; non-fatal).
-    if (callOutcome === 'completed' && answeredCount > 0) {
+    // script_responses rows (completed and answered early ends; non-fatal).
+    if (createBooking && answeredCount > 0) {
       try {
         const rows = (questions as any[]).map((q, idx) => {
           const a = rawScriptAnswers[getStableId(q, idx)];
@@ -429,13 +439,14 @@ Deno.serve(async (req) => {
               source: 'public_script',
               language: language || 'en',
               token_id: tokenRow.id,
+              ...(callOutcome === 'ended_early' ? { partial: true } : {}),
             },
           };
         }).filter(Boolean);
         if (rows.length > 0) {
           const { error: srErr } = await admin.from('script_responses').insert(rows as any[]);
           if (srErr) console.error('submit-public-script: script_responses insert failed', srErr.message);
-          else {
+          else if (callOutcome === 'completed') {
             const { data: sc } = await admin
               .from('research_scripts').select('total_responses').eq('id', script.id).maybeSingle();
             const { error: upErr } = await admin
