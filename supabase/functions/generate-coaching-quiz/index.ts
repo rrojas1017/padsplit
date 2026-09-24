@@ -1,10 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-};
+import { corsHeaders, requireUser, canSeeBooking, STAFF } from "../_shared/auth.ts";
 
 interface QuizQuestion {
   id: number;
@@ -17,6 +13,9 @@ serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
+
+  const auth = await requireUser(req, STAFF);
+  if (!auth.ok) return auth.response;
 
   try {
     const { bookingId, quizType } = await req.json();
@@ -32,6 +31,14 @@ serve(async (req) => {
       return new Response(
         JSON.stringify({ error: 'quizType must be jeff_coaching or katty_qa' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    const canSee = await canSeeBooking(auth.ctx, bookingId);
+    if (!canSee) {
+      return new Response(
+        JSON.stringify({ error: 'Booking not found' }),
+        { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
