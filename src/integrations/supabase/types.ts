@@ -135,7 +135,7 @@ export type Database = {
           {
             foreignKeyName: "agent_goals_agent_id_fkey"
             columns: ["agent_id"]
-            isOneToOne: true
+            isOneToOne: false
             referencedRelation: "agents"
             referencedColumns: ["id"]
           },
@@ -3237,6 +3237,7 @@ export type Database = {
         Returns: boolean
       }
       is_agent: { Args: { _user_id: string }; Returns: boolean }
+      reap_stuck_transcriptions: { Args: never; Returns: Json }
     }
     Enums: {
       app_role: "super_admin" | "admin" | "supervisor" | "agent" | "researcher"
