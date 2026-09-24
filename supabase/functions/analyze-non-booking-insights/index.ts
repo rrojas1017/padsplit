@@ -368,12 +368,26 @@ Return JSON:
     console.log(`[ProcessAnalysis] AI response received (${txt.length} chars)`);
 
     let parsed: any = {};
+    let parseOk = false;
     try {
       const match = txt.match(/\{[\s\S]*\}/);
-      parsed = match ? JSON.parse(match[0]) : {};
+      if (match) {
+        parsed = JSON.parse(match[0]);
+        parseOk = true;
+      }
     } catch { 
-      console.warn(`[ProcessAnalysis] Failed to parse AI response, using empty object`);
+      console.warn(`[ProcessAnalysis] Failed to parse AI response`);
       parsed = {}; 
+    }
+
+    // INS-11: never save an empty "completed" analysis
+    if (!parseOk || !Array.isArray(parsed?.rejection_reasons) || parsed.rejection_reasons.length === 0) {
+      console.warn(`[ProcessAnalysis] AI response unusable (parsed=${parseOk}, ${txt.length} chars) — marking failed`);
+      await supabase.from('non_booking_insights').update({
+        status: 'failed',
+        error_message: 'AI response could not be parsed',
+      }).eq('id', id);
+      return;
     }
 
     // If AI didn't return proper objection_patterns, create them from pre-aggregated data
@@ -497,7 +511,8 @@ Deno.serve(async (req) => {
         analysis_period, 
         date_range_start, 
         date_range_end, 
-        status: 'processing' 
+        status: 'processing',
+        created_by: triggeredByUserId
       })
       .select()
       .single();
