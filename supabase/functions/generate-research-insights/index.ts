@@ -986,6 +986,9 @@ Deno.serve(async (req) => {
 
     // ── RESUME path: self-chaining invocation ──
     if (body.resume) {
+      if (auth.ctx.kind !== 'internal') {
+        return new Response(JSON.stringify({ error: 'Forbidden' }), { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
       const { insightId, chunkIndex, totalChunks } = body;
       console.log(`[Chain] Resume invocation: chunk ${chunkIndex + 1}/${totalChunks} for ${insightId}`);
 
