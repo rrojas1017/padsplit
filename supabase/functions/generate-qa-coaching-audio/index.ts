@@ -170,6 +170,23 @@ serve(async (req) => {
       );
     }
 
+    const isSuperAdminCaller = auth.ctx.kind === 'user' && auth.ctx.role === 'super_admin';
+    if (!isSuperAdminCaller) {
+      const { data: gateRows, error: gateErr } = await supabase.rpc('get_daily_coaching_gate');
+      if (gateErr) {
+        console.error('[CostGate] RPC failed, continuing (fail-open):', gateErr.message);
+      } else {
+        const gate: any = Array.isArray(gateRows) ? gateRows[0] : gateRows;
+        if (gate?.is_blocked) {
+          return new Response(
+            JSON.stringify({ success: false, blocked: true, reason: 'daily_cost_gate',
+              todayAvg: Number(gate.today_avg ?? 0), recordCount: Number(gate.record_count ?? 0) }),
+            { status: 429, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+      }
+    }
+
     if (!transcription.qa_scores) {
       throw new Error('No QA scores found for this booking');
     }
