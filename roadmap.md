@@ -23,4 +23,4 @@
 - [x] BKG-P3 Dashboard/leaderboard/timezone (businessTime, useDashboardData, EditBooking fetch)
 - [x] BIL-FE: billing totals via billing_cost_summary, 7d preset, usage PDF rates from invoice line items
 - [x] BIL-FE correction: archived null edge_function → 'archived_monthly_summary' + static label
-- [ ] BIL-COSTS: shared _shared/costs.ts price list, 10 functions switched, deploy + 401 checks
+- [x] BIL-COSTS: shared _shared/costs.ts price list, 10 functions switched, deploy + 401 checks
