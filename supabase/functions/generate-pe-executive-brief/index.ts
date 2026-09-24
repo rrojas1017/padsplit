@@ -43,6 +43,8 @@ Deno.serve(async (req) => {
 
   const auth = await requireUser(req, MANAGERS);
   if (!auth.ok) return auth.response;
+  const costUserId = auth.ctx.userId;
+  const costIsInternal = auth.ctx.role === 'super_admin';
 
   try {
     if (!LOVABLE_API_KEY) {
@@ -152,7 +154,7 @@ Write the JSON now. Be specific. Recommendations must reference real numbers fro
           await logApiCost(adminClient(), {
             service_provider: 'lovable_ai', service_type: 'pe_executive_brief', edge_function: 'generate-pe-executive-brief',
             input_tokens: tk.inputTokens, output_tokens: tk.outputTokens, token_source: tk.source,
-            model: model, triggered_by_user_id: auth.ctx.userId, is_internal: auth.ctx.role === 'super_admin',
+            model: model, triggered_by_user_id: costUserId, is_internal: costIsInternal,
           });
         }
         let brief: any;

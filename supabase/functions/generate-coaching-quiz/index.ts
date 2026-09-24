@@ -1,6 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeaders, requireUser, canSeeBooking, STAFF } from "../_shared/auth.ts";
+import { tokensFromUsage, logApiCost } from "../_shared/costs.ts";
 
 interface QuizQuestion {
   id: number;
@@ -161,6 +162,15 @@ Focus on:
 
     const aiData = await aiResponse.json();
     const content = aiData.choices?.[0]?.message?.content;
+    {
+      const tk = tokensFromUsage(aiData, systemPrompt + userPrompt, typeof content === 'string' ? content : '');
+      await logApiCost(supabase, {
+        service_provider: 'lovable_ai', service_type: 'coaching_quiz', edge_function: 'generate-coaching-quiz',
+        booking_id: bookingId || null,
+        input_tokens: tk.inputTokens, output_tokens: tk.outputTokens, token_source: tk.source,
+        model: 'google/gemini-2.5-flash', triggered_by_user_id: auth.ctx.userId, is_internal: auth.ctx.role === 'super_admin',
+      });
+    }
 
     if (!content) {
       throw new Error('No content in AI response');

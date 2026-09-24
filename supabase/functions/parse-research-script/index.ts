@@ -1,6 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 
-import { requireUser, corsHeaders, ADMINS } from "../_shared/auth.ts";
+import { requireUser, corsHeaders, ADMINS, adminClient } from "../_shared/auth.ts";
+import { tokensFromUsage, logApiCost } from "../_shared/costs.ts";
 
 serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -152,6 +153,14 @@ Rules for question extraction:
 
     const data = await response.json();
     const toolCall = data.choices?.[0]?.message?.tool_calls?.[0];
+    {
+      const tk = tokensFromUsage(data, systemPrompt + String(text ?? ''), String(toolCall?.function?.arguments ?? ''));
+      await logApiCost(adminClient(), {
+        service_provider: 'lovable_ai', service_type: 'research_script_parse', edge_function: 'parse-research-script',
+        input_tokens: tk.inputTokens, output_tokens: tk.outputTokens, token_source: tk.source,
+        model: 'openai/gpt-5', triggered_by_user_id: auth.ctx.userId, is_internal: auth.ctx.role === 'super_admin',
+      });
+    }
     if (!toolCall?.function?.arguments) {
       throw new Error("AI did not return structured output");
     }
