@@ -4,6 +4,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 import { requireUser, jsonResponse, corsHeaders, ADMINS } from "../_shared/auth.ts";
 import { isAllowedRecordingUrl, safeRecordingFetch } from "../_shared/url.ts";
+import { logApiCost } from "../_shared/costs.ts";
 
 interface STTResult {
   transcription: string;
@@ -189,6 +190,22 @@ serve(async (req) => {
     }
     if (deepgramResult.status === 'rejected') {
       console.error('[Compare] Deepgram failed:', deepgramResult.reason);
+    }
+
+    // Cost rows (one per provider that returned a result)
+    if (elevenlabs) {
+      await logApiCost(supabase, {
+        service_provider: 'elevenlabs', service_type: 'stt_comparison', edge_function: 'compare-stt-providers',
+        booking_id: bookingId || null, audio_duration_seconds: elevenlabs.durationSeconds,
+        model: 'scribe_v1', triggered_by_user_id: auth.ctx.userId, is_internal: true,
+      });
+    }
+    if (deepgram) {
+      await logApiCost(supabase, {
+        service_provider: 'deepgram', service_type: 'stt_comparison', edge_function: 'compare-stt-providers',
+        booking_id: bookingId || null, audio_duration_seconds: deepgram.durationSeconds,
+        model: 'nova-2', triggered_by_user_id: auth.ctx.userId, is_internal: true,
+      });
     }
 
     // Calculate call duration from whichever succeeded
