@@ -15,7 +15,7 @@ export interface ChurnRiskResult {
 interface ChurnInput {
   callDurationSeconds: number | null;
   bookingDate: string;
-  moveInDate: string;
+  moveInDate: string | null;
   communicationMethod: string | null;
   transcription?: {
     callSentiment?: string;
@@ -83,16 +83,19 @@ export function calculateChurnRisk(input: ChurnInput): ChurnRiskResult {
   });
 
   // 6. Short time between booking and move-in (< 2 days) — Medium weight, max 10 pts
-  const bookingMs = new Date(input.bookingDate).getTime();
-  const moveInMs = new Date(input.moveInDate).getTime();
-  const daysBetween = (moveInMs - bookingMs) / (1000 * 60 * 60 * 24);
-  const rushBooking = daysBetween >= 0 && daysBetween < 2;
-  signals.push({
-    label: `Rush booking (${Math.round(daysBetween * 10) / 10} days gap)`,
-    points: rushBooking ? 10 : 0,
-    weight: 'medium',
-    present: rushBooking,
-  });
+  //    Skipped entirely when the move-in date is not recorded.
+  if (input.moveInDate) {
+    const bookingMs = new Date(input.bookingDate).getTime();
+    const moveInMs = new Date(input.moveInDate).getTime();
+    const daysBetween = (moveInMs - bookingMs) / (1000 * 60 * 60 * 24);
+    const rushBooking = daysBetween >= 0 && daysBetween < 2;
+    signals.push({
+      label: `Rush booking (${Math.round(daysBetween * 10) / 10} days gap)`,
+      points: rushBooking ? 10 : 0,
+      weight: 'medium',
+      present: rushBooking,
+    });
+  }
 
   // 7. High market churn — Medium weight, max 10 pts
   const highMarketChurn = (input.marketChurnRate || 0) > 30;

@@ -87,7 +87,7 @@ export function ChurnWarningPanel() {
                   <span className="text-xs text-muted-foreground">• {getAgentName(agents, r.agentId)}</span>
                 </div>
                 <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                  <span>Move-in: {format(new Date(r.moveInDate), 'MMM d')}</span>
+                  <span>Move-in: {r.moveInDate ? format(new Date(r.moveInDate), 'MMM d') : '—'}</span>
                   {r.marketCity && <span>• {r.marketCity}, {r.marketState}</span>}
                 </div>
                 {r.risk.topFactors.length > 0 && (

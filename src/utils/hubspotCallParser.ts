@@ -407,7 +407,7 @@ export function toBookingInsert(
   return {
     agent_id: agentId,
     booking_date: record.activityDate.toISOString().split('T')[0],
-    move_in_date: record.activityDate.toISOString().split('T')[0],
+    move_in_date: null,
     member_name: record.contactName,
     booking_type: record.bookingType,
     status: record.status,

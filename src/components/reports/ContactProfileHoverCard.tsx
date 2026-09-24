@@ -44,7 +44,7 @@ interface ContactProfileHoverCardProps {
   shouldMaskContact?: boolean;
   // Props for priority calculation
   bookingStatus?: string;
-  moveInDate?: Date;
+  moveInDate?: Date | null;
   bookingDate?: Date;
   lastContactDate?: Date | null;
   marketCity?: string;
@@ -424,7 +424,7 @@ export function ContactProfileHoverCard({
           memberName={memberName}
           marketCity={marketCity}
           marketState={marketState}
-          moveInDate={moveInDate}
+          moveInDate={moveInDate ?? undefined}
           status={bookingStatus}
           onEmailSent={refreshCommunications}
         />
@@ -440,7 +440,7 @@ export function ContactProfileHoverCard({
           memberName={memberName}
           marketCity={marketCity}
           marketState={marketState}
-          moveInDate={moveInDate}
+          moveInDate={moveInDate ?? undefined}
           status={bookingStatus}
           onSMSSent={refreshCommunications}
         />

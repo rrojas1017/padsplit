@@ -80,7 +80,7 @@ export function BookingsProvider({ children }: { children: ReactNode }) {
 
       const transformedBookings: Booking[] = (result || []).map((b: any) => ({
         id: b.id,
-        moveInDate: new Date(b.move_in_date + 'T00:00:00'),
+        moveInDate: b.move_in_date ? new Date(b.move_in_date + 'T00:00:00') : null,
         bookingDate: new Date(b.booking_date + 'T00:00:00'),
         memberName: b.member_name,
         bookingType: b.booking_type,
@@ -185,7 +185,7 @@ export function BookingsProvider({ children }: { children: ReactNode }) {
     const { data: userData } = await supabase.auth.getUser();
     
     const { data, error } = await supabase.from('bookings').insert({
-      move_in_date: format(booking.moveInDate, 'yyyy-MM-dd'),
+      move_in_date: booking.moveInDate ? format(booking.moveInDate, 'yyyy-MM-dd') : null,
       booking_date: format(booking.bookingDate, 'yyyy-MM-dd'),
       member_name: booking.memberName,
       booking_type: booking.bookingType,
@@ -229,7 +229,7 @@ export function BookingsProvider({ children }: { children: ReactNode }) {
   const updateBooking = async (id: string, updates: Partial<Booking>) => {
     const updateData: any = {};
     
-    if (updates.moveInDate) updateData.move_in_date = format(updates.moveInDate, 'yyyy-MM-dd');
+    if (updates.moveInDate !== undefined) updateData.move_in_date = updates.moveInDate ? format(updates.moveInDate, 'yyyy-MM-dd') : null;
     if (updates.bookingDate) updateData.booking_date = format(updates.bookingDate, 'yyyy-MM-dd');
     if (updates.memberName) updateData.member_name = updates.memberName;
     if (updates.bookingType) updateData.booking_type = updates.bookingType;

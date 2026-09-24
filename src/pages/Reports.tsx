@@ -361,7 +361,7 @@ export default function Reports() {
       ];
       const rows = records.map(booking => [
         format(booking.bookingDate, 'yyyy-MM-dd'),
-        booking.status === 'Non Booking' ? '' : format(booking.moveInDate, 'yyyy-MM-dd'),
+        booking.status === 'Non Booking' || !booking.moveInDate ? '' : format(booking.moveInDate, 'yyyy-MM-dd'),
         booking.memberName,
         booking.contactEmail ? (shouldMask ? maskEmail(booking.contactEmail) : booking.contactEmail) : '',
         booking.contactPhone ? (shouldMask ? maskPhone(booking.contactPhone) : booking.contactPhone) : '',
@@ -1360,7 +1360,7 @@ export default function Reports() {
                       </div>
                     </td>
                     <td className="py-3 px-4 text-sm text-foreground">
-                      {booking.status === 'Non Booking' ? (
+                      {booking.status === 'Non Booking' || !booking.moveInDate ? (
                         <span className="text-muted-foreground">—</span>
                       ) : (
                         format(booking.moveInDate, 'MMM d, yyyy')
@@ -1485,7 +1485,7 @@ export default function Reports() {
                           risk={calculateChurnRisk({
                             callDurationSeconds: booking.callDurationSeconds || null,
                             bookingDate: booking.bookingDate instanceof Date ? booking.bookingDate.toISOString() : String(booking.bookingDate),
-                            moveInDate: booking.moveInDate instanceof Date ? booking.moveInDate.toISOString() : String(booking.moveInDate),
+                            moveInDate: booking.moveInDate instanceof Date ? booking.moveInDate.toISOString() : null,
                             communicationMethod: booking.communicationMethod || null,
                             transcription: booking.callKeyPoints ? (typeof booking.callKeyPoints === 'string' ? JSON.parse(booking.callKeyPoints) : booking.callKeyPoints) : null,
                           })}

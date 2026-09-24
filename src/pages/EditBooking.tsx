@@ -106,7 +106,7 @@ export default function EditBooking() {
   useEffect(() => {
     if (booking) {
       setBookingDate(booking.bookingDate);
-      setMoveInDate(booking.moveInDate);
+      setMoveInDate(booking.moveInDate ?? undefined);
       setMemberName(booking.memberName);
       setAgentId(booking.agentId);
       setMarketCity(booking.marketCity);
@@ -141,7 +141,7 @@ export default function EditBooking() {
       toast({ title: 'Error', description: 'Market city and state are required', variant: 'destructive' });
       return;
     }
-    if (!moveInDate) {
+    if (!moveInDate && ['Pending Move-In', 'Moved In', 'Postponed'].includes(status)) {
       toast({ title: 'Error', description: 'Move-in date is required', variant: 'destructive' });
       return;
     }
@@ -151,7 +151,7 @@ export default function EditBooking() {
     try {
       await updateBooking(id, {
         bookingDate,
-        moveInDate,
+        moveInDate: moveInDate ?? null,
         memberName: memberName.trim(),
         bookingType,
         agentId,

@@ -24,6 +24,7 @@ export function useChurnPrediction() {
         .from('bookings')
         .select('id, member_name, move_in_date, booking_date, agent_id, market_city, market_state, communication_method, call_duration_seconds')
         .eq('status', 'Pending Move-In')
+        .not('move_in_date', 'is', null)
         .order('move_in_date', { ascending: true });
 
       if (bErr) throw bErr;
@@ -83,7 +84,7 @@ export function useChurnPrediction() {
         return {
           bookingId: b.id,
           memberName: b.member_name,
-          moveInDate: b.move_in_date,
+          moveInDate: b.move_in_date as string, // non-null: query filters NULL move-in dates
           bookingDate: b.booking_date,
           agentId: b.agent_id,
           marketCity: b.market_city,

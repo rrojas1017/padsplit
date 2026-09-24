@@ -93,7 +93,7 @@ export interface AgentFeedback {
 export interface Booking {
   id: string;
   importBatchId?: string;
-  moveInDate: Date;
+  moveInDate: Date | null;
   bookingDate: Date;
   memberName: string;
   bookingType: 'Inbound' | 'Outbound' | 'Referral' | 'Research';

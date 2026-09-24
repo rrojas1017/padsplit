@@ -435,6 +435,7 @@ export const calculateInsightsData = (
   // HubSpot imports with move_in_date = booking_date are placeholders: skip here only.
   const weekEnd = addDaysStr(today, 7);
   const pendingMoveInsThisWeek = actualBookings.filter(b => {
+    if (!b.moveInDate) return false;
     const moveIn = format(b.moveInDate instanceof Date ? b.moveInDate : parseISO(String(b.moveInDate)), 'yyyy-MM-dd');
     if (b.importBatchId && moveIn === bookingYmd(b)) return false;
     return b.status === 'Pending Move-In' && moveIn >= today && moveIn <= weekEnd;

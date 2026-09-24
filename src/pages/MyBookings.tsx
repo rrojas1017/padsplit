@@ -401,7 +401,7 @@ export default function MyBookings() {
                       {format(new Date(booking.bookingDate), 'MMM d, yyyy')}
                     </td>
                     <td className="py-3 px-4 text-sm text-foreground">
-                      {format(new Date(booking.moveInDate), 'MMM d, yyyy')}
+                      {booking.moveInDate ? format(new Date(booking.moveInDate), 'MMM d, yyyy') : '—'}
                     </td>
                     <td className="py-3 px-4">
                       <ContactProfileHoverCard
