@@ -3176,6 +3176,7 @@ export type Database = {
           record_count: number
         }[]
       }
+      get_internal_function_secret: { Args: never; Returns: string }
       get_my_role: { Args: never; Returns: string }
       get_my_site_id: { Args: never; Returns: string }
       get_non_booking_stats: {
@@ -3201,6 +3202,7 @@ export type Database = {
         Returns: Database["public"]["Enums"]["app_role"]
       }
       get_user_site_id: { Args: { _user_id: string }; Returns: string }
+      has_any_role: { Args: { _user_id: string }; Returns: boolean }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]
