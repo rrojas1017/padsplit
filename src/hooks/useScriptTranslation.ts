@@ -24,7 +24,8 @@ export function useScriptTranslation() {
   /** On-the-fly translation (fallback only) */
   const translateScript = useCallback(async (
     script: TranslatableScript,
-    targetLanguage: SurveyLanguage
+    targetLanguage: SurveyLanguage,
+    scriptToken?: string
   ): Promise<TranslatedContent | null> => {
     if (targetLanguage === 'en') {
       return {
@@ -44,6 +45,7 @@ export function useScriptTranslation() {
           rebuttal: script.rebuttal_script || '',
           questions: script.questions,
           targetLanguage,
+          ...(scriptToken ? { scriptToken } : {}),
         },
       });
 

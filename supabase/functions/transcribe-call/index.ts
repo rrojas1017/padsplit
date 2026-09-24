@@ -8,26 +8,8 @@ declare const EdgeRuntime: {
 };
 
 import { requireUserOrInternal, canSeeBooking, jsonResponse, corsHeaders, STAFF } from "../_shared/auth.ts";
-import { isAllowedRecordingUrl } from "../_shared/url.ts";
+import { isAllowedRecordingUrl, safeRecordingFetch } from "../_shared/url.ts";
 
-// Fetch a recording URL without following redirects automatically.
-// Follows at most 3 redirect hops, each Location must pass isAllowedRecordingUrl.
-async function safeRecordingFetch(url: string, init: RequestInit = {}): Promise<Response> {
-  let current = url;
-  for (let hop = 0; hop <= 3; hop++) {
-    if (!isAllowedRecordingUrl(current)) throw new Error('Recording URL not allowed');
-    const res = await fetch(current, { ...init, redirect: 'manual' });
-    if (res.status >= 300 && res.status < 400) {
-      const loc = res.headers.get('location');
-      if (!loc) return res;
-      if (hop === 3) throw new Error('Too many recording redirects');
-      current = new URL(loc, current).toString();
-      continue;
-    }
-    return res;
-  }
-  throw new Error('Too many recording redirects');
-}
 
 // === HARD-WIRED COST PROTECTION CONSTANTS ===
 const MAX_COST_PER_RECORD_NO_TTS = 0.07; // USD - absolute ceiling per record (excluding TTS)
