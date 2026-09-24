@@ -45,23 +45,95 @@ Deno.serve(async (req) => {
       }
     }
 
+    const json = (b: unknown, status = 200) =>
+      new Response(JSON.stringify(b), { status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+
+    // Load the research call (service role).
+    const { data: call, error: callErr } = await admin
+      .from('research_calls')
+      .select('id, campaign_id, researcher_id, caller_name, caller_phone, researcher_notes, call_duration_seconds, language, call_outcome')
+      .eq('id', research_call_id)
+      .maybeSingle();
+    if (callErr) {
+      console.error('persist-raw-answers: call lookup failed', callErr.message);
+      return json({ error: 'Lookup failed' }, 500);
+    }
+    if (!call) return json({ error: 'Research call not found' }, 404);
+
     // Find the booking for this research call.
-    const { data: booking, error: bookErr } = await admin
+    const { data: foundBooking, error: bookErr } = await admin
       .from('bookings')
       .select('id')
       .eq('research_call_id', research_call_id)
       .maybeSingle();
 
     if (bookErr) {
-      console.error('persist-raw-answers: booking lookup failed', bookErr);
-      return new Response(JSON.stringify({ error: 'Lookup failed' }), {
-        status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
+      console.error('persist-raw-answers: booking lookup failed', bookErr.message);
+      return json({ error: 'Lookup failed' }, 500);
     }
+
+    let booking: { id: string } | null = foundBooking;
+    let createdBooking = false;
+
     if (!booking) {
-      return new Response(JSON.stringify({ ok: true, merged: false, reason: 'no_booking' }), {
-        status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
+      // (a) Link an API-submitted booking for the same phone number.
+      const digits = String(call.caller_phone || '').replace(/\D/g, '').slice(-10);
+      if (digits) {
+        const { data: candidates } = await admin
+          .from('bookings')
+          .select('id, member_name, import_batch_id')
+          .eq('record_type', 'research')
+          .is('research_call_id', null)
+          .ilike('contact_phone', `%${digits}`)
+          .order('created_at', { ascending: false })
+          .limit(5);
+        const match = (candidates || []).find((b: any) =>
+          b.member_name?.startsWith('API Submission') || b.import_batch_id === 'api-submission'
+        );
+        if (match) {
+          const { error: linkErr } = await admin.from('bookings').update({
+            member_name: call.caller_name,
+            research_call_id: call.id,
+            notes: call.researcher_notes || null,
+            call_duration_seconds: call.call_duration_seconds || null,
+          }).eq('id', match.id);
+          if (linkErr) console.error('persist-raw-answers: link failed', linkErr.message);
+          else booking = { id: match.id };
+        }
+      }
+
+      // (b) Otherwise create the research booking (completed or unknown outcome only).
+      if (!booking && (call.call_outcome === 'completed' || call.call_outcome == null)) {
+        const { data: anyAgent } = await admin
+          .from('agents')
+          .select('id')
+          .eq('active', true)
+          .limit(1)
+          .maybeSingle();
+        if (anyAgent) {
+          const today = new Date().toISOString().split('T')[0];
+          const { data: inserted, error: insErr } = await admin.from('bookings').insert({
+            record_type: 'research',
+            research_call_id: call.id,
+            member_name: call.caller_name,
+            booking_date: today,
+            move_in_date: today,
+            booking_type: 'Research',
+            status: 'Research',
+            agent_id: anyAgent.id,
+            contact_phone: call.caller_phone || null,
+            created_by: auth.ctx.userId,
+            notes: call.researcher_notes || null,
+            call_duration_seconds: call.call_duration_seconds || null,
+          }).select('id').single();
+          if (insErr) console.error('persist-raw-answers: booking insert failed', insErr.message);
+          else { booking = { id: inserted.id }; createdBooking = true; }
+        }
+      }
+    }
+
+    if (!booking) {
+      return json({ ok: true, merged: false, reason: 'no_booking' });
     }
 
     const { data: existing } = await admin
@@ -71,36 +143,94 @@ Deno.serve(async (req) => {
       .maybeSingle();
 
     if (!existing) {
-      return new Response(JSON.stringify({ ok: true, merged: false, reason: 'no_transcription_row' }), {
-        status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
+      const { error: tInsErr } = await admin
+        .from('booking_transcriptions')
+        .insert({ booking_id: booking.id, research_extraction: { raw_script_answers } });
+      if (tInsErr) {
+        console.error('persist-raw-answers: transcription insert failed', tInsErr.message);
+        return json({ error: 'Update failed' }, 500);
+      }
+    } else {
+      const currentExtraction = (existing.research_extraction || {}) as Record<string, any>;
+      const currentRaw = (currentExtraction.raw_script_answers || {}) as Record<string, any>;
+      // Existing keys win — never clobber an already-populated answer.
+      const mergedRaw = { ...raw_script_answers, ...currentRaw };
+      const nextExtraction = { ...currentExtraction, raw_script_answers: mergedRaw };
+
+      const { error: updErr } = await admin
+        .from('booking_transcriptions')
+        .update({ research_extraction: nextExtraction })
+        .eq('id', existing.id);
+
+      if (updErr) {
+        console.error('persist-raw-answers: update failed', updErr.message);
+        return json({ error: 'Update failed' }, 500);
+      }
     }
 
-    const currentExtraction = (existing.research_extraction || {}) as Record<string, any>;
-    const currentRaw = (currentExtraction.raw_script_answers || {}) as Record<string, any>;
-    // Existing keys win — never clobber an already-populated answer.
-    const mergedRaw = { ...raw_script_answers, ...currentRaw };
-    const nextExtraction = { ...currentExtraction, raw_script_answers: mergedRaw };
-
-    const { error: updErr } = await admin
-      .from('booking_transcriptions')
-      .update({ research_extraction: nextExtraction })
-      .eq('id', existing.id);
-
-    if (updErr) {
-      console.error('persist-raw-answers: update failed', updErr);
-      return new Response(JSON.stringify({ error: 'Update failed' }), {
-        status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
+    // script_responses — idempotent per session; non-fatal.
+    try {
+      if (call.campaign_id) {
+        const { data: campaign } = await admin
+          .from('research_campaigns')
+          .select('script_id')
+          .eq('id', call.campaign_id)
+          .maybeSingle();
+        const scriptId = campaign?.script_id;
+        if (scriptId) {
+          const { count: existingCount } = await admin
+            .from('script_responses')
+            .select('id', { count: 'exact', head: true })
+            .eq('session_id', call.id);
+          if (!existingCount) {
+            const { data: script } = await admin
+              .from('research_scripts')
+              .select('questions, total_responses')
+              .eq('id', scriptId)
+              .maybeSingle();
+            const orderById = new Map<string, number>();
+            (Array.isArray(script?.questions) ? script!.questions : []).forEach((q: any, idx: number) => {
+              if (q?.id !== undefined && q?.id !== null) orderById.set(String(q.id), q.order ?? idx + 1);
+            });
+            const rows = Object.entries(raw_script_answers as Record<string, any>).map(([key, a], idx) => {
+              const qid = String(a?.question_id ?? key);
+              const labels = Array.isArray(a?.selected_option_labels) ? a.selected_option_labels : null;
+              const numeric = typeof a?.scale_value === 'number' ? a.scale_value : null;
+              const value = a?.raw_text_answer ?? (labels ? labels.join(', ') : numeric !== null ? String(numeric) : null);
+              return {
+                script_id: scriptId,
+                session_id: call.id,
+                question_order: orderById.get(qid) ?? idx + 1,
+                response_value: value,
+                response_options: labels,
+                response_numeric: numeric,
+                metadata: { question_id: qid, question_type: a?.question_type ?? null, source: 'agent_runtime', language: call.language ?? null },
+              };
+            });
+            if (rows.length > 0) {
+              const { error: srErr } = await admin.from('script_responses').insert(rows);
+              if (srErr) {
+                console.error('persist-raw-answers: script_responses insert failed', srErr.message);
+              } else {
+                await admin.from('research_scripts').update({
+                  total_responses: (script?.total_responses ?? 0) + 1,
+                  last_response_at: new Date().toISOString(),
+                }).eq('id', scriptId);
+              }
+            }
+          }
+        }
+      }
+    } catch (srEx) {
+      console.error('persist-raw-answers: script_responses step failed', srEx instanceof Error ? srEx.message : srEx);
     }
 
-    return new Response(JSON.stringify({
+    return json({
       ok: true,
       merged: true,
       booking_id: booking.id,
       count: Object.keys(raw_script_answers).length,
-    }), {
-      status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      created_booking: createdBooking,
     });
   } catch (err) {
     console.error('persist-raw-answers: unexpected error', err);
