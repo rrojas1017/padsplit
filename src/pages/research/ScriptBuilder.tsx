@@ -89,6 +89,11 @@ export default function ScriptBuilder() {
       rebuttal_script: wizardData.rebuttalScript || null,
       closing_script: wizardData.closingScript || null,
       is_active: isDraft ? false : wizardData.isActive,
+      script_type: wizardData.scriptType || null,
+      slug: wizardData.slug || null,
+      ai_prompt: wizardData.aiPrompt || null,
+      ai_model: wizardData.aiModel || null,
+      ai_temperature: wizardData.aiTemperature ?? null,
     } as any);
     setWizardMode(false);
     toast.success(isDraft ? 'Script saved as draft' : 'Script launched!');

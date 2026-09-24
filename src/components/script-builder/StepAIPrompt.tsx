@@ -1,4 +1,4 @@
-import { useCallback } from 'react';
+import { useCallback, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
@@ -106,10 +106,13 @@ export function StepAIPrompt({ data, onChange }: Props) {
   }, [data.name, data.scriptType, data.questions, onChange]);
 
   // Auto-generate on first visit if empty
-  if (!data.aiPrompt) {
-    const prompt = generateAIPrompt(data.name, data.scriptType, data.questions);
-    onChange({ aiPrompt: prompt });
-  }
+  useEffect(() => {
+    if (!data.aiPrompt) {
+      const prompt = generateAIPrompt(data.name, data.scriptType, data.questions);
+      onChange({ aiPrompt: prompt });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data.aiPrompt]);
 
   return (
     <div className="space-y-6">

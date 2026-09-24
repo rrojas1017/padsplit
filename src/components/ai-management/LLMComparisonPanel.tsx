@@ -241,7 +241,7 @@ export function LLMComparisonPanel() {
         await supabase
           .from('llm_provider_settings')
           .update({ weight: 100, api_config: { 
-            model: 'deepseek-chat',
+            model: 'deepseek-v4-flash',
             use_gemini_fallback_for: ['non_booking', 'negative_sentiment'],
             enable_two_pass_sentiment: true
           }})
@@ -257,7 +257,7 @@ export function LLMComparisonPanel() {
         // Disable hybrid mode: Set Gemini back to 100%, DeepSeek to 0%
         await supabase
           .from('llm_provider_settings')
-          .update({ weight: 0, api_config: { model: 'deepseek-chat' }})
+          .update({ weight: 0, api_config: { model: 'deepseek-v4-flash' }})
           .eq('provider_name', 'deepseek');
         
         await supabase
