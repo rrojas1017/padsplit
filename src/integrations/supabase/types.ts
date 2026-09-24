@@ -2546,6 +2546,7 @@ export type Database = {
       }
       research_prompts: {
         Row: {
+          campaign_type: string | null
           id: string
           model: string | null
           prompt_key: string
@@ -2556,6 +2557,7 @@ export type Database = {
           version: number | null
         }
         Insert: {
+          campaign_type?: string | null
           id?: string
           model?: string | null
           prompt_key: string
@@ -2566,6 +2568,7 @@ export type Database = {
           version?: number | null
         }
         Update: {
+          campaign_type?: string | null
           id?: string
           model?: string | null
           prompt_key?: string
