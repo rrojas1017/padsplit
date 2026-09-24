@@ -1,49 +1,139 @@
-# BIL-FE — Billing totals + usage PDF rates
+# BIL-FE correction — archived-monthly-summary label
 
-Frontend only. Three files changed: `src/hooks/useBillingData.ts`, `src/pages/Billing.tsx`, `src/components/billing/UsageDetailPDFGenerator.ts`. No DB, edge function, RLS or dependency changes. Nothing published.
+## Defect
+`billing_cost_summary` returns `edge_function = null` for the `source = 'archived'` rows
+(monthly summary has no per-function detail). In `useBillingData.ts` the `byFunction`
+aggregation uses `r.edge_function` as the map key directly, so those rows land under the
+key `null` and the "Cost by Edge Function" table (`FunctionCostsTable.tsx`) renders a row
+labelled **`null / null`** with ~$1,566.29.
 
-## 1. BIL-18 — Costs tab totals from `billing_cost_summary` (useBillingData.ts)
+## Scope constraint & a decision needed
+You asked to touch **only** `src/hooks/useBillingData.ts` (plus the label-map file where the
+function-label lookup lives). The label lookup itself is:
 
-- **Date range (lines 104–127, `getDateRange`)**: replace the date-fns preset logic. The hook accepts the existing `DateRangeType` plus the custom dates. It maps them to `resolveRange` presets (today, yesterday, thisWeek→Monday..today in ET, thisMonth→month, last7Days→7d, last30Days→30d, allTime→all, custom→custom). It returns `from`/`to` as 'yyyy-MM-dd' ET strings.
-- **New helper, local to the hook**: `etMidnightIso(ymd)` returns the ISO instant of 00:00 America/New_York on that day. The offset (-04:00 or -05:00) comes from `Intl.DateTimeFormat` with `timeZoneName: 'longOffset'`, so the change to and from daylight saving time is handled. Values:
-  - `p_start` = etMidnightIso(from)
-  - `p_end` = etMidnightIso(to + 1 day), exclusive
-  - All Time: `p_start` = '2020-01-01T00:00:00-05:00', `p_end` = etMidnightIso(today + 1)
-- **The existing row query (lines 143–150)** uses the same instants: `.gte(p_start).lt(p_end)` instead of the browser-local start and end.
-- **fetchData**: runs `supabase.rpc('billing_cost_summary', { p_start, p_end })` alongside the row query, typed with a local `CostSummaryRow` interface (no `any`). The result goes into new state `rpcSummary: CostSummaryRow[] | null`.
-  - If the call errors with a message containing 'forbidden', or with any other error, `rpcSummary` stays null (the old behaviour) and the error is logged.
-- **Totals (lines 206, 230–250)**: when `rpcSummary` is present, these are summed from its rows:
-  - `totalCost`, `byProvider`, `byServiceType`, `byFunction` (count = `rows`, cost = `cost_usd`)
-  - `excludeTTS` applies the same filter to the RPC rows (service_type starting with `tts_` or equal to `qa_script_generation`).
-  - Otherwise the current client-side sums from the loaded rows are kept.
-  - `costPerBooking` and `costPerMinute` keep using the RPC total over the row-based counts (unchanged when the RPC is unavailable).
-- **Row-level figures** (daily trend, per-agent, voice/text record counts, unique bookings, talk time) stay row-based.
-- **New return fields**: `costsCapped: boolean` (true when the rows loaded equal the server's row cap, detected as `costsRaw.length >= 1000`), `totalsSource: 'rpc' | 'rows'` and `archivedCost: number` (the sum of rows where source = 'archived').
+```ts
+// src/components/billing/FunctionCostsTable.tsx:15
+name: FUNCTION_LABELS[fn] || fn,
+```
 
-## 2. Billing.tsx — preset mapping (lines 36–45) and cap label
+`FUNCTION_LABELS` is a **static** `Record<string,string>` exported from
+`src/utils/billingCalculations.ts`. The dynamic "before <date>" portion of the label
+cannot be injected through a static map that `FunctionCostsTable` reads verbatim — the date
+only exists at runtime inside the hook (from the loaded rows). So fully meeting the
+"compute it as the earliest created_at … else omit the date" requirement needs one extra
+one-line change in `FunctionCostsTable.tsx`.
 
-- Add a `'last7Days'` value to `DateRangeType` in the hook (additive, so existing callers keep working).
-- Mapping: '7d'→last7Days, '30d'→last30Days; the rest are unchanged. All presets resolve through `resolveRange` inside the hook (section 1). This keeps Billing.tsx limited to the preset mapping.
-- The "latest 1,000 rows" label: the detail tables are rendered in child components, which are outside scope. Only the preset mapping changes in Billing.tsx. I will add the label only if a detail table header lives inside Billing.tsx itself; otherwise `costsCapped` is exposed and a follow-up adds the label.
+Two options — **recommend Option A**:
 
-## 3. BIL-14 — Usage PDF rates from the invoice snapshot (UsageDetailPDFGenerator.ts)
+- **Option A (recommended):** allow a ~1-line change in `FunctionCostsTable.tsx` so the
+  rendered label can include the runtime-computed date. Files touched: `useBillingData.ts`,
+  `billingCalculations.ts`, `FunctionCostsTable.tsx`.
+- **Option B (strict two-file):** stay within `useBillingData.ts` + `billingCalculations.ts`
+  only, and render a **static** label with no runtime date:
+  "Archived costs (monthly summary, before Jun 23 2026)". This still fixes the `null / null`
+  bug but cannot satisfy the "omit the date when no rows" rule.
 
-- **Rates, now fetched instead of hard-coded (lines 16–21)**: `SOW_RATES` stays as the last-resort default. A new async `resolveRates(invoiceNumber)`:
-  1. Looks up `billing_invoices.id` by `invoice_number`, then its `invoice_line_items` (`service_category`, `unit_rate`).
-  2. For each of voice_processing, text_processing, email_delivery and sms_delivery, it uses the line item's `unit_rate`.
-  3. If there is no line item for a category, it uses the active `sow_pricing_config.unit_rate` (or the column that holds the rate) for that category.
-  4. If neither exists, it uses the hard-coded default.
-  - This needs no signature change, so `InvoiceHistory.tsx` stays untouched.
-- **Rates passed through the drawing functions**: `rates: Record<string, number>` is threaded into the cover (lines 203–206), the communications page (line 395), the reconciliation (lines 446–449) and the main export (lines 506–549, the voice and text detail calls).
-- **Invoice totals are unchanged**: invoice totals come from the invoice rows, not from this PDF, and the PDF now matches the stored line-item rates.
+The plan below is written for **Option A**. If you prefer Option B, say so and I drop the
+`FunctionCostsTable.tsx` change and use the static string.
 
-## Checks after implementation
+## costsCapped subtitle note — skipped
+The "by-function table header/subtitle" lives in `FunctionCostsTable.tsx`
+(`CardDescription` at lines 28–30). Adding the conditional
+"Row-level tables show the latest 1,000 rows; totals include everything." note requires
+(a) threading a `costsCapped` prop into `FunctionCostsTable` and (b) passing it from
+`Billing.tsx` (which doesn't even destructure `costsCapped` today). That is **not** a
+one-line change in a single existing component, so per your instruction this is **skipped**.
+The hook already exposes `costsCapped` for a future pass.
 
-- `npx tsgo --noEmit -p tsconfig.app.json` must pass clean.
-- A read-only SQL comparison for Aug 2026 (ET) and All Time. The RPC itself needs super_admin, so the numbers are confirmed with an equivalent direct sum.
-- The report lists anything not verifiable from here.
+## Changes
 
-## Assumptions
+### 1. `src/hooks/useBillingData.ts`
 
-- The PostgREST server cap is 1,000 rows, even though the code asks for 5,000, which is why All Time shows $31.91.
-- The `sow_pricing_config` rate column name is confirmed by a read before coding. It is used only as the fallback.
+**a. Key fix in the rpcRows aggregation (lines 269–277).**
+Replace direct use of `r.edge_function` with a normalized key:
+
+```ts
+const fnKey = r.edge_function ?? 'archived_monthly_summary';
+if (!summary.byFunction[fnKey]) summary.byFunction[fnKey] = { count: 0, cost: 0 };
+summary.byFunction[fnKey].count += Number(r.rows);
+summary.byFunction[fnKey].cost += cost;
+```
+
+(Keep the `byProvider` / `byServiceType` lines unchanged.)
+
+**b. Compute the earliest live created_at.** After `const rpcRows = …` (line 241) and before
+`summary` is built, derive the earliest created_at among the loaded live rows (`costs`):
+
+```ts
+const earliestLiveCreatedAt = costs.length
+  ? costs.reduce((min, c) => (c.created_at < min ? c.created_at : min), costs[0].created_at)
+  : null;
+```
+
+`costs` is already the date-filtered, `is_internal = false` live rows (post any `excludeTTS`
+filter), which is exactly "the loaded rows". For `excludeTTS` it reflects the same set shown
+in row-level tables — acceptable.
+
+**c. Format the date** in the business timezone using the already-imported `BUSINESS_TZ`:
+
+```ts
+const archivedSummaryBeforeDate = earliestLiveCreatedAt
+  ? new Date(earliestLiveCreatedAt).toLocaleDateString('en-US',
+      { month: 'short', day: 'numeric', year: 'numeric', timeZone: BUSINESS_TZ })
+  : null;
+```
+
+**d. Expose it** in the returned object (add to the return statement, ~line 463–483):
+
+```ts
+archivedSummaryBeforeDate,
+```
+
+`totalsSource`, `archivedCost`, `costsCapped` already exist and are unaffected.
+
+### 2. `src/utils/billingCalculations.ts`
+
+Add a base (no-date) entry to `FUNCTION_LABELS` (line 155–166) so a fallback label always
+exists:
+
+```ts
+'archived_monthly_summary': 'Archived costs (monthly summary)',
+```
+
+### 3. `src/components/billing/FunctionCostsTable.tsx` (Option A only)
+
+- Add `archivedSummaryBeforeDate?: string | null` to `FunctionCostsTableProps`.
+- In the `.map` (line 13–19), compute the name so the date is appended when present:
+
+```ts
+name: fn === 'archived_monthly_summary' && archivedSummaryBeforeDate
+  ? `Archived costs (monthly summary, before ${archivedSummaryBeforeDate})`
+  : (FUNCTION_LABELS[fn] || fn),
+```
+
+`rawName` stays the key (`archived_monthly_summary`). No other rendering changes.
+
+### 4. `src/pages/Billing.tsx`
+
+- Destructure `archivedSummaryBeforeDate` from `useBillingData` (add to the existing
+  destructure at lines 47–64).
+- Pass it through at the call site (line 159):
+
+```tsx
+<FunctionCostsTable summary={summary} archivedSummaryBeforeDate={archivedSummaryBeforeDate} />
+```
+
+## What does NOT change
+- Totals, `archivedCost`, `totalsSource`, daily trend, byProvider, byServiceType, SOW metrics,
+  invoices, `costsCapped`. The archived cost still rolls into `totalCost` exactly as today.
+- The `else` (row-fallback) branch (lines 278–288) is untouched; live rows already have a
+  real `edge_function`.
+- Exported label maps, `CostSummary` interface shape, no new `any`, no deps, no DB/edge/RLS.
+- Existing invoice totals unaffected.
+
+## Acceptance
+- All Time → by-function table no longer shows a `null / null` row; it shows a single
+  **"Archived costs (monthly summary, before Jun 23 2026)"** row (~$1,566.29), with
+  `archived_monthly_summary` as the mono subtitle.
+- Aug 1–31 2026 → no archived row at all (live data only), totals unchanged from BIL-FE.
+- `tsgo --noEmit` clean.
