@@ -1,6 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 
 import { requireUser, adminClient, jsonResponse, corsHeaders, RESEARCH } from "../_shared/auth.ts";
+import { tokensFromUsage, logApiCost } from "../_shared/costs.ts";
 
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
@@ -13,6 +14,8 @@ serve(async (req) => {
       return jsonResponse(413, { error: "Input too large" });
     }
 
+    let costUserId: string | null = null;
+    let costIsInternal = false;
     if (typeof scriptToken === "string" && scriptToken.length > 0) {
       const { data: tok, error: tokErr } = await adminClient()
         .from("script_access_tokens")
@@ -25,6 +28,8 @@ serve(async (req) => {
     } else {
       const auth = await requireUser(req, RESEARCH);
       if (!auth.ok) return auth.response;
+      costUserId = auth.ctx.userId;
+      costIsInternal = auth.ctx.role === "super_admin";
     }
 
     if (!targetLanguage || targetLanguage === "en") {
@@ -134,6 +139,15 @@ Use the translate_script tool to return the translated content.`;
     const result = await response.json();
     const message = result.choices?.[0]?.message;
     const toolCall = message?.tool_calls?.[0];
+    {
+      const outText = String(toolCall?.function?.arguments ?? message?.content ?? "");
+      const tk = tokensFromUsage(result, prompt, outText);
+      await logApiCost(adminClient(), {
+        service_provider: "lovable_ai", service_type: "research_script_translation", edge_function: "translate-script",
+        input_tokens: tk.inputTokens, output_tokens: tk.outputTokens, token_source: tk.source,
+        model: "google/gemini-3-flash-preview", triggered_by_user_id: costUserId, is_internal: costIsInternal,
+      });
+    }
     
     let translated: any;
     if (toolCall?.function?.arguments) {
