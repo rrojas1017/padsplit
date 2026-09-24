@@ -29,7 +29,7 @@ import { resolveNextQuestionIndex } from '@/utils/scriptBranching';
 import type { ScriptQuestion as CanonicalScriptQuestion } from '@/hooks/useResearchScripts';
 
 interface ScriptQuestion {
-  id?: number;
+  id?: number | string;
   order?: number;
   text?: string;
   question?: string;
@@ -116,10 +116,12 @@ export default function PublicScriptView() {
   const [phase, setPhase] = useState<Phase>('start');
   const [questionIndex, setQuestionIndex] = useState(0);
   const [visitedStack, setVisitedStack] = useState<number[]>([]);
-  const [responses, setResponses] = useState<Record<number, unknown>>({});
+  const [responses, setResponses] = useState<Record<string, unknown>>({});
   const [probeNotes, setProbeNotes] = useState<Record<string, Record<number, string>>>({});
   const [agentNotes, setAgentNotes] = useState<Record<string, string>>({});
   const [endedEarly, setEndedEarly] = useState(false);
+  const [declined, setDeclined] = useState(false);
+  const [submissionId, setSubmissionId] = useState<string | null>(null);
   const [earlyDisposition, setEarlyDisposition] = useState('');
   const [selectedEndDisposition, setSelectedEndDisposition] = useState('caller_hung_up');
   const [surveyLanguage, setSurveyLanguage] = useState<SurveyLanguage>('en');
@@ -159,6 +161,8 @@ export default function PublicScriptView() {
   const submitPublic = useCallback(async (opts: { endedEarly?: boolean; earlyDisposition?: string } = {}) => {
     if (!token || !script) return;
     if (submitState === 'saving' || submitState === 'saved') return;
+    const endedEarlyFlag = opts.endedEarly ?? endedEarly;
+    const dispositionValue = opts.earlyDisposition ?? (endedEarly ? earlyDisposition : '');
     setSubmitState('saving');
     try {
       const { error: fnError } = await supabase.functions.invoke('submit-public-script', {
@@ -167,9 +171,11 @@ export default function PublicScriptView() {
           responses,
           probeNotes,
           agentNotes,
-          endedEarly: !!opts.endedEarly,
-          earlyDisposition: opts.earlyDisposition || null,
+          endedEarly: !!endedEarlyFlag,
+          earlyDisposition: dispositionValue || null,
           language: surveyLanguage,
+          declined,
+          submission_id: submissionId,
         },
       });
       if (fnError) {
@@ -182,7 +188,7 @@ export default function PublicScriptView() {
       console.error('submit-public-script error', e);
       setSubmitState('failed');
     }
-  }, [token, script, responses, probeNotes, agentNotes, surveyLanguage, submitState]);
+  }, [token, script, responses, probeNotes, agentNotes, surveyLanguage, submitState, endedEarly, earlyDisposition, declined, submissionId]);
 
   // Auto-submit when the script naturally completes (phase === 'done', not early).
   useEffect(() => {
@@ -200,6 +206,8 @@ export default function PublicScriptView() {
     setProbeNotes({});
     setAgentNotes({});
     setEndedEarly(false);
+    setDeclined(false);
+    setSubmissionId(null);
     setEarlyDisposition('');
     setSelectedEndDisposition('caller_hung_up');
     setSurveyLanguage('en');
@@ -234,6 +242,14 @@ export default function PublicScriptView() {
     (a, b) => (a.order ?? a.id ?? 0) - (b.order ?? b.id ?? 0)
   );
 
+  // Stable response key: question id, else q_idx_<index in the original questions array>.
+  const sourceQuestions: ScriptQuestion[] = translatedContent?.questions || script.questions || [];
+  const stableKeyFor = (q: ScriptQuestion | undefined): string => {
+    if (!q) return '';
+    if (q.id !== undefined && q.id !== null && String(q.id).trim() !== '') return String(q.id);
+    return `q_idx_${sourceQuestions.indexOf(q)}`;
+  };
+
   const introScript = translatedContent?.intro ?? (script.intro_script || '');
   const rebuttalScript = translatedContent?.rebuttal ?? (script.rebuttal_script || '');
   const closingScript = translatedContent?.closing ?? (script.closing_script || '');
@@ -245,6 +261,7 @@ export default function PublicScriptView() {
       else if (closingScript) setPhase('closing');
       else setPhase('done');
     } else {
+      setDeclined(true);
       if (rebuttalScript) setPhase('rebuttal');
       else setPhase('done');
     }
@@ -257,7 +274,7 @@ export default function PublicScriptView() {
       const resolved = resolveNextQuestionIndex({
         currentIndex: questionIndex,
         question: currentQ,
-        answer: responses[questionIndex],
+        answer: responses[stableKeyFor(sortedQuestions[questionIndex])],
         questionsLength: sortedQuestions.length,
       });
       if (resolved === 'closing') {
@@ -304,7 +321,8 @@ export default function PublicScriptView() {
   const progressPercent = totalSteps > 0 ? (currentStep / totalSteps) * 100 : 0;
 
   const currentQ = sortedQuestions[questionIndex];
-  const currentResponse = responses[questionIndex];
+  const currentKey = stableKeyFor(currentQ);
+  const currentResponse = responses[currentKey];
   const yesNoResponse = currentQ?.type === 'yes_no' ? (currentResponse as string) : undefined;
 
   return (
@@ -447,6 +465,7 @@ export default function PublicScriptView() {
                       }
                     }
                   }
+                  setSubmissionId(crypto.randomUUID());
                   setPhase(introScript ? 'intro' : 'consent');
                 }}>
                   {isTranslating ? (
@@ -531,7 +550,7 @@ export default function PublicScriptView() {
                 {currentQ.type === 'yes_no' && (
                   <RadioGroup
                     value={(currentResponse as string) || ''}
-                    onValueChange={v => setResponses(prev => ({ ...prev, [questionIndex]: v }))}
+                    onValueChange={v => setResponses(prev => ({ ...prev, [currentKey]: v }))}
                     className="space-y-2"
                   >
                     <div className="flex items-center gap-3 border rounded-lg px-4 py-3 cursor-pointer hover:bg-muted/50 transition-colors">
@@ -578,7 +597,7 @@ export default function PublicScriptView() {
                 {currentQ.type === 'multiple_choice' && (
                   <RadioGroup
                     value={(currentResponse as string) || ''}
-                    onValueChange={v => setResponses(prev => ({ ...prev, [questionIndex]: v }))}
+                    onValueChange={v => setResponses(prev => ({ ...prev, [currentKey]: v }))}
                     className="space-y-2"
                   >
                     {(currentQ.options || []).map((opt, i) => (
@@ -601,7 +620,7 @@ export default function PublicScriptView() {
                     <Slider
                       min={sMin} max={sMax} step={1}
                       value={[val]}
-                      onValueChange={([v]) => setResponses(prev => ({ ...prev, [questionIndex]: v }))}
+                      onValueChange={([v]) => setResponses(prev => ({ ...prev, [currentKey]: v }))}
                     />
                     <div className="flex justify-between text-xs text-muted-foreground">
                       <span>{sMin} — Low</span><span>{sMax} — High</span>
@@ -614,7 +633,7 @@ export default function PublicScriptView() {
                   <Textarea
                     placeholder="Quick notes (optional — AI extracts from recording)"
                     value={(currentResponse as string) || ''}
-                    onChange={e => setResponses(prev => ({ ...prev, [questionIndex]: e.target.value }))}
+                    onChange={e => setResponses(prev => ({ ...prev, [currentKey]: e.target.value }))}
                     rows={4}
                   />
                 )}
@@ -700,6 +719,16 @@ export default function PublicScriptView() {
                     <p className="text-sm text-muted-foreground">You've walked through the full script flow.</p>
                   </>
                 )}
+                <div className="text-sm" aria-live="polite">
+                  {submitState === 'saving' && <span className="text-muted-foreground">Saving…</span>}
+                  {submitState === 'saved' && <span className="text-primary font-medium">Saved</span>}
+                  {submitState === 'failed' && (
+                    <span className="inline-flex items-center gap-2 text-destructive">
+                      Could not save
+                      <Button size="sm" variant="outline" onClick={() => void submitPublic()}>Retry</Button>
+                    </span>
+                  )}
+                </div>
                 <div className="flex gap-3 justify-center">
                   <Button onClick={restart}>
                     <RotateCcw className="w-4 h-4 mr-2" /> Restart
