@@ -4,7 +4,8 @@ import { validatePassword, getPasswordErrorMessage } from '@/utils/passwordValid
 import { PasswordStrengthIndicator } from '@/components/PasswordStrengthIndicator';
 import { usePageTracking } from '@/hooks/usePageTracking';
 import { Button } from '@/components/ui/button';
-import { Plus, MoreVertical, Shield, ShieldCheck, User, Crown, Loader2, Link, Pencil, Trash2, ChevronDown, ChevronUp, Mail, MessageSquare, Mic, Search } from 'lucide-react';
+import { Plus, MoreVertical, Shield, ShieldCheck, User, Crown, Loader2, Link, Pencil, Trash2, ChevronDown, ChevronUp, Mail, MessageSquare, Mic, Search, UserX, UserCheck } from 'lucide-react';
+import { FunctionsHttpError } from '@supabase/supabase-js';
 import { cn } from '@/lib/utils';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
@@ -94,6 +95,10 @@ export default function UserManagement() {
     siteId: string;
   } | null>(null);
   const [isSavingUser, setIsSavingUser] = useState(false);
+
+  // Deactivate / reactivate login (super_admin only)
+  const [statusTarget, setStatusTarget] = useState<{ user: UserWithRole; active: boolean } | null>(null);
+  const [isSettingStatus, setIsSettingStatus] = useState(false);
 
   // Form state
   const [newUserName, setNewUserName] = useState('');
@@ -660,22 +665,39 @@ export default function UserManagement() {
     }
   };
 
-  // Handle toggling user profile status (for researchers without linked agents)
-  const handleToggleUserStatus = async (userId: string) => {
+  // Deactivate / reactivate a login through the admin-set-user-status function
+  const handleConfirmSetStatus = async () => {
+    if (!statusTarget) return;
+    const { user: target, active } = statusTarget;
+    setIsSettingStatus(true);
     try {
-      const user = users.find(u => u.id === userId);
-      if (!user) return;
-      const newStatus = user.status === 'active' ? 'inactive' : 'active';
-      const { error } = await supabase
-        .from('profiles')
-        .update({ status: newStatus })
-        .eq('id', userId);
-      if (error) throw error;
-      toast({ title: 'Status Updated', description: `User is now ${newStatus}` });
+      const { data, error } = await supabase.functions.invoke('admin-set-user-status', {
+        body: { userId: target.id, active },
+      });
+      if (error) {
+        let message = 'Failed to update status';
+        if (error instanceof FunctionsHttpError) {
+          try {
+            const payload = (await error.context.json()) as { error?: string };
+            if (payload?.error) message = payload.error;
+          } catch {
+            // keep generic message
+          }
+        }
+        toast({ title: 'Status not changed', description: message, variant: 'destructive' });
+        return;
+      }
+      const revoked = (data as { sessionsRevoked?: number | null } | null)?.sessionsRevoked;
+      toast({
+        title: active ? `${target.name} reactivated` : `${target.name} deactivated`,
+        description: active
+          ? 'They can sign in again.'
+          : `Sessions ended: ${typeof revoked === 'number' ? revoked : 'unknown'}`,
+      });
+      setStatusTarget(null);
       fetchUsers();
-    } catch (error) {
-      console.error('Error toggling user status:', error);
-      toast({ title: 'Error', description: 'Failed to update status', variant: 'destructive' });
+    } finally {
+      setIsSettingStatus(false);
     }
   };
 
@@ -926,6 +948,9 @@ export default function UserManagement() {
                               </span>
                             </div>
                             <span className="font-medium text-foreground">{user.name || 'Unknown'}</span>
+                            {user.status === 'inactive' && (
+                              <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-destructive/15 text-destructive">Login disabled</span>
+                            )}
                           </div>
                         </td>
                         <td className="py-4 px-4 text-sm text-muted-foreground">
@@ -992,7 +1017,19 @@ export default function UserManagement() {
                                   Change Role
                                 </DropdownMenuItem>
                               )}
-                              <DropdownMenuItem className="text-destructive">Deactivate</DropdownMenuItem>
+                              {isSuperAdmin && user.id !== currentUser?.id && (
+                                user.status !== 'inactive' ? (
+                                  <DropdownMenuItem className="text-destructive" onClick={() => setStatusTarget({ user, active: false })}>
+                                    <UserX className="w-4 h-4 mr-2" />
+                                    Deactivate
+                                  </DropdownMenuItem>
+                                ) : (
+                                  <DropdownMenuItem onClick={() => setStatusTarget({ user, active: true })}>
+                                    <UserCheck className="w-4 h-4 mr-2" />
+                                    Reactivate
+                                  </DropdownMenuItem>
+                                )
+                              )}
                               {user.id !== currentUser?.id && !isSupervisor && (
                                 <DropdownMenuItem 
                                   className="text-destructive"
@@ -1154,6 +1191,9 @@ export default function UserManagement() {
                                       </span>
                                     </div>
                                     <span className="font-medium text-foreground">{user.name || 'Unknown'}</span>
+                                    {user.status === 'inactive' && (
+                                      <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-destructive/15 text-destructive">Login disabled</span>
+                                    )}
                                   </div>
                                 </td>
                                 <td className="py-4 px-4">
@@ -1190,7 +1230,8 @@ export default function UserManagement() {
                                     <div className="flex items-center gap-2">
                                       <Switch
                                         checked={user.status === 'active'}
-                                        onCheckedChange={() => handleToggleUserStatus(user.id)}
+                                        disabled={!isSuperAdmin || user.id === currentUser?.id}
+                                        onCheckedChange={(checked) => setStatusTarget({ user, active: checked })}
                                       />
                                       <span className={cn(
                                         "text-xs font-medium",
@@ -1240,6 +1281,19 @@ export default function UserManagement() {
                                           <Shield className="w-4 h-4 mr-2" />
                                           Change Role
                                         </DropdownMenuItem>
+                                      )}
+                                      {isSuperAdmin && user.id !== currentUser?.id && (
+                                        user.status !== 'inactive' ? (
+                                          <DropdownMenuItem className="text-destructive" onClick={() => setStatusTarget({ user, active: false })}>
+                                            <UserX className="w-4 h-4 mr-2" />
+                                            Deactivate login
+                                          </DropdownMenuItem>
+                                        ) : (
+                                          <DropdownMenuItem onClick={() => setStatusTarget({ user, active: true })}>
+                                            <UserCheck className="w-4 h-4 mr-2" />
+                                            Reactivate login
+                                          </DropdownMenuItem>
+                                        )
                                       )}
                                       {user.id !== currentUser?.id && !isSupervisor && (
                                         <DropdownMenuItem 
@@ -1769,6 +1823,31 @@ export default function UserManagement() {
             >
               {isDeleting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
               Delete User
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Deactivate / Reactivate confirmation */}
+      <Dialog open={!!statusTarget} onOpenChange={(o) => { if (!o && !isSettingStatus) setStatusTarget(null); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{statusTarget?.active ? 'Reactivate login' : 'Deactivate login'}</DialogTitle>
+            <DialogDescription>
+              {statusTarget?.active
+                ? `${statusTarget.user.name} will be able to sign in again.`
+                : `${statusTarget?.user.name ?? 'This user'} will be signed out of every device and won't be able to sign in until reactivated.`}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setStatusTarget(null)} disabled={isSettingStatus}>Cancel</Button>
+            <Button
+              variant={statusTarget?.active ? 'default' : 'destructive'}
+              onClick={handleConfirmSetStatus}
+              disabled={isSettingStatus}
+            >
+              {isSettingStatus && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+              {statusTarget?.active ? 'Reactivate' : 'Deactivate'}
             </Button>
           </DialogFooter>
         </DialogContent>

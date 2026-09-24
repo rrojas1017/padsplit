@@ -55,11 +55,19 @@ Deno.serve(async (req) => {
       admin.from("profiles").select("name,email").eq("id", userId).maybeSingle(),
     ]);
 
-    const { error: updErr } = await admin.auth.admin.updateUserById(userId, { password: newPassword });
+    const { error: updErr } = await admin.auth.admin.updateUserById(userId, {
+      password: newPassword,
+      app_metadata: { must_change_password: true },
+    });
     if (updErr) {
       console.error("[admin-reset-password] update failed:", updErr.message);
       return jsonResponse(500, { error: "Failed to update password" });
     }
+
+    let sessionsRevoked: number | null = null;
+    const { data: n, error: revErr } = await admin.rpc("revoke_user_sessions", { p_user_id: userId });
+    if (revErr) console.error("[admin-reset-password] session revoke failed:", revErr.message);
+    else sessionsRevoked = typeof n === "number" ? n : null;
 
     try {
       const callerName = callerProf.data?.name || callerProf.data?.email || auth.ctx.user.email || "unknown";
@@ -68,14 +76,14 @@ Deno.serve(async (req) => {
         user_id: callerId,
         user_name: callerName,
         action: "password_reset",
-        resource: `Password reset for ${targetName} (${userId})`,
+        resource: `Password reset for ${targetName} (${userId}); sessions ended: ${sessionsRevoked ?? "unknown"}`,
       });
       if (logErr) console.error("[admin-reset-password] audit log failed:", logErr.message);
     } catch (e) {
       console.error("[admin-reset-password] audit log failed:", e instanceof Error ? e.message : "unknown");
     }
 
-    return jsonResponse(200, { success: true });
+    return jsonResponse(200, { success: true, sessionsRevoked });
   } catch (e) {
     console.error("[admin-reset-password] unexpected error:", e instanceof Error ? e.message : "unknown");
     return jsonResponse(500, { error: "Failed to update password" });
