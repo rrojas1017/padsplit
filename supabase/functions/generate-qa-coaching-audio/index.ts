@@ -3,71 +3,8 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 import { requireUserOrInternal, canSeeBooking, jsonResponse, corsHeaders, STAFF } from "../_shared/auth.ts";
+import { logApiCost, tokensFromUsage } from "../_shared/costs.ts";
 
-// Cost logging helper function
-async function logApiCost(supabase: any, params: {
-  service_provider: 'elevenlabs' | 'lovable_ai';
-  service_type: string;
-  edge_function: string;
-  booking_id?: string;
-  agent_id?: string;
-  site_id?: string;
-  input_tokens?: number;
-  output_tokens?: number;
-  audio_duration_seconds?: number;
-  character_count?: number;
-  metadata?: Record<string, any>;
-  triggered_by_user_id?: string;
-  is_internal?: boolean;
-}) {
-  try {
-    let cost = 0;
-    
-    if (params.service_provider === 'elevenlabs') {
-      if (params.audio_duration_seconds) {
-        cost = (params.audio_duration_seconds / 60) * 0.034;
-      }
-      if (params.character_count) {
-        cost = params.character_count * 0.00015;
-      }
-    } else if (params.service_provider === 'lovable_ai') {
-      const model = params.metadata?.model || 'google/gemini-2.5-flash';
-      let inputRate = 0.0001;
-      let outputRate = 0.0003;
-      
-      if (model.includes('gemini-2.5-pro')) {
-        inputRate = 0.00125;
-        outputRate = 0.005;
-      }
-      
-      const inputCost = ((params.input_tokens || 0) / 1000) * inputRate;
-      const outputCost = ((params.output_tokens || 0) / 1000) * outputRate;
-      cost = inputCost + outputCost;
-    }
-
-    await supabase.from('api_costs').insert({
-      service_provider: params.service_provider,
-      service_type: params.service_type,
-      edge_function: params.edge_function,
-      booking_id: params.booking_id || null,
-      agent_id: params.agent_id || null,
-      site_id: params.site_id || null,
-      input_tokens: params.input_tokens || null,
-      output_tokens: params.output_tokens || null,
-      audio_duration_seconds: params.audio_duration_seconds || null,
-      character_count: params.character_count || null,
-      estimated_cost_usd: cost,
-      metadata: params.metadata || {},
-      triggered_by_user_id: params.triggered_by_user_id || null,
-      is_internal: params.is_internal || false,
-    });
-    
-    console.log(`[Cost] Logged ${params.service_provider} ${params.service_type}: $${cost.toFixed(6)}`);
-  } catch (error) {
-    // Don't fail the main operation if cost logging fails
-    console.error('[Cost] Failed to log API cost:', error);
-  }
-}
 
 interface QACategory {
   name: string;
@@ -360,7 +297,7 @@ Generate ONLY the spoken coaching script. No formatting, no quotes around the sc
     // Log Lovable AI cost for script generation
     const estimatedInputTokens = Math.ceil(kattyPrompt.length / 4);
     const estimatedOutputTokens = Math.ceil(coachingScript.length / 4);
-    logApiCost(supabase, {
+    await logApiCost(supabase, {
       service_provider: 'lovable_ai',
       service_type: 'qa_script_generation',
       edge_function: 'generate-qa-coaching-audio',
@@ -469,7 +406,7 @@ Generate ONLY the spoken coaching script. No formatting, no quotes around the sc
     }
 
     // Log ElevenLabs TTS cost
-    logApiCost(supabase, {
+    await logApiCost(supabase, {
       service_provider: 'elevenlabs',
       service_type: 'tts_qa_coaching',
       edge_function: 'generate-qa-coaching-audio',

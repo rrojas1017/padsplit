@@ -2,6 +2,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 import { requireInternal, corsHeaders } from "../_shared/auth.ts";
+import { logApiCost, tokensFromUsage } from "../_shared/costs.ts";
 
 interface QACategory {
   name: string;
@@ -18,48 +19,6 @@ interface QAScores {
   scoredAt: string;
 }
 
-// Cost logging helper
-async function logApiCost(supabase: any, params: {
-  service_provider: 'elevenlabs' | 'lovable_ai';
-  service_type: string;
-  edge_function: string;
-  booking_id?: string;
-  agent_id?: string;
-  site_id?: string;
-  input_tokens?: number;
-  output_tokens?: number;
-  audio_duration_seconds?: number;
-  character_count?: number;
-  metadata?: Record<string, any>;
-  triggered_by_user_id?: string;
-  is_internal?: boolean;
-}) {
-  try {
-    let cost = 0;
-    if (params.service_provider === 'elevenlabs') {
-      if (params.audio_duration_seconds) {
-        cost += (params.audio_duration_seconds / 60) * 0.10;
-      }
-      if (params.character_count) {
-        cost += params.character_count * 0.0003;
-      }
-    } else if (params.service_provider === 'lovable_ai') {
-      const inputCost = ((params.input_tokens || 0) / 1000) * 0.0001;
-      const outputCost = ((params.output_tokens || 0) / 1000) * 0.0003;
-      cost = inputCost + outputCost;
-    }
-
-    await supabase.from('api_costs').insert({
-      ...params,
-      estimated_cost_usd: cost,
-      triggered_by_user_id: params.triggered_by_user_id || null,
-      is_internal: params.is_internal || false,
-    });
-    console.log(`[Cost] Logged ${params.service_type}: $${cost.toFixed(4)}`);
-  } catch (error) {
-    console.error('[Cost] Failed to log cost:', error);
-  }
-}
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -189,7 +148,7 @@ ${categories.map(cat => `    "${cat.name}": <score 0-${cat.maxPoints}>`).join(',
     // Log AI cost
     const inputTokens = Math.ceil(prompt.length / 4);
     const outputTokens = Math.ceil(content.length / 4);
-    logApiCost(supabase, {
+    await logApiCost(supabase, {
       service_provider: 'lovable_ai',
       service_type: 'ai_qa_scoring',
       edge_function: 'generate-qa-scores',

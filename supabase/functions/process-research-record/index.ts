@@ -1,42 +1,8 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 import { requireInternal, corsHeaders } from "../_shared/auth.ts";
+import { logApiCost, tokensFromUsage } from "../_shared/costs.ts";
 
-// Cost logging helper
-async function logApiCost(supabase: any, params: {
-  service_provider: string;
-  service_type: string;
-  edge_function: string;
-  booking_id?: string;
-  input_tokens?: number;
-  output_tokens?: number;
-  metadata?: Record<string, any>;
-  triggered_by_user_id?: string;
-  is_internal?: boolean;
-}) {
-  try {
-    let cost = 0;
-    if (params.service_provider === 'lovable_ai') {
-      const model = params.metadata?.model || 'google/gemini-2.5-pro';
-      let inputRate = 0.00000125;
-      let outputRate = 0.00001;
-      if (model.includes('flash')) {
-        inputRate = 0.0000003;
-        outputRate = 0.0000025;
-      }
-      cost = ((params.input_tokens || 0) * inputRate) + ((params.output_tokens || 0) * outputRate);
-    }
-    await supabase.from('api_costs').insert({
-      ...params,
-      estimated_cost_usd: cost,
-      triggered_by_user_id: params.triggered_by_user_id || null,
-      is_internal: params.is_internal || false,
-    });
-    console.log(`[Cost] Logged ${params.service_type}: $${cost.toFixed(6)}`);
-  } catch (error) {
-    console.error('[Cost] Failed to log cost:', error);
-  }
-}
 
 // Call Lovable AI gateway
 async function callLovableAI(

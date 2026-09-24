@@ -9,6 +9,7 @@ declare const EdgeRuntime: {
 
 import { requireUserOrInternal, canSeeBooking, jsonResponse, corsHeaders, STAFF } from "../_shared/auth.ts";
 import { isAllowedRecordingUrl, safeRecordingFetch } from "../_shared/url.ts";
+import { logApiCost, tokensFromUsage } from "../_shared/costs.ts";
 
 
 // === HARD-WIRED COST PROTECTION CONSTANTS ===
@@ -212,12 +213,6 @@ function classifyIssuesFromKeyPoints(keyPoints: any): DetectedIssueDetail[] {
   return detected;
 }
 
-// Provider pricing constants (per minute)
-const STT_PRICING: Record<STTProviderName, number> = {
-  elevenlabs: 0.034,  // ElevenLabs Pro Plan
-  deepgram: 0.0043,   // Deepgram Nova-2
-};
-
 // LLM Provider types for hybrid selection
 type LLMProviderName = 'lovable_ai' | 'deepseek';
 
@@ -226,12 +221,6 @@ interface LLMProviderSelection {
   model: string;
   fallbackReason?: string;
 }
-
-// DeepSeek pricing: $0.14/1M input, $0.28/1M output (cache miss)
-const DEEPSEEK_PRICING = {
-  inputRate: 0.00000014,   // $0.14 per 1M tokens
-  outputRate: 0.00000028,  // $0.28 per 1M tokens
-};
 
 // Fetch provider-specific prompt enhancements from database
 async function getProviderPromptEnhancements(
@@ -381,81 +370,6 @@ async function callDeepSeekForAnalysis(
   };
 }
 
-// Cost logging helper function
-async function logApiCost(supabase: any, params: {
-  service_provider: 'elevenlabs' | 'deepgram' | 'lovable_ai' | 'deepseek';
-  service_type: string;
-  edge_function: string;
-  booking_id?: string;
-  agent_id?: string;
-  site_id?: string;
-  input_tokens?: number;
-  output_tokens?: number;
-  audio_duration_seconds?: number;
-  character_count?: number;
-  metadata?: Record<string, any>;
-  triggered_by_user_id?: string;
-  is_internal?: boolean;
-}) {
-  try {
-    let cost = 0;
-    
-    if (params.service_provider === 'elevenlabs') {
-      if (params.audio_duration_seconds) {
-        cost = (params.audio_duration_seconds / 60) * STT_PRICING.elevenlabs;
-      }
-      if (params.character_count) {
-        cost = params.character_count * 0.00015;
-      }
-    } else if (params.service_provider === 'deepgram') {
-      if (params.audio_duration_seconds) {
-        cost = (params.audio_duration_seconds / 60) * STT_PRICING.deepgram;
-      }
-    } else if (params.service_provider === 'deepseek') {
-      const inputCost = (params.input_tokens || 0) * DEEPSEEK_PRICING.inputRate;
-      const outputCost = (params.output_tokens || 0) * DEEPSEEK_PRICING.outputRate;
-      cost = inputCost + outputCost;
-    } else if (params.service_provider === 'lovable_ai') {
-      const model = params.metadata?.model || 'google/gemini-2.5-flash';
-      let inputRate = 0.0000003;
-      let outputRate = 0.0000025;
-      
-      if (model.includes('gemini-2.5-pro')) {
-        inputRate = 0.00000125;
-        outputRate = 0.00001;
-      } else if (model.includes('gemini-2.5-flash-lite')) {
-        inputRate = 0.000000075;
-        outputRate = 0.0000003;
-      }
-      
-      const inputCost = (params.input_tokens || 0) * inputRate;
-      const outputCost = (params.output_tokens || 0) * outputRate;
-      cost = inputCost + outputCost;
-    }
-
-    await supabase.from('api_costs').insert({
-      service_provider: params.service_provider,
-      service_type: params.service_type,
-      edge_function: params.edge_function,
-      booking_id: params.booking_id || null,
-      agent_id: params.agent_id || null,
-      site_id: params.site_id || null,
-      input_tokens: params.input_tokens || null,
-      output_tokens: params.output_tokens || null,
-      audio_duration_seconds: params.audio_duration_seconds || null,
-      character_count: params.character_count || null,
-      estimated_cost_usd: cost,
-      metadata: params.metadata || {},
-      triggered_by_user_id: params.triggered_by_user_id || null,
-      is_internal: params.is_internal || false,
-    });
-    
-    console.log(`[Cost] Logged ${params.service_provider} ${params.service_type}: $${cost.toFixed(6)}`);
-  } catch (error) {
-    // Don't fail the main operation if cost logging fails
-    console.error('[Cost] Failed to log API cost:', error);
-  }
-}
 
 // Select STT provider based on A/B weights
 async function selectSTTProvider(supabase: any): Promise<STTProviderName> {
@@ -1678,7 +1592,7 @@ async function processTranscription(bookingId: string, kixieUrl: string, skipTts
       // Log cost for speaker identification (small AI call)
       const speakerIdInputTokens = Math.ceil(3000 / 4); // ~3000 chars prompt
       const speakerIdOutputTokens = Math.ceil(150 / 4); // ~150 chars response
-      logApiCost(supabase, {
+      await logApiCost(supabase, {
         service_provider: 'lovable_ai',
         service_type: 'speaker_identification',
         edge_function: 'transcribe-call',
@@ -1718,7 +1632,7 @@ async function processTranscription(bookingId: string, kixieUrl: string, skipTts
           polishApplied = true;
           
           // Log the polishing cost
-          logApiCost(supabase, {
+          await logApiCost(supabase, {
             service_provider: 'lovable_ai',
             service_type: 'transcript_polishing',
             edge_function: 'transcribe-call',
@@ -1753,7 +1667,7 @@ async function processTranscription(bookingId: string, kixieUrl: string, skipTts
 
     // Log STT cost for the selected provider
     if (callDurationSeconds) {
-      logApiCost(supabase, {
+      await logApiCost(supabase, {
         service_provider: selectedProvider,
         service_type: 'stt_transcription',
         edge_function: 'transcribe-call',
@@ -1814,7 +1728,7 @@ async function processTranscription(bookingId: string, kixieUrl: string, skipTts
       estimatedOutputTokens = Math.ceil(aiContent.length / 4);
 
       // Log Lovable AI cost
-      logApiCost(supabase, {
+      await logApiCost(supabase, {
         service_provider: 'lovable_ai',
         service_type: 'ai_analysis',
         edge_function: 'transcribe-call',
@@ -1856,7 +1770,7 @@ async function processTranscription(bookingId: string, kixieUrl: string, skipTts
       JSON.parse(probe.trim());
 
       // Log DeepSeek cost
-      logApiCost(supabase, {
+      await logApiCost(supabase, {
         service_provider: 'deepseek',
         service_type: 'ai_analysis',
         edge_function: 'transcribe-call',
@@ -2058,7 +1972,7 @@ Be generous in matching — if the topic of a question was discussed even partia
               console.log(`[Background] Survey progress: ${surveyProgress.answered}/${surveyProgress.total} questions covered`);
               
               // Log cost
-              logApiCost(supabase, {
+              await logApiCost(supabase, {
                 service_provider: 'lovable_ai',
                 service_type: 'survey_progress_extraction',
                 edge_function: 'transcribe-call',
