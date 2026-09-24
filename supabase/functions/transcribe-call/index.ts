@@ -1848,6 +1848,12 @@ async function processTranscription(bookingId: string, kixieUrl: string, skipTts
       aiContent = deepseekResult.content;
       estimatedInputTokens = deepseekResult.inputTokens;
       estimatedOutputTokens = deepseekResult.outputTokens;
+      // Validate the DeepSeek output parses as JSON (same fence stripping as below)
+      let probe = (aiContent || '').trim();
+      if (probe.startsWith('```json')) probe = probe.slice(7);
+      if (probe.startsWith('```')) probe = probe.slice(3);
+      if (probe.endsWith('```')) probe = probe.slice(0, -3);
+      JSON.parse(probe.trim());
 
       // Log DeepSeek cost
       logApiCost(supabase, {
@@ -1868,12 +1874,6 @@ async function processTranscription(bookingId: string, kixieUrl: string, skipTts
           prompt_enhanced: !!enhancements
         }
       });
-        // Validate the DeepSeek output parses as JSON (same fence stripping as below)
-        let probe = (aiContent || '').trim();
-        if (probe.startsWith('```json')) probe = probe.slice(7);
-        if (probe.startsWith('```')) probe = probe.slice(3);
-        if (probe.endsWith('```')) probe = probe.slice(0, -3);
-        JSON.parse(probe.trim());
       } catch (dsErr) {
         console.error('[LLM] DeepSeek failed, falling back to Gemini:', dsErr instanceof Error ? dsErr.message : 'unknown');
         llmProviderUsed = 'lovable_ai';
