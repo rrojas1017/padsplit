@@ -1,6 +1,7 @@
 // Audience Survey Executive Brief — AI narrative generator
 
-import { corsHeaders, requireUser, MANAGERS } from "../_shared/auth.ts";
+import { corsHeaders, requireUser, MANAGERS, adminClient } from "../_shared/auth.ts";
+import { tokensFromUsage, logApiCost } from "../_shared/costs.ts";
 
 const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY")!;
 
@@ -25,6 +26,8 @@ Deno.serve(async (req) => {
 
   const auth = await requireUser(req, MANAGERS);
   if (!auth.ok) return auth.response;
+  const costUserId = auth.ctx.userId;
+  const costIsInternal = auth.ctx.role === 'super_admin';
 
   try {
     if (!LOVABLE_API_KEY) {
@@ -113,6 +116,14 @@ Write the JSON now. Make the analysis specific to these results and avoid generi
         if (!aiResponse.ok) return { ok: false, reason: await aiResponse.text() };
         const aiResult = await aiResponse.json();
         const rawContent = aiResult?.choices?.[0]?.message?.content || "{}";
+        {
+          const tk = tokensFromUsage(aiResult, systemPrompt + userPrompt, rawContent);
+          await logApiCost(adminClient(), {
+            service_provider: 'lovable_ai', service_type: 'audience_executive_brief', edge_function: 'generate-audience-survey-executive-brief',
+            input_tokens: tk.inputTokens, output_tokens: tk.outputTokens, token_source: tk.source,
+            model: model, triggered_by_user_id: costUserId, is_internal: costIsInternal,
+          });
+        }
         let brief: ExecutiveBrief;
         try {
           brief = JSON.parse(rawContent);

@@ -2,6 +2,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 
 import { requireUserOrInternal, corsHeaders } from "../_shared/auth.ts";
+import { tokensFromUsage, logApiCost } from "../_shared/costs.ts";
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -223,6 +224,17 @@ If no lifestyle signals are detected, return: {"lifestyleSignals": []}`;
 
           const result = await response.json();
           let content = result.choices?.[0]?.message?.content?.trim() || '';
+          {
+            const t = tokensFromUsage(result, prompt, content);
+            await logApiCost(supabase, {
+              service_provider: 'lovable_ai', service_type: 'lifestyle_extraction',
+              edge_function: 'batch-extract-lifestyle-signals',
+              booking_id: record.booking_id ?? null,
+              triggered_by_user_id: auth.ctx.kind === 'user' ? auth.ctx.userId : null,
+              input_tokens: t.inputTokens, output_tokens: t.outputTokens, token_source: t.source,
+              model: 'google/gemini-2.5-flash-lite', is_internal: true,
+            });
+          }
           
           if (content.startsWith('```json')) content = content.slice(7);
           if (content.startsWith('```')) content = content.slice(3);

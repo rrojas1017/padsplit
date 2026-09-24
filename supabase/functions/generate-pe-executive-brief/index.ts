@@ -4,7 +4,8 @@
 //  - Uses Gemini 2.5 Pro for executive prose
 //  - Stateless: aggregates are passed in the request body (no DB snapshot)
 
-import { corsHeaders, requireUser, MANAGERS } from "../_shared/auth.ts";
+import { corsHeaders, requireUser, MANAGERS, adminClient } from "../_shared/auth.ts";
+import { tokensFromUsage, logApiCost } from "../_shared/costs.ts";
 
 const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY")!;
 
@@ -42,6 +43,8 @@ Deno.serve(async (req) => {
 
   const auth = await requireUser(req, MANAGERS);
   if (!auth.ok) return auth.response;
+  const costUserId = auth.ctx.userId;
+  const costIsInternal = auth.ctx.role === 'super_admin';
 
   try {
     if (!LOVABLE_API_KEY) {
@@ -146,6 +149,14 @@ Write the JSON now. Be specific. Recommendations must reference real numbers fro
         }
         const aiResult = await aiResponse.json();
         const rawContent = aiResult?.choices?.[0]?.message?.content || "{}";
+        {
+          const tk = tokensFromUsage(aiResult, systemPrompt + userPrompt, rawContent);
+          await logApiCost(adminClient(), {
+            service_provider: 'lovable_ai', service_type: 'pe_executive_brief', edge_function: 'generate-pe-executive-brief',
+            input_tokens: tk.inputTokens, output_tokens: tk.outputTokens, token_source: tk.source,
+            model: model, triggered_by_user_id: costUserId, is_internal: costIsInternal,
+          });
+        }
         let brief: any;
         try {
           brief = JSON.parse(rawContent);
