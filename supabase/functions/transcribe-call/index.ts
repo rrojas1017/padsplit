@@ -2067,7 +2067,7 @@ Be generous in matching — if the topic of a question was discussed even partia
                 site_id: siteId || undefined,
                 input_tokens: Math.ceil(surveyPrompt.length / 4),
                 output_tokens: Math.ceil(surveyContent.length / 4),
-                metadata: { model: 'google/gemini-2.5-flash', campaign: campaignId || 'unknown' }
+                metadata: { model: 'google/gemini-2.5-flash', campaign: 'unknown' }
               });
             } else {
               console.error('[Background] Survey progress AI call failed:', surveyAiResponse.status);
