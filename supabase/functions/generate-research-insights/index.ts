@@ -1126,12 +1126,12 @@ Deno.serve(async (req) => {
         if (!prev) {
           console.log('[Gate] ran reason=no_previous');
         } else {
-          const btQ = () => supabase.from('booking_transcriptions').select('*')
+          const btQ = (cols: string) => supabase.from('booking_transcriptions').select(cols)
             .eq('research_campaign_type', campaignType).eq('research_processing_status', 'completed');
           const a = Math.max(
-            await gateMaxTs(btQ().select('created_at'), 'created_at'),
-            await gateMaxTs(btQ().select('updated_at'), 'updated_at'),
-            await gateMaxTs(btQ().select('research_processed_at'), 'research_processed_at'),
+            await gateMaxTs(btQ('created_at'), 'created_at'),
+            await gateMaxTs(btQ('updated_at'), 'updated_at'),
+            await gateMaxTs(btQ('research_processed_at'), 'research_processed_at'),
           );
           const b = await gateMaxTs(supabase.from('research_prompts').select('updated_at'), 'updated_at');
           const prevTs = new Date(prev.created_at).getTime();
