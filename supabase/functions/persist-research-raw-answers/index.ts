@@ -63,7 +63,7 @@ Deno.serve(async (req) => {
     // Load the research call (service role).
     const { data: call, error: callErr } = await admin
       .from('research_calls')
-      .select('id, campaign_id, researcher_id, caller_name, caller_phone, researcher_notes, call_duration_seconds, language, call_outcome')
+      .select('id, campaign_id, researcher_id, caller_name, caller_phone, researcher_notes, call_duration_seconds, language, call_outcome, responses')
       .eq('id', research_call_id)
       .maybeSingle();
     if (callErr) {
@@ -71,6 +71,9 @@ Deno.serve(async (req) => {
       return json({ error: 'Lookup failed' }, 500);
     }
     if (!call) return json({ error: 'Research call not found' }, 404);
+
+    const answeredCount = Object.keys(raw_script_answers as Record<string, unknown>).length;
+    const endedEarly = call.call_outcome != null && call.call_outcome !== 'completed';
 
     // Find the booking for this research call.
     const { data: foundBooking, error: bookErr } = await admin
@@ -114,8 +117,8 @@ Deno.serve(async (req) => {
         }
       }
 
-      // (b) Otherwise create the research booking (completed or unknown outcome only).
-      if (!booking && (call.call_outcome === 'completed' || call.call_outcome == null)) {
+      // (b) Otherwise create the research booking (completed/unknown outcome, or any outcome with answers).
+      if (!booking && (call.call_outcome === 'completed' || call.call_outcome == null || answeredCount > 0)) {
         const { data: anyAgent } = await admin
           .from('agents')
           .select('id')
@@ -137,6 +140,7 @@ Deno.serve(async (req) => {
             created_by: auth.ctx.userId,
             notes: call.researcher_notes || null,
             call_duration_seconds: call.call_duration_seconds || null,
+            has_valid_conversation: true,
           }).select('id').single();
           if (insErr) console.error('persist-raw-answers: booking insert failed', insErr.message);
           else { booking = { id: inserted.id }; createdBooking = true; }
@@ -148,16 +152,29 @@ Deno.serve(async (req) => {
       return json({ ok: true, merged: false, reason: 'no_booking' });
     }
 
+    // Linked or found booking: mark as a real conversation only when not yet validated.
+    if (!createdBooking && answeredCount > 0) {
+      const { error: hvcErr } = await admin
+        .from('bookings')
+        .update({ has_valid_conversation: true })
+        .eq('id', booking.id)
+        .is('has_valid_conversation', null);
+      if (hvcErr) console.error('persist-raw-answers: has_valid_conversation update failed', hvcErr.message);
+    }
+
     // Resolve the survey label from the call's script (non-fatal).
     let routedType: string | null = null;
+    let totalQuestions = 0;
     try {
       if (call.campaign_id) {
         const { data: routeCampaign } = await admin
           .from('research_campaigns').select('script_id').eq('id', call.campaign_id).maybeSingle();
         if (routeCampaign?.script_id) {
           const { data: routeScript } = await admin
-            .from('research_scripts').select('id, slug').eq('id', routeCampaign.script_id).maybeSingle();
+            .from('research_scripts').select('id, slug, questions').eq('id', routeCampaign.script_id).maybeSingle();
           routedType = resolveResearchCampaignType(routeScript ?? null);
+          totalQuestions = (Array.isArray(routeScript?.questions) ? routeScript!.questions as any[] : [])
+            .filter((q: any) => q?.is_internal !== true).length;
         }
       }
     } catch (e) {
@@ -165,9 +182,18 @@ Deno.serve(async (req) => {
       routedType = null;
     }
 
+    const callResponses = (call.responses && typeof call.responses === 'object') ? call.responses as Record<string, any> : {};
+    const surveyProgress = {
+      answered: answeredCount,
+      total: totalQuestions,
+      ended_early: endedEarly,
+      disposition: endedEarly ? (callResponses._early_disposition ?? null) : null,
+      source: 'agent_runtime',
+    };
+
     const { data: existing } = await admin
       .from('booking_transcriptions')
-      .select('id, research_extraction, research_campaign_type')
+      .select('id, research_extraction, research_campaign_type, survey_progress')
       .eq('booking_id', booking.id)
       .maybeSingle();
 
@@ -177,6 +203,7 @@ Deno.serve(async (req) => {
         .insert({
           booking_id: booking.id,
           research_extraction: { raw_script_answers },
+          survey_progress: surveyProgress,
           ...(routedType ? { research_campaign_type: routedType, retag_source: 'script_id_route' } : {}),
         });
       if (tInsErr) {
@@ -194,6 +221,7 @@ Deno.serve(async (req) => {
         .from('booking_transcriptions')
         .update({
           research_extraction: nextExtraction,
+          ...(existing.survey_progress == null ? { survey_progress: surveyProgress } : {}),
           ...(routedType && routedType !== 'move_out_survey' &&
               (existing.research_campaign_type == null || existing.research_campaign_type === 'move_out_survey')
             ? { research_campaign_type: routedType, retag_source: 'script_id_route' } : {}),
