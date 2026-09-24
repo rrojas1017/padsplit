@@ -18,6 +18,9 @@ Deno.serve(async (req) => {
     return new Response("ok", { headers: corsHeaders });
   }
 
+  const auth = await requireUser(req, MANAGERS);
+  if (!auth.ok) return auth.response;
+
   try {
     const { insight_id } = await req.json();
 

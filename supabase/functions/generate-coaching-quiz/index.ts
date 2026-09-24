@@ -14,6 +14,9 @@ serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
+  const auth = await requireUser(req, STAFF);
+  if (!auth.ok) return auth.response;
+
   try {
     const { bookingId, quizType } = await req.json();
 
@@ -28,6 +31,14 @@ serve(async (req) => {
       return new Response(
         JSON.stringify({ error: 'quizType must be jeff_coaching or katty_qa' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    const canSee = await canSeeBooking(auth.ctx, bookingId);
+    if (!canSee) {
+      return new Response(
+        JSON.stringify({ error: 'Booking not found' }),
+        { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 

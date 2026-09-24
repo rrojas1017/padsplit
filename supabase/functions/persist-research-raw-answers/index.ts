@@ -11,25 +11,13 @@ Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders });
 
   try {
-    const authHeader = req.headers.get('Authorization') || '';
-    const token = authHeader.replace(/^Bearer\s+/i, '');
-    if (!token) {
-      return new Response(JSON.stringify({ error: 'Unauthorized' }), {
-        status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
+    const auth = await requireUser(req, RESEARCH);
+    if (!auth.ok) return auth.response;
 
     const admin = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
     );
-
-    const { data: userData, error: userErr } = await admin.auth.getUser(token);
-    if (userErr || !userData?.user) {
-      return new Response(JSON.stringify({ error: 'Unauthorized' }), {
-        status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
 
     const body = await req.json().catch(() => ({}));
     const { research_call_id, raw_script_answers } = body || {};
@@ -42,6 +30,19 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ error: 'raw_script_answers must be an object' }), {
         status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
+    }
+
+    if (auth.ctx.role === 'researcher') {
+      const { data: rc, error: rcErr } = await admin
+        .from('research_calls')
+        .select('researcher_id')
+        .eq('id', research_call_id)
+        .maybeSingle();
+      if (rcErr || !rc || rc.researcher_id !== auth.ctx.userId) {
+        return new Response(JSON.stringify({ error: 'Forbidden' }), {
+          status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
     }
 
     // Find the booking for this research call.
