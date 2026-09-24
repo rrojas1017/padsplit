@@ -2,10 +2,7 @@ import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-};
+import { requireUserOrInternal, canSeeBooking, jsonResponse, corsHeaders, MANAGERS } from "../_shared/auth.ts";
 
 // Types for call type configuration
 interface CallTypeConfig {
@@ -753,6 +750,9 @@ serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
+  const auth = await requireUserOrInternal(req, MANAGERS);
+  if (!auth.ok) return auth.response;
+
   try {
     const { bookingId } = await req.json();
     
@@ -760,28 +760,18 @@ serve(async (req) => {
       throw new Error('Missing bookingId');
     }
 
+    if (!(await canSeeBooking(auth.ctx, bookingId))) {
+      return jsonResponse(404, { error: 'Booking not found' });
+    }
+
     const lovableApiKey = Deno.env.get('LOVABLE_API_KEY');
     const supabaseUrl = Deno.env.get('SUPABASE_URL');
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
 
-    // Detect if triggered by super_admin
-    let triggeredByUserId: string | null = null;
-    let isInternal = false;
-    const authHeader = req.headers.get('Authorization');
-    if (authHeader) {
-      try {
-        const anonClient = createClient(supabaseUrl!, Deno.env.get('SUPABASE_ANON_KEY')!);
-        const token = authHeader.replace('Bearer ', '');
-        const { data: { user } } = await anonClient.auth.getUser(token);
-        if (user) {
-          triggeredByUserId = user.id;
-          const adminClient = createClient(supabaseUrl!, supabaseServiceKey!);
-          const { data: roleData } = await adminClient.from('user_roles').select('role').eq('user_id', user.id).single();
-          isInternal = roleData?.role === 'super_admin';
-          if (isInternal) console.log('[Internal] Request triggered by super_admin, marking costs as internal');
-        }
-      } catch (e) { console.log('[Internal] Could not determine user role:', e); }
-    }
+    // Attribution from the verified caller
+    const triggeredByUserId: string | null = auth.ctx.kind === 'user' ? auth.ctx.userId : null;
+    const isInternal = auth.ctx.kind === 'user' && auth.ctx.role === 'super_admin';
+    if (isInternal) console.log('[Internal] Request triggered by super_admin, marking costs as internal');
     
     if (!lovableApiKey) {
       throw new Error('LOVABLE_API_KEY not configured');
