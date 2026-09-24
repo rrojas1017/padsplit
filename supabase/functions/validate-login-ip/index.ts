@@ -1,9 +1,6 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version',
-};
+import { requireUser, ANY_ROLE, corsHeaders } from '../_shared/auth.ts';
 
 // CIDR matching utility
 function ipToBigInt(ip: string): bigint {
@@ -87,46 +84,15 @@ Deno.serve(async (req) => {
     // Create service role client for database queries
     const supabaseAdmin = createClient(supabaseUrl, supabaseServiceRoleKey);
     
-    // Extract the JWT token from authorization header
-    const authHeader = req.headers.get('authorization');
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    const auth = await requireUser(req, ANY_ROLE, { allowNoRole: true, allowInactive: true });
+    if (!auth.ok) {
       return new Response(
-        JSON.stringify({ blocked: false, message: 'No auth token, skipping IP check' }),
-        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        JSON.stringify({ blocked: false, message: 'Unauthenticated, skipping IP check' }),
+        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
-    
-    const token = authHeader.replace('Bearer ', '');
-    
-    // Decode JWT to get user ID (without verification - Supabase handles this)
-    const payloadBase64 = token.split('.')[1];
-    const payload = JSON.parse(atob(payloadBase64));
-    const userId = payload.sub;
-    
-    if (!userId) {
-      console.error('No user ID in token');
-      return new Response(
-        JSON.stringify({ blocked: false, error: 'Invalid token format' }),
-        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-    
-    // Get user's role
-    const { data: roleData, error: roleError } = await supabaseAdmin
-      .from('user_roles')
-      .select('role')
-      .eq('user_id', userId)
-      .maybeSingle();
-    
-    if (roleError) {
-      console.error('Error fetching user role:', roleError);
-      return new Response(
-        JSON.stringify({ blocked: false, error: 'Failed to fetch user role' }),
-        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-    
-    const userRole = roleData?.role || 'agent';
+    const userId = auth.ctx.userId;
+    const userRole = auth.ctx.role ?? 'agent';
     
     // Extract client IP early for logging
     const clientIp = extractClientIp(req);
