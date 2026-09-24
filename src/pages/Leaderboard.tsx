@@ -17,7 +17,7 @@ export default function Leaderboard() {
   const { agents, isLoading: agentsLoading } = useAgents();
   const [dateRange, setDateRange] = useSessionState<DateRangeFilterType>('leaderboard:dateRange', 'today');
   const [customDates, setCustomDates] = useSessionState<CalcCustomDateRange | undefined>('leaderboard:customDates', undefined);
-  const [selectedSiteId, setSelectedSiteId] = useSessionState<string | null>('leaderboard:site', null);
+  const [selectedSiteId, setSelectedSiteId] = useState<string | null>(null);
 
   const handleRangeChange = (range: DateFilterValue, dates?: CustomDateRange) => {
     setDateRange(range as DateRangeFilterType);
