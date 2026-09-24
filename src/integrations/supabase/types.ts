@@ -3179,6 +3179,17 @@ export type Database = {
         }[]
       }
       archive_old_api_costs: { Args: never; Returns: Json }
+      billing_cost_summary: {
+        Args: { p_end: string; p_start: string }
+        Returns: {
+          cost_usd: number
+          edge_function: string
+          rows: number
+          service_provider: string
+          service_type: string
+          source: string
+        }[]
+      }
       can_view_booking: { Args: { booking_agent_id: string }; Returns: boolean }
       claim_booking_for_transcription: {
         Args: { p_booking_id: string }
