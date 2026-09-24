@@ -408,6 +408,24 @@ export type Database = {
         }
         Relationships: []
       }
+      api_rate_limit_windows: {
+        Row: {
+          client_id: string
+          hits: number
+          window_start: string
+        }
+        Insert: {
+          client_id: string
+          hits?: number
+          window_start: string
+        }
+        Update: {
+          client_id?: string
+          hits?: number
+          window_start?: string
+        }
+        Relationships: []
+      }
       billing_invoices: {
         Row: {
           client_id: string
@@ -3149,6 +3167,14 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      api_rate_limit_hit: {
+        Args: { p_client_id: string; p_limit: number }
+        Returns: {
+          allowed: boolean
+          remaining: number
+          reset_at: string
+        }[]
+      }
       archive_old_api_costs: { Args: never; Returns: Json }
       can_view_booking: { Args: { booking_agent_id: string }; Returns: boolean }
       claim_booking_for_transcription: {
