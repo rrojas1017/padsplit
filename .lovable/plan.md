@@ -1,57 +1,235 @@
-# Security Fix P6: Authorize 6 AI/utility functions
+# SECURITY FIX P7 — Authorization on 5 user-facing AI/report functions
 
-Scope: the 6 functions below, `_shared/url.ts`, transcribe-call (helper move only), and two small frontend edits. No SQL, RLS, migrations, config.toml, prompts, models, cost logic or other functions.
+## Goal
+These 5 edge functions are reachable today with just the public anon key (or,
+for `persist-research-raw-answers`, any logged-in user regardless of role) and
+each triggers paid Gemini calls or writes survey data. Add the shared
+authorization guard right after the `OPTIONS` preflight, replacing each local
+`corsHeaders` with the shared import from `_shared/auth.ts`. Keep request /
+response shapes unchanged; only add `401`/`403`/`404`.
 
-Pattern in each function: delete the local `const corsHeaders = {...}`, import from `../_shared/auth.ts`, and add `const auth = await <guard>; if (!auth.ok) return auth.response;` right after the OPTIONS return.
+## Shared module used
+`supabase/functions/_shared/auth.ts` exports: `corsHeaders`, `requireUser`,
+`canSeeBooking`, and the role arrays `STAFF`, `MANAGERS`, `RESEARCH`. `requireUser`
+resolves the JWT via `auth.getUser` (never `atob`), loads roles from
+`user_roles` (highest wins), rejects no-role and inactive profiles, and returns
+`{ ok, ctx }` where `ctx.userId`, `ctx.role` are available for the `user` kind.
+`canSeeBooking(ctx, bookingId)` queries `bookings` via the caller's RLS-scoped
+client and returns false when the caller cannot see the booking.
 
-## Per function
+App callers already send the logged-in user's JWT through
+`supabase.functions.invoke(...)`; no `src/**` changes are needed.
 
-| # | Function | Local corsHeaders removed | Guard inserted after | config.toml (unchanged) |
-|---|---|---|---|---|
-| 1 | backfill-markets-from-transcriptions | lines 4-7 | line 130: `requireUser(req, ADMINS)` | false |
-| 2 | backfill-pricing-data | lines 4-7 | line 86: `requireUser(req, ADMINS)` | false |
-| 3 | aggregate-market-data | lines 3-6 | line 66: `requireUser(req, ADMINS)` | true |
-| 4 | compare-stt-providers | lines 5-8 | line 144: `requireUser(req, ADMINS)` | true |
-| 5 | parse-research-script | lines 3-7 | line 12: `requireUser(req, ADMINS)` | false |
-| 6 | translate-script | lines 3-6 | line 9: custom guard (below) | false |
+## config.toml
+No changes. Existing values stay as-is, including
+`persist-research-raw-answers` (`verify_jwt = false`) — the in-function
+`requireUser` is the real guard, matching the P1 pattern.
 
-### 4. compare-stt-providers (extra)
-- After the `!kixieUrl` check (lines 149-151), add: `if (!isAllowedRecordingUrl(kixieUrl)) return jsonResponse(400, { error: 'Recording URL not allowed' });`
-- `downloadAudio` (line 120): `fetch(kixieUrl, {...})` becomes `safeRecordingFetch(kixieUrl, {...})`, headers unchanged.
-- Imports: `isAllowedRecordingUrl, safeRecordingFetch` from `../_shared/url.ts`.
+---
 
-### 6. translate-script (custom guard)
-- Replace line 1 import with `serve` + `requireUser, adminClient, jsonResponse, corsHeaders, RESEARCH` from `../_shared/auth.ts`.
-- Line 12: parse the body once as `body`, then take `{ intro, closing, rebuttal, questions, targetLanguage, scriptToken }`. Body is read before the guard because the token lives in it.
-- Size cap: if `JSON.stringify({intro, closing, rebuttal, questions}).length > 100000`, return 413 `{error:'Input too large'}`.
-- Access check:
-  - If `scriptToken` is a non-empty string: look up `script_access_tokens` with `adminClient()` (`select id, is_active, expires_at` `.eq('token', scriptToken).maybeSingle()`). The row must exist, `is_active` must be true, and `expires_at` must be null or in the future. Otherwise return 401.
-  - Otherwise: `requireUser(req, RESEARCH)`. If that fails, return its 401/403.
-- Order: OPTIONS, then parse (bad JSON goes to the existing catch and returns 500, same as today), then size cap, then access check, then the unchanged logic.
-- The token is never logged.
+## 1. generate-coaching-quiz — `requireUser(STAFF)` + `canSeeBooking`
+Caller: `CoachingQuizModal.tsx` (agents on their own calls).
 
-## _shared/url.ts
-- Line 2: add `".amazonaws.com", ".cloudfront.net", ".googleapis.com"` to `DEFAULT_SUFFIXES`. The https-only, no-IP and no-.local checks stay as they are.
-- New export `safeRecordingFetch(url, init)`: a byte-identical move of transcribe-call lines 13-30 (manual redirect, max 3 hops, every hop checked with `isAllowedRecordingUrl`, same error messages).
+**Replace lines 1–7** (imports + local corsHeaders):
+```ts
+import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-## transcribe-call (helper move only)
-- Delete lines 13-30, the local `safeRecordingFetch`.
-- Line 11 becomes `import { isAllowedRecordingUrl, safeRecordingFetch } from "../_shared/url.ts";`.
-- Call sites at lines 825 and 1574 are unchanged. Behaviour stays identical except for the wider suffix list, which is item 7 and applies to both functions.
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+};
+```
+with:
+```ts
+import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { corsHeaders, requireUser, canSeeBooking, STAFF } from "../_shared/auth.ts";
+```
 
-## Frontend (only allowed edits)
-- `src/hooks/useScriptTranslation.ts`: `translateScript(script, targetLanguage, scriptToken?: string)`. The invoke body (lines 41-47) adds `...(scriptToken ? { scriptToken } : {})`. `translateAndStore` is unchanged, because signed-in Script Builder users pass the role check.
-- `src/pages/PublicScriptView.tsx` line 439: `translateScript(script, 'es', token)`.
+**Insert after the OPTIONS block** (after line 19):
+```ts
+  const auth = await requireUser(req, STAFF);
+  if (!auth.ok) return auth.response;
+```
 
-## Deploy and test
-Deploy these 7 functions: the 6 above plus transcribe-call. Then send anon-key POSTs:
-- Functions 1-5 with `{}`: expect 401.
-- translate-script with `{}`: expect 401.
-- translate-script with `{"scriptToken":"fake"}`: expect 401.
+**Insert after the `quizType` validation block** (after line 36, before
+`const supabaseUrl = ...`), using the booking the caller just supplied:
+```ts
+    const canSee = await canSeeBooking(auth.ctx, bookingId);
+    if (!canSee) {
+      return new Response(
+        JSON.stringify({ error: 'Booking not found' }),
+        { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+```
 
-Nothing paid can start in these tests, because every check runs before any AI call or download.
+Everything else (transcription fetch, AI call, JSON parsing, responses) unchanged.
 
-## Notes
-- Existing app callers are signed-in admins (Market Intelligence, Settings AI management, Script Builder), or public survey pages that hold a valid token.
-- A public survey page whose token was deactivated or has expired will lose on-the-fly translation, with the existing "Proceeding in English" message. Scripts marked ES: Ready don't call the function at all.
-- aggregate-market-data and compare-stt-providers stay `verify_jwt=true`, as requested.
+---
+
+## 2. generate-executive-brief — `requireUser(MANAGERS)`
+Caller: `generate-executive-docx.ts` / `generate-executive-pdf.ts` (report
+exports on Research Insights — super_admin/admin/supervisor).
+
+**Replace lines 1–7** (imports + local corsHeaders):
+```ts
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers":
+    "authorization, x-client-info, apikey, content-type",
+};
+```
+with:
+```ts
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { corsHeaders, requireUser, MANAGERS } from "../_shared/auth.ts";
+```
+
+**Insert after the OPTIONS block** (after line 24):
+```ts
+  const auth = await requireUser(req, MANAGERS);
+  if (!auth.ok) return auth.response;
+```
+
+No other change.
+
+---
+
+## 3. generate-pe-executive-brief — `requireUser(MANAGERS)`
+Caller: `generate-pe-docx.ts` (Payment Experience report export — managers).
+
+**Replace lines 7–10** (local corsHeaders):
+```ts
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+};
+```
+with:
+```ts
+import { corsHeaders, requireUser, MANAGERS } from "../_shared/auth.ts";
+```
+(import placed where the `const corsHeaders` block was; the top-of-file comment
+lines 1–5 are untouched.)
+
+**Insert after the OPTIONS line** (after line 44):
+```ts
+  const auth = await requireUser(req, MANAGERS);
+  if (!auth.ok) return auth.response;
+```
+
+No other change.
+
+---
+
+## 4. generate-audience-survey-executive-brief — `requireUser(MANAGERS)`
+Caller: `generateAudienceSurveyReport.ts` (Audience Survey report export — managers).
+
+**Replace lines 3–6** (local corsHeaders):
+```ts
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+};
+```
+with:
+```ts
+import { corsHeaders, requireUser, MANAGERS } from "../_shared/auth.ts";
+```
+
+**Insert after the OPTIONS line** (after line 27):
+```ts
+  const auth = await requireUser(req, MANAGERS);
+  if (!auth.ok) return auth.response;
+```
+
+No other change.
+
+---
+
+## 5. persist-research-raw-answers — `requireUser(RESEARCH)` + researcher ownership check
+Caller: `useResearchCalls.ts` `LogSurveyCall` (researchers and managers).
+
+`RESEARCH = ["super_admin", "admin", "supervisor", "researcher"]`. Managers may
+write any call. A `researcher` may only write a call whose
+`research_calls.researcher_id === auth.ctx.userId`.
+
+**Replace lines 7–12** (import + local corsHeaders):
+```ts
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+};
+```
+with:
+```ts
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { corsHeaders, requireUser, RESEARCH } from '../_shared/auth.ts';
+```
+
+**Replace lines 18–36** (the manual `Authorization`/`getUser` block):
+```ts
+    const authHeader = req.headers.get('Authorization') || '';
+    const token = authHeader.replace(/^Bearer\s+/i, '');
+    if (!token) {
+      return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+        status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    const admin = createClient(
+      Deno.env.get('SUPABASE_URL') ?? '',
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
+    );
+
+    const { data: userData, error: userErr } = await admin.auth.getUser(token);
+    if (userErr || !userData?.user) {
+      return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+        status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+```
+with:
+```ts
+    const auth = await requireUser(req, RESEARCH);
+    if (!auth.ok) return auth.response;
+
+    const admin = createClient(
+      Deno.env.get('SUPABASE_URL') ?? '',
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
+    );
+```
+
+**Insert after the `raw_script_answers` validation block** (after line 49,
+before the booking lookup at line 52) — researcher ownership check:
+```ts
+    if (auth.ctx.role === 'researcher') {
+      const { data: rc, error: rcErr } = await admin
+        .from('research_calls')
+        .select('researcher_id')
+        .eq('id', research_call_id)
+        .maybeSingle();
+      if (rcErr || !rc || rc.researcher_id !== auth.ctx.userId) {
+        return new Response(JSON.stringify({ error: 'Forbidden' }), {
+          status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+    }
+```
+
+Everything else (booking lookup, transcription merge, update, responses) unchanged.
+
+---
+
+## Out of scope
+No changes to `src/**`, SQL, RLS, migrations, other functions, prompts, models,
+timeouts, or cost logic. `config.toml` unchanged.
+
+## Verification after implementation
+Deploy the 5 functions, then anon-key `POST {}` each — expected `401 {"error":"Unauthorized"}` for all 5.
