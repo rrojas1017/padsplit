@@ -26,7 +26,15 @@ serve(async (req) => {
     let jobId = body.jobId || null;
 
     // Initial call (no jobId): create the job. Auth is enforced above on every call.
+    // Only a signed-in super_admin may start a new job; internal callers must supply an existing jobId.
     if (!jobId) {
+      if (auth.ctx.kind !== 'user') {
+        return new Response(JSON.stringify({ error: 'jobId required for internal calls' }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      }
+
 
       // Count remaining before creating job
       let initialRemaining = 0;
@@ -61,7 +69,7 @@ serve(async (req) => {
           start_date: startDate,
           end_date: endDate,
           remaining: initialRemaining,
-          created_by: user.id,
+          created_by: auth.ctx.kind === 'user' ? auth.ctx.userId : null,
           started_at: new Date().toISOString(),
         })
         .select('id')
