@@ -82,41 +82,10 @@ export default function Settings() {
   usePageTracking('view_settings');
   const { theme, toggleTheme } = useTheme();
   const { hasRole } = useAuth();
-  const [isGeneratingAudio, setIsGeneratingAudio] = useState(false);
   const [isRetryingTranscriptions, setIsRetryingTranscriptions] = useState(false);
   const [failedTranscriptionCount, setFailedTranscriptionCount] = useState<number | null>(null);
   
   const canAccessAIManagement = hasRole(['super_admin', 'admin']);
-
-  const handleBatchGenerateAudio = async () => {
-    setIsGeneratingAudio(true);
-    toast.info('Starting batch audio generation...', { duration: 5000 });
-    
-    try {
-      const { data, error } = await supabase.functions.invoke('batch-regenerate-coaching');
-      
-      if (error) {
-        throw error;
-      }
-      
-      if (data?.results) {
-        const { total, succeeded, failed } = data.results;
-        if (total === 0) {
-          toast.info('No bookings found needing coaching audio');
-        } else {
-          toast.success(
-            `Batch complete: ${succeeded} of ${total} audio files generated${failed > 0 ? `, ${failed} failed` : ''}`,
-            { duration: 10000 }
-          );
-        }
-      }
-    } catch (error) {
-      console.error('Batch audio generation error:', error);
-      toast.error('Failed to generate coaching audio. Please try again.');
-    } finally {
-      setIsGeneratingAudio(false);
-    }
-  };
 
   // Check for failed transcriptions on mount
   useEffect(() => {
@@ -387,40 +356,6 @@ export default function Settings() {
                   </div>
                 </div>
                 <ScriptList />
-              </div>
-
-              {/* Batch Coaching Audio Generation */}
-              <div className="bg-card rounded-xl border border-border p-6 shadow-card">
-                <div className="flex items-center gap-3 mb-6">
-                  <Volume2 className="w-5 h-5 text-accent" />
-                  <div>
-                    <h3 className="text-lg font-semibold text-foreground">Coaching Audio Generation</h3>
-                    <p className="text-sm text-muted-foreground">Generate missing voice coaching for all transcribed calls</p>
-                  </div>
-                </div>
-                <div className="space-y-4">
-                  <p className="text-sm text-muted-foreground">
-                    This will generate coaching audio for all bookings that have been transcribed and analyzed 
-                    but are missing voice coaching feedback. Processing may take several minutes depending on the number of bookings.
-                  </p>
-                  <Button 
-                    onClick={handleBatchGenerateAudio}
-                    disabled={isGeneratingAudio}
-                    className="gap-2"
-                  >
-                    {isGeneratingAudio ? (
-                      <>
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                        Generating Audio...
-                      </>
-                    ) : (
-                      <>
-                        <Zap className="w-4 h-4" />
-                        Generate Missing Coaching Audio
-                      </>
-                    )}
-                  </Button>
-                </div>
               </div>
 
               {/* Batch Retry Failed Transcriptions */}
