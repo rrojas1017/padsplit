@@ -281,8 +281,8 @@ async function selectLLMProvider(
     const deepseekSettings = settings?.find((s: any) => s.provider_name === 'deepseek');
     const geminiSettings = settings?.find((s: any) => s.provider_name === 'lovable_ai');
 
-    const deepseekWeight = deepseekSettings?.weight || 0;
-    const geminiWeight = geminiSettings?.weight || 100;
+    const deepseekWeight = deepseekSettings?.weight ?? 0;
+    const geminiWeight = geminiSettings?.weight ?? 100;
 
     // Check fallback conditions from DeepSeek's api_config
     const fallbackConditions: string[] = deepseekSettings?.api_config?.use_gemini_fallback_for || [];
@@ -307,14 +307,14 @@ async function selectLLMProvider(
 
     if (geminiWeight === 0) {
       console.log('[LLM A/B] Gemini weight is 0, using DeepSeek');
-      return { provider: 'deepseek', model: 'deepseek-chat' };
+      return { provider: 'deepseek', model: 'deepseek-v4-flash' };
     }
 
     // Random selection based on weights
     const random = Math.random() * totalWeight;
     if (random < deepseekWeight) {
       console.log(`[LLM A/B] Selected DeepSeek (weight: ${deepseekWeight}/${totalWeight})`);
-      return { provider: 'deepseek', model: 'deepseek-chat' };
+      return { provider: 'deepseek', model: 'deepseek-v4-flash' };
     }
 
     console.log(`[LLM A/B] Selected Gemini (weight: ${geminiWeight}/${totalWeight})`);
@@ -348,7 +348,7 @@ async function callDeepSeekForAnalysis(
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      model: 'deepseek-chat',
+      model: 'deepseek-v4-flash',
       messages: [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userPrompt },
@@ -374,7 +374,7 @@ async function callDeepSeekForAnalysis(
 
   return {
     content,
-    model: result.model || 'deepseek-chat',
+    model: result.model || 'deepseek-v4-flash',
     inputTokens,
     outputTokens,
     latencyMs,
@@ -908,7 +908,7 @@ async function fetchCallTypeConfig(
       .from('company_knowledge')
       .select('title, content, category')
       .eq('is_active', true)
-      .contains('call_type_ids', [callTypeId])
+      .or(`call_type_ids.is.null,call_type_ids.cs.{${callTypeId}}`)
       .order('priority', { ascending: false });
 
     if (knowledgeError) {
@@ -958,11 +958,44 @@ async function fetchCallTypeConfig(
   }
 }
 
+// Global company knowledge (call_type_ids IS NULL), used when the booking has no call type
+async function fetchGlobalKnowledge(
+  supabase: any
+): Promise<Array<{ title: string; content: string; category: string }>> {
+  try {
+    const { data, error } = await supabase
+      .from('company_knowledge')
+      .select('title, content, category')
+      .eq('is_active', true)
+      .is('call_type_ids', null)
+      .order('priority', { ascending: false });
+    if (error) {
+      console.log('[Config] Error fetching global knowledge:', error.message);
+      return [];
+    }
+    return data || [];
+  } catch {
+    return [];
+  }
+}
+
 // Build dynamic prompt based on configuration
-function buildDynamicPrompt(transcription: string, config: CallTypeConfig | null, isNonBooking: boolean = false): string {
+function buildDynamicPrompt(
+  transcription: string,
+  config: CallTypeConfig | null,
+  isNonBooking: boolean = false,
+  globalKnowledge: Array<{ title: string; content: string; category: string }> = []
+): string {
   // Default prompt if no config
   if (!config) {
-    return buildDefaultPrompt(transcription, isNonBooking);
+    const base = buildDefaultPrompt(transcription, isNonBooking);
+    if (globalKnowledge.length === 0) return base;
+    return base + `
+
+Company knowledge (use this context when analyzing):
+${globalKnowledge.map(k => `
+[${(k.category || 'general').toUpperCase()}] ${k.title}:
+${k.content}`).join('\n')}`;
   }
 
   const sections: string[] = [];
@@ -1508,6 +1541,7 @@ async function processTranscription(bookingId: string, kixieUrl: string, skipTts
     const recordType = bookingData?.record_type || null;
     const isResearch = recordType === 'research';
     siteId = (bookingData?.agents as any)?.site_id || null;
+    agentId = bookingData?.agent_id || null;
     const bookingStatus = bookingData?.status || null;
     const isNonBooking = bookingStatus === 'Non Booking';
     console.log(`[Background] Booking call_type_id: ${callTypeId || 'none'}, agent_id: ${agentId}, site_id: ${siteId}, status: ${bookingStatus}`);
@@ -1738,7 +1772,8 @@ async function processTranscription(bookingId: string, kixieUrl: string, skipTts
     }
     // Step 3: Generate summary, key points, and agent feedback with dynamic prompt
     console.log('[Background] Generating AI summary and agent feedback...');
-    const summaryPrompt = buildDynamicPrompt(transcription, config, isNonBooking);
+    const globalKnowledge = config ? [] : await fetchGlobalKnowledge(supabase);
+    const summaryPrompt = buildDynamicPrompt(transcription, config, isNonBooking, globalKnowledge);
     
     // Hybrid LLM selection: choose provider based on weights and fallback conditions
     const llmSelection = await selectLLMProvider(supabase, bookingStatus, callDurationSeconds);
@@ -1748,7 +1783,57 @@ async function processTranscription(bookingId: string, kixieUrl: string, skipTts
     let estimatedInputTokens = 0;
     let estimatedOutputTokens = 0;
 
+    let llmProviderUsed: LLMProviderName = llmSelection.provider;
+
+    // Gemini (Lovable AI) analysis — shared by the gemini provider and the DeepSeek fallback
+    const runGeminiAnalysis = async (geminiModel: string, geminiFallbackReason?: string) => {
+      // Use Gemini (Lovable AI) for analysis
+      const aiResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${lovableApiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: geminiModel,
+          messages: [
+            { role: 'user', content: summaryPrompt }
+          ],
+        }),
+      });
+
+      if (!aiResponse.ok) {
+        const errorText = await aiResponse.text();
+        console.error('[Background] Lovable AI error:', errorText);
+        throw new Error(`AI summary error: ${aiResponse.status}`);
+      }
+
+      const aiResult = await aiResponse.json();
+      aiContent = aiResult.choices?.[0]?.message?.content || '';
+      estimatedInputTokens = Math.ceil(summaryPrompt.length / 4);
+      estimatedOutputTokens = Math.ceil(aiContent.length / 4);
+
+      // Log Lovable AI cost
+      logApiCost(supabase, {
+        service_provider: 'lovable_ai',
+        service_type: 'ai_analysis',
+        edge_function: 'transcribe-call',
+        booking_id: bookingId,
+        agent_id: agentId || undefined,
+        site_id: siteId || undefined,
+        input_tokens: estimatedInputTokens,
+        output_tokens: estimatedOutputTokens,
+        metadata: { 
+          model: geminiModel, 
+          transcription_length: transcription.length, 
+          call_duration_seconds: callDurationSeconds,
+          fallback_reason: geminiFallbackReason
+        }
+      });
+    };
+
     if (llmSelection.provider === 'deepseek') {
+      try {
       // Use DeepSeek for analysis with provider-specific prompt enhancements
       let systemPrompt = 'You are an expert at analyzing sales call transcriptions. Always respond with valid JSON only, no markdown.';
       
@@ -1783,50 +1868,20 @@ async function processTranscription(bookingId: string, kixieUrl: string, skipTts
           prompt_enhanced: !!enhancements
         }
       });
-    } else {
-      // Use Gemini (Lovable AI) for analysis
-      const aiResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${lovableApiKey}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          model: llmSelection.model,
-          messages: [
-            { role: 'user', content: summaryPrompt }
-          ],
-        }),
-      });
-
-      if (!aiResponse.ok) {
-        const errorText = await aiResponse.text();
-        console.error('[Background] Lovable AI error:', errorText);
-        throw new Error(`AI summary error: ${aiResponse.status}`);
+        // Validate the DeepSeek output parses as JSON (same fence stripping as below)
+        let probe = (aiContent || '').trim();
+        if (probe.startsWith('```json')) probe = probe.slice(7);
+        if (probe.startsWith('```')) probe = probe.slice(3);
+        if (probe.endsWith('```')) probe = probe.slice(0, -3);
+        JSON.parse(probe.trim());
+      } catch (dsErr) {
+        console.error('[LLM] DeepSeek failed, falling back to Gemini:', dsErr instanceof Error ? dsErr.message : 'unknown');
+        llmProviderUsed = 'lovable_ai';
+        aiContent = '';
+        await runGeminiAnalysis(selectAnalysisModel(callDurationSeconds), 'deepseek_error');
       }
-
-      const aiResult = await aiResponse.json();
-      aiContent = aiResult.choices?.[0]?.message?.content || '';
-      estimatedInputTokens = Math.ceil(summaryPrompt.length / 4);
-      estimatedOutputTokens = Math.ceil(aiContent.length / 4);
-
-      // Log Lovable AI cost
-      logApiCost(supabase, {
-        service_provider: 'lovable_ai',
-        service_type: 'ai_analysis',
-        edge_function: 'transcribe-call',
-        booking_id: bookingId,
-        agent_id: agentId || undefined,
-        site_id: siteId || undefined,
-        input_tokens: estimatedInputTokens,
-        output_tokens: estimatedOutputTokens,
-        metadata: { 
-          model: llmSelection.model, 
-          transcription_length: transcription.length, 
-          call_duration_seconds: callDurationSeconds,
-          fallback_reason: llmSelection.fallbackReason
-        }
-      });
+    } else {
+      await runGeminiAnalysis(llmSelection.model, llmSelection.fallbackReason);
     }
 
     console.log('[Background] AI response received');
@@ -2012,7 +2067,7 @@ Be generous in matching — if the topic of a question was discussed even partia
                 site_id: siteId || undefined,
                 input_tokens: Math.ceil(surveyPrompt.length / 4),
                 output_tokens: Math.ceil(surveyContent.length / 4),
-                metadata: { model: 'google/gemini-2.5-flash', campaign: campaignName || 'fallback' }
+                metadata: { model: 'google/gemini-2.5-flash', campaign: campaignId || 'unknown' }
               });
             } else {
               console.error('[Background] Survey progress AI call failed:', surveyAiResponse.status);
@@ -2068,7 +2123,7 @@ Be generous in matching — if the topic of a question was discussed even partia
         stt_latency_ms: sttLatencyMs,
         stt_word_count: sttWordCount,
         stt_confidence_score: sttConfidenceScore,
-        llm_provider: llmSelection.provider,
+        llm_provider: llmProviderUsed,
         ...(surveyProgress ? { survey_progress: surveyProgress } : {}),
         updated_at: new Date().toISOString(),
       }, {
