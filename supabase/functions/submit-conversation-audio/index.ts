@@ -21,6 +21,9 @@ function isDialerKeyConflict(e: any): boolean {
     /research_calls_campaign_dialer_call_key/.test(`${e?.message ?? ''} ${e?.details ?? ''}`);
 }
 
+const isBookingCallConflict = (e: any) =>
+  e?.code === '23505' && /bookings_research_call_id_key/.test(`${e?.message ?? ''} ${e?.details ?? ''}`);
+
 async function sha256Hex(text: string): Promise<string> {
   const encoder = new TextEncoder();
   const data = encoder.encode(text);
