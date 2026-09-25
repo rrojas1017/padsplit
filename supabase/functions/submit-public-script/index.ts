@@ -758,6 +758,22 @@ Deno.serve(async (req) => {
     };
     const createNew = async (outcome: string): Promise<Response | 'existing'> => {
       if (!dialerUid) {
+        // CR-007: recording-first — adopt the recording row for the same lead + agent (last 2 h)
+        if (dialerLead && dialerAgent) {
+          const { data: recRows, error: recErr } = await admin
+            .from('research_calls')
+            .select(DIALER_SELECT)
+            .eq('campaign_id', campaign.id)
+            .neq('caller_type', 'public')
+            .eq('dialer_agent_user', dialerAgent)
+            .eq('dialer_lead_id', dialerLead)
+            .gte('created_at', new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString())
+            .is('responses->>_submission_id', null)
+            .limit(10);
+          if (recErr) console.error('submit-public-script: recording lookup failed', recErr.message);
+          const matches = ((recRows ?? []) as any[]).filter((r) => !phoneMismatch(r));
+          if (matches.length === 1) return adopt(matches[0], outcome);
+        }
         const { data, error } = await insertRow(outcome, false);
         if (data) return finishNew(data.id, outcome, false);
         return insertFailure(error);
