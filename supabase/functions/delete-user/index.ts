@@ -62,16 +62,32 @@ Deno.serve(async (req) => {
       )
     }
 
-    // Check target user's role - admins cannot delete super_admins
-    const { data: targetRoleData } = await adminClient
+    // Check target user's roles - admins cannot delete super_admins or other admins
+    const { data: targetRoleRows, error: targetRoleErr } = await adminClient
       .from('user_roles')
       .select('role')
       .eq('user_id', userId)
-      .single()
 
-    if (targetRoleData?.role === 'super_admin' && roleData.role !== 'super_admin') {
+    if (targetRoleErr) {
+      console.error('Target role lookup failed:', targetRoleErr)
+      return new Response(
+        JSON.stringify({ error: 'Failed to delete user' }),
+        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
+    }
+
+    const targetRoles = (targetRoleRows || []).map((r: { role: string }) => r.role)
+
+    if (targetRoles.includes('super_admin') && roleData.role !== 'super_admin') {
       return new Response(
         JSON.stringify({ error: 'Only super_admin can delete super_admin users' }),
+        { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
+    }
+
+    if (roleData.role === 'admin' && targetRoles.includes('admin')) {
+      return new Response(
+        JSON.stringify({ error: 'Admins cannot delete other admins' }),
         { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
     }
