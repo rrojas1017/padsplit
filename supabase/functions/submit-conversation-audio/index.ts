@@ -274,6 +274,7 @@ Deno.serve(async (req) => {
       }
       // 2. Form match: lead + agent ±30 min, else phone + agent
       if (!linkRow) {
+        // CR-007 corrective #1: match against the form's open interval
         const startMs = callStart.startedAt.getTime();
         const { data: windowRows } = await adminClient
           .from('research_calls')
@@ -281,19 +282,28 @@ Deno.serve(async (req) => {
           .eq('campaign_id', matchedCampaignId)
           .eq('caller_type', 'public')
           .eq('dialer_agent_user', dialerAgentUser)
-          .gte('created_at', new Date(startMs - 30 * 60 * 1000).toISOString())
-          .lte('created_at', new Date(startMs + 30 * 60 * 1000).toISOString())
+          .is('kixie_link', null)
+          .gte('created_at', new Date(startMs - 3 * 60 * 60 * 1000).toISOString())
+          .lte('created_at', new Date(startMs + 90 * 60 * 1000).toISOString())
           .limit(50);
         const rows = (windowRows ?? []) as any[];
-        const pool = rows.filter((r) => !r.kixie_link && phoneOk(r));
+        const MIN = 60 * 1000;
+        const inInterval = (r: any, beforeMin: number, afterMin: number) => {
+          const formStart = Date.parse(r.created_at);
+          if (!Number.isFinite(formStart)) return false;
+          const fin = r.finalized_at ? Date.parse(r.finalized_at) : NaN;
+          const formEnd = Number.isFinite(fin) ? fin : Date.now();
+          return startMs >= formStart - beforeMin * MIN && startMs <= formEnd + afterMin * MIN;
+        };
         let candidates: any[] = [];
         let kind: 'lead' | 'fallback' | null = null;
         if (leadId) {
-          const byLead = pool.filter((r) => r.dialer_lead_id === leadId);
+          const byLead = rows.filter((r) => r.dialer_lead_id === leadId && phoneOk(r) && inInterval(r, 120, 30));
           if (byLead.length > 0) { candidates = byLead; kind = 'lead'; }
         }
         if (!kind && phone10) {
-          candidates = pool.filter((r) => (phoneDigits(r.caller_phone) ?? '').slice(-10) === phone10);
+          candidates = rows.filter((r) =>
+            inInterval(r, 60, 15) && phoneOk(r) && (phoneDigits(r.caller_phone) ?? '').slice(-10) === phone10);
           kind = 'fallback';
         }
         if (candidates.length === 1) {
@@ -301,9 +311,10 @@ Deno.serve(async (req) => {
           linked = kind;
         } else if (candidates.length > 1) {
           notesSuffix = ' | unlinked (ambiguous)';
-        } else if (rows.length > 0) {
+        } else if (rows.some((r) => inInterval(r, 60, 15))) {
           notesSuffix = ' | unlinked';
         }
+        console.log(`[cr007] match kind=${linkRow ? kind : 'none'} candidates=${candidates.length}`);
       }
       if (linkRow) {
         researchCallHandled = true;
