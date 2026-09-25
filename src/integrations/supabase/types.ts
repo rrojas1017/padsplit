@@ -667,6 +667,7 @@ export type Database = {
           booking_type: string
           call_duration_seconds: number | null
           call_key_points: Json | null
+          call_started_at: string | null
           call_summary: string | null
           call_transcription: string | null
           call_type_id: string | null
@@ -712,6 +713,7 @@ export type Database = {
           booking_type: string
           call_duration_seconds?: number | null
           call_key_points?: Json | null
+          call_started_at?: string | null
           call_summary?: string | null
           call_transcription?: string | null
           call_type_id?: string | null
@@ -757,6 +759,7 @@ export type Database = {
           booking_type?: string
           call_duration_seconds?: number | null
           call_key_points?: Json | null
+          call_started_at?: string | null
           call_summary?: string | null
           call_transcription?: string | null
           call_type_id?: string | null
