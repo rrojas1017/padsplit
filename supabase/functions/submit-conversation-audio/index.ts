@@ -2,6 +2,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.49.1';
 
 import { corsHeaders, adminClient as sharedAdmin } from '../_shared/auth.ts';
 import { isAllowedRecordingUrl } from '../_shared/url.ts';
+import { resolveCallStart } from '../_shared/callTime.ts';
 
 async function sha256Hex(text: string): Promise<string> {
   const encoder = new TextEncoder();
@@ -91,7 +92,7 @@ Deno.serve(async (req) => {
 
     // --- Parse & validate body ---
     const body = await req.json();
-    const { audioUrl, dialerAgentUser, phoneNumber, campaign, type } = body;
+    const { audioUrl, dialerAgentUser, phoneNumber, campaign, type, callTimestamp } = body;
 
     const errors: string[] = [];
     if (!audioUrl || typeof audioUrl !== 'string') errors.push('audioUrl is required');
@@ -185,7 +186,12 @@ Deno.serve(async (req) => {
       }
     }
 
-    const today = new Date().toISOString().split('T')[0];
+    const callStart = resolveCallStart({ explicit: callTimestamp, audioUrl });
+    if (callTimestamp !== undefined && callStart.source !== 'body') {
+      console.log('[submit] callTimestamp invalid or out of range, falling back');
+    }
+    console.log(`[submit] call_start source=${callStart.source} date=${callStart.date}`);
+    const today = callStart.date;
 
     // --- Create research_calls row first (so booking can link to it) ---
     let researchCallId: string | null = null;
@@ -227,6 +233,7 @@ Deno.serve(async (req) => {
         communication_method: 'Phone',
         import_batch_id: 'api-submission',
         research_call_id: researchCallId,
+        call_started_at: callStart.startedAt.toISOString(),
       })
       .select('id')
       .single();
@@ -288,6 +295,9 @@ Deno.serve(async (req) => {
       bookingId: booking.id,
       researchCallId,
       resolvedCampaignType,
+      callDate: callStart.date,
+      callStartedAt: callStart.startedAt.toISOString(),
+      callDateSource: callStart.source,
       matchedAgent: { id: agent.id, name: agent.name },
     }), {
       status: 201, headers: {
