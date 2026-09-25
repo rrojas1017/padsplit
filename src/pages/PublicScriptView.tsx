@@ -173,7 +173,11 @@ export default function PublicScriptView() {
   const snapshotRef = useRef(snapshot);
   snapshotRef.current = snapshot;
   const saveSeqRef = useRef(0);
-  const inFlightRef = useRef(false);
+  const generationRef = useRef(0);
+  const requestIdRef = useRef(0);
+  const latestReqIdRef = useRef(0);
+  const inFlightRef = useRef<{ gen: number; reqId: number } | null>(null);
+  const SAVE_TIMEOUT_MS = 20000;
   const pendingRef = useRef<boolean | null>(null); // pending final flag
   const lastAttemptFinalRef = useRef(false);
   const savedJsonRef = useRef<string | null>(null);
@@ -188,7 +192,18 @@ export default function PublicScriptView() {
     if (!token) return;
     const s = snapshotRef.current;
     if (!s.submissionId) return;
-    inFlightRef.current = true;
+    const gen = generationRef.current;
+    const reqId = ++requestIdRef.current;
+    const submissionId = s.submissionId;
+    latestReqIdRef.current = reqId;
+    inFlightRef.current = { gen, reqId };
+    const isCurrent = () =>
+      gen === generationRef.current &&
+      reqId === latestReqIdRef.current &&
+      submissionId === snapshotRef.current.submissionId;
+    const ctrl = new AbortController();
+    let timedOut = false;
+    const timer = setTimeout(() => { timedOut = true; ctrl.abort(); }, SAVE_TIMEOUT_MS);
     lastAttemptFinalRef.current = final;
     saveSeqRef.current += 1;
     const json = contentJson(s);
@@ -211,8 +226,11 @@ export default function PublicScriptView() {
             ? Math.max(0, Math.round((Date.now() - startedAtRef.current) / 1000))
             : undefined,
         },
+        signal: ctrl.signal,
       });
+      if (!isCurrent()) return;
       if (fnError) {
+        if (timedOut) { setLastError('Server did not answer — retry'); setSaveState('failed'); return; }
         let status = 0;
         let body: any = null;
         if (fnError instanceof FunctionsHttpError) {
@@ -222,6 +240,7 @@ export default function PublicScriptView() {
         let reason = 'Server error';
         if (status === 429) reason = `Too many submissions from this office right now, retry in ${body?.retry_after ?? 60}s`;
         else if (status === 403 || status === 409) reason = body?.error || (status === 403 ? 'Access denied' : 'Submission expired');
+        if (!isCurrent()) return;
         setLastError(reason);
         setSaveState('failed');
       } else {
@@ -233,10 +252,14 @@ export default function PublicScriptView() {
         if (final) { terminalSavedRef.current = true; setTerminalSaved(true); }
       }
     } catch {
-      setLastError('Server error');
+      if (!isCurrent()) return;
+      setLastError(timedOut ? 'Server did not answer — retry' : 'Server error');
       setSaveState('failed');
     } finally {
-      inFlightRef.current = false;
+      clearTimeout(timer);
+      // eslint-disable-next-line no-unsafe-finally
+      if (!isCurrent()) return;
+      inFlightRef.current = null;
       const next = pendingRef.current;
       pendingRef.current = null;
       if (next !== null && !terminalSavedRef.current) void send(next);
@@ -245,7 +268,8 @@ export default function PublicScriptView() {
 
   const requestSave = useCallback((final: boolean) => {
     if (terminalSavedRef.current) return;
-    if (inFlightRef.current) {
+    const f = inFlightRef.current;
+    if (f && f.gen === generationRef.current) {
       pendingRef.current = final || pendingRef.current === true;
       return;
     }
@@ -281,6 +305,8 @@ export default function PublicScriptView() {
   }, []);
 
   const doRestart = useCallback(() => {
+    generationRef.current += 1;
+    inFlightRef.current = null;
     setPhase('start');
     setQuestionIndex(0);
     setVisitedStack([]);
@@ -308,7 +334,9 @@ export default function PublicScriptView() {
     startedAtRef.current = null;
   }, []);
 
+  const restartBlocked = !terminalSaved && (saveState === 'saving' || saveState === 'idle' || saveState === 'saved');
   const restart = () => {
+    if (restartBlocked) return;
     if (terminalSaved) doRestart();
     else setRestartConfirmOpen(true);
   };
@@ -837,10 +865,11 @@ export default function PublicScriptView() {
                     <p className="text-sm text-muted-foreground">You've walked through the full script flow.</p>
                   </>
                 )}
-                <div className="flex gap-3 justify-center">
-                  <Button onClick={restart}>
+                <div className="flex flex-col items-center gap-1">
+                  <Button onClick={restart} disabled={restartBlocked}>
                     <RotateCcw className="w-4 h-4 mr-2" /> Restart
                   </Button>
+                  {restartBlocked && <span className="text-xs text-muted-foreground">Saving…</span>}
                 </div>
               </div>
             </WizardCard>
