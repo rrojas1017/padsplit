@@ -37,5 +37,10 @@ export function ProtectedRoute({ children, allowedRoles }: ProtectedRouteProps) 
     return <Navigate to="/dashboard" replace />;
   }
 
-  return <>{children}</>;
+  return (
+    <>
+      {children}
+      {mustChangePassword && !isImpersonating && <ChangePasswordDialog open forced />}
+    </>
+  );
 }
