@@ -1,204 +1,127 @@
-# CR-001 — Admins can edit supervisor, agent and researcher users in User Management
+# CR-002 — One sidebar organized by business function
 
-Frontend-only. Two files: `src/pages/UserManagement.tsx` and `src/components/user-management/CommunicationPermissionsCell.tsx`. No database, RLS, migration, edge function, route, query key, audit action name, or other file changes.
+## Files
 
-The RLS policy + trigger already live in production (admin can UPDATE `profiles` for supervisor/agent/researcher rows, limited to name, site_id, and the four `can_send_*` columns; super_admin and admin rows are 0 rows; status/email changes error 42501). We only wire the UI to use it and to detect denials.
+1. **`src/components/layout/AppSidebar.tsx`**
+   - Replace the two-group `core | admin` menu with seven fixed group definitions.
+   - Render the same shared sidebar for all five roles, including research pages.
+   - Preserve collapse, route highlighting, scroll restoration, navigation, branding, and the complete existing footer.
 
----
+2. **`src/hooks/useSidebarOrder.ts`**
+   - Replace the old flat/group-moving order model with v2 per-group ordering.
+   - Persist and reset only the new v2 local and user preference keys.
 
-## File 1 — `src/components/user-management/CommunicationPermissionsCell.tsx`
+3. **`src/components/layout/ResearchLayout.tsx`**
+   - Import and render `AppSidebar` directly.
+   - Make no other layout change.
 
-**3a. New optional `disabled` prop (default false)**
-- Add `disabled?: boolean;` to `CommunicationPermissionsCellProps` (interface, lines 9–18).
-- Destructure `disabled = false,` in the component params (lines 20–29).
+4. **`src/components/layout/ResearchSidebar.tsx`**
+   - Delete the now-unused duplicate sidebar after `ResearchLayout` switches to `AppSidebar`.
 
-**Disable only the Switch and the 3 Checkboxes — no new styles/colors/layout**
-- `Switch` (lines 39–42): add `disabled={disabled}`.
-- Email `Checkbox` (lines 70–74): add `disabled={disabled}`.
-- SMS `Checkbox` (lines 79–83): add `disabled={disabled}`.
-- Voice `Checkbox` (lines 88–92): add `disabled={disabled}`.
-- The `CollapsibleTrigger` Button and labels are left untouched (per the ticket: only the Switch and the 3 Checkboxes).
+`SidebarContext.tsx` does not need to change.
 
----
+## Group and item structure
 
-## File 2 — `src/pages/UserManagement.tsx`
+Define:
 
-### Shared helper (new, local to the component, above the return at ~line 815)
+```text
+type MenuGroupId =
+  | 'my_work'
+  | 'sales'
+  | 'coaching'
+  | 'research'
+  | 'insights'
+  | 'data'
+  | 'admin'
 
-```ts
-const canEditComms = (user: UserWithRole) =>
-  isSuperAdmin ||
-  (isAdmin &&
-    (user.id === currentUser?.id ||
-      ['supervisor', 'agent', 'researcher'].includes(user.role)));
-```
+MenuGroup = {
+  id: MenuGroupId
+  label: string
+  icon: LucideIcon
+  items: MenuItem[]
+}
 
-`isSuperAdmin`, `isAdmin`, and `currentUser` already exist (lines 135–137, 77). No new state.
-
----
-
-### Item 1 — Non-Agents tab "Edit User" menu visibility
-
-Lines 1008–1013 today: `{isSuperAdmin && (`.
-
-Change the guard to:
-
-```tsx
-{(isSuperAdmin || (isAdmin && ['supervisor', 'agent', 'researcher'].includes(user.role))) && (
-  <DropdownMenuItem onClick={() => handleOpenEditUserDialog(user)}>
-    <Pencil className="w-4 h-4 mr-2" />
-    Edit User
-  </DropdownMenuItem>
-)}
-```
-
-Exact condition: `isSuperAdmin || (isAdmin && ['supervisor','agent','researcher'].includes(user.role))`.
-
-On the Non-Agents tab the only rows present are super_admin/admin/supervisor (filter at line 835), so for an admin this opens Edit User only on supervisor rows. The Edit User dialog body (lines 1713–1786) is unchanged: Name required + trimmed, Email read-only/disabled, Site select shown only when `editingUser.role === 'supervisor'`, otherwise "All Sites". The "Reset password" section inside the dialog stays `isSuperAdmin &&` (line 1770) — unchanged.
-
----
-
-### Item 2 — Agents tab "Edit Researcher": detect permission failure in `handleSaveResearcher`
-
-Lines 448–489. Today the profile update at lines 452–459 has no `.select('id')` and throws on error.
-
-Replace:
-
-```ts
-const { error: profileError } = await supabase
-  .from('profiles')
-  .update({
-    name: editingResearcher.name,
-    site_id: editingResearcher.siteId || null,
-  })
-  .eq('id', editingResearcher.id);
-if (profileError) throw profileError;
-```
-
-with:
-
-```ts
-const { data: profileData, error: profileError } = await supabase
-  .from('profiles')
-  .update({
-    name: editingResearcher.name,
-    site_id: editingResearcher.siteId || null,
-  })
-  .eq('id', editingResearcher.id)
-  .select('id');
-
-// RLS denials surface as an error OR as an empty returned array (0 rows updated)
-if (profileError || !profileData || profileData.length === 0) {
-  toast({
-    title: 'Error',
-    description: "You don't have permission to edit this user",
-    variant: 'destructive',
-  });
-  return; // keep dialog open; do NOT update/create the agent record
+MenuItem = {
+  id: `${groupId}:${path}`
+  icon: LucideIcon
+  label: string
+  path: string
+  roles: Role[]
 }
 ```
 
-On a confirmed 1-row update, fall through to the existing linked-agent update/create block (lines 462–480) and the success toast + close, unchanged. This matches the pattern `handleSaveUser` already uses (lines 514–528).
+Group order, labels, icons, item order, paths, and role gates will exactly match the ticket:
 
----
+- `my_work` / **My Work** / Briefcase — 5 agent items.
+- `sales` / **Sales** / BarChart3 — 8 super_admin/admin/supervisor items.
+- `coaching` / **Coaching & QA** / GraduationCap — 3 super_admin/admin/supervisor items.
+- `research` / **Research** / FlaskConical — the four research workflow items for researcher/super_admin/admin, plus Script Builder, Campaign Manager, and Research Insights with their specified roles. “My Dashboard” becomes **Research Dashboard**; its path remains `/research/dashboard`.
+- `insights` / **Insights** / Lightbulb — 2 super_admin/admin items.
+- `data` / **Data & Communications** / Database — 4 items with the specified role gates.
+- `admin` / **Administration** / Wrench — 6 items with the specified role gates.
 
-### Item 3 — Communication permissions
+The old agent Dashboard entry is removed. `/add-booking` and `/tools/move-in-calculator` remain separate definitions in `my_work` and `sales`; their group-qualified IDs prevent React/order collisions. Each group is filtered through the existing `hasRole` behavior and is omitted when it has no visible items. This produces the requested role counts: agent 5/1, researcher 4/1, supervisor 14/5, admin 28/6, super_admin 30/6.
 
-#### 3a/3b. Pass `disabled` to both `CommunicationPermissionsCell` instances
+Each visible group uses the current collapsible Admin-group presentation: existing trigger styles, uppercase label, chevron, group icon, and icon-only collapsed mode. No new visual tokens, spacing, or components are introduced.
 
-Non-Agents tab cell (lines 988–997) and Agents tab cell (lines 1247–1256): add
+## Expanded-state resolution
 
-```tsx
-disabled={!canEditComms(user)}
+Use localStorage key **`sidebar-group-expanded-v1`** with:
+
+```text
+{ [groupId]: boolean }
 ```
 
-So for admins the cell is read-only on super_admin rows and on other admins' rows (unless it's the current admin's own row), and enabled on the current user and on supervisor/agent/researcher rows. For super_admin it is always enabled.
+Resolution for every visible group:
 
-#### 3c. `handleToggleCommunicationPermission` (lines 705–740)
+1. If that group has a stored boolean, use it.
+2. Otherwise use the role default:
+   - agent: `my_work` expanded
+   - researcher: `research` expanded
+   - supervisor/admin: `sales` expanded
+   - super_admin: every visible group expanded
+   - all other groups collapsed
+3. If the current route belongs to a visible group, force that group open and persist `true` in the same map.
+4. User toggles update only that group’s entry while preserving the other entries.
 
-Replace the update + error check (lines 710–715)
+The implementation will stop reading and writing `sidebar-admin-expanded`. It will not remove that legacy key.
 
-```ts
-const { error } = await supabase
-  .from('profiles')
-  .update({ can_send_communications: newValue })
-  .eq('id', userId);
+## v2 ordering and drag/drop
 
-if (error) throw error;
-```
+Persist this value:
 
-with
-
-```ts
-const { data, error } = await supabase
-  .from('profiles')
-  .update({ can_send_communications: newValue })
-  .eq('id', userId)
-  .select('id');
-
-if (error || !data || data.length === 0) {
-  toast({
-    title: 'Error',
-    description: "You don't have permission to change this user's permissions",
-    variant: 'destructive',
-  });
-  return;
+```text
+{
+  [groupId]: string[] // item paths in that group’s chosen order
 }
 ```
 
-Only after a confirmed 1-row update: keep the existing `access_logs` insert with action `communication_permission_grant` / `communication_permission_revoke` (unchanged names), the existing success toast, and `fetchUsers()`. On denial: no access_logs row, no "Permission Updated" toast, dialog stays consistent with the disabled control.
+Use only:
 
-#### 3c. `handleToggleChannelPermission` (lines 743–785)
+- localStorage: **`sidebar-custom-order-v2`**
+- `user_preferences.preference_key`: **`sidebar_custom_order_v2`**
 
-Same pattern. Replace (lines 754–759)
+Read path:
 
-```ts
-const { error } = await supabase
-  .from('profiles')
-  .update({ [columnName]: newValue })
-  .eq('id', userId);
+1. Start with the validated local v2 value as the temporary fallback.
+2. For a signed-in user, query the v2 database preference as the source of truth.
+3. If the database contains a valid v2 map, apply it and refresh the local v2 cache.
+4. If no database row exists, retain the valid local v2 value and write that fallback to the v2 database preference.
+5. Never inspect or migrate either legacy key.
 
-if (error) throw error;
-```
+Ordering resolution is independent per group: known saved paths are applied once in saved order, unknown paths are ignored, and visible items missing from the saved list append in their declared default order.
 
-with
+Drag/drop remains super_admin-only and expanded-sidebar-only. A drag can reorder an item only inside its originating group; a target from another group is ignored. Group order is never draggable. Saving writes the affected per-group path array to the v2 map locally and to the v2 database preference.
 
-```ts
-const { data, error } = await supabase
-  .from('profiles')
-  .update({ [columnName]: newValue })
-  .eq('id', userId)
-  .select('id');
+“Reset to default” appears under the same existing condition, removes only `sidebar-custom-order-v2`, clears the in-memory v2 order, and deletes only the `sidebar_custom_order_v2` preference row. It never reads, writes, migrates, or deletes `sidebar-custom-order` or `sidebar_custom_order`.
 
-if (error || !data || data.length === 0) {
-  toast({
-    title: 'Error',
-    description: "You don't have permission to change this user's permissions",
-    variant: 'destructive',
-  });
-  return;
-}
-```
+## Shared research layout and unchanged behavior
 
-Keep the existing `access_logs` insert with action `channel_permission_grant` / `channel_permission_revoke` (unchanged names) and success toast on confirmed update only.
+`ResearchLayout` will render `AppSidebar`; its header, content, margins, and all other behavior remain unchanged. The shared footer continues using the existing `roleLabel[user.role]`, so it shows the real effective role and retains the user card, Change password, Logout, and “Powered by Appendify LLC” for every role.
 
----
+No changes will be made to routes, `App.tsx`, protected access, headers, page tracking, audit action names, database schema/policies, migrations, edge functions, dependencies, or any file outside the four listed above. Nothing will be published.
 
-## What does NOT change (confirmation)
+## Verification after approval
 
-- Deactivate/Reactivate login (menu items + confirmation dialog + `admin-set-user-status`): still `isSuperAdmin`-only.
-- The status switch on the Agents tab (`disabled={!isSuperAdmin || user.id === currentUser?.id}`, line 1233): unchanged.
-- Password reset / `ResetPasswordSection` in every edit dialog: still `isSuperAdmin`-only (lines 1626, 1696, 1770).
-- "Change Role" menu item visibility (lines 1014–1019, 1279–1284): unchanged.
-- "Delete User" visibility (lines 1033–1044, 1298–1309): unchanged.
-- "Edit Agent" dialog and `handleSaveAgent` (lines 402–434, 1577–1645): unchanged.
-- The Edit User dialog body, the Edit Researcher dialog body (except the handler), and the Create User dialog: unchanged.
-- Supervisors, agents, and researchers see nothing new — no new menu items, no new enabled controls, no new tabs.
-- No route, audit action name, query key, or `user_preferences` key changes.
-- No other files touched; no database changes; nothing published.
-
-## Verification (after build approval)
-
-- `tsgo --noEmit -p tsconfig.app.json` is clean.
-- No edge functions are changed, so no `deno check`/deploy needed.
-- Browser check as an admin on `/users`: Edit User appears on supervisor rows (Non-Agents) and researcher rows without a linked agent (Agents tab); it does not appear on super_admin/other admin rows. Editing a supervisor's name saves; the comms toggles are enabled on self/supervisor/agent/researcher rows and disabled (read-only) on other admins'/super_admins' rows. Attempting a comms toggle on a row the admin can't write (simulated by a row whose role is super_admin, where the cell is disabled) does not fire a request because the control is disabled.
+- Run `tsgo --noEmit -p tsconfig.app.json`.
+- Check the preview for the role-specific visible groups/counts, route auto-expansion, collapse mode, within-group drag rejection across groups, v2 persistence/reset, and research pages using the shared footer/sidebar.
