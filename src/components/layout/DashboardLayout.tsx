@@ -8,7 +8,6 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useAdminNotifications } from '@/hooks/useAdminNotifications';
 import { useCostAlertMonitor } from '@/hooks/useCostAlertMonitor';
 import { cn } from '@/lib/utils';
-import { ChangePasswordDialog } from '@/components/account/ChangePasswordDialog';
 
 interface DashboardLayoutProps {
   children: ReactNode;
