@@ -74,7 +74,11 @@ interface UseReportsDataReturn {
   researchScriptOptions: ResearchScriptOption[];
   /** Survey progress flags for research rows, keyed by booking id. */
   researchProgressById: Record<string, ResearchProgressInfo>;
+  /** Intake label for research rows, keyed by booking id. */
+  researchIntakeById: Record<string, ResearchIntake>;
 }
+
+export type ResearchIntake = 'Form + Recording' | 'Form only' | 'Recording only';
 
 // Map sort column names to database column names
 const sortColumnMap: Record<string, string> = {
@@ -102,6 +106,7 @@ export function useReportsData(
   const [manualRecordCount, setManualRecordCount] = useState(0);
   const [researchScriptOptions, setResearchScriptOptions] = useState<ResearchScriptOption[]>([]);
   const [researchProgressById, setResearchProgressById] = useState<Record<string, ResearchProgressInfo>>({});
+  const [researchIntakeById, setResearchIntakeById] = useState<Record<string, ResearchIntake>>({});
 
   // Active research scripts without a dedicated dashboard → extra campaign filter entries.
   useEffect(() => {
@@ -459,7 +464,31 @@ export function useReportsData(
         };
       });
 
+      // Intake badge: one batched lookup for research calls on this page.
+      const intakeMap: Record<string, ResearchIntake> = {};
+      const rcIds = Array.from(new Set((data || []).map(r => (r as any).research_call_id).filter(Boolean))) as string[];
+      if (rcIds.length > 0) {
+        const { data: rcs, error: rcErr } = await (supabase as any)
+          .from('research_calls')
+          .select('id, kixie_link, source:responses->>_source')
+          .in('id', rcIds);
+        if (!rcErr && rcs) {
+          const byRc = new Map<string, ResearchIntake>();
+          for (const rc of rcs as any[]) {
+            const form = rc.source === 'public_script';
+            const rec = !!rc.kixie_link;
+            const v: ResearchIntake | null = form && rec ? 'Form + Recording' : form ? 'Form only' : rec ? 'Recording only' : null;
+            if (v) byRc.set(rc.id, v);
+          }
+          for (const r of data || []) {
+            const v = byRc.get((r as any).research_call_id);
+            if (v) intakeMap[r.id] = v;
+          }
+        }
+      }
+
       setRecords(transformedRecords);
+      setResearchIntakeById(intakeMap);
       setResearchProgressById(progressMap);
       setTotalCount(count || 0);
       setResearchSummary({
@@ -493,5 +522,6 @@ export function useReportsData(
     refetch,
     researchScriptOptions,
     researchProgressById,
+    researchIntakeById,
   };
 }

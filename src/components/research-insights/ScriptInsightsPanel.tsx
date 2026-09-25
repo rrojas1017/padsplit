@@ -428,7 +428,15 @@ function ScriptAISummaryTab({ scriptId, campaignType, canGenerate }: { scriptId:
   );
 }
 
+function intakeLabel(r: { kixie_link?: string | null; responses?: unknown }): string | null {
+  const src = r.responses && typeof r.responses === "object" ? (r.responses as Record<string, unknown>)._source : undefined;
+  const form = src === "public_script";
+  const rec = !!r.kixie_link;
+  return form && rec ? "Form + Recording" : form ? "Form only" : rec ? "Recording only" : null;
+}
+
 interface SubmissionRow {
+  kixie_link?: string | null;
   id: string;
   created_at: string;
   caller_type: string | null;
@@ -481,7 +489,7 @@ function ScriptSubmissionsTab({ scriptId }: { scriptId: string }) {
       while (true) {
         const { data, error } = await supabase
           .from("research_calls")
-          .select("id, created_at, caller_type, call_outcome, language, call_duration_seconds, responses, researcher_id")
+          .select("id, created_at, caller_type, call_outcome, language, call_duration_seconds, responses, researcher_id, kixie_link")
           .in("campaign_id", ids)
           .order("created_at", { ascending: false })
           .range(from, from + PAGE - 1);
@@ -546,7 +554,12 @@ function ScriptSubmissionsTab({ scriptId }: { scriptId: string }) {
               {rows.slice(0, 200).map(r => (
                 <tr key={r.id} className="border-t">
                   <td className="py-2 px-3 whitespace-nowrap">{dateFmt.format(new Date(r.created_at))}</td>
-                  <td className="py-2 px-3">{r.caller_type === "public" ? "Public link" : "Researcher runtime"}</td>
+                  <td className="py-2 px-3">
+                    <span className="inline-flex items-center gap-1.5 flex-wrap">
+                      {r.caller_type === "public" ? "Public link" : "Researcher runtime"}
+                      {intakeLabel(r) && <Badge variant="outline" className="text-[10px] px-1.5 py-0">{intakeLabel(r)}</Badge>}
+                    </span>
+                  </td>
                   <td className="py-2 px-3">
                     <Badge variant={r.call_outcome === "completed" ? "default" : "outline"} className="text-xs">
                       {r.call_outcome === "in_progress" ? "In progress" : (r.call_outcome ?? "—")}

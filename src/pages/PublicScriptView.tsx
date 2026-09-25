@@ -108,6 +108,32 @@ function ScriptBlock({ children, variant = 'default' }: { children: React.ReactN
   );
 }
 
+const DIALER_CTRL_RE = /[\u0000-\u001f\u007f]/g;
+const DIALER_PARAMS: Array<[string, string, boolean]> = [
+  ['uid', 'dialer_uid', false], ['lead', 'dialer_lead', false], ['phone', 'dialer_phone', true],
+  ['agent', 'dialer_agent', false], ['campaign', 'dialer_campaign', false],
+];
+function sanitizeDialer(v: unknown, phone = false): string | undefined {
+  try {
+    if (typeof v !== 'string') return undefined;
+    let s = v.replace(DIALER_CTRL_RE, '').trim();
+    if (phone) s = s.replace(/\D/g, '');
+    if (!s || s.length > 64 || (phone && s.length > 15)) return undefined;
+    return s;
+  } catch { return undefined; }
+}
+function readDialerParams(): Record<string, string> {
+  const out: Record<string, string> = {};
+  try {
+    const q = new URLSearchParams(window.location.search);
+    for (const [k, key, phone] of DIALER_PARAMS) {
+      const v = sanitizeDialer(q.get(k), phone);
+      if (v !== undefined) out[key] = v;
+    }
+  } catch { /* ignore malformed query */ }
+  return out;
+}
+
 export default function PublicScriptView() {
   const { token } = useParams<{ token: string }>();
   const [script, setScript] = useState<PublicScript | null>(null);
@@ -116,6 +142,9 @@ export default function PublicScriptView() {
 
   const [phase, setPhase] = useState<Phase>('start');
   const startedAtRef = useRef<number | null>(null);
+  // Screen-pop dialer params: read once, kept for page lifetime (survive Restart), never rendered/logged.
+  const dialerParamsRef = useRef<Record<string, string> | null>(null);
+  if (dialerParamsRef.current === null) dialerParamsRef.current = readDialerParams();
   useEffect(() => {
     if (phase !== 'start' && startedAtRef.current === null) startedAtRef.current = Date.now();
   }, [phase]);
@@ -226,6 +255,7 @@ export default function PublicScriptView() {
             ? Math.max(0, Math.round((Date.now() - startedAtRef.current) / 1000))
             : undefined,
           startedAt: startedAtRef.current !== null ? new Date(startedAtRef.current).toISOString() : undefined,
+          ...(dialerParamsRef.current ?? {}),
         },
         signal: ctrl.signal,
       });

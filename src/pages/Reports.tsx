@@ -209,6 +209,7 @@ export default function Reports() {
     refetch,
     researchScriptOptions,
     researchProgressById,
+    researchIntakeById,
   } = useReportsData(filters, pagination, sorting);
 
   const scriptLabelByType = useMemo(() => {
@@ -342,6 +343,7 @@ export default function Reports() {
         'Market State',
         'Transcription Status',
         'Detected Issues',
+        'Intake',
       ];
       const rows = records.map(booking => [
         format(booking.bookingDate, 'yyyy-MM-dd'),
@@ -357,6 +359,7 @@ export default function Reports() {
         booking.marketState || '',
         (booking.transcriptionStatus === 'unavailable' ? 'No audio' : booking.transcriptionStatus) || '',
         booking.detectedIssues ? normalizeDetectedIssues(booking.detectedIssues).map(d => d.issue).join(', ') : '',
+        researchIntakeById[booking.id] || '',
       ]);
       const csvContent = [
         headers.join(','),
@@ -1132,6 +1135,9 @@ export default function Reports() {
                         </span>
                       ) : (
                         <span className="text-muted-foreground">—</span>
+                      )}
+                      {researchIntakeById[booking.id] && (
+                        <Badge variant="outline" className="text-[10px] px-1.5 py-0">{researchIntakeById[booking.id]}</Badge>
                       )}
                       {researchProgressById[booking.id]?.endedEarly && (() => {
                         const p = researchProgressById[booking.id];

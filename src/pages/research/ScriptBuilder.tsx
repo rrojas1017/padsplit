@@ -34,6 +34,8 @@ const AUDIENCE_LABELS: Record<string, string> = {
   active_member: 'Active Members',
 };
 
+const SCREEN_POP_QUERY = '?uid=--A--uniqueid--B--&lead=--A--lead_id--B--&phone=--A--phone_number--B--&agent=--A--user--B--&campaign=--A--campaign--B--';
+
 export default function ScriptBuilder() {
   
   const { scripts, isLoading, createScript, updateScript, deleteScript, retranslateScript } = useResearchScripts();
@@ -211,6 +213,18 @@ export default function ScriptBuilder() {
                                 <p className="text-xs text-muted-foreground break-all bg-muted rounded px-2 py-1 font-mono">
                                   {getScriptPublicUrl(token.token)}
                                 </p>
+                              </div>
+                              <div className="space-y-1">
+                                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">ViciDial Screen-Pop URL</p>
+                                <p className="text-xs text-muted-foreground break-all bg-muted rounded px-2 py-1 font-mono">
+                                  {`${getScriptPublicUrl(token.token)}${SCREEN_POP_QUERY}`}
+                                </p>
+                                <Button size="sm" variant="outline" className="w-full" onClick={() => { navigator.clipboard.writeText(`${getScriptPublicUrl(token.token)}${SCREEN_POP_QUERY}`); toast.success('Screen-pop URL copied'); }}>
+                                  <Copy className="w-3 h-3 mr-1.5" /> Copy Screen-Pop URL
+                                </Button>
+                                <p className="text-xs text-muted-foreground">Add <code className="font-mono">uniqueid</code> to the recording POST so the form and the recording link to the same call.</p>
+                              </div>
+                              <div className="space-y-1">
                                 {token.last_accessed_at && (
                                   <p className="text-xs text-muted-foreground">
                                     Last accessed: {new Date(token.last_accessed_at).toLocaleDateString()}

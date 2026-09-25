@@ -119,6 +119,8 @@ X-Client-Secret: sk_your_client_secret_here`}</CodeBlock>
               { name: 'campaign', type: 'string', required: true, description: 'Campaign name or identifier tied to the conversation.' },
               { name: 'type', type: 'string', required: true, description: 'Must be "research". Any other value is rejected.' },
               { name: 'callTimestamp', type: 'string', required: false, description: 'Call start as ISO-8601 with offset or Z (e.g. 2026-09-21T23:30:00-04:00). If omitted, the call time is read from the recording filename (YYYYMMDD-HHMMSS_, dialer time UTC-4); otherwise the upload time is used.' },
+              { name: 'uniqueid', type: 'string', required: false, description: 'ViciDial call unique ID (--A--uniqueid--B--), max 64 chars. Links this recording to the screen-pop form for the same call.' },
+              { name: 'leadId', type: 'string', required: false, description: 'ViciDial lead ID (--A--lead_id--B--), max 64 chars.' },
             ]}
           />
 
@@ -153,6 +155,13 @@ X-Client-Secret: sk_your_client_secret_here`}</CodeBlock>
   }
 }`}</ResponseBlock>
 
+            <ResponseBlock status={200} label="Duplicate (same uniqueid posted again)">{`{
+  "success": true,
+  "duplicate": true,
+  "bookingId": "uuid-of-existing-record",
+  "researchCallId": "uuid-of-research-call"
+}`}</ResponseBlock>
+
             <ResponseBlock status={400} label="Validation failed">{`{
   "error": "Validation failed",
   "details": ["audioUrl is required", "type must be \\"research\\""]
@@ -162,6 +171,21 @@ X-Client-Secret: sk_your_client_secret_here`}</CodeBlock>
 
             <ResponseBlock status={400} label="Agent not found">{`{ "error": "Agent not found for dialerAgentUser: unknown_agent" }`}</ResponseBlock>
           </div>
+
+          {/* Linking */}
+          <h3 className="text-xs font-bold uppercase tracking-[0.15em] text-muted-foreground mt-8 mb-3">Form + Recording Linking</h3>
+          <p className="text-sm text-muted-foreground mb-3 max-w-2xl leading-relaxed">
+            When the agent's screen-pop form and the recording share the same call, both are stored as <strong className="text-foreground">one record</strong>:
+            typed answers plus the recording and transcript. Send <code className="text-xs bg-muted px-1.5 py-0.5 rounded font-mono">uniqueid</code> for an exact match;
+            without it, the recording is matched by phone and time. A repeat post of the same <code className="text-xs bg-muted px-1.5 py-0.5 rounded font-mono">uniqueid</code> returns
+            200 with <code className="text-xs bg-muted px-1.5 py-0.5 rounded font-mono">duplicate: true</code> and writes nothing.
+          </p>
+          <p className="text-sm text-muted-foreground mb-3 max-w-2xl">
+            Success responses include <code className="text-xs bg-muted px-1.5 py-0.5 rounded font-mono">linked</code>: <code className="text-xs bg-muted px-1.5 py-0.5 rounded font-mono">"uid"</code> (matched by uniqueid),{' '}
+            <code className="text-xs bg-muted px-1.5 py-0.5 rounded font-mono">"fallback"</code> (matched by phone/time) or <code className="text-xs bg-muted px-1.5 py-0.5 rounded font-mono">null</code> (new record).
+          </p>
+          <p className="text-sm text-muted-foreground mb-3">Screen-pop form URL (configure in the ViciDial campaign web form):</p>
+          <CodeBlock language="text">{`<public script link>?uid=--A--uniqueid--B--&lead=--A--lead_id--B--&phone=--A--phone_number--B--&agent=--A--user--B--&campaign=--A--campaign--B--`}</CodeBlock>
         </div>
       </DocSection>
 
