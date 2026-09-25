@@ -302,6 +302,7 @@ Deno.serve(async (req) => {
       _client_hash: clientHash,
       _submission_id: submissionId,
       _save_seq: saveSeq,
+      ...(outcome !== 'in_progress' ? { _finalized_at: new Date().toISOString() } : {}),
     });
 
     const touchToken = () => {
