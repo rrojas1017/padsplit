@@ -28,7 +28,7 @@ Deno.serve(async (req) => {
   if (req.method !== "POST") return jsonResponse(405, { error: "Method not allowed" });
 
   try {
-    const auth = await requireUser(req, ["super_admin"]);
+    const auth = await requireUser(req, ["super_admin", "admin"]);
     if (!auth.ok) return auth.response;
     const callerId = auth.ctx.userId;
 
@@ -46,9 +46,12 @@ Deno.serve(async (req) => {
     if (unmet.length > 0) return jsonResponse(400, { error: "Password does not meet requirements", unmet });
 
     const admin = adminClient();
-    const { data: roleRows, error: roleErr } = await admin.from("user_roles").select("role").eq("user_id", userId).limit(1);
+    const { data: roleRows, error: roleErr } = await admin.from("user_roles").select("role").eq("user_id", userId);
     if (roleErr) { console.error("[admin-reset-password] role lookup failed:", roleErr.message); return jsonResponse(500, { error: "Failed to update password" }); }
     if (!roleRows || roleRows.length === 0) return jsonResponse(404, { error: "User not found" });
+    if (auth.ctx.role === "admin" && roleRows.some((r: { role: string }) => r.role === "super_admin" || r.role === "admin")) {
+      return jsonResponse(403, { error: "Admins can only manage supervisor, agent and researcher users" });
+    }
 
     const [callerProf, targetProf] = await Promise.all([
       admin.from("profiles").select("name,email").eq("id", callerId).maybeSingle(),
