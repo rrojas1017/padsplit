@@ -500,6 +500,7 @@ function ScriptSubmissionsTab({ scriptId }: { scriptId: string }) {
     completed: rows.filter(r => r.call_outcome === "completed").length,
     endedEarly: rows.filter(r => r.call_outcome === "ended_early").length,
     refused: rows.filter(r => r.call_outcome === "refused" || r.call_outcome === "declined").length,
+    inProgress: rows.filter(r => r.call_outcome === "in_progress").length,
   }), [rows]);
 
   if (isLoading) return <Skeleton className="h-64 w-full" />;
@@ -509,11 +510,12 @@ function ScriptSubmissionsTab({ scriptId }: { scriptId: string }) {
     { label: "Completed", value: kpis.completed },
     { label: "Ended early", value: kpis.endedEarly },
     { label: "Refused/declined", value: kpis.refused },
+    { label: "In progress", value: kpis.inProgress },
   ];
 
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
         {cards.map(c => (
           <Card key={c.label}>
             <CardContent className="p-4">
@@ -547,7 +549,7 @@ function ScriptSubmissionsTab({ scriptId }: { scriptId: string }) {
                   <td className="py-2 px-3">{r.caller_type === "public" ? "Public link" : "Researcher runtime"}</td>
                   <td className="py-2 px-3">
                     <Badge variant={r.call_outcome === "completed" ? "default" : "outline"} className="text-xs">
-                      {r.call_outcome ?? "—"}
+                      {r.call_outcome === "in_progress" ? "In progress" : (r.call_outcome ?? "—")}
                     </Badge>
                   </td>
                   <td className="py-2 px-3">{r.call_outcome === "ended_early" ? (earlyDisposition(r.responses) ?? "—") : "—"}</td>

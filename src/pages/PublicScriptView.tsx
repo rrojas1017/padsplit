@@ -849,6 +849,19 @@ export default function PublicScriptView() {
         </div>
       </div>
 
+      <AlertDialog open={restartConfirmOpen} onOpenChange={setRestartConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Restart survey?</AlertDialogTitle>
+            <AlertDialogDescription>This survey is not saved and will be lost. Restart anyway?</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={doRestart}>Restart anyway</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       {/* Footer */}
       <div className="py-4 text-center border-t">
         <p className="text-xs text-muted-foreground">PadSplit Operations · External View</p>
