@@ -8,6 +8,30 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { resolveCallStart } from '../_shared/callTime.ts';
 
+// CR-005 corrective #2: background AI re-trigger after a recording-first merge.
+declare const EdgeRuntime: { waitUntil: (promise: Promise<unknown>) => void };
+
+async function triggerResearchProcessing(bookingId: string): Promise<void> {
+  try {
+    const res = await fetch(
+      `${Deno.env.get('SUPABASE_URL')}/functions/v1/process-research-record`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`,
+        },
+        body: JSON.stringify({ bookingId }),
+      },
+    );
+    if (!res.ok) {
+      console.error(`[cr005] process-research-record HTTP ${res.status} for ${bookingId}`);
+    }
+  } catch (e) {
+    console.error(`[cr005] process-research-record call failed for ${bookingId}`, e);
+  }
+}
+
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
@@ -400,6 +424,53 @@ Deno.serve(async (req) => {
         source: 'public_script',
       };
 
+      // CR-005 corrective #2: after a recording-first merge succeeds and the booking
+      // is now a valid conversation with a completed transcript but no AI run,
+      // re-trigger process-research-record so typed answers get extracted. The
+      // downstream fetch is backgrounded via EdgeRuntime.waitUntil; only the two
+      // reads are awaited to decide. Never changes the form-save HTTP response.
+      const maybeTriggerResearchProcessing = async (targetId: string): Promise<void> => {
+        let reason: string | null = null;
+        try {
+          const [bk, btRow] = await Promise.all([
+            admin.from('bookings')
+              .select('transcription_status, has_valid_conversation')
+              .eq('id', targetId).maybeSingle(),
+            admin.from('booking_transcriptions')
+              .select('research_processing_status, call_transcription')
+              .eq('booking_id', targetId).maybeSingle(),
+          ]);
+          const tStatus = (bk.data as any)?.transcription_status ?? null;
+          const hasValid = (bk.data as any)?.has_valid_conversation === true;
+          const transcript = (btRow.data as any)?.call_transcription;
+          const rps = (btRow.data as any)?.research_processing_status ?? null;
+          const hasTranscript = typeof transcript === 'string' && transcript.trim() !== '';
+
+          if (tStatus !== 'completed') {
+            reason = `transcription_status=${tStatus ?? 'null'}`;
+          } else if (!hasValid) {
+            reason = 'has_valid_conversation=false';
+          } else if (!hasTranscript) {
+            reason = 'no transcription text';
+          } else if (rps === 'processing' || rps === 'completed') {
+            reason = `research_processing_status=${rps}`;
+          } else {
+            console.log(`[cr005] triggered process-research-record for ${targetId}`);
+            const p = triggerResearchProcessing(targetId);
+            if (typeof EdgeRuntime !== 'undefined' && typeof (EdgeRuntime as any)?.waitUntil === 'function') {
+              (EdgeRuntime as any).waitUntil(p);
+            } else {
+              p.catch(() => {});
+            }
+            return;
+          }
+        } catch (e) {
+          reason = 'read failed';
+          console.error('[cr005] processing trigger read failed', e);
+        }
+        console.log(`[cr005] processing not triggered: ${reason}`);
+      };
+
       // Merge typed answers into an existing (recording-created) booking; never insert one.
       const mergeIntoBooking = async (targetId: string) => {
         if (count > 0) try {
@@ -420,7 +491,11 @@ Deno.serve(async (req) => {
               survey_progress: progressObj,
               ...(!bt?.research_campaign_type && routedType ? { research_campaign_type: routedType, retag_source: 'script_id_route' } : {}),
             }, { onConflict: 'booking_id' });
-          if (mergeErr) console.error('submit-public-script: linked merge failed', mergeErr.message);
+          if (mergeErr) {
+            console.error('submit-public-script: linked merge failed', mergeErr.message);
+          } else {
+            await maybeTriggerResearchProcessing(targetId);
+          }
         } catch (mergeEx) {
           console.error('submit-public-script: linked merge failed', mergeEx);
         }
