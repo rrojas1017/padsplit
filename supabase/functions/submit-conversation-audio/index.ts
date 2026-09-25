@@ -225,7 +225,7 @@ Deno.serve(async (req) => {
     let researchCallId: string | null = null;
     let researchCallHandled = false;
 
-    const RC_SELECT = 'id, kixie_link, caller_phone, dialer_lead_id, dialer_agent_user, dialer_call_id';
+    const RC_SELECT = 'id, kixie_link, caller_phone, dialer_lead_id, dialer_agent_user, dialer_call_id, created_at, call_outcome, finalized_at:responses->>_finalized_at';
     const readByUid = async () => {
       const { data } = await adminClient
         .from('research_calls')
