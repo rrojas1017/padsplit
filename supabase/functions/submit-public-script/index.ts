@@ -302,6 +302,7 @@ Deno.serve(async (req) => {
       _client_hash: clientHash,
       _submission_id: submissionId,
       _save_seq: saveSeq,
+      ...(outcome !== 'in_progress' ? { _finalized_at: new Date().toISOString() } : {}),
     });
 
     const touchToken = () => {
@@ -527,7 +528,10 @@ Deno.serve(async (req) => {
       const storedAnswers = buildRawScriptAnswers(questions as any[], stored);
       const count = Object.keys(storedAnswers).length;
       let bookingId = await findLinkedBooking(row.id);
-      if (!bookingId && qualifiesForBooking(row.call_outcome, count)) {
+      const finalizedAt = typeof stored._finalized_at === 'string' ? stored._finalized_at : null;
+      const finalizedMs = finalizedAt ? new Date(finalizedAt).getTime() : null;
+      const allowRepair = finalizedMs === null || Date.now() - finalizedMs > 120_000;
+      if (!bookingId && qualifiesForBooking(row.call_outcome, count) && allowRepair) {
         bookingId = await finalizeSideEffects(row.id, row.call_outcome, storedAnswers, {
           repair: true,
           callerName: row.caller_name && row.caller_name !== 'Public Submission' ? row.caller_name : null,
