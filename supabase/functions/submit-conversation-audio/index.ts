@@ -219,14 +219,13 @@ Deno.serve(async (req) => {
     const callKey = cleanDialer(body.recordingId) ?? cleanDialer(body.uniqueid);
     const leadId = cleanDialer(body.leadId);
     const phone10 = (phoneDigits(phoneNumber) ?? '').slice(-10) || null;
-    let linked: 'uid' | 'fallback' | null = null;
-    let idMismatch = false;
+    let linked: 'uid' | 'lead' | 'fallback' | null = null;
     let notesSuffix = '';
     let linkRow: any = null;
     let researchCallId: string | null = null;
     let researchCallHandled = false;
 
-    const RC_SELECT = 'id, kixie_link, caller_phone, dialer_lead_id, dialer_agent_user';
+    const RC_SELECT = 'id, kixie_link, caller_phone, dialer_lead_id, dialer_agent_user, dialer_call_id';
     const readByUid = async () => {
       const { data } = await adminClient
         .from('research_calls')
@@ -258,58 +257,73 @@ Deno.serve(async (req) => {
         .select('id')
         .single();
 
-    if (matchedCampaignId && callKey) {
-      researchCallHandled = true;
-      let found = await readByUid();
-      if (!found) {
-        const { data: rc, error: rcErr } = await researchCallInsert({
-          dialer_call_id: callKey,
-          dialer_agent_user: dialerAgentUser.slice(0, 64),
-          ...(leadId ? { dialer_lead_id: leadId } : {}),
-        });
-        if (rc) researchCallId = rc.id;
-        else if (isDialerKeyConflict(rcErr)) found = await readByUid();
-        else console.error('[submit] research_calls insert failed:', rcErr?.message);
-      }
-      if (found) {
-        if (found.kixie_link) return await respondDuplicate(found.id);
-        const rowPhone10 = (phoneDigits(found.caller_phone) ?? '').slice(-10) || null;
-        if (rowPhone10 && phone10 && rowPhone10 !== phone10) {
-          // CR-007: call key matched but phone differs → do not link; separate unlinked row
-          const { data: rc, error: rcErr } = await researchCallInsert({
-            dialer_agent_user: dialerAgentUser.slice(0, 64),
-            ...(leadId ? { dialer_lead_id: leadId } : {}),
-          });
-          if (rc) researchCallId = rc.id;
-          else console.error('[submit] research_calls insert failed:', rcErr?.message);
-          notesSuffix = ' | id-mismatch';
-          idMismatch = true;
-        } else {
-          linkRow = found;
-          linked = 'uid';
+    // CR-007: phone cross-check fails only when both phones are present and differ
+    const phoneOk = (r: any) => {
+      const rp = (phoneDigits(r?.caller_phone) ?? '').slice(-10) || null;
+      return !(rp && phone10 && rp !== phone10);
+    };
+
+    if (matchedCampaignId) {
+      // 1. Id step (duplicate protection + legacy id link)
+      if (callKey) {
+        const found = await readByUid();
+        if (found) {
+          if (found.kixie_link) return await respondDuplicate(found.id);
+          if (phoneOk(found)) { linkRow = found; linked = 'uid'; }
         }
       }
-    } else if (matchedCampaignId) {
-      const startMs = callStart.startedAt.getTime();
-      const { data: windowRows } = await adminClient
-        .from('research_calls')
-        .select(RC_SELECT)
-        .eq('campaign_id', matchedCampaignId)
-        .eq('caller_type', 'public')
-        .eq('dialer_agent_user', dialerAgentUser)
-        .gte('created_at', new Date(startMs - 30 * 60 * 1000).toISOString())
-        .lte('created_at', new Date(startMs + 30 * 60 * 1000).toISOString())
-        .limit(50);
-      const rows = (windowRows ?? []) as any[];
-      const candidates = phone10
-        ? rows.filter((r) => !r.kixie_link && (phoneDigits(r.caller_phone) ?? '').slice(-10) === phone10)
-        : [];
-      if (candidates.length === 1) {
-        linkRow = candidates[0];
-        linked = 'fallback';
+      // 2. Form match: lead + agent ±30 min, else phone + agent
+      if (!linkRow) {
+        const startMs = callStart.startedAt.getTime();
+        const { data: windowRows } = await adminClient
+          .from('research_calls')
+          .select(RC_SELECT)
+          .eq('campaign_id', matchedCampaignId)
+          .eq('caller_type', 'public')
+          .eq('dialer_agent_user', dialerAgentUser)
+          .gte('created_at', new Date(startMs - 30 * 60 * 1000).toISOString())
+          .lte('created_at', new Date(startMs + 30 * 60 * 1000).toISOString())
+          .limit(50);
+        const rows = (windowRows ?? []) as any[];
+        const pool = rows.filter((r) => !r.kixie_link && phoneOk(r));
+        let candidates: any[] = [];
+        let kind: 'lead' | 'fallback' | null = null;
+        if (leadId) {
+          const byLead = pool.filter((r) => r.dialer_lead_id === leadId);
+          if (byLead.length > 0) { candidates = byLead; kind = 'lead'; }
+        }
+        if (!kind && phone10) {
+          candidates = pool.filter((r) => (phoneDigits(r.caller_phone) ?? '').slice(-10) === phone10);
+          kind = 'fallback';
+        }
+        if (candidates.length === 1) {
+          linkRow = candidates[0];
+          linked = kind;
+        } else if (candidates.length > 1) {
+          notesSuffix = ' | unlinked (ambiguous)';
+        } else if (rows.length > 0) {
+          notesSuffix = ' | unlinked';
+        }
+      }
+      if (linkRow) {
         researchCallHandled = true;
-      } else if (rows.length > 0) {
-        notesSuffix = ' | unlinked';
+      } else {
+        linked = null;
+        // 3. No link: new row, carrying the recording id for duplicate protection
+        researchCallHandled = true;
+        const base = {
+          dialer_agent_user: dialerAgentUser.slice(0, 64),
+          ...(leadId ? { dialer_lead_id: leadId } : {}),
+        };
+        let { data: rc, error: rcErr } = await researchCallInsert(callKey ? { ...base, dialer_call_id: callKey } : base);
+        if (!rc && callKey && isDialerKeyConflict(rcErr)) {
+          const again = await readByUid();
+          if (again?.kixie_link) return await respondDuplicate(again.id);
+          console.log('[cr007] dialer_call_id conflict on insert; inserting without it');
+          ({ data: rc, error: rcErr } = await researchCallInsert(base));
+        }
+        if (rc) researchCallId = rc.id;
+        else console.error('[submit] research_calls insert failed:', rcErr?.message);
       }
     }
 
