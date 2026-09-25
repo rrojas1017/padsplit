@@ -84,6 +84,7 @@ export function CallInsights({ booking, onTranscriptionComplete }: CallInsightsP
           {booking.transcriptionStatus === 'completed' && <Badge className="bg-green-600"><CheckCircle className="h-3 w-3 mr-1" />Completed</Badge>}
           {booking.transcriptionStatus === 'processing' && <Badge variant="secondary"><Loader2 className="h-3 w-3 mr-1 animate-spin" />Processing</Badge>}
           {booking.transcriptionStatus === 'failed' && <Badge variant="destructive"><XCircle className="h-3 w-3 mr-1" />Failed</Badge>}
+          {booking.transcriptionStatus === 'unavailable' && <Badge variant="outline">No audio</Badge>}
           {!booking.transcriptionStatus && <Badge variant="outline">Not Transcribed</Badge>}
         </div>
         {(!booking.transcriptionStatus || booking.transcriptionStatus === 'failed') && (
