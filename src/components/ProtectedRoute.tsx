@@ -1,5 +1,6 @@
 import { Navigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
+import { ChangePasswordDialog } from '@/components/account/ChangePasswordDialog';
 import { UserRole } from '@/types';
 
 interface ProtectedRouteProps {
@@ -8,7 +9,7 @@ interface ProtectedRouteProps {
 }
 
 export function ProtectedRoute({ children, allowedRoles }: ProtectedRouteProps) {
-  const { user, isLoading } = useAuth();
+  const { user, isLoading, mustChangePassword, isImpersonating } = useAuth();
 
   if (isLoading) {
     return (
@@ -36,5 +37,10 @@ export function ProtectedRoute({ children, allowedRoles }: ProtectedRouteProps) 
     return <Navigate to="/dashboard" replace />;
   }
 
-  return <>{children}</>;
+  return (
+    <>
+      {children}
+      {mustChangePassword && !isImpersonating && <ChangePasswordDialog open forced />}
+    </>
+  );
 }

@@ -8,7 +8,6 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useAdminNotifications } from '@/hooks/useAdminNotifications';
 import { useCostAlertMonitor } from '@/hooks/useCostAlertMonitor';
 import { cn } from '@/lib/utils';
-import { ChangePasswordDialog } from '@/components/account/ChangePasswordDialog';
 
 interface DashboardLayoutProps {
   children: ReactNode;
@@ -19,7 +18,7 @@ interface DashboardLayoutProps {
 
 export function DashboardLayout({ children, title, subtitle, actions }: DashboardLayoutProps) {
   const { collapsed } = useSidebar();
-  const { hasRole, mustChangePassword, isImpersonating } = useAuth();
+  const { hasRole } = useAuth();
   const isSuperAdmin = hasRole(['super_admin']);
   const { criticalNotifications } = useAdminNotifications();
   const costAlert = useCostAlertMonitor();
@@ -68,7 +67,6 @@ export function DashboardLayout({ children, title, subtitle, actions }: Dashboar
         <main className="p-6">
           {children}
         </main>
-        {mustChangePassword && !isImpersonating && <ChangePasswordDialog open forced />}
       </div>
     </div>
   );
