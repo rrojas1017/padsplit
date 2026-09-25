@@ -455,7 +455,7 @@ Deno.serve(async (req) => {
         const patched = await patchLinkedBooking(eb, researchCallId);
         if (patched instanceof Response) return patched;
         booking = { id: patched };
-        if (!linked && !idMismatch) linked = 'uid';
+        if (!linked) linked = 'uid';
       } else {
         console.error('Booking insert error:', bookingError);
         return new Response(JSON.stringify({ error: 'Failed to store record' }), {
@@ -519,7 +519,6 @@ Deno.serve(async (req) => {
       callDateSource: callStart.source,
       matchedAgent: { id: agent.id, name: agent.name },
       linked,
-      ...(idMismatch ? { idMismatch: true } : {}),
     }), {
       status: 201, headers: {
         ...corsHeaders, 'Content-Type': 'application/json',
