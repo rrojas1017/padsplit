@@ -468,7 +468,7 @@ export function useReportsData(
       const intakeMap: Record<string, ResearchIntake> = {};
       const rcIds = Array.from(new Set((data || []).map(r => (r as any).research_call_id).filter(Boolean))) as string[];
       if (rcIds.length > 0) {
-        const { data: rcs, error: rcErr } = await supabase
+        const { data: rcs, error: rcErr } = await (supabase as any)
           .from('research_calls')
           .select('id, kixie_link, source:responses->>_source')
           .in('id', rcIds);
