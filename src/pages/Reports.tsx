@@ -355,7 +355,7 @@ export default function Reports() {
         getAgentName(agents, booking.agentId),
         booking.marketCity || '',
         booking.marketState || '',
-        booking.transcriptionStatus || '',
+        (booking.transcriptionStatus === 'unavailable' ? 'No audio' : booking.transcriptionStatus) || '',
         booking.detectedIssues ? normalizeDetectedIssues(booking.detectedIssues).map(d => d.issue).join(', ') : '',
       ]);
       const csvContent = [
@@ -1268,6 +1268,7 @@ export default function Reports() {
                             booking.transcriptionStatus === 'processing' ? 'Transcription in progress...' :
                             booking.transcriptionStatus === 'failed' ? `Failed: ${booking.transcriptionErrorMessage || 'Unknown error'}` :
                             booking.transcriptionStatus === 'pending' ? 'Transcription pending...' :
+                            booking.transcriptionStatus === 'unavailable' ? 'No audio' :
                             'Not transcribed'
                           }
                         >
@@ -1607,6 +1608,7 @@ export default function Reports() {
                               booking.transcriptionStatus === 'processing' ? 'Transcription in progress...' :
                               booking.transcriptionStatus === 'failed' ? `Failed: ${booking.transcriptionErrorMessage || 'Unknown error'} - Click to retry` :
                               booking.transcriptionStatus === 'pending' ? 'Transcription pending...' :
+                              booking.transcriptionStatus === 'unavailable' ? 'No audio' :
                               'Transcribe Call'
                             }
                             className="hover:opacity-80 transition-opacity"
