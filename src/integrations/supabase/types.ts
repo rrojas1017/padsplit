@@ -2620,6 +2620,7 @@ export type Database = {
           intro_script_es: string | null
           is_active: boolean
           last_response_at: string | null
+          min_valid_duration_seconds: number
           name: string
           questions: Json
           questions_es: Json | null
@@ -2648,6 +2649,7 @@ export type Database = {
           intro_script_es?: string | null
           is_active?: boolean
           last_response_at?: string | null
+          min_valid_duration_seconds?: number
           name: string
           questions?: Json
           questions_es?: Json | null
@@ -2676,6 +2678,7 @@ export type Database = {
           intro_script_es?: string | null
           is_active?: boolean
           last_response_at?: string | null
+          min_valid_duration_seconds?: number
           name?: string
           questions?: Json
           questions_es?: Json | null
