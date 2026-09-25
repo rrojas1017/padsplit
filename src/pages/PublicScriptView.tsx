@@ -155,57 +155,131 @@ export default function PublicScriptView() {
     const label = earlyEndDispositions.find(d => d.value === disposition)?.label || disposition;
     setEarlyDisposition(label);
     setEndedEarly(true);
-    setPhase('done');
-    void submitPublic({ endedEarly: true, earlyDisposition: label });
+    setPhase('done'); // the done-phase effect sends the terminal save
   };
 
-  const [submitState, setSubmitState] = useState<'idle' | 'saving' | 'saved' | 'failed'>('idle');
+  // ---- Save queue (BUG-005) ----
+  type SaveState = 'idle' | 'saving' | 'saved' | 'failed';
+  const [saveState, setSaveState] = useState<SaveState>('idle');
+  const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null);
+  const [lastSavedAnswers, setLastSavedAnswers] = useState(0);
+  const [lastError, setLastError] = useState<string | null>(null);
+  const [terminalSaved, setTerminalSaved] = useState(false);
+  const [restartConfirmOpen, setRestartConfirmOpen] = useState(false);
 
+  // Snapshot of the latest committed state, read by queued sends.
+  const snapshot = { responses, probeNotes, agentNotes, endedEarly, earlyDisposition, surveyLanguage, declined, submissionId };
+  const snapshotRef = useRef(snapshot);
+  snapshotRef.current = snapshot;
+  const saveSeqRef = useRef(0);
+  const inFlightRef = useRef(false);
+  const pendingRef = useRef<boolean | null>(null); // pending final flag
+  const lastAttemptFinalRef = useRef(false);
+  const savedJsonRef = useRef<string | null>(null);
+  const terminalRequestedRef = useRef(false);
+  const terminalSavedRef = useRef(false);
+  const phaseRef = useRef(phase);
+  phaseRef.current = phase;
 
-  const submitPublic = useCallback(async (opts: { endedEarly?: boolean; earlyDisposition?: string } = {}) => {
-    if (!token || !script) return;
-    if (submitState === 'saving' || submitState === 'saved') return;
-    const endedEarlyFlag = opts.endedEarly ?? endedEarly;
-    const dispositionValue = opts.earlyDisposition ?? (endedEarly ? earlyDisposition : '');
-    setSubmitState('saving');
+  const contentJson = (s: typeof snapshot) => JSON.stringify([s.responses, s.probeNotes, s.agentNotes]);
+
+  const send = useCallback(async (final: boolean): Promise<void> => {
+    if (!token) return;
+    const s = snapshotRef.current;
+    if (!s.submissionId) return;
+    inFlightRef.current = true;
+    lastAttemptFinalRef.current = final;
+    saveSeqRef.current += 1;
+    const json = contentJson(s);
+    setSaveState('saving');
     try {
-      const { error: fnError } = await supabase.functions.invoke('submit-public-script', {
+      const { data, error: fnError } = await supabase.functions.invoke('submit-public-script', {
         body: {
           token,
-          responses,
-          probeNotes,
-          agentNotes,
-          endedEarly: !!endedEarlyFlag,
-          earlyDisposition: dispositionValue || null,
-          language: surveyLanguage,
-          declined,
-          submission_id: submissionId,
+          responses: s.responses,
+          probeNotes: s.probeNotes,
+          agentNotes: s.agentNotes,
+          endedEarly: !!s.endedEarly,
+          earlyDisposition: s.endedEarly ? (s.earlyDisposition || null) : null,
+          language: s.surveyLanguage,
+          declined: s.declined,
+          submission_id: s.submissionId,
+          final,
+          save_seq: saveSeqRef.current,
           durationSeconds: startedAtRef.current !== null
             ? Math.max(0, Math.round((Date.now() - startedAtRef.current) / 1000))
             : undefined,
         },
       });
       if (fnError) {
-        console.error('submit-public-script failed', fnError);
-        setSubmitState('failed');
+        let status = 0;
+        let body: any = null;
+        if (fnError instanceof FunctionsHttpError) {
+          status = fnError.context.status;
+          try { body = await fnError.context.json(); } catch { body = null; }
+        }
+        let reason = 'Server error';
+        if (status === 429) reason = `Too many submissions from this office right now, retry in ${body?.retry_after ?? 60}s`;
+        else if (status === 403 || status === 409) reason = body?.error || (status === 403 ? 'Access denied' : 'Submission expired');
+        setLastError(reason);
+        setSaveState('failed');
       } else {
-        setSubmitState('saved');
+        savedJsonRef.current = json;
+        setLastSavedAt(new Date());
+        setLastSavedAnswers(Number(data?.raw_answers_count ?? 0));
+        setLastError(null);
+        setSaveState('saved');
+        if (final) { terminalSavedRef.current = true; setTerminalSaved(true); }
       }
-    } catch (e) {
-      console.error('submit-public-script error', e);
-      setSubmitState('failed');
+    } catch {
+      setLastError('Server error');
+      setSaveState('failed');
+    } finally {
+      inFlightRef.current = false;
+      const next = pendingRef.current;
+      pendingRef.current = null;
+      if (next !== null && !terminalSavedRef.current) void send(next);
     }
-  }, [token, script, responses, probeNotes, agentNotes, surveyLanguage, submitState, endedEarly, earlyDisposition, declined, submissionId]);
+  }, [token]);
 
-  // Auto-submit when the script naturally completes (phase === 'done', not early).
+  const requestSave = useCallback((final: boolean) => {
+    if (terminalSavedRef.current) return;
+    if (inFlightRef.current) {
+      pendingRef.current = final || pendingRef.current === true;
+      return;
+    }
+    void send(final);
+  }, [send]);
+
+  // Trigger saves after state has been committed.
+  const [saveTrigger, setSaveTrigger] = useState<{ n: number; final: boolean } | null>(null);
+  const triggerSave = (final: boolean) => setSaveTrigger(p => ({ n: (p?.n ?? 0) + 1, final }));
   useEffect(() => {
-    if (phase === 'done' && !endedEarly && submitState === 'idle') {
-      void submitPublic();
+    if (saveTrigger) requestSave(saveTrigger.final);
+  }, [saveTrigger, requestSave]);
+
+  // Terminal save when the flow reaches done (completion, End Call, or declined).
+  useEffect(() => {
+    if (phase === 'done' && !terminalRequestedRef.current) {
+      terminalRequestedRef.current = true;
+      triggerSave(true);
     }
-  }, [phase, endedEarly, submitState, submitPublic]);
+  }, [phase]);
 
+  const retrySave = () => requestSave(lastAttemptFinalRef.current);
 
-  const restart = useCallback(() => {
+  // Warn before leaving with unsaved work.
+  useEffect(() => {
+    const handler = (e: BeforeUnloadEvent) => {
+      if (phaseRef.current === 'start') return;
+      const dirty = savedJsonRef.current !== contentJson(snapshotRef.current);
+      if (dirty || !terminalSavedRef.current) { e.preventDefault(); e.returnValue = ''; }
+    };
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
+  }, []);
+
+  const doRestart = useCallback(() => {
     setPhase('start');
     setQuestionIndex(0);
     setVisitedStack([]);
@@ -219,8 +293,24 @@ export default function PublicScriptView() {
     setSelectedEndDisposition('caller_hung_up');
     setSurveyLanguage('en');
     setTranslatedContent(null);
-    setSubmitState('idle');
+    setSaveState('idle');
+    setLastSavedAt(null);
+    setLastSavedAnswers(0);
+    setLastError(null);
+    setTerminalSaved(false);
+    saveSeqRef.current = 0;
+    pendingRef.current = null;
+    lastAttemptFinalRef.current = false;
+    savedJsonRef.current = null;
+    terminalRequestedRef.current = false;
+    terminalSavedRef.current = false;
+    startedAtRef.current = null;
   }, []);
+
+  const restart = () => {
+    if (terminalSaved) doRestart();
+    else setRestartConfirmOpen(true);
+  };
 
   if (isLoading) {
     return (
