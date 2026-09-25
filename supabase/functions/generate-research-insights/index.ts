@@ -1144,12 +1144,26 @@ async function runScriptMode(supabase: any, lovableApiKey: string, ctx: { kind: 
         const k = String(Math.round(v));
         s.distribution[k] = (s.distribution[k] ?? 0) + 1;
       } else if (openAnswers[sid]) {
-        const txt = typeof a.raw_text_answer === 'string' ? a.raw_text_answer.trim() : '';
+        const txt =
+          typeof a.raw_text_answer === 'string' && a.raw_text_answer.trim()
+            ? a.raw_text_answer.trim()
+            : typeof a.answer_text === 'string' && a.answer_text.trim()
+              ? a.answer_text.trim()
+              : '';
         if (!txt) continue;
         s.n++;
         if (openAnswers[sid].length < 150) openAnswers[sid].push(txt.slice(0, 300));
       } else {
-        const labels: string[] = Array.isArray(a.selected_option_labels) ? a.selected_option_labels : (a.raw_text_answer ? [String(a.raw_text_answer)] : []);
+        const labels: string[] =
+          Array.isArray(a.selected_option_labels) && a.selected_option_labels.length
+            ? a.selected_option_labels.map(String)
+            : Array.isArray(a.selected_options) && a.selected_options.length
+              ? a.selected_options.map(String)
+              : typeof a.raw_text_answer === 'string' && a.raw_text_answer.trim()
+                ? [a.raw_text_answer.trim()]
+                : typeof a.answer_text === 'string' && a.answer_text.trim()
+                  ? [a.answer_text.trim()]
+                  : [];
         if (!labels.length) continue;
         s.n++;
         for (const l of labels) s.counts[l] = (s.counts[l] ?? 0) + 1;
