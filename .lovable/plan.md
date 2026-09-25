@@ -1,103 +1,77 @@
-# CR-008 — Derive `leadId` / `recordingId` from the ViciDial recording filename
+# CR-009 — Restore `recording_id` as the screen-pop link key (frontend text only)
 
-**Scope:** ONE file — `supabase/functions/submit-conversation-audio/index.ts`. No other file, no database change, no new dependency, nothing published.
+**Scope:** 2 files, text/constants only — `src/pages/research/ScriptBuilder.tsx`, `src/pages/ApiDocs.tsx`. **CR-008 is dropped; do not implement it.** No edge function change (the backend already supports `recordingId`/`uid`), no `PublicScriptView.tsx`, no database, no `types.ts`, no new dependencies, nothing published.
 
-## Problem
+## Why
 
-Today `callKey` and `leadId` come only from the request body:
+PadSplit's IT manager confirmed ViciDial creates the `recording_id` when the pop opens (agent takes the call), so `--A--recording_id--B--` is valid at pop time. The screen-pop therefore carries `uid=--A--recording_id--B--` as the primary link key:
 
-```ts
-const callKey = cleanDialer(body.recordingId) ?? cleanDialer(body.uniqueid);
-const leadId  = cleanDialer(body.leadId);
-```
+- A form that sends `dialer_uid` stores it in `dialer_call_id` (adopt path with phone cross-check).
+- A recording that sends `recordingId` finds that same row in the id step → `linked: 'uid'` (phone cross-check).
+- Lead + agent + time, then phone + agent, remain the fallbacks.
 
-When the dialer omits those fields, the recording can't link to a form (no lead match, no phone-only fallback unless `leadId`/`phone` align) and a re-post of the same file can't be detected as a duplicate. Evidence: every one of today's 2,679 real `audioUrl` filenames has the shape
+Backend behavior is unchanged — this ticket only aligns the docs and the generated screen-pop URL.
 
-```
-YYYYMMDD-HHMMSS_M<19 digits>_<8 digits>_<CAMPAIGN>_<agent>-all.mp3
-```
+## Changes
 
-where the `M<19 digits>` tail's last 10 digits are the ViciDial `lead_id` (zero-padded) and the `<8 digits>` are ViciDial's per-file `recording_id` (time-correlated, corr 0.999). We can recover both from the filename when the body doesn't send them.
+### 1. `src/pages/research/ScriptBuilder.tsx`
 
-## Change
-
-### 1. New pure helper (added near `cleanDialer` / `phoneDigits`, ~line 14–19)
+**Line 37** — add `uid` first:
 
 ```ts
-// CR-008: recover lead_id + recording_id from a ViciDial recording filename.
-function parseVicidialFilename(audioUrl: string): { leadId: string | null; recordingId: string | null } {
-  try {
-    const path = audioUrl.split('/').pop() ?? '';
-    const name = decodeURIComponent(path.split('?')[0]);
-    const m = /^\d{8}-\d{6}_M(\d{19})_(\d{4,12})_/.exec(name);
-    if (!m) return { leadId: null, recordingId: null };
-    const leadTail = m[1].slice(-10);          // last 10 digits = zero-padded lead_id
-    const leadNum = Number(leadTail);
-    return {
-      leadId: leadNum === 0 ? null : String(leadNum),  // Number() strips zero padding; all-zeros → null
-      recordingId: m[2],
-    };
-  } catch {
-    return { leadId: null, recordingId: null };  // never throws
-  }
-}
+const SCREEN_POP_QUERY = '?uid=--A--recording_id--B--&lead=--A--lead_id--B--&phone=--A--phone_number--B--&agent=--A--user--B--&campaign=--A--campaign--B--';
 ```
 
-- Last path segment of the URL, query string stripped, URL-decoded.
-- Regex `/^\d{8}-\d{6}_M(\d{19})_(\d{4,12})_/` — date(8)-time(6), `_M`, 19-digit call id, `_`, 4–12-digit recording id, `_`.
-- `leadId` = `String(Number(last 10 of group 1))`; `0` (all-zeros) → `null`. `recordingId` = group 2.
-- Non-match / any error → `{ leadId: null, recordingId: null }`.
+**Line 225** — help line:
 
-### 2. Resolution order (replaces lines 219–220)
-
-Body values always win. Parsed values are pure digit strings ≤ 12 chars, so they trivially satisfy `cleanDialer`'s ≤64 length rule.
-
-```ts
-const parsed  = parseVicidialFilename(audioUrl);
-const bodyLead = cleanDialer(body.leadId);
-const bodyRec  = cleanDialer(body.recordingId) ?? cleanDialer(body.uniqueid);
-const leadId   = bodyLead ?? parsed.leadId;
-const callKey  = bodyRec  ?? parsed.recordingId;
-
-const leadSrc = bodyLead ? 'body' : parsed.leadId ? 'filename' : 'none';
-const recSrc  = bodyRec  ? 'body' : parsed.recordingId ? 'filename' : 'none';
-console.log(`[cr008] ids source lead=${leadSrc} rec=${recSrc}`);   // never logs values
+```tsx
+<p className="text-xs text-muted-foreground">In the recording POST send the same recording_id as <code className="font-mono">recordingId</code> and the lead_id as <code className="font-mono">leadId</code>.</p>
 ```
 
-`phone10` (line 221) is unchanged and stays below.
+(`SCREEN_POP_QUERY` is used on lines 220 and 222 unchanged; both now render with the leading `uid` param automatically.)
 
-### 3. Downstream — unchanged
+### 2. `src/pages/ApiDocs.tsx` — submit-conversation-audio section
 
-Nothing past the resolution changes: the id step (duplicate check / legacy uid link with `phoneOk`), CR-007 interval matching (lead ±, then phone fallback), the no-link insert carrying `dialer_call_id` / `dialer_lead_id`, the guarded link update, `patchLinkedBooking`, and the response shape.
+**Lines 122–124** — parameter descriptions:
 
-### Consequence (confirmed)
-
-New recording rows now carry `dialer_call_id` = the file's `recording_id` even when the dialer sends no `recordingId`. A re-post of the same file therefore hits the existing id-step duplicate path and returns the 200 `duplicate: true` response. Files whose names don't match the pattern behave exactly as today (`parsed` is all-null, `callKey`/`leadId` fall back to body-or-null as before).
-
-### Must NOT change
-
-Credential auth + rate limit, `campaign_key` resolution, the recording host allow-list, BUG-008 call-time resolution (`resolveCallStart`), the CR-006 guard, any other file, the database.
-
-## Unit-style trace of `parseVicidialFilename`
-
-```ts
-parseVicidialFilename('20260925-143052_M9251430520001234567_12345678_padtest_agent1-all.mp3')
-// group1 = '9251430520001234567' (mo=9, day=25, hhmmss=143052, lead=0001234567)
-// last10 = '0001234567' → Number = 1234567
-// → { leadId: '1234567', recordingId: '12345678' }
-
-parseVicidialFilename('https://rec.example.com/2026/20260925-143052_M9251430520001234567_12345678_padtest_agent1-all.mp3?download=1&token=xyz')
-// query stripped, decoded → same filename
-// → { leadId: '1234567', recordingId: '12345678' }
-
-parseVicidialFilename('random-recording.mp3')
-// no regex match
-// → { leadId: null, recordingId: null }
+```tsx
+{ name: 'leadId', type: 'string', required: false, description: 'ViciDial lead_id, max 64 chars. Fallback link key (lead + agent + call time).' },
+{ name: 'recordingId', type: 'string', required: false, description: 'ViciDial recording_id, max 64 chars. Primary link key to the screen-pop form (the pop sends it as `uid`) and duplicate-protection key.' },
+{ name: 'uniqueid', type: 'string', required: false, description: 'Legacy alias of recordingId. If both are sent, recordingId wins.' },
 ```
+
+(`uniqueid` unchanged.)
+
+**Lines 178–189** — Form + Recording Linking block, rewritten:
+
+```tsx
+<p className="text-sm text-muted-foreground mb-3 max-w-2xl leading-relaxed">
+  When the agent's screen-pop form and the recording share the same call, both are stored as <strong className="text-foreground">one record</strong>:
+  typed answers plus the recording and transcript. The recording is matched to the form first by{' '}
+  <code className="text-xs bg-muted px-1.5 py-0.5 rounded font-mono">recordingId</code>, then by{' '}
+  <code className="text-xs bg-muted px-1.5 py-0.5 rounded font-mono">leadId</code> + agent around the call time, then by phone + agent.
+  A different phone number never links, and ambiguous matches are not linked. A repeat post of the same{' '}
+  <code className="text-xs bg-muted px-1.5 py-0.5 rounded font-mono">recordingId</code> returns 200 with{' '}
+  <code className="text-xs bg-muted px-1.5 py-0.5 rounded font-mono">duplicate: true</code> and writes nothing.
+</p>
+<p className="text-sm text-muted-foreground mb-3 max-w-2xl">
+  Success responses include <code className="text-xs bg-muted px-1.5 py-0.5 rounded font-mono">linked</code>:{' '}
+  <code className="text-xs bg-muted px-1.5 py-0.5 rounded font-mono">"uid"</code> (matched by recording id),{' '}
+  <code className="text-xs bg-muted px-1.5 py-0.5 rounded font-mono">"lead"</code> (matched by lead + agent),{' '}
+  <code className="text-xs bg-muted px-1.5 py-0.5 rounded font-mono">"fallback"</code> (matched by phone + agent) or{' '}
+  <code className="text-xs bg-muted px-1.5 py-0.5 rounded font-mono">null</code> (new record).
+</p>
+```
+
+**Line 191** — screen-pop URL example (add `uid` first):
+
+```tsx
+<CodeBlock language="text">{`<public script link>?uid=--A--recording_id--B--&lead=--A--lead_id--B--&phone=--A--phone_number--B--&agent=--A--user--B--&campaign=--A--campaign--B--`}</CodeBlock>
+```
+
+The 201 response example (lines 147–157) omits `linked`; leaving it as-is is fine. No other part of the file changes.
 
 ## Verification (after approval)
 
-1. `deno check` on the function — clean (and does not regress the pre-existing unrelated deno errors in other functions).
-2. Deploy `submit-conversation-audio`.
-3. Unsigned `POST {}` → `401` (credential auth still rejects before any parsing).
-4. No real recordings posted.
+1. `tsgo --noEmit -p tsconfig.app.json` — clean.
+2. Nothing published.
