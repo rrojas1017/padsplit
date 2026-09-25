@@ -4,6 +4,23 @@ import { corsHeaders, adminClient as sharedAdmin } from '../_shared/auth.ts';
 import { isAllowedRecordingUrl } from '../_shared/url.ts';
 import { resolveCallStart } from '../_shared/callTime.ts';
 
+// CR-005 input hygiene (local copy; also in submit-public-script).
+function cleanDialer(v: unknown): string | null {
+  if (typeof v !== 'string') return null;
+  // deno-lint-ignore no-control-regex
+  const s = v.replace(/[\u0000-\u001f\u007f]/g, '').trim();
+  return s && s.length <= 64 ? s : null;
+}
+function phoneDigits(v: unknown): string | null {
+  if (typeof v !== 'string') return null;
+  const d = v.replace(/\D/g, '').slice(0, 15);
+  return d || null;
+}
+function isDialerKeyConflict(e: any): boolean {
+  return e?.code === '23505' &&
+    /research_calls_campaign_dialer_call_key/.test(`${e?.message ?? ''} ${e?.details ?? ''}`);
+}
+
 async function sha256Hex(text: string): Promise<string> {
   const encoder = new TextEncoder();
   const data = encoder.encode(text);
@@ -193,10 +210,35 @@ Deno.serve(async (req) => {
     console.log(`[submit] call_start source=${callStart.source} date=${callStart.date}`);
     const today = callStart.date;
 
-    // --- Create research_calls row first (so booking can link to it) ---
+    // --- CR-005: link to the ViciDial form row of the same call (only with a matched campaign) ---
+    const uniqueid = cleanDialer(body.uniqueid);
+    const leadId = cleanDialer(body.leadId);
+    const phone10 = (phoneDigits(phoneNumber) ?? '').slice(-10) || null;
+    let linked: 'uid' | 'fallback' | null = null;
+    let notesSuffix = '';
+    let linkRow: any = null;
     let researchCallId: string | null = null;
-    if (matchedCampaignId) {
-      const { data: rc, error: rcErr } = await adminClient
+    let researchCallHandled = false;
+
+    const RC_SELECT = 'id, kixie_link, caller_phone, dialer_lead_id, dialer_agent_user';
+    const readByUid = async () => {
+      const { data } = await adminClient
+        .from('research_calls')
+        .select(RC_SELECT)
+        .eq('campaign_id', matchedCampaignId)
+        .eq('dialer_call_id', uniqueid)
+        .maybeSingle();
+      return data as any;
+    };
+    const respondDuplicate = async (rcId: string) => {
+      const { data: b } = await adminClient
+        .from('bookings').select('id').eq('research_call_id', rcId).limit(1).maybeSingle();
+      return new Response(JSON.stringify({
+        success: true, duplicate: true, bookingId: b?.id ?? null, researchCallId: rcId,
+      }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    };
+    const researchCallInsert = (extra: Record<string, unknown> = {}) =>
+      adminClient
         .from('research_calls')
         .insert({
           campaign_id: matchedCampaignId,
@@ -205,9 +247,56 @@ Deno.serve(async (req) => {
           call_date: today,
           caller_type: 'existing_member',
           caller_status: 'submitted',
+          ...extra,
         })
         .select('id')
         .single();
+
+    if (matchedCampaignId && uniqueid) {
+      researchCallHandled = true;
+      let found = await readByUid();
+      if (!found) {
+        const { data: rc, error: rcErr } = await researchCallInsert({
+          dialer_call_id: uniqueid,
+          dialer_agent_user: dialerAgentUser.slice(0, 64),
+          ...(leadId ? { dialer_lead_id: leadId } : {}),
+        });
+        if (rc) researchCallId = rc.id;
+        else if (isDialerKeyConflict(rcErr)) found = await readByUid();
+        else console.error('[submit] research_calls insert failed:', rcErr?.message);
+      }
+      if (found) {
+        if (found.kixie_link) return await respondDuplicate(found.id);
+        linkRow = found;
+        linked = 'uid';
+      }
+    } else if (matchedCampaignId) {
+      const startMs = callStart.startedAt.getTime();
+      const { data: windowRows } = await adminClient
+        .from('research_calls')
+        .select(RC_SELECT)
+        .eq('campaign_id', matchedCampaignId)
+        .eq('caller_type', 'public')
+        .eq('dialer_agent_user', dialerAgentUser)
+        .gte('created_at', new Date(startMs - 30 * 60 * 1000).toISOString())
+        .lte('created_at', new Date(startMs + 30 * 60 * 1000).toISOString())
+        .limit(50);
+      const rows = (windowRows ?? []) as any[];
+      const candidates = phone10
+        ? rows.filter((r) => !r.kixie_link && (phoneDigits(r.caller_phone) ?? '').slice(-10) === phone10)
+        : [];
+      if (candidates.length === 1) {
+        linkRow = candidates[0];
+        linked = 'fallback';
+        researchCallHandled = true;
+      } else if (rows.length > 0) {
+        notesSuffix = ' | unlinked';
+      }
+    }
+
+    // --- Create research_calls row first (so booking can link to it) ---
+    if (matchedCampaignId && !researchCallHandled) {
+      const { data: rc, error: rcErr } = await researchCallInsert();
       if (rcErr) {
         // Non-fatal: log and proceed without linkage so we don't lose the submission.
         console.error('[submit] research_calls insert failed:', rcErr.message);
@@ -216,33 +305,94 @@ Deno.serve(async (req) => {
       }
     }
 
-    // --- Insert booking record (research type) ---
-    const { data: booking, error: bookingError } = await adminClient
-      .from('bookings')
-      .insert({
-        member_name: 'API Submission - ' + phoneNumber,
-        booking_type: 'Research',
-        status: 'Research',
-        record_type: 'research',
-        agent_id: agent.id,
-        booking_date: today,
-        move_in_date: today,
-        contact_phone: phoneNumber,
-        kixie_link: audioUrl,
-        notes: `Campaign: ${campaign} | Dialer Agent: ${dialerAgentUser} | API Submission`,
-        communication_method: 'Phone',
-        import_batch_id: 'api-submission',
-        research_call_id: researchCallId,
-        call_started_at: callStart.startedAt.toISOString(),
-      })
-      .select('id')
-      .single();
+    // --- LINK: attach this recording to the form row (guarded against a second recording) ---
+    let linkedBookingId: string | null = null;
+    if (linkRow) {
+      const { data: u, error: uErr } = await adminClient
+        .from('research_calls')
+        .update({
+          kixie_link: audioUrl,
+          ...(linkRow.caller_phone == null ? { caller_phone: phoneNumber } : {}),
+          ...(linkRow.dialer_lead_id == null && leadId ? { dialer_lead_id: leadId } : {}),
+          ...(linkRow.dialer_agent_user == null ? { dialer_agent_user: dialerAgentUser.slice(0, 64) } : {}),
+        })
+        .eq('id', linkRow.id)
+        .is('kixie_link', null)
+        .select('id');
+      if (uErr) {
+        console.error('[submit] link update failed:', uErr.message);
+        return new Response(JSON.stringify({ error: 'Failed to store record' }), {
+          status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+      if (!u || u.length === 0) return await respondDuplicate(linkRow.id);
+      researchCallId = linkRow.id;
 
-    if (bookingError) {
-      console.error('Booking insert error:', bookingError);
-      return new Response(JSON.stringify({ error: 'Failed to store record' }), {
-        status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
+      const { data: eb } = await adminClient
+        .from('bookings')
+        .select('id, notes, contact_phone')
+        .eq('research_call_id', linkRow.id)
+        .limit(1)
+        .maybeSingle();
+      if (eb) {
+        const { data: bu, error: buErr } = await adminClient
+          .from('bookings')
+          .update({
+            agent_id: agent.id,
+            kixie_link: audioUrl,
+            ...(eb.contact_phone ? {} : { contact_phone: phoneNumber }),
+            booking_date: today,
+            move_in_date: today,
+            call_started_at: callStart.startedAt.toISOString(),
+            notes: eb.notes ? `${eb.notes} | API Submission (linked)` : 'API Submission (linked)',
+          })
+          .eq('id', eb.id)
+          .is('kixie_link', null)
+          .select('id');
+        if (buErr) {
+          console.error('[submit] linked booking update failed:', buErr.message);
+          return new Response(JSON.stringify({ error: 'Failed to store record' }), {
+            status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+        if (!bu || bu.length === 0) return await respondDuplicate(linkRow.id);
+        linkedBookingId = eb.id;
+      }
+    }
+
+    // --- Insert booking record (research type) ---
+    let booking: { id: string };
+    if (linkedBookingId) {
+      booking = { id: linkedBookingId };
+    } else {
+      const { data: inserted, error: bookingError } = await adminClient
+        .from('bookings')
+        .insert({
+          member_name: 'API Submission - ' + phoneNumber,
+          booking_type: 'Research',
+          status: 'Research',
+          record_type: 'research',
+          agent_id: agent.id,
+          booking_date: today,
+          move_in_date: today,
+          contact_phone: phoneNumber,
+          kixie_link: audioUrl,
+          notes: `Campaign: ${campaign} | Dialer Agent: ${dialerAgentUser} | API Submission${notesSuffix}`,
+          communication_method: 'Phone',
+          import_batch_id: 'api-submission',
+          research_call_id: researchCallId,
+          call_started_at: callStart.startedAt.toISOString(),
+        })
+        .select('id')
+        .single();
+
+      if (bookingError || !inserted) {
+        console.error('Booking insert error:', bookingError);
+        return new Response(JSON.stringify({ error: 'Failed to store record' }), {
+          status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+      booking = inserted;
     }
 
     // --- Insert audit record ---
@@ -299,6 +449,7 @@ Deno.serve(async (req) => {
       callStartedAt: callStart.startedAt.toISOString(),
       callDateSource: callStart.source,
       matchedAgent: { id: agent.id, name: agent.name },
+      linked,
     }), {
       status: 201, headers: {
         ...corsHeaders, 'Content-Type': 'application/json',
