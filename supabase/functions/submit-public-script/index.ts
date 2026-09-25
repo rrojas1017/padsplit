@@ -702,6 +702,12 @@ Deno.serve(async (req) => {
     const adoptable = (d: any) =>
       !!d && (d.responses?._submission_id == null) &&
       Date.now() - new Date(d.created_at).getTime() <= 12 * 60 * 60 * 1000;
+    // CR-007: refuse id adoption when both phones are present and last 10 digits differ
+    const phoneMismatch = (d: any) => {
+      const a = (phoneDigits(d?.caller_phone) ?? '').slice(-10);
+      const b = (dialerPhone ?? '').slice(-10);
+      return !!a && !!b && a !== b;
+    };
 
     const finishNew = async (id: string, outcome: string, linked: boolean): Promise<Response> => {
       linkedFlag = linked;
@@ -714,9 +720,12 @@ Deno.serve(async (req) => {
       console.error('submit-public-script: research_calls insert failed', err?.message);
       return json(500, { error: 'Failed to record submission' });
     };
-    const insertUnlinked = async (outcome: string): Promise<Response | 'existing'> => {
+    const insertUnlinked = async (outcome: string, idMismatch = false): Promise<Response | 'existing'> => {
       const { data, error } = await insertRow(outcome, false, {
-        _dialer: { uid: dialerUid, lead: dialerLead, agent: dialerAgent, campaign: dialerCampaign },
+        _dialer: {
+          uid: dialerUid, lead: dialerLead, agent: dialerAgent, campaign: dialerCampaign,
+          ...(idMismatch ? { idMismatch: true } : {}),
+        },
       });
       if (data) return finishNew(data.id, outcome, false);
       return insertFailure(error);
@@ -754,12 +763,12 @@ Deno.serve(async (req) => {
         return insertFailure(error);
       }
       let d = await readDialerRow();
-      if (d) return adoptable(d) ? adopt(d, outcome) : insertUnlinked(outcome);
+      if (d) return adoptable(d) ? (phoneMismatch(d) ? insertUnlinked(outcome, true) : adopt(d, outcome)) : insertUnlinked(outcome);
       const { data, error } = await insertRow(outcome, true);
       if (data) return finishNew(data.id, outcome, true);
       if (isDialerKeyConflict(error)) {
         d = await readDialerRow();
-        return adoptable(d) ? adopt(d, outcome) : insertUnlinked(outcome);
+        return adoptable(d) ? (phoneMismatch(d) ? insertUnlinked(outcome, true) : adopt(d, outcome)) : insertUnlinked(outcome);
       }
       return insertFailure(error);
     };

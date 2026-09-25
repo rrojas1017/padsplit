@@ -232,7 +232,7 @@ Deno.serve(async (req) => {
         .from('research_calls')
         .select(RC_SELECT)
         .eq('campaign_id', matchedCampaignId)
-        .eq('dialer_call_id', uniqueid)
+        .eq('dialer_call_id', callKey)
         .maybeSingle();
       return data as any;
     };
