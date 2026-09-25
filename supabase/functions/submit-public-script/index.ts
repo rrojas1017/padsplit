@@ -8,6 +8,30 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { resolveCallStart } from '../_shared/callTime.ts';
 
+// CR-005 corrective #2: background AI re-trigger after a recording-first merge.
+declare const EdgeRuntime: { waitUntil: (promise: Promise<unknown>) => void };
+
+async function triggerResearchProcessing(bookingId: string): Promise<void> {
+  try {
+    const res = await fetch(
+      `${Deno.env.get('SUPABASE_URL')}/functions/v1/process-research-record`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`,
+        },
+        body: JSON.stringify({ bookingId }),
+      },
+    );
+    if (!res.ok) {
+      console.error(`[cr005] process-research-record HTTP ${res.status} for ${bookingId}`);
+    }
+  } catch (e) {
+    console.error(`[cr005] process-research-record call failed for ${bookingId}`, e);
+  }
+}
+
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
