@@ -1,5 +1,5 @@
 import { ReactNode } from 'react';
-import { ResearchSidebar } from './ResearchSidebar';
+import { AppSidebar } from './AppSidebar';
 import { Header } from './Header';
 import { useSidebar } from '@/contexts/SidebarContext';
 import { cn } from '@/lib/utils';
@@ -16,7 +16,7 @@ export function ResearchLayout({ children, title, subtitle, actions }: ResearchL
 
   return (
     <div className="min-h-screen bg-background flex w-full">
-      <ResearchSidebar />
+      <AppSidebar />
       <div className={cn(
         "flex-1 transition-all duration-300",
         collapsed ? "ml-16" : "ml-64"

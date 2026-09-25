@@ -1,76 +1,51 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 
-type MenuGroup = 'core' | 'admin';
+export type SidebarGroupId =
+  | 'my_work'
+  | 'sales'
+  | 'coaching'
+  | 'research'
+  | 'insights'
+  | 'data'
+  | 'admin';
 
-interface OrderEntry {
-  path: string;
-  group: MenuGroup;
-}
+type SavedOrder = Partial<Record<SidebarGroupId, string[]>>;
 
 interface MenuItem {
-  icon: React.ElementType;
-  label: string;
   path: string;
-  roles: string[];
-  group: MenuGroup;
 }
 
-const STORAGE_KEY = 'sidebar-custom-order';
-const PREFERENCE_KEY = 'sidebar_custom_order';
+const STORAGE_KEY = 'sidebar-custom-order-v2';
+const PREFERENCE_KEY = 'sidebar_custom_order_v2';
 
-function loadOrderFromLocal(): OrderEntry[] | null {
+function isSavedOrder(value: unknown): value is SavedOrder {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  return Object.values(value).every(
+    (paths) => Array.isArray(paths) && paths.every((path) => typeof path === 'string')
+  );
+}
+
+function loadOrderFromLocal(): SavedOrder | null {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return null;
-    const parsed = JSON.parse(raw);
-    if (Array.isArray(parsed) && parsed.every(e => e.path && e.group)) {
-      return parsed;
-    }
-    return null;
+    const parsed: unknown = JSON.parse(raw);
+    return isSavedOrder(parsed) ? parsed : null;
   } catch {
     return null;
   }
 }
 
-function saveOrderToLocal(order: OrderEntry[]) {
+function saveOrderToLocal(order: SavedOrder) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(order));
 }
 
 export function useSidebarOrder(userId?: string) {
-  const [savedOrder, setSavedOrder] = useState<OrderEntry[] | null>(() => loadOrderFromLocal());
+  const [savedOrder, setSavedOrder] = useState<SavedOrder | null>(() => loadOrderFromLocal());
   const dbLoaded = useRef(false);
 
-  // Load from database on mount (source of truth)
-  useEffect(() => {
-    if (!userId || dbLoaded.current) return;
-    dbLoaded.current = true;
-
-    supabase
-      .from('user_preferences')
-      .select('preference_value')
-      .eq('user_id', userId)
-      .eq('preference_key', PREFERENCE_KEY)
-      .maybeSingle()
-      .then(({ data }) => {
-        if (data?.preference_value) {
-          const order = data.preference_value as unknown as OrderEntry[];
-          if (Array.isArray(order) && order.every(e => e.path && e.group)) {
-            setSavedOrder(order);
-            saveOrderToLocal(order);
-            return;
-          }
-        }
-        // No DB record — if localStorage has something, push it to DB
-        const local = loadOrderFromLocal();
-        if (local) {
-          setSavedOrder(local);
-          upsertToDb(userId, local);
-        }
-      });
-  }, [userId]);
-
-  const upsertToDb = useCallback(async (uid: string, order: OrderEntry[]) => {
+  const upsertToDb = useCallback(async (uid: string, order: SavedOrder) => {
     await supabase
       .from('user_preferences')
       .upsert(
@@ -84,63 +59,74 @@ export function useSidebarOrder(userId?: string) {
       );
   }, []);
 
-  const getOrderedItems = useCallback((visibleItems: MenuItem[]): MenuItem[] => {
-    if (!savedOrder) return visibleItems;
+  useEffect(() => {
+    if (!userId || dbLoaded.current) return;
+    dbLoaded.current = true;
 
-    const itemMap = new Map(visibleItems.map(item => [item.path, item]));
-    const ordered: MenuItem[] = [];
+    supabase
+      .from('user_preferences')
+      .select('preference_value')
+      .eq('user_id', userId)
+      .eq('preference_key', PREFERENCE_KEY)
+      .maybeSingle()
+      .then(({ data }) => {
+        const databaseOrder = data?.preference_value;
+        if (isSavedOrder(databaseOrder)) {
+          setSavedOrder(databaseOrder);
+          saveOrderToLocal(databaseOrder);
+          return;
+        }
+
+        const localOrder = loadOrderFromLocal();
+        if (localOrder) {
+          setSavedOrder(localOrder);
+          upsertToDb(userId, localOrder);
+        }
+      });
+  }, [userId, upsertToDb]);
+
+  const getOrderedItems = useCallback(<T extends MenuItem>(groupId: SidebarGroupId, items: T[]): T[] => {
+    const paths = savedOrder?.[groupId];
+    if (!paths) return items;
+
+    const itemMap = new Map(items.map((item) => [item.path, item]));
+    const ordered: T[] = [];
     const seen = new Set<string>();
 
-    for (const entry of savedOrder) {
-      const item = itemMap.get(entry.path);
-      if (item) {
-        ordered.push({ ...item, group: entry.group });
-        seen.add(entry.path);
+    for (const path of paths) {
+      const item = itemMap.get(path);
+      if (item && !seen.has(path)) {
+        ordered.push(item);
+        seen.add(path);
       }
     }
 
-    for (const item of visibleItems) {
-      if (!seen.has(item.path)) {
-        ordered.push(item);
-      }
+    for (const item of items) {
+      if (!seen.has(item.path)) ordered.push(item);
     }
 
     return ordered;
   }, [savedOrder]);
 
   const moveItem = useCallback((
+    groupId: SidebarGroupId,
     itemPath: string,
-    targetGroup: MenuGroup,
     targetIndex: number,
     currentItems: MenuItem[]
   ) => {
-    const entries: OrderEntry[] = currentItems.map(item => ({
-      path: item.path,
-      group: item.group,
-    }));
+    const paths = currentItems.map((item) => item.path);
+    const draggedIndex = paths.indexOf(itemPath);
+    if (draggedIndex === -1) return;
 
-    const draggedIdx = entries.findIndex(e => e.path === itemPath);
-    if (draggedIdx === -1) return;
-    const [dragged] = entries.splice(draggedIdx, 1);
-    dragged.group = targetGroup;
+    const [draggedPath] = paths.splice(draggedIndex, 1);
+    const clampedIndex = Math.max(0, Math.min(targetIndex, paths.length));
+    paths.splice(clampedIndex, 0, draggedPath);
 
-    const groupItems = entries.filter(e => e.group === targetGroup);
-    const otherItems = entries.filter(e => e.group !== targetGroup);
-
-    const clampedIndex = Math.min(targetIndex, groupItems.length);
-    groupItems.splice(clampedIndex, 0, dragged);
-
-    let newOrder: OrderEntry[];
-    if (targetGroup === 'core') {
-      newOrder = [...groupItems, ...otherItems.filter(e => e.group === 'admin')];
-    } else {
-      newOrder = [...otherItems.filter(e => e.group === 'core'), ...groupItems];
-    }
-
+    const newOrder: SavedOrder = { ...(savedOrder ?? {}), [groupId]: paths };
     saveOrderToLocal(newOrder);
     setSavedOrder(newOrder);
     if (userId) upsertToDb(userId, newOrder);
-  }, [userId, upsertToDb]);
+  }, [savedOrder, userId, upsertToDb]);
 
   const resetOrder = useCallback(() => {
     localStorage.removeItem(STORAGE_KEY);
@@ -155,7 +141,10 @@ export function useSidebarOrder(userId?: string) {
     }
   }, [userId]);
 
-  const hasCustomOrder = savedOrder !== null;
-
-  return { getOrderedItems, moveItem, resetOrder, hasCustomOrder };
+  return {
+    getOrderedItems,
+    moveItem,
+    resetOrder,
+    hasCustomOrder: savedOrder !== null,
+  };
 }
