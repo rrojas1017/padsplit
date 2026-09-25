@@ -172,7 +172,13 @@ Deno.serve(async (req) => {
       language,
       declined,
       submission_id,
+      final: finalRaw,
+      save_seq,
     } = body || {};
+    // Old clients do not send `final` → treated as a terminal save.
+    const isFinal = finalRaw === false ? false : true;
+    const saveSeq: number | null =
+      typeof save_seq === 'number' && Number.isInteger(save_seq) && save_seq >= 0 ? save_seq : null;
     const submissionId: string | null =
       typeof submission_id === 'string' && submission_id.trim() !== '' && submission_id.length <= 100
         ? submission_id.trim() : null;
@@ -283,198 +289,337 @@ Deno.serve(async (req) => {
     const clientIp = (req.headers.get('x-forwarded-for') ?? '').split(',')[0].trim();
     const clientHash = await sha256Hex(clientIp + (Deno.env.get('SUPABASE_URL') ?? ''));
 
-    // Idempotency: same submission_id for this campaign returns the existing call.
-    if (submissionId) {
-      const { data: existing } = await admin
-        .from('research_calls')
-        .select('id')
-        .eq('campaign_id', campaign.id)
-        .eq('responses->>_submission_id', submissionId)
-        .limit(1)
-        .maybeSingle();
-      if (existing) {
-        const { data: linked } = await admin
-          .from('bookings').select('id').eq('research_call_id', existing.id).limit(1).maybeSingle();
-        return json(200, {
-          ok: true,
-          research_call_id: existing.id,
-          booking_id: linked?.id ?? null,
-          raw_answers_count: answeredCount,
-        });
-      }
-    }
-
-    // Rate limits
-    const hourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
-    const { count: tokenCount } = await admin
-      .from('research_calls')
-      .select('id', { count: 'exact', head: true })
-      .eq('responses->>_token_id', tokenRow.id)
-      .gte('created_at', hourAgo);
-    if ((tokenCount ?? 0) >= 60) {
-      return json(429, { error: 'Too many submissions, try again later' });
-    }
-    if (clientIp) {
-      const tenMinAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString();
-      const { count: clientCount } = await admin
-        .from('research_calls')
-        .select('id', { count: 'exact', head: true })
-        .eq('responses->>_client_hash', clientHash)
-        .gte('created_at', tenMinAgo);
-      if ((clientCount ?? 0) >= 10) {
-        return json(429, { error: 'Too many submissions, try again later' });
-      }
-    }
-
-    const callOutcome = declined ? 'refused' : endedEarly ? 'ended_early' : (answeredCount === 0 ? 'refused' : 'completed');
-    const createBooking = callOutcome === 'completed' || (callOutcome === 'ended_early' && answeredCount > 0);
+    const terminalOutcome = declined ? 'refused' : endedEarly ? 'ended_early' : (answeredCount === 0 ? 'refused' : 'completed');
     const totalQuestions = (questions as any[]).filter((q) => q?.is_internal !== true).length;
 
-    // Insert research_calls row (anonymous public submission).
-    const enrichedResponses: Record<string, unknown> = {
+    const buildEnriched = (outcome: string): Record<string, unknown> => ({
       ...normalizedResponses,
       _probe_notes: probeNotes || {},
       _agent_notes: agentNotes || {},
-      _early_disposition: endedEarly ? (earlyDisposition || 'ended_early') : null,
+      _early_disposition: outcome === 'ended_early' ? (earlyDisposition || 'ended_early') : null,
       _source: 'public_script',
       _token_id: tokenRow.id,
       _client_hash: clientHash,
       _submission_id: submissionId,
+      _save_seq: saveSeq,
+    });
+
+    const touchToken = () => {
+      admin.from('script_access_tokens')
+        .update({ last_accessed_at: new Date().toISOString() })
+        .eq('id', tokenRow.id)
+        .then(() => {});
     };
 
-    const { data: callRow, error: callErr } = await admin
-      .from('research_calls')
-      .insert({
-        campaign_id: campaign.id,
-        researcher_id: null,
-        caller_name: callerName || 'Public Submission',
-        caller_phone: null,
-        caller_type: 'public',
-        caller_status: null,
-        call_outcome: callOutcome,
-        call_duration_seconds: typeof durationSeconds === 'number' ? durationSeconds : null,
-        responses: enrichedResponses,
-        language: language || 'en',
-      })
-      .select('id')
-      .single();
-
-    if (callErr || !callRow) {
-      console.error('submit-public-script: research_calls insert failed', callErr);
-      return new Response(JSON.stringify({ error: 'Failed to record submission' }), {
-        status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    const ok = (callId: string, status: string, bookingId: string | null, count = answeredCount) => {
+      touchToken();
+      return json(200, {
+        ok: true,
+        research_call_id: callId,
+        booking_id: bookingId,
+        status,
+        raw_answers_count: count,
+        saved_at: new Date().toISOString(),
       });
-    }
+    };
 
-    // Create a research booking and a booking_transcriptions row carrying the
-    // durable raw_script_answers under research_extraction.
-    let bookingId: string | null = null;
-    if (createBooking) try {
-      const { data: anyAgent } = await admin
-        .from('agents').select('id').eq('active', true).limit(1).maybeSingle();
-      const today = new Date().toISOString().split('T')[0];
+    const qualifiesForBooking = (outcome: string, count: number) =>
+      outcome === 'completed' || (outcome === 'ended_early' && count > 0);
 
-      if (anyAgent) {
-        const { data: booking } = await admin
-          .from('bookings')
-          .insert({
-            record_type: 'research',
-            research_call_id: callRow.id,
-            member_name: callerName || 'Public Submission',
-            booking_date: today,
-            move_in_date: today,
-            booking_type: 'Research',
-            status: 'Research',
-            agent_id: anyAgent.id,
-            contact_phone: null,
-            call_duration_seconds: typeof durationSeconds === 'number' ? durationSeconds : null,
-            has_valid_conversation: true,
-          })
-          .select('id')
-          .single();
-        bookingId = booking?.id ?? null;
-      }
+    const findLinkedBooking = async (callId: string): Promise<string | null> => {
+      const { data } = await admin.from('bookings').select('id').eq('research_call_id', callId).limit(1).maybeSingle();
+      return data?.id ?? null;
+    };
 
-      if (bookingId && Object.keys(rawScriptAnswers).length > 0) {
-        const routedType = resolveResearchCampaignType(script);
-        await admin
-          .from('booking_transcriptions')
-          .insert({
-            booking_id: bookingId,
-            research_extraction: { raw_script_answers: rawScriptAnswers },
-            survey_progress: {
-              answered: answeredCount,
-              total: totalQuestions,
-              ended_early: callOutcome === 'ended_early',
-              disposition: endedEarly ? (earlyDisposition || null) : null,
-              source: 'public_script',
-            },
-            ...(routedType ? { research_campaign_type: routedType, retag_source: 'script_id_route' } : {}),
-          });
-      }
-    } catch (bookErr) {
-      console.error('submit-public-script: booking/transcription persist failed', bookErr);
-      // Non-fatal — research_calls row was saved.
-    }
+    // Booking + transcription + script_responses (+ completed counter unless repair).
+    const finalizeSideEffects = async (
+      callId: string,
+      outcome: string,
+      answers: Record<string, RawScriptAnswer>,
+      opts: { repair: boolean; callerName: string | null; duration: number | null; disposition: string | null; lang: string },
+    ): Promise<string | null> => {
+      const count = Object.keys(answers).length;
+      if (!qualifiesForBooking(outcome, count)) return null;
 
-    // script_responses rows (completed and answered early ends; non-fatal).
-    if (createBooking && answeredCount > 0) {
-      try {
-        const rows = (questions as any[]).map((q, idx) => {
-          const a = rawScriptAnswers[getStableId(q, idx)];
-          if (!a) return null;
-          const labels = a.selected_option_labels ?? null;
-          const value = a.raw_text_answer ?? (labels ? labels.join(', ') : (a.scale_value != null ? String(a.scale_value) : null));
-          return {
-            script_id: script.id,
-            session_id: callRow.id,
-            question_order: typeof q?.order === 'number' ? q.order : idx,
-            response_value: value,
-            response_options: labels,
-            response_numeric: a.scale_value ?? null,
-            respondent_id: null,
-            metadata: {
-              question_id: a.question_id,
-              question_type: a.question_type,
-              source: 'public_script',
-              language: language || 'en',
-              token_id: tokenRow.id,
-              ...(callOutcome === 'ended_early' ? { partial: true } : {}),
-            },
-          };
-        }).filter(Boolean);
-        if (rows.length > 0) {
-          const { error: srErr } = await admin.from('script_responses').insert(rows as any[]);
-          if (srErr) console.error('submit-public-script: script_responses insert failed', srErr.message);
-          else if (callOutcome === 'completed') {
-            const { data: sc } = await admin
-              .from('research_scripts').select('total_responses').eq('id', script.id).maybeSingle();
-            const { error: upErr } = await admin
-              .from('research_scripts')
-              .update({ total_responses: (sc?.total_responses ?? 0) + 1, last_response_at: new Date().toISOString() })
-              .eq('id', script.id);
-            if (upErr) console.error('submit-public-script: script counter update failed', upErr.message);
-          }
+      let bookingId: string | null = opts.repair ? await findLinkedBooking(callId) : null;
+      if (!bookingId) try {
+        const { data: anyAgent } = await admin
+          .from('agents').select('id').eq('active', true).limit(1).maybeSingle();
+        const today = new Date().toISOString().split('T')[0];
+
+        if (anyAgent) {
+          const { data: booking } = await admin
+            .from('bookings')
+            .insert({
+              record_type: 'research',
+              research_call_id: callId,
+              member_name: opts.callerName || 'Public Submission',
+              booking_date: today,
+              move_in_date: today,
+              booking_type: 'Research',
+              status: 'Research',
+              agent_id: anyAgent.id,
+              contact_phone: null,
+              call_duration_seconds: opts.duration,
+              has_valid_conversation: true,
+            })
+            .select('id')
+            .single();
+          bookingId = booking?.id ?? null;
         }
-      } catch (srEx) {
-        console.error('submit-public-script: script_responses step failed', srEx);
+
+        if (bookingId && count > 0) {
+          const routedType = resolveResearchCampaignType(script);
+          await admin
+            .from('booking_transcriptions')
+            .insert({
+              booking_id: bookingId,
+              research_extraction: { raw_script_answers: answers },
+              survey_progress: {
+                answered: count,
+                total: totalQuestions,
+                ended_early: outcome === 'ended_early',
+                disposition: outcome === 'ended_early' ? (opts.disposition || null) : null,
+                source: 'public_script',
+              },
+              ...(routedType ? { research_campaign_type: routedType, retag_source: 'script_id_route' } : {}),
+            });
+        }
+      } catch (bookErr) {
+        console.error('submit-public-script: booking/transcription persist failed', bookErr);
       }
+
+      if (count > 0) {
+        try {
+          let skip = false;
+          if (opts.repair) {
+            const { count: existing } = await admin
+              .from('script_responses').select('id', { count: 'exact', head: true }).eq('session_id', callId);
+            skip = (existing ?? 0) > 0;
+          }
+          if (!skip) {
+            const rows = (questions as any[]).map((q, idx) => {
+              const a = answers[getStableId(q, idx)];
+              if (!a) return null;
+              const labels = a.selected_option_labels ?? null;
+              const value = a.raw_text_answer ?? (labels ? labels.join(', ') : (a.scale_value != null ? String(a.scale_value) : null));
+              return {
+                script_id: script.id,
+                session_id: callId,
+                question_order: typeof q?.order === 'number' ? q.order : idx,
+                response_value: value,
+                response_options: labels,
+                response_numeric: a.scale_value ?? null,
+                respondent_id: null,
+                metadata: {
+                  question_id: a.question_id,
+                  question_type: a.question_type,
+                  source: 'public_script',
+                  language: opts.lang,
+                  token_id: tokenRow.id,
+                  ...(outcome === 'ended_early' ? { partial: true } : {}),
+                },
+              };
+            }).filter(Boolean);
+            if (rows.length > 0) {
+              const { error: srErr } = await admin.from('script_responses').insert(rows as any[]);
+              if (srErr) console.error('submit-public-script: script_responses insert failed', srErr.message);
+              else if (outcome === 'completed' && !opts.repair) {
+                const { data: sc } = await admin
+                  .from('research_scripts').select('total_responses').eq('id', script.id).maybeSingle();
+                const { error: upErr } = await admin
+                  .from('research_scripts')
+                  .update({ total_responses: (sc?.total_responses ?? 0) + 1, last_response_at: new Date().toISOString() })
+                  .eq('id', script.id);
+                if (upErr) console.error('submit-public-script: script counter update failed', upErr.message);
+              }
+            }
+          }
+        } catch (srEx) {
+          console.error('submit-public-script: script_responses step failed', srEx);
+        }
+      }
+      return bookingId;
+    };
+
+    const currentOpts = (repair: boolean) => ({
+      repair,
+      callerName: callerName || null,
+      duration: typeof durationSeconds === 'number' ? durationSeconds : null,
+      disposition: endedEarly ? (earlyDisposition || null) : null,
+      lang: language || 'en',
+    });
+
+    // Rate limit for the insert path only. Returns a 429 Response or null.
+    const rateLimit = async (): Promise<Response | null> => {
+      const check = async (field: string, value: string, windowMs: number, limit: number) => {
+        const since = new Date(Date.now() - windowMs).toISOString();
+        const { count } = await admin
+          .from('research_calls')
+          .select('id', { count: 'exact', head: true })
+          .eq(`responses->>${field}`, value)
+          .gte('created_at', since);
+        if ((count ?? 0) < limit) return null;
+        const { data: oldest } = await admin
+          .from('research_calls')
+          .select('created_at')
+          .eq(`responses->>${field}`, value)
+          .gte('created_at', since)
+          .order('created_at', { ascending: true })
+          .limit(1)
+          .maybeSingle();
+        const leaves = oldest?.created_at ? new Date(oldest.created_at).getTime() + windowMs : Date.now() + windowMs;
+        return Math.max(1, Math.ceil((leaves - Date.now()) / 1000));
+      };
+      let retry = await check('_token_id', tokenRow.id, 60 * 60 * 1000, 600);
+      if (retry === null && clientIp) retry = await check('_client_hash', clientHash, 10 * 60 * 1000, 120);
+      if (retry === null) return null;
+      return new Response(JSON.stringify({ error: 'Too many submissions from this office right now', retry_after: retry }), {
+        status: 429,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json', 'Retry-After': String(retry) },
+      });
+    };
+
+    const insertRow = async (outcome: string) =>
+      admin
+        .from('research_calls')
+        .insert({
+          campaign_id: campaign.id,
+          researcher_id: null,
+          caller_name: callerName || 'Public Submission',
+          caller_phone: null,
+          caller_type: 'public',
+          caller_status: null,
+          call_outcome: outcome,
+          call_duration_seconds: typeof durationSeconds === 'number' ? durationSeconds : null,
+          responses: buildEnriched(outcome),
+          language: language || 'en',
+        })
+        .select('id')
+        .single();
+
+    // ---- Legacy path: no submission_id → single terminal insert (as before) ----
+    if (!submissionId) {
+      const limited = await rateLimit();
+      if (limited) return limited;
+      const { data: callRow, error: callErr } = await insertRow(terminalOutcome);
+      if (callErr || !callRow) {
+        console.error('submit-public-script: research_calls insert failed', callErr?.message);
+        return json(500, { error: 'Failed to record submission' });
+      }
+      const bookingId = await finalizeSideEffects(callRow.id, terminalOutcome, rawScriptAnswers, currentOpts(false));
+      return ok(callRow.id, terminalOutcome, bookingId);
     }
 
-    // Touch last_accessed_at (fire and forget).
-    admin.from('script_access_tokens')
-      .update({ last_accessed_at: new Date().toISOString() })
-      .eq('id', tokenRow.id)
-      .then(() => {});
+    const readRow = async () => {
+      const { data } = await admin
+        .from('research_calls')
+        .select('id, call_outcome, created_at, responses, caller_name, call_duration_seconds, language')
+        .eq('responses->>_submission_id', submissionId)
+        .limit(1)
+        .maybeSingle();
+      return data as any;
+    };
 
-    return new Response(JSON.stringify({
-      ok: true,
-      research_call_id: callRow.id,
-      booking_id: bookingId,
-      raw_answers_count: Object.keys(rawScriptAnswers).length,
-    }), {
-      status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    // Terminal row: immutable; repair side effects once if a booking is missing.
+    const handleTerminal = async (row: any): Promise<Response> => {
+      const stored = (row.responses && typeof row.responses === 'object') ? row.responses : {};
+      const storedAnswers = buildRawScriptAnswers(questions as any[], stored);
+      const count = Object.keys(storedAnswers).length;
+      let bookingId = await findLinkedBooking(row.id);
+      if (!bookingId && qualifiesForBooking(row.call_outcome, count)) {
+        bookingId = await finalizeSideEffects(row.id, row.call_outcome, storedAnswers, {
+          repair: true,
+          callerName: row.caller_name && row.caller_name !== 'Public Submission' ? row.caller_name : null,
+          duration: typeof row.call_duration_seconds === 'number' ? row.call_duration_seconds : null,
+          disposition: typeof stored._early_disposition === 'string' ? stored._early_disposition : null,
+          lang: row.language || 'en',
+        });
+      }
+      return ok(row.id, row.call_outcome, bookingId, count);
+    };
+
+    let row = await readRow();
+
+    // ---- Insert path (new submission_id) ----
+    if (!row) {
+      const limited = await rateLimit();
+      if (limited) return limited;
+      const outcome = isFinal ? terminalOutcome : 'in_progress';
+      const { data: callRow, error: callErr } = await insertRow(outcome);
+      if (callRow) {
+        if (outcome === 'in_progress') return ok(callRow.id, outcome, null);
+        const bookingId = await finalizeSideEffects(callRow.id, outcome, rawScriptAnswers, currentOpts(false));
+        return ok(callRow.id, outcome, bookingId);
+      }
+      if ((callErr as any)?.code !== '23505') {
+        console.error('submit-public-script: research_calls insert failed', callErr?.message);
+        return json(500, { error: 'Failed to record submission' });
+      }
+      // Insert race: another request created the row — continue as an update.
+      row = await readRow();
+      if (!row) return json(500, { error: 'Failed to record submission' });
+    }
+
+    // ---- Existing row ----
+    const storedResponses = (row.responses && typeof row.responses === 'object') ? row.responses : {};
+    if (storedResponses._token_id !== tokenRow.id) {
+      return json(403, { error: 'Submission belongs to another link' });
+    }
+
+    if (row.call_outcome !== 'in_progress') return await handleTerminal(row);
+
+    if (Date.now() - new Date(row.created_at).getTime() > 6 * 60 * 60 * 1000) {
+      return json(409, { error: 'Submission expired' });
+    }
+
+    const updateFields = (outcome: string) => ({
+      call_outcome: outcome,
+      responses: buildEnriched(outcome),
+      caller_name: callerName || 'Public Submission',
+      call_duration_seconds: typeof durationSeconds === 'number' ? durationSeconds : null,
+      language: language || 'en',
     });
+
+    if (!isFinal) {
+      const storedSeq = typeof storedResponses._save_seq === 'number' ? storedResponses._save_seq : null;
+      if (saveSeq !== null && storedSeq !== null && saveSeq <= storedSeq) {
+        return ok(row.id, 'in_progress', null); // stale save, ignored
+      }
+      const { data: upd, error: updErr } = await admin
+        .from('research_calls')
+        .update(updateFields('in_progress'))
+        .eq('id', row.id)
+        .eq('call_outcome', 'in_progress')
+        .select('id');
+      if (updErr) {
+        console.error('submit-public-script: in_progress update failed', updErr.message);
+        return json(500, { error: 'Failed to record submission' });
+      }
+      if (!upd || upd.length === 0) {
+        const fresh = await readRow();
+        return fresh ? await handleTerminal(fresh) : json(500, { error: 'Failed to record submission' });
+      }
+      return ok(row.id, 'in_progress', null);
+    }
+
+    // Atomic in_progress → terminal flip; only the winner runs side effects.
+    const { data: flipped, error: flipErr } = await admin
+      .from('research_calls')
+      .update(updateFields(terminalOutcome))
+      .eq('id', row.id)
+      .eq('call_outcome', 'in_progress')
+      .select('id');
+    if (flipErr) {
+      console.error('submit-public-script: terminal update failed', flipErr.message);
+      return json(500, { error: 'Failed to record submission' });
+    }
+    if (!flipped || flipped.length === 0) {
+      const fresh = await readRow();
+      return fresh ? await handleTerminal(fresh) : json(500, { error: 'Failed to record submission' });
+    }
+    const bookingId = await finalizeSideEffects(row.id, terminalOutcome, rawScriptAnswers, currentOpts(false));
+    return ok(row.id, terminalOutcome, bookingId);
   } catch (err) {
     console.error('submit-public-script: unexpected error', err);
     return new Response(JSON.stringify({ error: 'Internal error' }), {
