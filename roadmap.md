@@ -42,3 +42,4 @@
 - [x] CR-001: admins can edit supervisor/agent/researcher users (Edit User menu, researcher save denial check, comms disabled prop + denial checks)
 - [x] BUG-005: public survey autosave (in_progress rows), idempotent terminal save, office-friendly rate limit
 - [x] BUG-007: script-aware research validation, empty transcript → 'unavailable' (No audio); capture file written, not applied
+- [x] CR-006: screen-pop placeholder guard (--A--/--B-- → absent) in PublicScriptView sanitizeDialer + both intake cleanDialer/phoneDigits; public links → padsplit.tools (useScriptTokens BASE_URL); both functions deployed

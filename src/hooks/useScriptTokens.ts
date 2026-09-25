@@ -13,7 +13,7 @@ export interface ScriptToken {
   last_accessed_at: string | null;
 }
 
-const BASE_URL = 'https://padsplit.lovable.app';
+const BASE_URL = 'https://padsplit.tools';
 
 export function getScriptPublicUrl(token: string) {
   return `${BASE_URL}/script/${token}`;
