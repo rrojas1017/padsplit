@@ -225,6 +225,7 @@ export default function PublicScriptView() {
           durationSeconds: startedAtRef.current !== null
             ? Math.max(0, Math.round((Date.now() - startedAtRef.current) / 1000))
             : undefined,
+          startedAt: startedAtRef.current !== null ? new Date(startedAtRef.current).toISOString() : undefined,
         },
         signal: ctrl.signal,
       });
