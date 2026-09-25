@@ -1,5 +1,6 @@
 import { Navigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
+import { ChangePasswordDialog } from '@/components/account/ChangePasswordDialog';
 import { UserRole } from '@/types';
 
 interface ProtectedRouteProps {
