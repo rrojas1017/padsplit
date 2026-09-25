@@ -370,17 +370,25 @@ Deno.serve(async (req) => {
     // --- LINK: attach this recording to the form row (guarded against a second recording) ---
     let linkedBookingId: string | null = null;
     if (linkRow) {
-      const { data: u, error: uErr } = await adminClient
+      const linkPatch: Record<string, unknown> = {
+        kixie_link: audioUrl,
+        ...(linkRow.caller_phone == null ? { caller_phone: phoneNumber } : {}),
+        ...(linkRow.dialer_lead_id == null && leadId ? { dialer_lead_id: leadId } : {}),
+        ...(linkRow.dialer_agent_user == null ? { dialer_agent_user: dialerAgentUser.slice(0, 64) } : {}),
+      };
+      const runLink = (patch: Record<string, unknown>) => adminClient
         .from('research_calls')
-        .update({
-          kixie_link: audioUrl,
-          ...(linkRow.caller_phone == null ? { caller_phone: phoneNumber } : {}),
-          ...(linkRow.dialer_lead_id == null && leadId ? { dialer_lead_id: leadId } : {}),
-          ...(linkRow.dialer_agent_user == null ? { dialer_agent_user: dialerAgentUser.slice(0, 64) } : {}),
-        })
+        .update(patch)
         .eq('id', linkRow.id)
         .is('kixie_link', null)
         .select('id');
+      let { data: u, error: uErr } = await runLink(
+        linkRow.dialer_call_id == null && callKey ? { ...linkPatch, dialer_call_id: callKey } : linkPatch,
+      );
+      if (uErr && isDialerKeyConflict(uErr)) {
+        console.log('[cr007] dialer_call_id not set: conflict');
+        ({ data: u, error: uErr } = await runLink(linkPatch));
+      }
       if (uErr) {
         console.error('[submit] link update failed:', uErr.message);
         return new Response(JSON.stringify({ error: 'Failed to store record' }), {
