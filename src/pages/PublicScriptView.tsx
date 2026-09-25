@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useParams } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
+import { FunctionsHttpError } from '@supabase/supabase-js';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
@@ -354,6 +355,7 @@ export default function PublicScriptView() {
 
   const handleConsent = (agreed: boolean) => {
     if (agreed) {
+      triggerSave(false);
       if (sortedQuestions.length > 0) { setPhase('question'); setQuestionIndex(0); }
       else if (closingScript) setPhase('closing');
       else setPhase('done');
@@ -367,6 +369,7 @@ export default function PublicScriptView() {
   const handleNext = () => {
     if (phase === 'intro') setPhase('consent');
     else if (phase === 'question') {
+      triggerSave(false);
       const currentQ = sortedQuestions[questionIndex] as unknown as CanonicalScriptQuestion;
       const resolved = resolveNextQuestionIndex({
         currentIndex: questionIndex,
@@ -421,6 +424,22 @@ export default function PublicScriptView() {
   const currentKey = stableKeyFor(currentQ);
   const currentResponse = responses[currentKey];
   const yesNoResponse = currentQ?.type === 'yes_no' ? (currentResponse as string) : undefined;
+
+  const saveBanner = phase !== 'start' && (
+    <div className={cn('flex items-center justify-between gap-3 rounded-lg border px-3 py-2 text-sm',
+      saveState === 'failed' ? 'border-destructive/30 bg-destructive/5 text-destructive' : 'bg-muted/40 text-muted-foreground')}
+      aria-live="polite">
+      <span>
+        {saveState === 'saving' && 'Saving…'}
+        {saveState === 'saved' && lastSavedAt && `Saved ${lastSavedAt.toLocaleTimeString()} · ${lastSavedAnswers} answer${lastSavedAnswers === 1 ? '' : 's'}`}
+        {saveState === 'failed' && `Not saved — ${lastError ?? 'Server error'}`}
+        {saveState === 'idle' && 'Not saved yet'}
+      </span>
+      {saveState === 'failed' && (
+        <Button size="sm" variant="outline" className="h-7" onClick={retrySave}>Retry</Button>
+      )}
+    </div>
+  );
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
@@ -510,6 +529,8 @@ export default function PublicScriptView() {
               <Progress value={progressPercent} className="h-2" />
             </div>
           )}
+
+          {saveBanner}
 
           {/* START */}
           {phase === 'start' && (
@@ -816,16 +837,6 @@ export default function PublicScriptView() {
                     <p className="text-sm text-muted-foreground">You've walked through the full script flow.</p>
                   </>
                 )}
-                <div className="text-sm" aria-live="polite">
-                  {submitState === 'saving' && <span className="text-muted-foreground">Saving…</span>}
-                  {submitState === 'saved' && <span className="text-primary font-medium">Saved</span>}
-                  {submitState === 'failed' && (
-                    <span className="inline-flex items-center gap-2 text-destructive">
-                      Could not save
-                      <Button size="sm" variant="outline" onClick={() => void submitPublic()}>Retry</Button>
-                    </span>
-                  )}
-                </div>
                 <div className="flex gap-3 justify-center">
                   <Button onClick={restart}>
                     <RotateCcw className="w-4 h-4 mr-2" /> Restart
