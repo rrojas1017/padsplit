@@ -136,6 +136,9 @@ export default function UserManagement() {
   const isAdmin = hasRole(['admin']);
   const isSupervisor = hasRole(['supervisor']);
 
+  const STAFF_TARGET_ROLES = ['supervisor', 'agent', 'researcher'];
+  const canManageLogin = (role: string) => isSuperAdmin || (isAdmin && STAFF_TARGET_ROLES.includes(role));
+
   // Get current user's site_id for supervisors
   const [currentUserSiteId, setCurrentUserSiteId] = useState<string | null>(null);
 
@@ -1047,13 +1050,13 @@ export default function UserManagement() {
                                   Edit User
                                 </DropdownMenuItem>
                               )}
-                              {(isSuperAdmin || isAdmin) && user.id !== currentUser?.id && (
+                              {(isSuperAdmin || isAdmin) && user.id !== currentUser?.id && (isSuperAdmin || STAFF_TARGET_ROLES.includes(user.role)) && (
                                 <DropdownMenuItem onClick={() => handleOpenEditRoleDialog(user)}>
                                   <Pencil className="w-4 h-4 mr-2" />
                                   Change Role
                                 </DropdownMenuItem>
                               )}
-                              {isSuperAdmin && user.id !== currentUser?.id && (
+                              {canManageLogin(user.role) && user.id !== currentUser?.id && (
                                 user.status !== 'inactive' ? (
                                   <DropdownMenuItem className="text-destructive" onClick={() => setStatusTarget({ user, active: false })}>
                                     <UserX className="w-4 h-4 mr-2" />
@@ -1066,7 +1069,7 @@ export default function UserManagement() {
                                   </DropdownMenuItem>
                                 )
                               )}
-                              {user.id !== currentUser?.id && !isSupervisor && (
+                              {user.id !== currentUser?.id && !isSupervisor && (isSuperAdmin || STAFF_TARGET_ROLES.includes(user.role)) && (
                                 <DropdownMenuItem 
                                   className="text-destructive"
                                   onClick={() => {
@@ -1266,7 +1269,7 @@ export default function UserManagement() {
                                     <div className="flex items-center gap-2">
                                       <Switch
                                         checked={user.status === 'active'}
-                                        disabled={!isSuperAdmin || user.id === currentUser?.id}
+                                        disabled={!canManageLogin(user.role) || user.id === currentUser?.id}
                                         onCheckedChange={(checked) => setStatusTarget({ user, active: checked })}
                                       />
                                       <span className={cn(
@@ -1313,13 +1316,13 @@ export default function UserManagement() {
                                           Edit Researcher
                                         </DropdownMenuItem>
                                       )}
-                                      {(isSuperAdmin || isAdmin) && user.id !== currentUser?.id && (
+                                      {(isSuperAdmin || isAdmin) && user.id !== currentUser?.id && (isSuperAdmin || STAFF_TARGET_ROLES.includes(user.role)) && (
                                         <DropdownMenuItem onClick={() => handleOpenEditRoleDialog(user)}>
                                           <Shield className="w-4 h-4 mr-2" />
                                           Change Role
                                         </DropdownMenuItem>
                                       )}
-                                      {isSuperAdmin && user.id !== currentUser?.id && (
+                                      {canManageLogin(user.role) && user.id !== currentUser?.id && (
                                         user.status !== 'inactive' ? (
                                           <DropdownMenuItem className="text-destructive" onClick={() => setStatusTarget({ user, active: false })}>
                                             <UserX className="w-4 h-4 mr-2" />
@@ -1332,7 +1335,7 @@ export default function UserManagement() {
                                           </DropdownMenuItem>
                                         )
                                       )}
-                                      {user.id !== currentUser?.id && !isSupervisor && (
+                                      {user.id !== currentUser?.id && !isSupervisor && (isSuperAdmin || STAFF_TARGET_ROLES.includes(user.role)) && (
                                         <DropdownMenuItem 
                                           className="text-destructive"
                                           onClick={() => {
@@ -1660,7 +1663,7 @@ export default function UserManagement() {
               </div>
             </div>
           )}
-          {isSuperAdmin && editingAgent && (() => {
+          {(isSuperAdmin || isAdmin) && editingAgent && (() => {
             const linkedUserId = agents.find(a => a.id === editingAgent.id)?.userId;
             if (!linkedUserId) return null;
             return (
@@ -1730,7 +1733,7 @@ export default function UserManagement() {
               </div>
             </div>
           )}
-          {isSuperAdmin && editingResearcher && (
+          {canManageLogin('researcher') && editingResearcher && (
             <div className="border-t pt-4 space-y-2">
               <h4 className="text-sm font-medium">Password</h4>
               <ResetPasswordSection userId={editingResearcher.id} userName={editingResearcher.name} />
@@ -1804,7 +1807,7 @@ export default function UserManagement() {
               </div>
             </div>
           )}
-          {isSuperAdmin && editingUser && (
+          {canManageLogin(editingUser.role) && editingUser && (
             <div className="border-t pt-4 space-y-2">
               <h4 className="text-sm font-medium">Password</h4>
               <ResetPasswordSection userId={editingUser.id} userName={editingUser.name} />
