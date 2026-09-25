@@ -96,7 +96,7 @@ export default function UserManagement() {
   } | null>(null);
   const [isSavingUser, setIsSavingUser] = useState(false);
 
-  // Deactivate / reactivate login (super_admin only)
+  // Deactivate / reactivate login (super_admin; admin for staff roles)
   const [statusTarget, setStatusTarget] = useState<{ user: UserWithRole; active: boolean } | null>(null);
   const [isSettingStatus, setIsSettingStatus] = useState(false);
 
@@ -1807,7 +1807,7 @@ export default function UserManagement() {
               </div>
             </div>
           )}
-          {canManageLogin(editingUser.role) && editingUser && (
+          {editingUser && canManageLogin(editingUser.role) && (
             <div className="border-t pt-4 space-y-2">
               <h4 className="text-sm font-medium">Password</h4>
               <ResetPasswordSection userId={editingUser.id} userName={editingUser.name} />
