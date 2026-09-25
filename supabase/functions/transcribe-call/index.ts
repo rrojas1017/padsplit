@@ -1937,6 +1937,7 @@ async function processTranscription(bookingId: string, kixieUrl: string, skipTts
     let resolvedScriptId: string | null = null;
     let resolvedQuestions: any[] | null = null;
     let resolvedScript: { id: string; slug: string | null; min_valid_duration_seconds: number | null } | null = null;
+    let formProgress: { answered?: number; source?: string } | null = null;
     if (isResearch) {
       try {
         const { data: bookingRow } = await supabase
@@ -1946,6 +1947,16 @@ async function processTranscription(bookingId: string, kixieUrl: string, skipTts
           .maybeSingle();
 
         const researchCallId = bookingRow?.research_call_id || null;
+        if (researchCallId) {
+          // CR-005: typed web-form progress (linked call) is never overwritten.
+          const { data: btRow } = await supabase
+            .from('booking_transcriptions')
+            .select('survey_progress')
+            .eq('booking_id', bookingId)
+            .maybeSingle();
+          const sp = (btRow as any)?.survey_progress;
+          formProgress = sp && typeof sp === 'object' && sp.source === 'public_script' ? sp : null;
+        }
         if (!researchCallId) {
           console.log(`[Background] Survey progress skipped (deterministic): booking_id=${bookingId} has no research_call_id`);
         } else {
@@ -2017,6 +2028,12 @@ async function processTranscription(bookingId: string, kixieUrl: string, skipTts
         hasValidConversation = false;
       }
     }
+
+    // CR-005: a linked web form's typed progress keeps the call valid.
+    if (formProgress && (Number(formProgress.answered) || 0) > 0 && !hasValidConversation) {
+      console.log(`[Validation] booking=${bookingId} valid via linked form progress`);
+      hasValidConversation = true;
+    }
     
     if (!hasValidConversation) {
       console.log(`[Background] ⚠️ No valid conversation detected for ${bookingId} - likely voicemail/failed connection`);
@@ -2024,8 +2041,8 @@ async function processTranscription(bookingId: string, kixieUrl: string, skipTts
 
     // ===== SURVEY PROGRESS EXTRACTION (Research records only) =====
     let surveyProgress: { answered: number; total: number; questions_covered: number[] } | null = null;
-    console.log(`[Background] Survey progress gate: isResearch=${isResearch}, hasValidConversation=${hasValidConversation}, hasTranscription=${!!transcription} for ${bookingId}`);
-    if (isResearch && hasValidConversation && transcription) {
+    console.log(`[Background] Survey progress gate: isResearch=${isResearch}, hasValidConversation=${hasValidConversation}, hasTranscription=${!!transcription}, formProgress=${!!formProgress} for ${bookingId}`);
+    if (isResearch && hasValidConversation && transcription && !formProgress) {
       try {
         console.log('[Background] Extracting survey progress for research record...');
         

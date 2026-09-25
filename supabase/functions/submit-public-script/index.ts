@@ -127,6 +127,23 @@ function hasLongString(v: unknown, max: number, depth = 0): boolean {
   return false;
 }
 
+// CR-005 input hygiene (local copy; also in submit-conversation-audio).
+function cleanDialer(v: unknown): string | null {
+  if (typeof v !== 'string') return null;
+  // deno-lint-ignore no-control-regex
+  const s = v.replace(/[\u0000-\u001f\u007f]/g, '').trim();
+  return s && s.length <= 64 ? s : null;
+}
+function phoneDigits(v: unknown): string | null {
+  if (typeof v !== 'string') return null;
+  const d = v.replace(/\D/g, '').slice(0, 15);
+  return d || null;
+}
+function isDialerKeyConflict(e: any): boolean {
+  return e?.code === '23505' &&
+    /research_calls_campaign_dialer_call_key/.test(`${e?.message ?? ''} ${e?.details ?? ''}`);
+}
+
 async function sha256Hex(input: string): Promise<string> {
   const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(input));
   return Array.from(new Uint8Array(buf)).map((b) => b.toString(16).padStart(2, '0')).join('');
@@ -176,6 +193,11 @@ Deno.serve(async (req) => {
       final: finalRaw,
       save_seq,
       startedAt,
+      dialer_uid,
+      dialer_lead,
+      dialer_phone,
+      dialer_agent,
+      dialer_campaign,
     } = body || {};
     const callStart = resolveCallStart({ explicit: startedAt, audioUrl: '', maxPastMs: 24 * 60 * 60 * 1000 });
     // Old clients do not send `final` → treated as a terminal save.
@@ -185,6 +207,12 @@ Deno.serve(async (req) => {
     const submissionId: string | null =
       typeof submission_id === 'string' && submission_id.trim() !== '' && submission_id.length <= 100
         ? submission_id.trim() : null;
+    // CR-005 dialer linkage (invalid values are treated as absent; never logged raw).
+    const dialerUid = cleanDialer(dialer_uid);
+    const dialerLead = cleanDialer(dialer_lead);
+    const dialerAgent = cleanDialer(dialer_agent);
+    const dialerCampaign = cleanDialer(dialer_campaign);
+    const dialerPhone = phoneDigits(dialer_phone);
 
     if (!token || typeof token !== 'string') {
       return new Response(JSON.stringify({ error: 'token is required' }), {
@@ -259,16 +287,28 @@ Deno.serve(async (req) => {
 
     const rawScriptAnswers = buildRawScriptAnswers(questions as any[], normalizedResponses);
 
+    // CR-005: dialer campaign_key wins when it belongs to this token's script.
+    let campaign: { id: string } | null = null;
+    if (dialerCampaign) {
+      const { data: dc } = await admin
+        .from('research_campaigns')
+        .select('id, script_id')
+        .eq('campaign_key', dialerCampaign)
+        .maybeSingle();
+      if (dc && dc.script_id === script.id) campaign = { id: dc.id };
+    }
     // Resolve a campaign for this script (most recent active one). Required by
     // the research_calls.campaign_id NOT NULL constraint.
-    let { data: campaign } = await admin
-      .from('research_campaigns')
-      .select('id')
-      .eq('script_id', script.id)
-      .eq('status', 'active')
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle();
+    if (!campaign) {
+      ({ data: campaign } = await admin
+        .from('research_campaigns')
+        .select('id')
+        .eq('script_id', script.id)
+        .eq('status', 'active')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle());
+    }
     if (!campaign) {
       const fallback = await admin
         .from('research_campaigns')
@@ -315,6 +355,7 @@ Deno.serve(async (req) => {
         .then(() => {});
     };
 
+    let linkedFlag = false;
     const ok = (callId: string, status: string, bookingId: string | null, count = answeredCount) => {
       touchToken();
       return json(200, {
@@ -324,6 +365,7 @@ Deno.serve(async (req) => {
         status,
         raw_answers_count: count,
         saved_at: new Date().toISOString(),
+        linked: linkedFlag,
       });
     };
 
@@ -343,12 +385,52 @@ Deno.serve(async (req) => {
       opts: { repair: boolean; callerName: string | null; duration: number | null; disposition: string | null; lang: string },
     ): Promise<string | null> => {
       const count = Object.keys(answers).length;
-      if (!qualifiesForBooking(outcome, count)) return null;
+      const existingBooking = await findLinkedBooking(callId);
+      if (!qualifiesForBooking(outcome, count)) return existingBooking;
 
-      let bookingId: string | null = opts.repair ? await findLinkedBooking(callId) : null;
-      if (!bookingId) try {
-        const { data: anyAgent } = await admin
-          .from('agents').select('id').eq('active', true).limit(1).maybeSingle();
+      const routedType = resolveResearchCampaignType(script);
+      const progressObj = {
+        answered: count,
+        total: totalQuestions,
+        ended_early: outcome === 'ended_early',
+        disposition: outcome === 'ended_early' ? (opts.disposition || null) : null,
+        source: 'public_script',
+      };
+
+      let bookingId: string | null = existingBooking;
+      if (existingBooking) {
+        // Recording arrived first: merge typed answers into its record; never insert a booking.
+        if (count > 0) try {
+          await admin.from('bookings').update({ has_valid_conversation: true }).eq('id', existingBooking);
+          const { data: bt } = await admin
+            .from('booking_transcriptions')
+            .select('research_extraction, research_campaign_type')
+            .eq('booking_id', existingBooking)
+            .maybeSingle();
+          const ex = (bt?.research_extraction && typeof bt.research_extraction === 'object')
+            ? bt.research_extraction as Record<string, any> : {};
+          const prevRaw = (ex.raw_script_answers && typeof ex.raw_script_answers === 'object') ? ex.raw_script_answers : {};
+          const { error: mergeErr } = await admin
+            .from('booking_transcriptions')
+            .upsert({
+              booking_id: existingBooking,
+              research_extraction: { ...ex, raw_script_answers: { ...prevRaw, ...answers } },
+              survey_progress: progressObj,
+              ...(!bt?.research_campaign_type && routedType ? { research_campaign_type: routedType, retag_source: 'script_id_route' } : {}),
+            }, { onConflict: 'booking_id' });
+          if (mergeErr) console.error('submit-public-script: linked merge failed', mergeErr.message);
+        } catch (mergeEx) {
+          console.error('submit-public-script: linked merge failed', mergeEx);
+        }
+      } else try {
+        let matchedAgent: { id: string } | null = null;
+        if (dialerAgent) {
+          const { data } = await admin
+            .from('agents').select('id').eq('dialer_agent_user', dialerAgent).limit(1).maybeSingle();
+          matchedAgent = data ?? null;
+        }
+        const anyAgent = matchedAgent ?? (await admin
+          .from('agents').select('id').eq('active', true).limit(1).maybeSingle()).data;
         const today = callStart.date;
 
         if (anyAgent) {
@@ -364,7 +446,7 @@ Deno.serve(async (req) => {
               booking_type: 'Research',
               status: 'Research',
               agent_id: anyAgent.id,
-              contact_phone: null,
+              contact_phone: dialerPhone,
               call_duration_seconds: opts.duration,
               has_valid_conversation: true,
             })
@@ -374,19 +456,12 @@ Deno.serve(async (req) => {
         }
 
         if (bookingId && count > 0) {
-          const routedType = resolveResearchCampaignType(script);
           await admin
             .from('booking_transcriptions')
             .insert({
               booking_id: bookingId,
               research_extraction: { raw_script_answers: answers },
-              survey_progress: {
-                answered: count,
-                total: totalQuestions,
-                ended_early: outcome === 'ended_early',
-                disposition: outcome === 'ended_early' ? (opts.disposition || null) : null,
-                source: 'public_script',
-              },
+              survey_progress: progressObj,
               ...(routedType ? { research_campaign_type: routedType, retag_source: 'script_id_route' } : {}),
             });
         }
@@ -397,7 +472,7 @@ Deno.serve(async (req) => {
       if (count > 0) {
         try {
           let skip = false;
-          if (opts.repair) {
+          {
             const { count: existing } = await admin
               .from('script_responses').select('id', { count: 'exact', head: true }).eq('session_id', callId);
             skip = (existing ?? 0) > 0;
@@ -485,47 +560,121 @@ Deno.serve(async (req) => {
       });
     };
 
-    const insertRow = async (outcome: string) =>
+    const insertRow = async (outcome: string, withDialerId = false, extra: Record<string, unknown> = {}) =>
       admin
         .from('research_calls')
         .insert({
           campaign_id: campaign.id,
           researcher_id: null,
           caller_name: callerName || 'Public Submission',
-          caller_phone: null,
+          caller_phone: dialerPhone,
           caller_type: 'public',
           caller_status: null,
           call_outcome: outcome,
           call_date: callStart.date,
           call_duration_seconds: typeof durationSeconds === 'number' ? durationSeconds : null,
-          responses: buildEnriched(outcome),
+          responses: { ...buildEnriched(outcome), ...extra },
           language: language || 'en',
+          ...(dialerAgent ? { dialer_agent_user: dialerAgent } : {}),
+          ...(dialerLead ? { dialer_lead_id: dialerLead } : {}),
+          ...(withDialerId && dialerUid ? { dialer_call_id: dialerUid } : {}),
         })
         .select('id')
         .single();
 
-    // ---- Legacy path: no submission_id → single terminal insert (as before) ----
-    if (!submissionId) {
-      const limited = await rateLimit();
-      if (limited) return limited;
-      const { data: callRow, error: callErr } = await insertRow(terminalOutcome);
-      if (callErr || !callRow) {
-        console.error('submit-public-script: research_calls insert failed', callErr?.message);
-        return json(500, { error: 'Failed to record submission' });
-      }
-      const bookingId = await finalizeSideEffects(callRow.id, terminalOutcome, rawScriptAnswers, currentOpts(false));
-      return ok(callRow.id, terminalOutcome, bookingId);
-    }
-
     const readRow = async () => {
       const { data } = await admin
         .from('research_calls')
-        .select('id, call_outcome, created_at, responses, caller_name, call_duration_seconds, language')
+        .select('id, call_outcome, created_at, responses, caller_name, call_duration_seconds, language, dialer_call_id')
         .eq('responses->>_submission_id', submissionId)
         .limit(1)
         .maybeSingle();
       return data as any;
     };
+
+    // ---- CR-005: new submission (plain insert, or link to the dialer call row) ----
+    const DIALER_SELECT = 'id, call_outcome, created_at, responses, kixie_link, call_duration_seconds, caller_phone, dialer_lead_id, dialer_agent_user';
+    const readDialerRow = async () => {
+      const { data } = await admin
+        .from('research_calls')
+        .select(DIALER_SELECT)
+        .eq('campaign_id', campaign.id)
+        .eq('dialer_call_id', dialerUid)
+        .maybeSingle();
+      return data as any;
+    };
+    const adoptable = (d: any) =>
+      !!d && (d.responses?._submission_id == null) &&
+      Date.now() - new Date(d.created_at).getTime() <= 12 * 60 * 60 * 1000;
+
+    const finishNew = async (id: string, outcome: string, linked: boolean): Promise<Response> => {
+      linkedFlag = linked;
+      if (outcome === 'in_progress') return ok(id, outcome, null);
+      const bookingId = await finalizeSideEffects(id, outcome, rawScriptAnswers, currentOpts(false));
+      return ok(id, outcome, bookingId);
+    };
+    const insertFailure = (err: any): Response | 'existing' => {
+      if (err?.code === '23505' && submissionId && !isDialerKeyConflict(err)) return 'existing';
+      console.error('submit-public-script: research_calls insert failed', err?.message);
+      return json(500, { error: 'Failed to record submission' });
+    };
+    const insertUnlinked = async (outcome: string): Promise<Response | 'existing'> => {
+      const { data, error } = await insertRow(outcome, false, {
+        _dialer: { uid: dialerUid, lead: dialerLead, agent: dialerAgent, campaign: dialerCampaign },
+      });
+      if (data) return finishNew(data.id, outcome, false);
+      return insertFailure(error);
+    };
+    const adopt = async (d: any, outcome: string): Promise<Response | 'existing'> => {
+      const { data: upd, error } = await admin
+        .from('research_calls')
+        .update({
+          responses: { ...((d.responses && typeof d.responses === 'object') ? d.responses : {}), ...buildEnriched(outcome) },
+          call_outcome: outcome,
+          language: language || 'en',
+          caller_name: callerName || 'Public Submission',
+          ...(d.caller_phone == null && dialerPhone ? { caller_phone: dialerPhone } : {}),
+          ...(d.dialer_lead_id == null && dialerLead ? { dialer_lead_id: dialerLead } : {}),
+          ...(d.dialer_agent_user == null && dialerAgent ? { dialer_agent_user: dialerAgent } : {}),
+          ...(d.call_duration_seconds == null && typeof durationSeconds === 'number' ? { call_duration_seconds: durationSeconds } : {}),
+        })
+        .eq('id', d.id)
+        .is('responses->>_submission_id', null)
+        .select('id');
+      if (error) {
+        console.error('submit-public-script: adopt update failed', error.message);
+        return json(500, { error: 'Failed to record submission' });
+      }
+      if (!upd || upd.length === 0) {
+        if (submissionId && await readRow()) return 'existing';
+        return insertUnlinked(outcome);
+      }
+      return finishNew(d.id, outcome, true);
+    };
+    const createNew = async (outcome: string): Promise<Response | 'existing'> => {
+      if (!dialerUid) {
+        const { data, error } = await insertRow(outcome, false);
+        if (data) return finishNew(data.id, outcome, false);
+        return insertFailure(error);
+      }
+      let d = await readDialerRow();
+      if (d) return adoptable(d) ? adopt(d, outcome) : insertUnlinked(outcome);
+      const { data, error } = await insertRow(outcome, true);
+      if (data) return finishNew(data.id, outcome, true);
+      if (isDialerKeyConflict(error)) {
+        d = await readDialerRow();
+        return adoptable(d) ? adopt(d, outcome) : insertUnlinked(outcome);
+      }
+      return insertFailure(error);
+    };
+
+    // ---- Legacy path: no submission_id → single terminal insert (as before) ----
+    if (!submissionId) {
+      const limited = await rateLimit();
+      if (limited) return limited;
+      const created = await createNew(terminalOutcome);
+      return created === 'existing' ? json(500, { error: 'Failed to record submission' }) : created;
+    }
 
     // Terminal row: immutable; repair side effects once if a booking is missing.
     const handleTerminal = async (row: any): Promise<Response> => {
@@ -555,22 +704,15 @@ Deno.serve(async (req) => {
       const limited = await rateLimit();
       if (limited) return limited;
       const outcome = isFinal ? terminalOutcome : 'in_progress';
-      const { data: callRow, error: callErr } = await insertRow(outcome);
-      if (callRow) {
-        if (outcome === 'in_progress') return ok(callRow.id, outcome, null);
-        const bookingId = await finalizeSideEffects(callRow.id, outcome, rawScriptAnswers, currentOpts(false));
-        return ok(callRow.id, outcome, bookingId);
-      }
-      if ((callErr as any)?.code !== '23505') {
-        console.error('submit-public-script: research_calls insert failed', callErr?.message);
-        return json(500, { error: 'Failed to record submission' });
-      }
+      const created = await createNew(outcome);
+      if (created !== 'existing') return created;
       // Insert race: another request created the row — continue as an update.
       row = await readRow();
       if (!row) return json(500, { error: 'Failed to record submission' });
     }
 
     // ---- Existing row ----
+    linkedFlag = !!row.dialer_call_id;
     const storedResponses = (row.responses && typeof row.responses === 'object') ? row.responses : {};
     if (storedResponses._token_id !== tokenRow.id) {
       return json(403, { error: 'Submission belongs to another link' });
