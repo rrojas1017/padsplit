@@ -6,6 +6,7 @@
 // linked booking_transcriptions.research_extraction JSON.
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { resolveCallStart } from '../_shared/callTime.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -174,7 +175,9 @@ Deno.serve(async (req) => {
       submission_id,
       final: finalRaw,
       save_seq,
+      startedAt,
     } = body || {};
+    const callStart = resolveCallStart({ explicit: startedAt, audioUrl: '', maxPastMs: 24 * 60 * 60 * 1000 });
     // Old clients do not send `final` → treated as a terminal save.
     const isFinal = finalRaw === false ? false : true;
     const saveSeq: number | null =
@@ -346,7 +349,7 @@ Deno.serve(async (req) => {
       if (!bookingId) try {
         const { data: anyAgent } = await admin
           .from('agents').select('id').eq('active', true).limit(1).maybeSingle();
-        const today = new Date().toISOString().split('T')[0];
+        const today = callStart.date;
 
         if (anyAgent) {
           const { data: booking } = await admin
@@ -357,6 +360,7 @@ Deno.serve(async (req) => {
               member_name: opts.callerName || 'Public Submission',
               booking_date: today,
               move_in_date: today,
+              call_started_at: callStart.startedAt.toISOString(),
               booking_type: 'Research',
               status: 'Research',
               agent_id: anyAgent.id,
@@ -492,6 +496,7 @@ Deno.serve(async (req) => {
           caller_type: 'public',
           caller_status: null,
           call_outcome: outcome,
+          call_date: callStart.date,
           call_duration_seconds: typeof durationSeconds === 'number' ? durationSeconds : null,
           responses: buildEnriched(outcome),
           language: language || 'en',

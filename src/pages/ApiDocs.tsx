@@ -118,6 +118,7 @@ X-Client-Secret: sk_your_client_secret_here`}</CodeBlock>
               { name: 'phoneNumber', type: 'string', required: true, description: 'Customer phone number associated with the conversation.' },
               { name: 'campaign', type: 'string', required: true, description: 'Campaign name or identifier tied to the conversation.' },
               { name: 'type', type: 'string', required: true, description: 'Must be "research". Any other value is rejected.' },
+              { name: 'callTimestamp', type: 'string', required: false, description: 'Call start as ISO-8601 with offset or Z (e.g. 2026-09-21T23:30:00-04:00). If omitted, the call time is read from the recording filename (YYYYMMDD-HHMMSS_, dialer time UTC-4); otherwise the upload time is used.' },
             ]}
           />
 
@@ -133,7 +134,8 @@ X-Client-Secret: sk_your_client_secret_here`}</CodeBlock>
     "dialerAgentUser": "agent_john_doe",
     "phoneNumber": "+14155551234",
     "campaign": "Q1-Research-2026",
-    "type": "research"
+    "type": "research",
+    "callTimestamp": "2026-03-10T14:30:15-04:00"
   }'`}</CodeBlock>
 
           {/* Responses */}
@@ -142,6 +144,9 @@ X-Client-Secret: sk_your_client_secret_here`}</CodeBlock>
             <ResponseBlock status={201} label="Created">{`{
   "success": true,
   "bookingId": "uuid-of-created-record",
+  "callDate": "2026-03-10",
+  "callStartedAt": "2026-03-10T18:30:15.000Z",
+  "callDateSource": "body",
   "matchedAgent": {
     "id": "uuid-of-agent",
     "name": "John Doe"
