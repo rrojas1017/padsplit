@@ -119,8 +119,8 @@ X-Client-Secret: sk_your_client_secret_here`}</CodeBlock>
               { name: 'campaign', type: 'string', required: true, description: 'Campaign name or identifier tied to the conversation.' },
               { name: 'type', type: 'string', required: true, description: 'Must be "research". Any other value is rejected.' },
               { name: 'callTimestamp', type: 'string', required: false, description: 'Call start as ISO-8601 with offset or Z (e.g. 2026-09-21T23:30:00-04:00). If omitted, the call time is read from the recording filename (YYYYMMDD-HHMMSS_, dialer time UTC-4); otherwise the upload time is used.' },
-              { name: 'leadId', type: 'string', required: false, description: 'ViciDial lead_id (--A--lead_id--B--), max 64 chars. Link key to the screen-pop form for the same call.' },
-              { name: 'recordingId', type: 'string', required: false, description: 'ViciDial recording_id, max 64 chars. Duplicate-protection key: a repeat post returns the 200 duplicate.' },
+              { name: 'leadId', type: 'string', required: false, description: 'ViciDial lead_id, max 64 chars. Fallback link key (lead + agent + call time).' },
+              { name: 'recordingId', type: 'string', required: false, description: 'ViciDial recording_id, max 64 chars. Primary link key to the screen-pop form (the pop sends it as `uid`) and duplicate-protection key.' },
               { name: 'uniqueid', type: 'string', required: false, description: 'Legacy alias of recordingId. If both are sent, recordingId wins.' },
             ]}
           />
@@ -177,18 +177,22 @@ X-Client-Secret: sk_your_client_secret_here`}</CodeBlock>
           <h3 className="text-xs font-bold uppercase tracking-[0.15em] text-muted-foreground mt-8 mb-3">Form + Recording Linking</h3>
           <p className="text-sm text-muted-foreground mb-3 max-w-2xl leading-relaxed">
             When the agent's screen-pop form and the recording share the same call, both are stored as <strong className="text-foreground">one record</strong>:
-            typed answers plus the recording and transcript. The recording is matched to the form by <code className="text-xs bg-muted px-1.5 py-0.5 rounded font-mono">leadId</code> + agent
-            within ±30 minutes of the call start, otherwise by phone + agent. A different phone number never links, and ambiguous matches are not linked.
-            A repeat post of the same <code className="text-xs bg-muted px-1.5 py-0.5 rounded font-mono">recordingId</code> returns
-            200 with <code className="text-xs bg-muted px-1.5 py-0.5 rounded font-mono">duplicate: true</code> and writes nothing.
+            typed answers plus the recording and transcript. The recording is matched to the form first by{' '}
+            <code className="text-xs bg-muted px-1.5 py-0.5 rounded font-mono">recordingId</code>, then by{' '}
+            <code className="text-xs bg-muted px-1.5 py-0.5 rounded font-mono">leadId</code> + agent around the call time, then by phone + agent.
+            A different phone number never links, and ambiguous matches are not linked. A repeat post of the same{' '}
+            <code className="text-xs bg-muted px-1.5 py-0.5 rounded font-mono">recordingId</code> returns 200 with{' '}
+            <code className="text-xs bg-muted px-1.5 py-0.5 rounded font-mono">duplicate: true</code> and writes nothing.
           </p>
           <p className="text-sm text-muted-foreground mb-3 max-w-2xl">
-            Success responses include <code className="text-xs bg-muted px-1.5 py-0.5 rounded font-mono">linked</code>: <code className="text-xs bg-muted px-1.5 py-0.5 rounded font-mono">"uid"</code> (legacy form carrying the recording id),{' '}
+            Success responses include <code className="text-xs bg-muted px-1.5 py-0.5 rounded font-mono">linked</code>:{' '}
+            <code className="text-xs bg-muted px-1.5 py-0.5 rounded font-mono">"uid"</code> (matched by recording id),{' '}
             <code className="text-xs bg-muted px-1.5 py-0.5 rounded font-mono">"lead"</code> (matched by lead + agent),{' '}
-            <code className="text-xs bg-muted px-1.5 py-0.5 rounded font-mono">"fallback"</code> (matched by phone + agent) or <code className="text-xs bg-muted px-1.5 py-0.5 rounded font-mono">null</code> (new record).
+            <code className="text-xs bg-muted px-1.5 py-0.5 rounded font-mono">"fallback"</code> (matched by phone + agent) or{' '}
+            <code className="text-xs bg-muted px-1.5 py-0.5 rounded font-mono">null</code> (new record).
           </p>
           <p className="text-sm text-muted-foreground mb-3">Screen-pop form URL (configure in the ViciDial campaign web form):</p>
-          <CodeBlock language="text">{`<public script link>?lead=--A--lead_id--B--&phone=--A--phone_number--B--&agent=--A--user--B--&campaign=--A--campaign--B--`}</CodeBlock>
+          <CodeBlock language="text">{`<public script link>?uid=--A--recording_id--B--&lead=--A--lead_id--B--&phone=--A--phone_number--B--&agent=--A--user--B--&campaign=--A--campaign--B--`}</CodeBlock>
         </div>
       </DocSection>
 
