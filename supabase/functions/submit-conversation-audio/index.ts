@@ -215,10 +215,12 @@ Deno.serve(async (req) => {
     const today = callStart.date;
 
     // --- CR-005: link to the ViciDial form row of the same call (only with a matched campaign) ---
-    const uniqueid = cleanDialer(body.uniqueid);
+    // CR-007: recordingId is the link key; uniqueid kept as legacy alias
+    const callKey = cleanDialer(body.recordingId) ?? cleanDialer(body.uniqueid);
     const leadId = cleanDialer(body.leadId);
     const phone10 = (phoneDigits(phoneNumber) ?? '').slice(-10) || null;
     let linked: 'uid' | 'fallback' | null = null;
+    let idMismatch = false;
     let notesSuffix = '';
     let linkRow: any = null;
     let researchCallId: string | null = null;
@@ -256,12 +258,12 @@ Deno.serve(async (req) => {
         .select('id')
         .single();
 
-    if (matchedCampaignId && uniqueid) {
+    if (matchedCampaignId && callKey) {
       researchCallHandled = true;
       let found = await readByUid();
       if (!found) {
         const { data: rc, error: rcErr } = await researchCallInsert({
-          dialer_call_id: uniqueid,
+          dialer_call_id: callKey,
           dialer_agent_user: dialerAgentUser.slice(0, 64),
           ...(leadId ? { dialer_lead_id: leadId } : {}),
         });
@@ -271,8 +273,21 @@ Deno.serve(async (req) => {
       }
       if (found) {
         if (found.kixie_link) return await respondDuplicate(found.id);
-        linkRow = found;
-        linked = 'uid';
+        const rowPhone10 = (phoneDigits(found.caller_phone) ?? '').slice(-10) || null;
+        if (rowPhone10 && phone10 && rowPhone10 !== phone10) {
+          // CR-007: call key matched but phone differs → do not link; separate unlinked row
+          const { data: rc, error: rcErr } = await researchCallInsert({
+            dialer_agent_user: dialerAgentUser.slice(0, 64),
+            ...(leadId ? { dialer_lead_id: leadId } : {}),
+          });
+          if (rc) researchCallId = rc.id;
+          else console.error('[submit] research_calls insert failed:', rcErr?.message);
+          notesSuffix = ' | id-mismatch';
+          idMismatch = true;
+        } else {
+          linkRow = found;
+          linked = 'uid';
+        }
       }
     } else if (matchedCampaignId) {
       const startMs = callStart.startedAt.getTime();
@@ -418,7 +433,7 @@ Deno.serve(async (req) => {
         const patched = await patchLinkedBooking(eb, researchCallId);
         if (patched instanceof Response) return patched;
         booking = { id: patched };
-        if (!linked) linked = 'uid';
+        if (!linked && !idMismatch) linked = 'uid';
       } else {
         console.error('Booking insert error:', bookingError);
         return new Response(JSON.stringify({ error: 'Failed to store record' }), {
@@ -482,6 +497,7 @@ Deno.serve(async (req) => {
       callDateSource: callStart.source,
       matchedAgent: { id: agent.id, name: agent.name },
       linked,
+      ...(idMismatch ? { idMismatch: true } : {}),
     }), {
       status: 201, headers: {
         ...corsHeaders, 'Content-Type': 'application/json',
