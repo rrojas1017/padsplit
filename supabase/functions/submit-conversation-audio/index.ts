@@ -21,6 +21,9 @@ function isDialerKeyConflict(e: any): boolean {
     /research_calls_campaign_dialer_call_key/.test(`${e?.message ?? ''} ${e?.details ?? ''}`);
 }
 
+const isBookingCallConflict = (e: any) =>
+  e?.code === '23505' && /bookings_research_call_id_key/.test(`${e?.message ?? ''} ${e?.details ?? ''}`);
+
 async function sha256Hex(text: string): Promise<string> {
   const encoder = new TextEncoder();
   const data = encoder.encode(text);
@@ -305,6 +308,35 @@ Deno.serve(async (req) => {
       }
     }
 
+    // Patch the form-created booking with this recording (guarded against a second recording).
+    const patchLinkedBooking = async (
+      eb: { id: string; notes: string | null; contact_phone: string | null },
+      rcId: string,
+    ): Promise<string | Response> => {
+      const { data: bu, error: buErr } = await adminClient
+        .from('bookings')
+        .update({
+          agent_id: agent.id,
+          kixie_link: audioUrl,
+          ...(eb.contact_phone ? {} : { contact_phone: phoneNumber }),
+          booking_date: today,
+          move_in_date: today,
+          call_started_at: callStart.startedAt.toISOString(),
+          notes: `${eb.notes ? eb.notes + ' | ' : ''}Campaign: ${campaign} | Dialer Agent: ${dialerAgentUser} | API Submission (linked)`,
+        })
+        .eq('id', eb.id)
+        .is('kixie_link', null)
+        .select('id');
+      if (buErr) {
+        console.error('[submit] linked booking update failed:', buErr.message);
+        return new Response(JSON.stringify({ error: 'Failed to store record' }), {
+          status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+      if (!bu || bu.length === 0) return await respondDuplicate(rcId);
+      return eb.id;
+    };
+
     // --- LINK: attach this recording to the form row (guarded against a second recording) ---
     let linkedBookingId: string | null = null;
     if (linkRow) {
@@ -335,28 +367,9 @@ Deno.serve(async (req) => {
         .limit(1)
         .maybeSingle();
       if (eb) {
-        const { data: bu, error: buErr } = await adminClient
-          .from('bookings')
-          .update({
-            agent_id: agent.id,
-            kixie_link: audioUrl,
-            ...(eb.contact_phone ? {} : { contact_phone: phoneNumber }),
-            booking_date: today,
-            move_in_date: today,
-            call_started_at: callStart.startedAt.toISOString(),
-            notes: eb.notes ? `${eb.notes} | API Submission (linked)` : 'API Submission (linked)',
-          })
-          .eq('id', eb.id)
-          .is('kixie_link', null)
-          .select('id');
-        if (buErr) {
-          console.error('[submit] linked booking update failed:', buErr.message);
-          return new Response(JSON.stringify({ error: 'Failed to store record' }), {
-            status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          });
-        }
-        if (!bu || bu.length === 0) return await respondDuplicate(linkRow.id);
-        linkedBookingId = eb.id;
+        const patched = await patchLinkedBooking(eb, linkRow.id);
+        if (patched instanceof Response) return patched;
+        linkedBookingId = patched;
       }
     }
 
@@ -386,13 +399,31 @@ Deno.serve(async (req) => {
         .select('id')
         .single();
 
-      if (bookingError || !inserted) {
+      if (inserted) {
+        booking = inserted;
+      } else if (isBookingCallConflict(bookingError) && researchCallId) {
+        // The form intake created the booking first — patch it instead.
+        const { data: eb } = await adminClient
+          .from('bookings')
+          .select('id, notes, contact_phone')
+          .eq('research_call_id', researchCallId)
+          .maybeSingle();
+        if (!eb) {
+          console.error('[submit] booking conflict but no booking found on re-read');
+          return new Response(JSON.stringify({ error: 'Failed to store record' }), {
+            status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+        const patched = await patchLinkedBooking(eb, researchCallId);
+        if (patched instanceof Response) return patched;
+        booking = { id: patched };
+        if (!linked) linked = 'uid';
+      } else {
         console.error('Booking insert error:', bookingError);
         return new Response(JSON.stringify({ error: 'Failed to store record' }), {
           status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
       }
-      booking = inserted;
     }
 
     // --- Insert audit record ---

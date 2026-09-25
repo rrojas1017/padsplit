@@ -144,6 +144,9 @@ function isDialerKeyConflict(e: any): boolean {
     /research_calls_campaign_dialer_call_key/.test(`${e?.message ?? ''} ${e?.details ?? ''}`);
 }
 
+const isBookingCallConflict = (e: any) =>
+  e?.code === '23505' && /bookings_research_call_id_key/.test(`${e?.message ?? ''} ${e?.details ?? ''}`);
+
 async function sha256Hex(input: string): Promise<string> {
   const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(input));
   return Array.from(new Uint8Array(buf)).map((b) => b.toString(16).padStart(2, '0')).join('');
@@ -397,15 +400,14 @@ Deno.serve(async (req) => {
         source: 'public_script',
       };
 
-      let bookingId: string | null = existingBooking;
-      if (existingBooking) {
-        // Recording arrived first: merge typed answers into its record; never insert a booking.
+      // Merge typed answers into an existing (recording-created) booking; never insert one.
+      const mergeIntoBooking = async (targetId: string) => {
         if (count > 0) try {
-          await admin.from('bookings').update({ has_valid_conversation: true }).eq('id', existingBooking);
+          await admin.from('bookings').update({ has_valid_conversation: true }).eq('id', targetId);
           const { data: bt } = await admin
             .from('booking_transcriptions')
             .select('research_extraction, research_campaign_type')
-            .eq('booking_id', existingBooking)
+            .eq('booking_id', targetId)
             .maybeSingle();
           const ex = (bt?.research_extraction && typeof bt.research_extraction === 'object')
             ? bt.research_extraction as Record<string, any> : {};
@@ -413,7 +415,7 @@ Deno.serve(async (req) => {
           const { error: mergeErr } = await admin
             .from('booking_transcriptions')
             .upsert({
-              booking_id: existingBooking,
+              booking_id: targetId,
               research_extraction: { ...ex, raw_script_answers: { ...prevRaw, ...answers } },
               survey_progress: progressObj,
               ...(!bt?.research_campaign_type && routedType ? { research_campaign_type: routedType, retag_source: 'script_id_route' } : {}),
@@ -422,6 +424,13 @@ Deno.serve(async (req) => {
         } catch (mergeEx) {
           console.error('submit-public-script: linked merge failed', mergeEx);
         }
+      };
+
+      let bookingId: string | null = existingBooking;
+      let mergedViaConflict = false;
+      if (existingBooking) {
+        // Recording arrived first.
+        await mergeIntoBooking(existingBooking);
       } else try {
         let matchedAgent: { id: string } | null = null;
         if (dialerAgent) {
@@ -434,7 +443,7 @@ Deno.serve(async (req) => {
         const today = callStart.date;
 
         if (anyAgent) {
-          const { data: booking } = await admin
+          const { data: booking, error: insErr } = await admin
             .from('bookings')
             .insert({
               record_type: 'research',
@@ -453,9 +462,19 @@ Deno.serve(async (req) => {
             .select('id')
             .single();
           bookingId = booking?.id ?? null;
+          if (!booking && isBookingCallConflict(insErr)) {
+            // The recording intake created the booking first — merge into it.
+            bookingId = await findLinkedBooking(callId);
+            if (bookingId) {
+              await mergeIntoBooking(bookingId);
+              mergedViaConflict = true;
+            }
+          } else if (insErr) {
+            console.error('submit-public-script: booking insert failed', insErr.message);
+          }
         }
 
-        if (bookingId && count > 0) {
+        if (bookingId && count > 0 && !mergedViaConflict) {
           await admin
             .from('booking_transcriptions')
             .insert({
