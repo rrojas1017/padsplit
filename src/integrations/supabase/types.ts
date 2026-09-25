@@ -2363,6 +2363,9 @@ export type Database = {
           caller_type: string
           campaign_id: string
           created_at: string
+          dialer_agent_user: string | null
+          dialer_call_id: string | null
+          dialer_lead_id: string | null
           id: string
           kixie_link: string | null
           language: string | null
@@ -2387,6 +2390,9 @@ export type Database = {
           caller_type: string
           campaign_id: string
           created_at?: string
+          dialer_agent_user?: string | null
+          dialer_call_id?: string | null
+          dialer_lead_id?: string | null
           id?: string
           kixie_link?: string | null
           language?: string | null
@@ -2411,6 +2417,9 @@ export type Database = {
           caller_type?: string
           campaign_id?: string
           created_at?: string
+          dialer_agent_user?: string | null
+          dialer_call_id?: string | null
+          dialer_lead_id?: string | null
           id?: string
           kixie_link?: string | null
           language?: string | null
