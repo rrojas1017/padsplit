@@ -139,6 +139,53 @@ function validateConversation(params: {
   return true;
 }
 
+const SR_ROUTE_SCRIPT_ID_MAP: Record<string, string> = {
+  '6397bb7f-ac6a-49ea-90ad-9ca6ec046434': 'move_out_survey',
+  'c701a243-1c66-425a-8f79-99a290ec5b6b': 'payment_experience',
+};
+const SR_BUILTIN_TYPES = ['move_out_survey', 'payment_experience', 'audience_survey'];
+// Same rule as submit-public-script resolveResearchCampaignType. Keep in sync.
+function srResolveCampaignType(s: { id: string; slug?: string | null }): string {
+  if (SR_ROUTE_SCRIPT_ID_MAP[s.id]) return SR_ROUTE_SCRIPT_ID_MAP[s.id];
+  if (s.slug && ['payment_experience', 'audience_survey'].includes(s.slug)) return s.slug;
+  return s.slug || `script_${String(s.id).slice(0, 8)}`;
+}
+const SCRIPT_DEAD_CALL_SUMMARY_PHRASES = [
+  'voicemail', 'mailbox', 'answering machine', 'automated voice', 'automatic voice',
+  'automated message', 'automated greeting', 'automated carrier', 'carrier announcement',
+  'carrier message', 'ivr greeting', 'call screening', 'no live conversation', 'no live person',
+  'did not connect', 'no conversation took place', 'no conversation occurred', 'no actual conversation',
+  'no two-way conversation', 'no real conversation', 'no meaningful conversation', 'no meaningful dialogue',
+  'one-sided recording', 'no contact was made', 'failed to connect', 'no information was exchanged',
+  'no member interaction', 'no audio', 'wrong number', 'leave a message', 'transcript contains only',
+  'transcription contains only', 'extremely limited',
+];
+// Verbatim copy of validateConversation's voicemailIndicators (that function must stay unchanged).
+const SCRIPT_VOICEMAIL_INDICATORS = [
+  'forwarded to voicemail', 'leave your message', 'leave a message', 'not available', 'at the tone',
+  'please record your message', 'mailbox is full', 'record your message at the tone',
+  'the person you are calling', 'is not available right now', 'after the beep', 'voice mailbox',
+  'voicemail', 'answering machine', 'automated voice',
+];
+
+// Validity for research scripts without a dedicated dashboard (BUG-007).
+function validateScriptResearchConversation(p: {
+  durationSeconds: number | null;
+  transcription: string;
+  summary: string;
+  minDurationSeconds: number;
+}): { valid: boolean; reason: string } {
+  const d = p.durationSeconds;
+  if (d == null || d < 15) return { valid: false, reason: 'too_short_hard' };
+  if (d < 30 && SCRIPT_VOICEMAIL_INDICATORS.some(i => (p.transcription || '').toLowerCase().includes(i))) {
+    return { valid: false, reason: 'voicemail_short' };
+  }
+  const s = (p.summary || '').toLowerCase();
+  if (SCRIPT_DEAD_CALL_SUMMARY_PHRASES.some(i => s.includes(i))) return { valid: false, reason: 'summary_dead_call' };
+  if (d < p.minDurationSeconds) return { valid: false, reason: 'below_script_minimum' };
+  return { valid: true, reason: 'valid' };
+}
+
 // Extract a person's name from a greeting pattern in the first 500 chars of transcript
 // Looks for "Hi [Name]", "Hello [Name]", "Hey [Name]", "Good morning [Name]" etc.
 // Only matches the Agent/researcher's first line greeting the other person
@@ -1417,6 +1464,26 @@ async function updateBookingError(supabase: any, bookingId: string, errorMessage
   }
 }
 
+// Helper to mark booking as having no usable audio (empty STT transcript)
+async function updateBookingUnavailable(supabase: any, bookingId: string, message: string) {
+  try {
+    const { error } = await supabase
+      .from('bookings')
+      .update({
+        transcription_status: 'unavailable',
+        transcription_error_message: message
+      })
+      .eq('id', bookingId);
+    if (error && error.code === '42703') {
+      console.warn(`[Background] Schema cache stale (42703) on unavailable update for ${bookingId}. Status update skipped.`);
+    } else if (error) {
+      console.error('[Background] Failed to update unavailable status:', error);
+    }
+  } catch (e) {
+    console.error('[Background] Failed to update unavailable status:', e);
+  }
+}
+
 // Background transcription processing with timeout handling
 async function processTranscription(bookingId: string, kixieUrl: string, skipTts: boolean = false) {
   console.log(`[Background] Starting transcription for booking ${bookingId} (skipTts: ${skipTts})`);
@@ -1662,11 +1729,11 @@ async function processTranscription(bookingId: string, kixieUrl: string, skipTts
     
     console.log(`[Background] ${selectedProvider} transcription formatted, length:`, transcription.length);
 
-    // Guard: if transcription text is empty after STT processing, mark as failed
+    // Guard: if transcription text is empty after STT processing, mark as unavailable (no audio)
     if (!transcription || transcription.trim().length === 0) {
-      console.error(`[Background] Empty transcript returned by ${selectedProvider} for booking ${bookingId}. Marking as failed.`);
+      console.error(`[Background] Empty transcript returned by ${selectedProvider} for booking ${bookingId}. Marking as unavailable.`);
       clearTimeout(timeoutId);
-      await updateBookingError(supabase, bookingId, `STT returned empty transcript (${selectedProvider}). Audio may be silent or corrupted.`);
+      await updateBookingUnavailable(supabase, bookingId, `STT returned empty transcript (${selectedProvider}). Audio may be silent or corrupted.`);
       return;
     }
 
@@ -1863,41 +1930,15 @@ async function processTranscription(bookingId: string, kixieUrl: string, skipTts
     }
 
     // ===== CONVERSATION VALIDITY CHECK =====
-    // Detect voicemails, failed connections, and calls without real conversations
-    let hasValidConversation = validateConversation({
-      durationSeconds: callDurationSeconds,
-      transcription: transcription,
-      summary: summary,
-    });
-    
-    // Research calls require a minimum 2-minute (120s) duration to be considered valid
-    if (hasValidConversation && isResearch && (!callDurationSeconds || callDurationSeconds < 120)) {
-      console.log(`[Background] Research call ${bookingId} under 2 min (${callDurationSeconds || 0}s) — marking invalid`);
-      hasValidConversation = false;
-    }
-    
-    if (!hasValidConversation) {
-      console.log(`[Background] ⚠️ No valid conversation detected for ${bookingId} - likely voicemail/failed connection`);
-    }
-
-    // ===== SURVEY PROGRESS EXTRACTION (Research records only) =====
-    let surveyProgress: { answered: number; total: number; questions_covered: number[] } | null = null;
-    console.log(`[Background] Survey progress gate: isResearch=${isResearch}, hasValidConversation=${hasValidConversation}, hasTranscription=${!!transcription} for ${bookingId}`);
-    if (isResearch && hasValidConversation && transcription) {
+    // Resolve the research script ONCE (deterministic chain only):
+    //   bookings.research_call_id → research_calls.campaign_id
+    //   → research_campaigns.script_id → research_scripts
+    // Reused by survey progress below. If any link is missing, it stays null.
+    let resolvedScriptId: string | null = null;
+    let resolvedQuestions: any[] | null = null;
+    let resolvedScript: { id: string; slug: string | null; min_valid_duration_seconds: number | null } | null = null;
+    if (isResearch) {
       try {
-        console.log('[Background] Extracting survey progress for research record...');
-        
-        // DETERMINISTIC script resolution ONLY:
-        //   bookings.research_call_id
-        //   → research_calls.campaign_id
-        //   → research_campaigns.script_id
-        //   → research_scripts.questions
-        // No fallback to first-available script, Move-Out defaults, keyword
-        // inference, conversation_submissions.campaign, or notes regex.
-        // If any link is missing, leave survey_progress NULL.
-        let questions: any[] | null = null;
-        let resolvedScriptId: string | null = null;
-
         const { data: bookingRow } = await supabase
           .from('bookings')
           .select('research_call_id')
@@ -1920,21 +1961,76 @@ async function processTranscription(bookingId: string, kixieUrl: string, skipTts
           } else {
             const { data: campaignRow } = await supabase
               .from('research_campaigns')
-              .select('script_id, research_scripts!research_campaigns_script_id_fkey(questions)')
+              .select('script_id, research_scripts!research_campaigns_script_id_fkey(id, slug, questions, min_valid_duration_seconds)')
               .eq('id', campaignId)
               .maybeSingle();
 
             resolvedScriptId = (campaignRow as any)?.script_id || null;
-            const q = (campaignRow as any)?.research_scripts?.questions;
+            const scriptRow = (campaignRow as any)?.research_scripts || null;
+            const q = scriptRow?.questions;
             if (Array.isArray(q) && q.length > 0) {
-              questions = q;
+              resolvedQuestions = q;
+            }
+            if (scriptRow?.id) {
+              resolvedScript = {
+                id: scriptRow.id,
+                slug: scriptRow.slug ?? null,
+                min_valid_duration_seconds: scriptRow.min_valid_duration_seconds ?? null,
+              };
             }
 
             console.log(
-              `[Background] Deterministic script resolution: booking_id=${bookingId} resolved_script_id=${resolvedScriptId || 'null'} question_count=${questions ? questions.length : 0}`
+              `[Background] Deterministic script resolution: booking_id=${bookingId} resolved_script_id=${resolvedScriptId || 'null'} question_count=${resolvedQuestions ? resolvedQuestions.length : 0}`
             );
           }
         }
+      } catch (resolveErr) {
+        console.error('[Background] Research script resolution failed:', resolveErr);
+        resolvedScript = null;
+      }
+    }
+    const scriptType = resolvedScript ? srResolveCampaignType(resolvedScript) : null;
+    const useScriptValidator = isResearch && !!resolvedScript && !!scriptType && !SR_BUILTIN_TYPES.includes(scriptType);
+
+    let hasValidConversation: boolean;
+    if (useScriptValidator) {
+      const minDur = resolvedScript!.min_valid_duration_seconds ?? 120;
+      const r = validateScriptResearchConversation({
+        durationSeconds: callDurationSeconds,
+        transcription: transcription,
+        summary: summary,
+        minDurationSeconds: minDur,
+      });
+      console.log(`[Validation] script=${resolvedScript!.id.slice(0, 8)} type=${scriptType} dur=${callDurationSeconds ?? 'null'} min=${minDur} result=${r.valid ? 'valid' : r.reason}`);
+      hasValidConversation = r.valid;
+    } else {
+      // Detect voicemails, failed connections, and calls without real conversations
+      hasValidConversation = validateConversation({
+        durationSeconds: callDurationSeconds,
+        transcription: transcription,
+        summary: summary,
+      });
+
+      // Research calls require a minimum 2-minute (120s) duration to be considered valid
+      if (hasValidConversation && isResearch && (!callDurationSeconds || callDurationSeconds < 120)) {
+        console.log(`[Background] Research call ${bookingId} under 2 min (${callDurationSeconds || 0}s) — marking invalid`);
+        hasValidConversation = false;
+      }
+    }
+    
+    if (!hasValidConversation) {
+      console.log(`[Background] ⚠️ No valid conversation detected for ${bookingId} - likely voicemail/failed connection`);
+    }
+
+    // ===== SURVEY PROGRESS EXTRACTION (Research records only) =====
+    let surveyProgress: { answered: number; total: number; questions_covered: number[] } | null = null;
+    console.log(`[Background] Survey progress gate: isResearch=${isResearch}, hasValidConversation=${hasValidConversation}, hasTranscription=${!!transcription} for ${bookingId}`);
+    if (isResearch && hasValidConversation && transcription) {
+      try {
+        console.log('[Background] Extracting survey progress for research record...');
+        
+        // Script resolved once above (deterministic chain).
+        const questions: any[] | null = resolvedQuestions;
         
         if (Array.isArray(questions) && questions.length > 0) {
             // Build numbered question list for AI
