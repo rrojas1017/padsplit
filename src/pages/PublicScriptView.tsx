@@ -116,6 +116,7 @@ const DIALER_PARAMS: Array<[string, string, boolean]> = [
 function sanitizeDialer(v: unknown, phone = false): string | undefined {
   try {
     if (typeof v !== 'string') return undefined;
+    if (v.includes('--A--') || v.includes('--B--')) return undefined;
     let s = v.replace(DIALER_CTRL_RE, '').trim();
     if (phone) s = s.replace(/\D/g, '');
     if (!s || s.length > 64 || (phone && s.length > 15)) return undefined;

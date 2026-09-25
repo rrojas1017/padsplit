@@ -7,6 +7,7 @@ import { resolveCallStart } from '../_shared/callTime.ts';
 // CR-005 input hygiene (local copy; also in submit-public-script).
 function cleanDialer(v: unknown): string | null {
   if (typeof v !== 'string') return null;
+  if (v.includes('--A--') || v.includes('--B--')) return null;
   // deno-lint-ignore no-control-regex
   const s = v.replace(/[\u0000-\u001f\u007f]/g, '').trim();
   return s && s.length <= 64 ? s : null;

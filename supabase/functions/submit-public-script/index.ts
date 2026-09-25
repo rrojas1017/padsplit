@@ -154,12 +154,14 @@ function hasLongString(v: unknown, max: number, depth = 0): boolean {
 // CR-005 input hygiene (local copy; also in submit-conversation-audio).
 function cleanDialer(v: unknown): string | null {
   if (typeof v !== 'string') return null;
+  if (v.includes('--A--') || v.includes('--B--')) return null;
   // deno-lint-ignore no-control-regex
   const s = v.replace(/[\u0000-\u001f\u007f]/g, '').trim();
   return s && s.length <= 64 ? s : null;
 }
 function phoneDigits(v: unknown): string | null {
   if (typeof v !== 'string') return null;
+  if (v.includes('--A--')) return null;
   const d = v.replace(/\D/g, '').slice(0, 15);
   return d || null;
 }
