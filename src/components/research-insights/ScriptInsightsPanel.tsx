@@ -14,6 +14,8 @@ import { Badge } from "@/components/ui/badge";
 import { useAuth } from "@/contexts/AuthContext";
 import { resolveResearchCampaignType } from "@/utils/researchCampaignType";
 import type { ScriptQuestion } from "@/hooks/useResearchScripts";
+import { SCRIPT_SURVEY_KPIS } from "@/config/scriptSurveyKpis";
+import { ScriptSurveyInsightsDashboard } from "@/components/research-insights/ScriptSurveyInsightsDashboard";
 
 export interface ScriptResponse {
   id: string;
@@ -33,6 +35,11 @@ interface ScriptInsightsPanelProps {
 }
 
 export function ScriptInsightsPanel({ scriptId }: ScriptInsightsPanelProps) {
+  if (SCRIPT_SURVEY_KPIS[scriptId]) return <ScriptSurveyInsightsDashboard scriptId={scriptId} />;
+  return <LegacyScriptInsightsPanel scriptId={scriptId} />;
+}
+
+function LegacyScriptInsightsPanel({ scriptId }: ScriptInsightsPanelProps) {
   const { user } = useAuth();
   const canSeeSubmissions = user?.role === "super_admin" || user?.role === "admin";
   const canSeeAISummary = canSeeSubmissions || user?.role === "supervisor";
@@ -270,7 +277,7 @@ function levelVariant(level: string): "destructive" | "default" | "secondary" | 
   return "outline";
 }
 
-function ScriptAISummaryTab({ scriptId, campaignType, canGenerate }: { scriptId: string; campaignType: string; canGenerate: boolean }) {
+export function ScriptAISummaryTab({ scriptId, campaignType, canGenerate }: { scriptId: string; campaignType: string; canGenerate: boolean }) {
   const [pollStartedAt, setPollStartedAt] = useState<number | null>(null);
   const [isInvoking, setIsInvoking] = useState(false);
 
@@ -473,7 +480,7 @@ const dateFmt = new Intl.DateTimeFormat("en-US", {
   timeStyle: "short",
 });
 
-function ScriptSubmissionsTab({ scriptId }: { scriptId: string }) {
+export function ScriptSubmissionsTab({ scriptId }: { scriptId: string }) {
   const { data: rows = [], isLoading } = useQuery({
     queryKey: ["script-submissions", scriptId],
     queryFn: async () => {
