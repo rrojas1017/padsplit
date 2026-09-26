@@ -179,9 +179,9 @@ export async function generateScriptSurveyDocx(params: GenerateScriptSurveyDocxP
 
   children.push(
     new Paragraph({
-      children: [new TextRun({ text: `PadSplit — ${scriptName} Executive Brief`, bold: true, size: 40, font: 'Arial', color: NAVY_HEX })],
+      text: `PadSplit — ${scriptName} Executive Brief`,
+      heading: HeadingLevel.TITLE,
       alignment: AlignmentType.CENTER,
-      spacing: { after: 100 },
     }),
     new Paragraph({
       children: [new TextRun({ text: `Generated: ${todayStr} · Period: ${dateRangeStr}`, color: '666666', size: 20, font: 'Arial' })],
