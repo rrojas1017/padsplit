@@ -13,18 +13,15 @@ import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import type { DateRangeOption } from '@/hooks/useResearchInsightsData';
-import type { ScriptQuestion } from '@/hooks/useResearchScripts';
 import { useScriptSurveyResponses, type ScriptSurveyQuestion, type ScriptSurveyRecord } from '@/hooks/useScriptSurveyResponses';
 import {
   computeScriptSurveyFunnel,
   deriveScriptSurveyStats,
   filterByDateRange,
   summarizeScriptQuestion,
-  answerLabels,
-  answerScale,
-  answerText,
 } from '@/utils/scriptSurveyAnalytics';
-import { SCRIPT_SURVEY_KPIS, computeScriptKpis, type ScriptKpiConfig, type ScriptKpiResult } from '@/config/scriptSurveyKpis';
+import { SCRIPT_SURVEY_KPIS, computeScriptKpis, formatKpiValue, kpiDenominator } from '@/config/scriptSurveyKpis';
+import { generateScriptSurveyDocx } from '@/utils/generate-script-survey-docx';
 import { toPEQuestionSummary } from '@/utils/scriptSurveyPEAdapter';
 import { KPI } from '@/components/payment-experience/insights/primitives/KpiTile';
 import { SectionHeader } from '@/components/payment-experience/insights/primitives/SectionHeader';
@@ -35,19 +32,6 @@ import { ScriptSurveyFunnelSection } from './script-survey/ScriptSurveyFunnelSec
 import { ScriptSurveyTabs, type ScriptSurveyTab } from './script-survey/ScriptSurveyTabs';
 import { ScriptSurveyResponsesTab } from './script-survey/ScriptSurveyResponsesTab';
 import { ScriptSubmissionsTab, ScriptAISummaryTab } from './ScriptInsightsPanel';
-
-function formatKpiValue(k: ScriptKpiConfig, r: ScriptKpiResult): string {
-  if (r.value == null) return '—';
-  if (k.kind === 'avg') return `${r.value.toFixed(1)}/${k.max ?? 5}`;
-  if (k.kind === 'pct') return `${Math.round(r.value)}%`;
-  return r.value.toLocaleString();
-}
-
-function kpiDenominator(k: ScriptKpiConfig, r: ScriptKpiResult): string {
-  if (k.kind === 'count') return `${r.numerator.toLocaleString()} with answers of ${r.denominator.toLocaleString()} routed`;
-  if (k.kind === 'avg') return `Based on ${r.numerator.toLocaleString()} responses`;
-  return `${r.numerator.toLocaleString()} of ${r.denominator.toLocaleString()} answered`;
-}
 
 const shortLabel = (s: string) => (s.length > 28 ? s.slice(0, 27) + '…' : s);
 
@@ -141,36 +125,25 @@ export function ScriptSurveyInsightsDashboard({ scriptId }: { scriptId: string }
   }, [kpiConfig, kpis, stats]);
 
   const handleWord = async () => {
-    if (!script || isGenerating) return;
+    if (!script || isGenerating || eligible.length === 0) return;
     setIsGenerating(true);
+    toast.info('Generating clusters and narrative — this can take ~1–2 minutes…');
     try {
-      const responses: Array<{ question_order: number; response_value: string | null; response_options: string[] | null; response_numeric: number | null; session_id: string }> = [];
-      for (const r of eligible) {
-        for (const q of questions) {
-          const e = r.answers[q.id];
-          const labels = answerLabels(e);
-          const scale = answerScale(e);
-          const text = answerText(e);
-          if (!labels.length && scale === null && !text) continue;
-          responses.push({
-            question_order: q.order,
-            response_value: text ?? (labels.length ? labels.join(', ') : scale !== null ? String(scale) : null),
-            response_options: labels.length ? labels : null,
-            response_numeric: scale,
-            session_id: r.booking_id,
-          });
-        }
-      }
-      const { generateDynamicReport } = await import('@/utils/generateDynamicReport');
-      await generateDynamicReport(
-        { name: script.name, script_type: 'mixed' },
-        questions.map((q) => ({ ...q, required: false })) as ScriptQuestion[],
-        responses,
-        eligible.length,
-      );
+      await generateScriptSurveyDocx({
+        scriptId,
+        scriptName: script.name,
+        questions,
+        sections,
+        records,
+        validRecords,
+        eligibleRecords: eligible,
+        kpiConfig,
+        kpis,
+      });
+      toast.success('Executive brief downloaded');
     } catch (err) {
-      console.error('[ScriptSurveyInsights] Word report failed', err);
-      toast.error('Could not generate the Word report.');
+      console.error('[ScriptSurveyInsights] Word brief failed', err);
+      toast.error('Failed to generate report');
     } finally {
       setIsGenerating(false);
     }

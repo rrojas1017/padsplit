@@ -90,3 +90,25 @@ export function computeScriptKpis(
     return { value: answered ? (hits / answered) * 100 : null, numerator: hits, denominator: answered };
   });
 }
+
+// ── Shared formatting (dashboard tiles + Word brief use the same helpers) ────
+
+export function formatKpiValue(k: ScriptKpiConfig, r: ScriptKpiResult): string {
+  if (r.value == null) return '—';
+  if (k.kind === 'avg') return `${r.value.toFixed(1)}/${k.max ?? 5}`;
+  if (k.kind === 'pct') return `${Math.round(r.value)}%`;
+  return r.value.toLocaleString();
+}
+
+export function kpiDenominator(k: ScriptKpiConfig, r: ScriptKpiResult): string {
+  if (k.kind === 'count') return `${r.numerator.toLocaleString()} with answers of ${r.denominator.toLocaleString()} routed`;
+  if (k.kind === 'avg') return `Based on ${r.numerator.toLocaleString()} responses`;
+  return `${r.numerator.toLocaleString()} of ${r.denominator.toLocaleString()} answered`;
+}
+
+export const SCRIPT_SURVEY_PURPOSE: Record<string, string> = {
+  'c24c5e6b-c7d8-43c6-86d5-affea47178bf':
+    'experience of members in their first 30 days after move-in (renewal, referral, support, maintenance)',
+  '827b23ef-3f35-4108-8462-468bf6cf7872':
+    'why leads who engaged did not book (cost clarity, approval, search, trust, future intent)',
+};
