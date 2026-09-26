@@ -1,84 +1,86 @@
-# CR-010 Phase 1 — data layer for the per-script survey dashboards
+# CR-010 Phase 2 — Payment-Experience-style dashboard for per-script surveys
 
-No visible UI change. Three new files, plus one PE file where an existing helper gets the `export` keyword and nothing else.
+This phase builds a new dashboard for the two per-script surveys: 30-Day Member Experience (c24c5e6b…) and Non-Booking Conversion (827b23ef…). It looks like the Payment Experience (PE) dashboard. Every other script keeps today's panel.
 
-## What exists today (inspected)
+## PE UI inventory and decisions
 
-- `src/hooks/usePaymentExperienceResponses.ts`: pages through `booking_transcriptions` with `fetchAllPages` (1000 rows per page, capped at 10k), inner-joined to `bookings`, filtered to `research_campaign_type = 'payment_experience'`. It computes eligibility (voicemail / under 120s / fewer than 3 fields) and derives KPIs.
-- `src/utils/paymentExperienceScriptResponses.ts`:
-  - `summarizeQuestion` (private, and specific to PE question ids).
-  - `derivePaymentExperienceScriptData`.
-  - `normalizeAndMergeDistribution`, `applyLongTail` and `applyFixedOrder` (exported).
-  - `buildPaymentExperienceScriptCsv` is an **aggregate** CSV: one row per question and answer label, with count, % and responses.
-  - The helpers `trim(s, 240)`, `pct` and `csvEscape` are private.
-- `src/utils/paymentExperienceAnalytics.ts`: `computeSurveyFunnel(all, eligible)` returns `FunnelStep { id, label, count }[]`. The type is exported, and trailing zero steps are trimmed down to 2.
-- `filterByDateRange` is private in `PaymentExperienceInsightsDashboard.tsx`. It compares `booking_date` as a 'yyyy-MM-dd' string against local bounds.
-- `src/utils/researchCampaignType.ts`: `resolveResearchCampaignType(script)` returns `script_<id8>` for these two scripts, since neither has a mapped id or a built-in slug.
-- `ScriptQuestion` in `useResearchScripts.ts` already carries `id`, `order`, `question`, `type`, `options`, `scale_min`, `scale_max`, `section`, `ai_extraction_hint` and `is_internal`.
+| PE piece | Props today | Decision |
+|---|---|---|
+| `KPI` tile (private, in `PaymentExperienceInsightsDashboard.tsx`) | `label, value, denominator?, meta?, caption?, icon, iconBg?, iconColor?, variant?, accent?` | **Move** it unchanged to `insights/primitives/KpiTile.tsx`. PE imports it from there, so PE's markup stays identical. The new dashboard reuses it. |
+| `ExecutiveSummaryBanner` | `insight: PaymentAIInsight, kpis: PaymentKPIs, topFrictionThemes, firstAction?` (PE-typed) | **Twin**: `ScriptSurveySummaryBanner`, with the same markup, classes and icons. It takes `{ summary: string, firstAction?: string, chips: string[] }`. |
+| `SurveyFunnelSection` | `steps: FunnelStep[], eligibility?: FunnelEligibilityMeta` (the meta has PE voicemail/short-call fields) | **Twin**: `ScriptSurveyFunnelSection`. Same markup, but the footer line is a `detail: string`. |
+| `primitives/SectionHeader` | `title, hint?, emphasis?` | **Reuse as-is.** |
+| `InsightTabs` | PE records and fixed PE tab keys | **Twin**: `ScriptSurveyTabs`. Same `TabsList` / `TRIGGER_CLASS` look, plus `flex-wrap` so the tab list wraps on narrow screens. |
+| `TopicQuestionCard` | `summary: PEQuestionSummary, title, chart, helperText?, fixedOrder?, maxRows?, donutMinReadablePct?` | **Reuse as-is**, through an adapter that turns a script question summary into PE's summary shape (`toPEQuestionSummary`). |
+| `OpenEndedClusters` | `questionId, questionText, responses, sampleResponses?, totalResponses?` | **Reuse as-is.** The `questionId` becomes `<scriptId>:<question.id>` so cached clusters never collide with PE's. |
+| `tabs/ScriptResponsesTab` (uses private `StatCard`, `MultiBars`, `YesNoPills`, `ScaleDisplay`, `OpenEndedDisplay`, `QuestionCard`) | `eligibleRecords: PaymentExperienceRecord[], totalRouted` (derives PE data internally) | **Twin**: `ScriptSurveyResponsesTab`. It copies those private visuals with identical markup and feeds them adapted PE summaries. It adds a jump-to select, a "Download Report" button and a "CSV" button. |
+| `paymentExperienceReportExport.openPaymentExperienceScriptReport` | `{ data: PEScriptData }`, with the "Payment Experience" title hardcoded | **Twin**: `scriptSurveyReportExport.openScriptSurveyReport({ scriptName, data })`, with the same HTML layout and CSS, titled with the script name. |
 
-## Build
+## New dashboard: `src/components/research-insights/ScriptSurveyInsightsDashboard.tsx` (`{ scriptId }`)
 
-1. **`src/hooks/useScriptSurveyResponses.ts`**, `useScriptSurveyResponses(scriptId)` using react-query:
-   - Load the script from `research_scripts` (`id, name, slug, questions`) and drop questions marked `is_internal`. Question ids go through `ensureQuestionIds`, so the keys match `raw_script_answers`.
-   - Page with `fetchAllPages` over `booking_transcriptions`:
-     - Select `research_campaign_type`, `research_processing_status`, `raw_script_answers:research_extraction->raw_script_answers` and `survey_progress`.
-     - Inner join `bookings!inner(id, booking_date, call_duration_seconds, has_valid_conversation, transcription_status, kixie_link, research_call_id, record_type)`.
-     - Filters: `.eq('research_campaign_type', campaignType)` and `.eq('bookings.record_type','research')`, ordered by id. Only the viewer's session is used (normal RLS).
-   - Each record gets:
-     - `answers` per question id.
-     - `answeredCount`: an answer counts only if it has at least one selected label, a finite `scale_value`, or text that is not blank after trimming.
-     - `isForm`: at least one entry has source `agent_runtime`.
-     - `hasRecording`: `!!kixie_link`.
-   - Returns `{ script, questions, sections, records, validRecords, eligibleRecords, isLoading }`. `sections` follows question order and has no duplicates.
-   - `survey_progress` is read with the same "column or JSON path" approach the build confirms against types.ts. If it is not a real column, the plan falls back to `research_extraction->survey_progress`.
-2. **`src/utils/scriptSurveyAnalytics.ts`** (pure functions):
-   - `hasAnswerValue(entry)`
-   - `summarizeScriptQuestion(q, eligible)`:
-     - Choice questions: label distribution. The % denominator is the number of members who answered.
-     - Scale questions: avg, min and max, with one bucket per integer from `scale_min` to `scale_max`. The default is 1–5.
-     - Open-ended questions: `samples` (first 25, each cut to 240 chars) and `allResponses`.
-   - `deriveScriptSurveyStats(questions, eligible)`, as specified.
-   - `computeScriptSurveyFunnel(records, valid, eligible, questions)` returns PE's `FunnelStep[]`: Routed → Valid conversation → Answered at least 1 → Answered at least 50% → Answered all.
-   - `buildScriptSurveyCsv(questions, eligible)`: one row per record, with booking id and date, form/recording flags, then one column per question. Multiple choices are joined with "; ". The escaping is a copy of PE's `csvEscape` rule.
-   - `filterByDateRange` is re-exported from its PE location.
-3. **`src/config/scriptSurveyKpis.ts`**: two six-tile configs keyed by script id, exactly as listed in the ticket, plus `computeScriptKpis(config, questions, eligible)` which returns `{ value, numerator, denominator }` for each tile.
-   - `count`: eligible over routed.
-   - `avg`: mean of the scale answers for the hint's question.
-   - `pct`: share of answered records whose labels include one of the `positiveOptions`.
-   - `value` is null when nobody answered.
-   - Option matching trims the text and ignores case, and treats "—" and "-" as the same, so small dash differences still match.
+The dashboard is built on the Phase 1 pieces (`useScriptSurveyResponses`, `scriptSurveyAnalytics`, `scriptSurveyKpis`). All data is filtered by booking date through `filterByDateRange`. Top to bottom:
 
-## The one PE change
+1. **Header row** (right-aligned, like PE's):
+   - A date-range select with PE's 5 options, stored in `useSessionState('scriptSurvey:<scriptId>:dateRange', 'allTime')`.
+   - A "Word" button that calls the existing `generateDynamicReport`. Its answers are built from the filtered eligible records: one entry per answered question, with `session_id` = booking id. Phase 3 replaces this button.
+2. **Loading and empty states:**
+   - A loading skeleton copied from PE.
+   - "No survey calls processed yet." when there are no records.
+3. **Summary banner:**
+   - It reads the latest completed `research_insights` row for `campaign_type = script_<id8>` and shows `data.report.executive_summary`.
+   - The first-action line is `recommendations[0].action`.
+   - When there is no report, it shows a set line: "{respondents} members surveyed · {completionRate}% avg completion · lowest-scoring: {label} ({x.x}/5)".
+4. **Six KPI tiles:** shared `KpiTile` in PE's grid (`grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3`), using `computeScriptKpis(config, questions, eligible, records.length)`.
+   - Values: averages as `x.x/5`, percentages as `NN%`, counts as the number; "—" when empty.
+   - Denominator text and style (`variant` / `accent`) as specified in the ticket.
+5. **Survey Funnel:** a `SectionHeader` plus the funnel twin, from `computeScriptSurveyFunnel`.
+   - It shows only when at least 2 steps are non-zero.
+   - Detail line: "{valid} valid conversations of {routed} routed · {forms} with typed form · {recordingOnly} recording-only".
+6. **Tabs:**
+   - **Overview:** one `TopicQuestionCard` per question behind KPI tiles 2–6. Scale questions show as ordered bars (`fixedOrder` 1..max). Choice questions show as a donut, falling back to ranked bars under PE's readability rule (`donutMinReadablePct`).
+   - **One tab per script section:**
+     - Tabs follow script order; each label is at most 28 characters, ending in "…" when cut.
+     - Choice and scale questions use `TopicQuestionCard`; open-ended questions use `OpenEndedClusters`.
+   - **Script Responses:**
+     - The responses twin: stat cards (Completion Rate, Avg Questions Answered, Respondents, Latest Response), the jump-to select and every question's visuals.
+     - A "Download Report" button opens the report twin; a "CSV" button uses `buildScriptSurveyCsv`.
+   - **Submissions:** `ScriptSubmissionsTab`, shown to super_admin and admin only (as today).
+   - **AI Summary:** `ScriptAISummaryTab`, shown to super_admin, admin and supervisor. Only admins can generate (as today).
 
-`filterByDateRange` in `PaymentExperienceInsightsDashboard.tsx` gets the keyword `export`. Its body stays byte-for-byte the same. Nothing else in PE, Move-Out or Audience changes.
+## Wiring
 
-## Acceptance
+In `ScriptInsightsPanel.tsx`:
+- `ScriptSubmissionsTab` and `ScriptAISummaryTab` get the `export` keyword; their bodies are unchanged.
+- An early branch goes in before the panel renders: when `SCRIPT_SURVEY_KPIS[scriptId]` exists, it returns `<ScriptSurveyInsightsDashboard scriptId=… />`.
+- The existing hooks are split into an inner `LegacyScriptInsightsPanel`, so the rules about React hook order hold. Its body moves as-is, so its output is identical.
 
-The QA team checks these against SQL:
+`ResearchInsights.tsx` is not changed.
 
-| Script | routed | valid | eligible | eligible with form | eligible recording-only | answered values |
-|---|---|---|---|---|---|---|
-| Non-Booking | 2510 | 156 | 33 | 7 | 26 | 180 |
-| 30-Day | 278 | 41 | 40 | 23 | 17 | 581 |
+## Files touched
 
-Mapping to the hook's output:
+New:
+- `src/components/payment-experience/insights/primitives/KpiTile.tsx` (the moved KPI tile)
+- `src/components/research-insights/ScriptSurveyInsightsDashboard.tsx`
+- `src/components/research-insights/script-survey/ScriptSurveySummaryBanner.tsx`
+- `src/components/research-insights/script-survey/ScriptSurveyFunnelSection.tsx`
+- `src/components/research-insights/script-survey/ScriptSurveyTabs.tsx`
+- `src/components/research-insights/script-survey/ScriptSurveyResponsesTab.tsx`
+- `src/utils/scriptSurveyReportExport.ts`
+- `src/utils/scriptSurveyPEAdapter.ts`: `toPEQuestionSummary(question, summary)` and `toPEScriptData(...)`. It maps question types: `multiple_choice` becomes `multi`, `yes_no` becomes `yesno`, `scale` stays `scale`, `open_ended` becomes `open`. Distribution items get `key` = label.
 
-- **routed** = `records.length`
-- **valid** = `validRecords.length`
-- **eligible** = `eligibleRecords.length`
-- **with form** = eligible records where `isForm` is true
-- **recording-only** = eligible records where `isForm` is false
-- **answered values** = sum of `answeredCount` over eligible records
+Edited:
+- `PaymentExperienceInsightsDashboard.tsx`: the local KPI tile is replaced by an import of the identical moved tile.
+- `ScriptInsightsPanel.tsx`: the exports and the early branch described above.
 
-## Points to note
+## Must not change
 
-- The ticket asks for a CSV with one row per record, while PE's CSV is aggregate. The plan follows the ticket.
-- "Answered ≥50%" means `answeredCount >= ceil(questions.length / 2)`.
-
-## Out of scope
-
-`ScriptInsightsPanel`, edge functions, the database, types.ts, new dependencies, publishing.
+- PE, Move-Out and Audience rendering and data.
+- Edge functions, the database, types.ts.
+- Role gating.
+- No new dependencies.
 
 ## Verification
 
-`tsgo --noEmit -p tsconfig.app.json`.
+- `tsgo --noEmit -p tsconfig.app.json`.
+- A diff check that the moved KPI tile's body is byte-identical to the original.
+- Nothing published.
