@@ -1,10 +1,9 @@
-// src/utils/generate-pe-docx.ts
-// Payment Experience Executive Brief — .docx generator.
+// src/utils/generate-script-survey-docx.ts
+// Per-script survey Executive Brief — .docx generator (CR-010 Phase 3).
 //
-// Mirrors `generate-executive-docx.ts` (Move-Out) but tailored for the PE data
-// model. All numbers are recomputed deterministically from the live records
-// passed in. AI (Gemini 2.5 Pro via `generate-pe-executive-brief`) writes
-// prose paragraphs and recommendations only — never numbers.
+// Twin of `generate-pe-docx.ts` with the same styling. All numbers are
+// recomputed deterministically from the records passed in. AI (via
+// `generate-script-survey-brief`) writes prose and recommendations only.
 //
 // Aggregate-only: no member verbatims are included anywhere in the docx.
 
@@ -16,13 +15,16 @@ import {
 import { format } from 'date-fns';
 import { supabase } from '@/integrations/supabase/client';
 import { fetchClustersForQuestion } from '@/utils/openEndedClusterFetch';
-import type { PaymentExperienceRecord, PaymentKPIs } from '@/hooks/usePaymentExperienceResponses';
+import type { ScriptSurveyQuestion, ScriptSurveyRecord } from '@/hooks/useScriptSurveyResponses';
+import { summarizeScriptQuestion, type ScriptQuestionSummary } from '@/utils/scriptSurveyAnalytics';
 import {
-  derivePaymentExperienceScriptData,
-  type PEQuestionSummary,
-} from '@/utils/paymentExperienceScriptResponses';
+  formatKpiValue,
+  SCRIPT_SURVEY_PURPOSE,
+  type ScriptKpiConfig,
+  type ScriptKpiResult,
+} from '@/config/scriptSurveyKpis';
 
-// ── Styling primitives ───────────────────────────────────────────────────────
+// ── Styling primitives (identical to PE) ────────────────────────────────────
 
 const cellBorder = { style: BorderStyle.SINGLE, size: 1, color: 'CCCCCC' };
 const cellBorders = { top: cellBorder, bottom: cellBorder, left: cellBorder, right: cellBorder };
@@ -62,7 +64,7 @@ function stripUUIDs(text: string): string {
 
 // ── AI narrative fetch ───────────────────────────────────────────────────────
 
-interface PEBrief {
+interface ScriptSurveyBrief {
   narrative_headline?: string;
   executive_narrative?: string;
   risk_flags?: string[];
@@ -75,100 +77,109 @@ interface PEBrief {
   generated_at?: string;
 }
 
-async function fetchPEBrief(payload: any): Promise<PEBrief | null> {
+async function fetchBrief(payload: any): Promise<ScriptSurveyBrief | null> {
   try {
-    const { data, error } = await supabase.functions.invoke('generate-pe-executive-brief', {
-      body: payload,
-    });
+    const { data, error } = await supabase.functions.invoke('generate-script-survey-brief', { body: payload });
     if (error) throw error;
     return data?.executive_brief || null;
   } catch (e) {
-    console.error('[generate-pe-docx] AI brief failed:', e);
+    console.error('[generate-script-survey-docx] AI brief failed:', e);
     return null;
   }
 }
 
-// ── KPI formatting ───────────────────────────────────────────────────────────
+type Row = { label: string; count: number; pct: number };
 
-const fmtPct = (v: number | null) => (v == null ? '—' : `${Math.round(v)}%`);
-const fmtScore = (v: number | null, max: number) => (v == null ? '—' : `${v.toFixed(1)}/${max}`);
+function distributionRows(s: ScriptQuestionSummary): Row[] {
+  if (s.type === 'scale') return s.buckets.map((b) => ({ label: b.label, count: b.count, pct: b.pct }));
+  if (s.type === 'open_ended') return [];
+  return s.distribution.map((d) => ({ label: d.label, count: d.count, pct: d.pct }));
+}
+
+const slugify = (s: string) =>
+  s.trim().replace(/[^A-Za-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'Survey';
 
 // ── Main export ──────────────────────────────────────────────────────────────
 
-export async function generatePEDocx(
-  records: PaymentExperienceRecord[],
-  eligibleRecords: PaymentExperienceRecord[],
-  kpis: PaymentKPIs,
-  topFrictionThemes: Array<{ key: string; label: string; count: number; share: number }>,
-  autopayBarriers: Array<{ key: string; label: string; count: number; share: number }>,
-) {
+export interface GenerateScriptSurveyDocxParams {
+  scriptId: string;
+  scriptName: string;
+  questions: ScriptSurveyQuestion[];
+  sections: string[];
+  records: ScriptSurveyRecord[];
+  validRecords: ScriptSurveyRecord[];
+  eligibleRecords: ScriptSurveyRecord[];
+  kpiConfig: ScriptKpiConfig[];
+  kpis: ScriptKpiResult[];
+}
+
+export async function generateScriptSurveyDocx(params: GenerateScriptSurveyDocxParams) {
+  const { scriptId, scriptName, questions, sections, records, validRecords, eligibleRecords, kpiConfig, kpis } = params;
   const todayStr = format(new Date(), 'MMMM d, yyyy');
 
-  // Derive per-question summaries from script responses (all 16 questions).
-  const scriptData = derivePaymentExperienceScriptData(eligibleRecords, records.length);
-
-  // Compute date range from booking dates on eligible records.
+  // Date range from booking dates ('yyyy-MM-dd' ET strings) on eligible records.
   let minDate: string | null = null;
   let maxDate: string | null = null;
   for (const r of eligibleRecords) {
-    if (!r.booking_date) continue;
-    if (!minDate || r.booking_date < minDate) minDate = r.booking_date;
-    if (!maxDate || r.booking_date > maxDate) maxDate = r.booking_date;
+    const d = (r.booking_date || '').slice(0, 10);
+    if (!d) continue;
+    if (!minDate || d < minDate) minDate = d;
+    if (!maxDate || d > maxDate) maxDate = d;
   }
-  const dateRangeStr = minDate && maxDate
-    ? `${format(new Date(minDate), 'MMM d, yyyy')} – ${format(new Date(maxDate), 'MMM d, yyyy')}`
-    : 'All time';
+  const fmtYmd = (d: string) => format(new Date(`${d}T12:00:00`), 'MMM d, yyyy');
+  const dateRangeStr = minDate && maxDate ? `${fmtYmd(minDate)} – ${fmtYmd(maxDate)}` : 'All time';
 
-  // ── Resolve open-ended clusters from cache (parallel) ──────────────────────
-  const openSummaries = scriptData.questions.filter((q) => q.question.type === 'open');
-  const clusterMap = new Map<string, Array<{ label: string; count: number; pct: number }>>();
-  await Promise.all(openSummaries.map(async (q) => {
-    const responses = (q.allResponses || []).filter(Boolean);
-    const clusters = await fetchClustersForQuestion(q.question.id, q.question.text, responses);
-    if (clusters) clusterMap.set(q.question.id, clusters);
+  // Per-question summaries (internal questions already excluded upstream).
+  const summaries = new Map<string, ScriptQuestionSummary>();
+  for (const q of questions) summaries.set(q.id, summarizeScriptQuestion(q, eligibleRecords));
+
+  // ── Open-ended clusters: same questionId + responses as the dashboard ─────
+  const clusterMap = new Map<string, Row[]>();
+  await Promise.all(questions.filter((q) => q.type === 'open_ended').map(async (q) => {
+    const s = summaries.get(q.id);
+    if (!s || s.type !== 'open_ended') return;
+    const clusters = await fetchClustersForQuestion(
+      `${scriptId}:${q.id}`, q.question, s.allResponses, '[generate-script-survey-docx]',
+    );
+    if (clusters) clusterMap.set(q.id, clusters);
   }));
 
-  // ── Build aggregated AI payload (no verbatims) ────────────────────────────
+  // ── Aggregated AI payload (no verbatims) ──────────────────────────────────
   const aiPayload = {
-    kpis: {
-      membersSurveyed: eligibleRecords.length,
-      literacyAvg: kpis.literacy.value,
-      autopayEnrolledPct: kpis.autopayEnrolled.value,
-      moveInClarityAvg: kpis.moveInClarity.value,
-      hardshipAwarePct: kpis.hardshipAware.value,
-      payCycleMisalignmentPct: kpis.payCycleMisalignment.value,
-    },
-    perQuestion: scriptData.questions.map((qs) => ({
-      order: qs.question.order,
-      text: qs.question.text,
-      type: qs.question.type,
-      count: qs.count,
-      avg: typeof qs.avg === 'number' ? qs.avg : null,
-      topAnswers: qs.distribution.slice(0, 5).map((d) => ({
-        label: d.label, count: d.count, pct: d.percentage,
-      })),
-      clusters: clusterMap.get(qs.question.id)?.slice(0, 6) || undefined,
-    })),
-    frictionThemes: topFrictionThemes.map((t) => ({
-      label: t.label, count: t.count, pct: t.share * 100,
-    })),
-    autopayBarriers: autopayBarriers.map((b) => ({
-      label: b.label, count: b.count, pct: b.share * 100,
-    })),
-    dateRange: { start: minDate, end: maxDate },
+    surveyName: scriptName,
+    surveyPurpose: SCRIPT_SURVEY_PURPOSE[scriptId] || '',
+    kpis: kpiConfig.map((k, i) => ({ label: k.label, value: formatKpiValue(k, kpis[i]) })),
+    perQuestion: questions.slice(0, 60).map((q) => {
+      const s = summaries.get(q.id)!;
+      return {
+        order: q.order,
+        text: q.question,
+        section: q.section || '',
+        type: q.type,
+        count: s.count,
+        avg: s.type === 'scale' ? s.avg : null,
+        topAnswers: distributionRows(s)
+          .filter((d) => d.count > 0)
+          .sort((a, b) => b.count - a.count)
+          .slice(0, 5),
+        clusters: clusterMap.get(q.id)?.slice(0, 6) || undefined,
+      };
+    }),
+    sections,
+    totalRoutedCalls: records.length,
+    validConversations: validRecords.length,
     totalRespondents: eligibleRecords.length,
+    dateRange: { start: minDate, end: maxDate },
   };
 
-  const brief = await fetchPEBrief(aiPayload);
+  const brief = await fetchBrief(aiPayload);
 
   // ── Build doc children ────────────────────────────────────────────────────
-
   const children: (Paragraph | Table)[] = [];
 
-  // Title
   children.push(
     new Paragraph({
-      text: 'PadSplit — Payment Experience Executive Brief',
+      text: `PadSplit — ${scriptName} Executive Brief`,
       heading: HeadingLevel.TITLE,
       alignment: AlignmentType.CENTER,
     }),
@@ -179,46 +190,40 @@ export async function generatePEDocx(
     }),
   );
 
-  // Headline
-  const headline = brief?.narrative_headline || 'Payment Experience snapshot across surveyed members';
+  // Headline (same rendering as PE)
+  const headline = brief?.narrative_headline || `${scriptName} snapshot across surveyed members`;
   children.push(new Paragraph({
     children: [new TextRun({ text: stripUUIDs(headline), bold: true, size: 28, font: 'Arial' })],
     spacing: { after: 200 },
   }));
 
-  // ── KPI table (recomputed from raw data) ──────────────────────────────────
-  const metrics = [
-    { label: 'Members Surveyed', value: eligibleRecords.length.toLocaleString() },
-    { label: 'Avg Literacy', value: fmtScore(kpis.literacy.value, 100) },
-    { label: 'Auto-pay Enrolled', value: fmtPct(kpis.autopayEnrolled.value) },
-    { label: 'Move-in Clarity', value: fmtScore(kpis.moveInClarity.value, 5) },
-    { label: 'Hardship-Aware', value: fmtPct(kpis.hardshipAware.value) },
-    { label: 'Pay-cycle Misalign', value: fmtPct(kpis.payCycleMisalignment.value) },
-  ];
-  const kpiColWidth = Math.floor(9360 / metrics.length);
-  children.push(new Table({
-    width: { size: 9360, type: WidthType.DXA },
-    columnWidths: metrics.map(() => kpiColWidth),
-    rows: [
-      new TableRow({ children: metrics.map((m) => new TableCell({
-        borders: cellBorders,
-        width: { size: kpiColWidth, type: WidthType.DXA },
-        shading: { fill: KPI_BG, type: ShadingType.CLEAR },
-        margins: cellMargins,
-        children: [
-          new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: m.value, bold: true, size: 22, font: 'Arial' })] }),
-          new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: m.label, size: 14, font: 'Arial', color: '666666' })] }),
-        ],
-      })) }),
-    ],
-  }));
-  children.push(new Paragraph({ text: '', spacing: { after: 200 } }));
+  // ── KPI table (same six tiles as the dashboard) ───────────────────────────
+  const metrics = kpiConfig.map((k, i) => ({ label: k.label, value: formatKpiValue(k, kpis[i]) }));
+  if (metrics.length > 0) {
+    const kpiColWidth = Math.floor(9360 / metrics.length);
+    children.push(new Table({
+      width: { size: 9360, type: WidthType.DXA },
+      columnWidths: metrics.map(() => kpiColWidth),
+      rows: [
+        new TableRow({ children: metrics.map((m) => new TableCell({
+          borders: cellBorders,
+          width: { size: kpiColWidth, type: WidthType.DXA },
+          shading: { fill: KPI_BG, type: ShadingType.CLEAR },
+          margins: cellMargins,
+          children: [
+            new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: m.value, bold: true, size: 22, font: 'Arial' })] }),
+            new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: m.label, size: 14, font: 'Arial', color: '666666' })] }),
+          ],
+        })) }),
+      ],
+    }));
+    children.push(new Paragraph({ text: '', spacing: { after: 200 } }));
+  }
 
-  // ── Executive Analysis (AI prose) ─────────────────────────────────────────
+  // ── Executive Analysis ────────────────────────────────────────────────────
   children.push(new Paragraph({ text: 'Executive Analysis', heading: HeadingLevel.HEADING_1 }));
   if (brief?.executive_narrative) {
-    const paras = brief.executive_narrative.split(/\n\n+/).filter(Boolean);
-    for (const p of paras) {
+    for (const p of brief.executive_narrative.split(/\n\n+/).filter(Boolean)) {
       children.push(new Paragraph({
         children: [new TextRun({ text: stripUUIDs(p.replace(/\*\*/g, '')), size: 22, font: 'Arial' })],
         spacing: { after: 120 },
@@ -245,75 +250,24 @@ export async function generatePEDocx(
     }
   }
 
-  // ── Top Friction Themes ───────────────────────────────────────────────────
-  if (topFrictionThemes.length > 0) {
-    children.push(new Paragraph({ text: 'Top Friction Themes', heading: HeadingLevel.HEADING_1 }));
-    children.push(new Table({
-      width: { size: 9360, type: WidthType.DXA },
-      columnWidths: [5160, 2100, 2100],
-      rows: [
-        new TableRow({ children: [headerCell('Theme', 5160), headerCell('Count', 2100), headerCell('Share', 2100)] }),
-        ...topFrictionThemes.map((t, i) => {
-          const bg = i % 2 === 1 ? LIGHT_BG : undefined;
-          return new TableRow({ children: [
-            cell(t.label, 5160, { shading: bg }),
-            cell(String(t.count), 2100, { shading: bg }),
-            cell(`${(t.share * 100).toFixed(1)}%`, 2100, { shading: bg }),
-          ] });
-        }),
-      ],
-    }));
-    children.push(new Paragraph({ text: '', spacing: { after: 200 } }));
-  }
-
-  // ── Auto-pay Barriers ─────────────────────────────────────────────────────
-  if (autopayBarriers.length > 0) {
-    children.push(new Paragraph({ text: 'Auto-pay Barriers (among not-enrolled)', heading: HeadingLevel.HEADING_1 }));
-    children.push(new Table({
-      width: { size: 9360, type: WidthType.DXA },
-      columnWidths: [5160, 2100, 2100],
-      rows: [
-        new TableRow({ children: [headerCell('Barrier', 5160), headerCell('Count', 2100), headerCell('Share', 2100)] }),
-        ...autopayBarriers.map((b, i) => {
-          const bg = i % 2 === 1 ? LIGHT_BG : undefined;
-          return new TableRow({ children: [
-            cell(b.label, 5160, { shading: bg }),
-            cell(String(b.count), 2100, { shading: bg }),
-            cell(`${(b.share * 100).toFixed(1)}%`, 2100, { shading: bg }),
-          ] });
-        }),
-      ],
-    }));
-    children.push(new Paragraph({ text: '', spacing: { after: 200 } }));
-  }
-
-  // ── Per-Question Detail (every script question) ───────────────────────────
+  // ── Per-Question Detail, grouped by section ───────────────────────────────
   children.push(new Paragraph({ text: 'Per-Question Detail', heading: HeadingLevel.HEADING_1 }));
 
-  const renderQuestion = (qs: PEQuestionSummary, indent = false) => {
-    const q = qs.question;
-    const titleSize = indent ? 20 : 22;
+  const renderQuestion = (q: ScriptSurveyQuestion) => {
+    const s = summaries.get(q.id)!;
     children.push(new Paragraph({
-      children: [new TextRun({
-        text: `${indent ? '  └ ' : `Q${q.order}. `}${q.text}`,
-        bold: true, size: titleSize, font: 'Arial',
-      })],
+      children: [new TextRun({ text: `Q${q.order}. ${q.question}`, bold: true, size: 22, font: 'Arial' })],
       spacing: { before: 120, after: 40 },
     }));
-    const metaParts: string[] = [`n=${qs.count}`];
-    if (typeof qs.avg === 'number' && q.type === 'scale') metaParts.push(`avg=${qs.avg.toFixed(2)}`);
+    const metaParts: string[] = [`n=${s.count}`];
+    if (s.type === 'scale' && typeof s.avg === 'number') metaParts.push(`avg=${s.avg.toFixed(2)}`);
     if (q.section) metaParts.push(q.section);
     children.push(new Paragraph({
       children: [new TextRun({ text: metaParts.join(' · '), size: 16, font: 'Arial', color: '888888' })],
       spacing: { after: 60 },
     }));
 
-    if (q.type === 'compound') {
-      for (const sub of qs.subQuestions || []) renderQuestion(sub, true);
-      return;
-    }
-
-    if (q.type === 'open') {
+    if (s.type === 'open_ended') {
       const clusters = clusterMap.get(q.id);
       if (clusters && clusters.length > 0) {
         children.push(new Paragraph({
@@ -338,16 +292,15 @@ export async function generatePEDocx(
         children.push(new Paragraph({ text: '', spacing: { after: 160 } }));
       } else {
         children.push(new Paragraph({
-          children: [new TextRun({ text: `Open-ended responses received: ${qs.count}. (Clusters not yet generated.)`, italics: true, size: 18, font: 'Arial', color: '666666' })],
+          children: [new TextRun({ text: `Open-ended responses received: ${s.count}. (Clusters not yet generated.)`, italics: true, size: 18, font: 'Arial', color: '666666' })],
           spacing: { after: 160 },
         }));
       }
       return;
     }
 
-    // multi / yesno / scale → distribution table
-    const rows = qs.distribution.filter((d) => d.count > 0);
-    if (rows.length === 0) {
+    const rows = s.type === 'scale' ? distributionRows(s) : distributionRows(s).filter((d) => d.count > 0);
+    if (s.count === 0 || rows.length === 0) {
       children.push(new Paragraph({
         children: [new TextRun({ text: '(no responses)', italics: true, size: 18, font: 'Arial', color: '888888' })],
         spacing: { after: 160 },
@@ -364,7 +317,7 @@ export async function generatePEDocx(
           return new TableRow({ children: [
             cell(d.label, 5160, { shading: bg }),
             cell(String(d.count), 2100, { shading: bg }),
-            cell(`${d.percentage.toFixed(1)}%`, 2100, { shading: bg }),
+            cell(`${d.pct.toFixed(1)}%`, 2100, { shading: bg }),
           ] });
         }),
       ],
@@ -372,7 +325,18 @@ export async function generatePEDocx(
     children.push(new Paragraph({ text: '', spacing: { after: 160 } }));
   };
 
-  for (const qs of scriptData.questions) renderQuestion(qs);
+  const rendered = new Set<string>();
+  for (const sec of sections) {
+    const inSec = questions.filter((q) => q.section === sec);
+    if (!inSec.length) continue;
+    children.push(new Paragraph({ text: sec, heading: HeadingLevel.HEADING_2 }));
+    for (const q of inSec) { renderQuestion(q); rendered.add(q.id); }
+  }
+  const unsectioned = questions.filter((q) => !rendered.has(q.id));
+  if (unsectioned.length) {
+    if (sections.length) children.push(new Paragraph({ text: 'Other questions', heading: HeadingLevel.HEADING_2 }));
+    for (const q of unsectioned) renderQuestion(q);
+  }
 
   // ── Recommended Actions ───────────────────────────────────────────────────
   if (brief?.recommended_actions?.length) {
@@ -406,10 +370,12 @@ export async function generatePEDocx(
   children.push(new Paragraph({
     children: [new TextRun({
       text:
-        `Aggregates derived from ${records.length.toLocaleString()} routed Payment Experience survey calls, ` +
-        `of which ${eligibleRecords.length.toLocaleString()} were analytics-eligible (valid conversation, ` +
-        `≥120s duration, ≥3 required extraction fields). All metrics recomputed deterministically from raw ` +
-        `extractions. Open-ended themes clustered by AI (Gemini); narrative prose written by Gemini 2.5 Pro ` +
+        `Aggregates derived from ${records.length.toLocaleString()} routed ${scriptName} survey calls, ` +
+        `of which ${validRecords.length.toLocaleString()} were valid conversations and ` +
+        `${eligibleRecords.length.toLocaleString()} had at least one answered question (eligible respondents). ` +
+        `Answers come from the agent's typed survey form plus answers extracted by AI from the call recording; ` +
+        `when both exist for a question, the typed form answer wins. All metrics recomputed deterministically ` +
+        `from those answers. Open-ended themes clustered by AI (Gemini); narrative prose written by Gemini 2.5 Pro ` +
         `grounded in the aggregates above. No individual member verbatims are included.`,
       size: 18, font: 'Arial', color: '555555',
     })],
@@ -417,7 +383,7 @@ export async function generatePEDocx(
   }));
   children.push(new Paragraph({
     children: [new TextRun({
-      text: `PadSplit Research Analytics Platform · Payment Experience · ${brief?.generated_at ? 'AI-generated brief' : 'Data-driven report'}`,
+      text: `PadSplit Research Analytics Platform · ${scriptName} · ${brief?.generated_at ? 'AI-generated brief' : 'Data-driven report'}`,
       size: 18, font: 'Arial', color: '999999',
     })],
   }));
@@ -440,7 +406,7 @@ export async function generatePEDocx(
       },
       headers: {
         default: new Header({ children: [new Paragraph({
-          children: [new TextRun({ text: 'PadSplit Payment Experience — Confidential', color: '999999', size: 16, font: 'Arial' })],
+          children: [new TextRun({ text: `PadSplit ${scriptName} — Confidential`, color: '999999', size: 16, font: 'Arial' })],
           alignment: AlignmentType.RIGHT,
         })] }),
       },
@@ -458,7 +424,7 @@ export async function generatePEDocx(
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.href = url;
-  link.download = `PadSplit-Payment-Experience-Brief-${format(new Date(), 'yyyy-MM-dd')}.docx`;
+  link.download = `PadSplit-${slugify(scriptName)}-Brief-${format(new Date(), 'yyyy-MM-dd')}.docx`;
   link.click();
   URL.revokeObjectURL(url);
 }
