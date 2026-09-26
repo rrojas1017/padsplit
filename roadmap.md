@@ -43,3 +43,4 @@
 - [x] BUG-005: public survey autosave (in_progress rows), idempotent terminal save, office-friendly rate limit
 - [x] BUG-007: script-aware research validation, empty transcript → 'unavailable' (No audio); capture file written, not applied
 - [x] CR-006: screen-pop placeholder guard (--A--/--B-- → absent) in PublicScriptView sanitizeDialer + both intake cleanDialer/phoneDigits; public links → padsplit.tools (useScriptTokens BASE_URL); both functions deployed
+- [ ] CR-010 Phase 1: script survey data layer (hook, analytics, KPI config)
