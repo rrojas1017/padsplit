@@ -45,4 +45,4 @@
 - [x] CR-006: screen-pop placeholder guard (--A--/--B-- → absent) in PublicScriptView sanitizeDialer + both intake cleanDialer/phoneDigits; public links → padsplit.tools (useScriptTokens BASE_URL); both functions deployed
 - [x] CR-010 Phase 1: script survey data layer (hook, analytics, KPI config)
 - [x] CR-010 Phase 2: PE-style dashboard for per-script surveys
-- [ ] CR-010 Phase 3: Word executive brief for script surveys
+- [x] CR-010 Phase 3: Word executive brief for script surveys
