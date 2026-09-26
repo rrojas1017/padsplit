@@ -12,7 +12,7 @@ import { toast } from 'sonner';
 import { generatePEDocx } from '@/utils/generate-pe-docx';
 import type { DateRangeOption } from '@/hooks/useResearchInsightsData';
 
-function filterByDateRange<T extends { booking_date: string }>(records: T[], range: DateRangeOption): T[] {
+export function filterByDateRange<T extends { booking_date: string }>(records: T[], range: DateRangeOption): T[] {
   if (range === 'allTime') return records;
   const now = new Date();
   let start: Date;
