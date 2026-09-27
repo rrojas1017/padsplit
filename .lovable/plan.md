@@ -1,102 +1,70 @@
-# CR-010 Phase 3 — Word executive brief for script-survey dashboards
+# CR-011 — Hide the Agent Status module
 
-The Word button on the 30-Day Member Experience and Non-Booking Conversion dashboards will download an executive brief in the same format as the Payment Experience (PE) brief. It replaces the current generic report.
+The `/agent-status` page is removed from the sidebar and its route becomes a redirect to `/dashboard`. The page file, the status context, the heartbeat, and `agent_sessions` writes are all left intact. Research agents work in ViciDial and never sign in here, so the page shows everyone Offline; hiding it stops that misleading view.
 
-## What exists today
+## Current state (verified)
 
-- **`src/utils/generate-pe-docx.ts`** (528 lines) builds the PE brief.
-  - Styling: `NAVY_HEX 1A365D`, `LIGHT_BG`, `KPI_BG E8F0FE`, and the `headerCell` / `cell` / `stripUUIDs` helpers.
-  - Clusters: `sha256Hex` and `fetchClustersForQuestion` read `payment_experience_open_ended_cluster_cache`. On a cache miss they call `cluster-pe-open-ended` with a 90 s timeout. Questions with fewer than 8 responses get no clusters. Warnings are tagged `[generate-pe-docx]`.
-  - Narrative: `fetchPEBrief` calls `generate-pe-executive-brief`.
-  - Output: a Methodology section, a "PadSplit Payment Experience — Confidential" header, and a `PadSplit-Payment-Experience-Brief-yyyy-MM-dd.docx` file.
-- **`generate-pe-executive-brief`** (edge function):
-  - Access: `requireUser(req, MANAGERS)`.
-  - Models: Gemini 2.5 Pro with a 110 s timeout, then Flash with a 30 s timeout.
-  - Cost: `logApiCost(adminClient(), { service_provider: 'lovable_ai', service_type: 'pe_executive_brief', ... })`.
-- **Cost types:** `api_costs` has a CHECK constraint on `service_provider` only; `service_type` is free text. The billing UI keeps no list of allowed types; unknown types fall back to a gray color in `RealtimeCostDashboard`. So **no database or billing change is needed** for `script_survey_executive_brief`.
-- **`cluster-pe-open-ended`** accepts any `questionId` up to 200 characters. `${scriptId}:${q.id}` fits.
+**Visible link to `/agent-status` (the only one):**
+- `src/components/layout/AppSidebar.tsx:92` — `item('sales', Activity, 'Agent Status', '/agent-status', ['super_admin', 'admin', 'supervisor'])` in the `sales` group.
+
+**`Activity` icon usage:** imported at `AppSidebar.tsx:2` and used only on line 92. Nothing else in the file imports or uses `Activity`, so the import is removed too.
+
+**Route and page import in `src/App.tsx`:**
+- `App.tsx:34` — `import AgentStatus from "./pages/AgentStatus";`
+- `App.tsx:202-208` — the `/agent-status` route, wrapped in `ProtectedRoute allowedRoles={['super_admin', 'admin', 'supervisor']}` → `DataProviders` → `<AgentStatus />`.
+- `Navigate` is already imported (`App.tsx:6`), used for the `/member-insights` redirect at line 211.
+
+**AgentStatusProvider:** `App.tsx:13` import and `App.tsx:72-74` wrap inside `DataProviders`. `useAgentStatus` is consumed **only** by `src/pages/AgentStatus.tsx` (and defined in the context). Per the must-not-change list, the provider and context are left as-is — they become unused by any rendered page but stay intact and harmless.
+
+**`view_agent_status` page-tracking:** `usePageTracking('view_agent_status')` lives **only** at `src/pages/AgentStatus.tsx:28`. There is no shared page-tracking map keyed by route; `src/hooks/usePageTracking.ts` takes the action string as a direct argument. So nothing else needs changing for tracking.
+
+**Other matches found (non-visible, left alone):**
+- `src/pages/AuditLog.tsx:54` — `view_agent_status` is an entry in `ACTION_CONFIG`, a display-only map that renders an icon + label for **existing** `access_logs` rows whose `action = 'view_agent_status'`. It is not a page-view trigger. Leaving it means historical audit rows still render correctly. No change.
+- `src/contexts/AgentsContext.tsx` / `src/pages/UserManagement.tsx` / `src/pages/ImportBookings.tsx` — these reference `toggleAgentStatus` / `getAgentStatus` (agent active/inactive and import-match helpers), unrelated to the Agent Status page. No change.
+- `src/components/security/LoginHistoryPanel.tsx`, `src/pages/DisplayLinks.tsx`, `src/pages/Billing.tsx`, `src/components/billing/RealtimeCostDashboard.tsx`, `src/components/import/BulkProcessingTab.tsx` — matched only via the broad `agent_status`/`AgentStatus` substring in the earlier file listing; targeted searches for `agent-status` / `AgentStatus` found no actual references. No change.
+
+**No matches** in: dashboard cards (`Dashboard.tsx`, `Wallboard.tsx`), command palette (`src/components/ui/command.tsx` is the generic primitive with no configured items), markdown, or tests.
 
 ## Build
 
-### 1. Shared cluster helper: `src/utils/openEndedClusterFetch.ts` (new)
-- `sha256Hex` and `fetchClustersForQuestion(questionId, questionText, responses, logTag = '[generate-pe-docx]')` move here from `generate-pe-docx.ts` with identical bodies.
-- The one difference is the log tag, which becomes a parameter whose default is PE's tag. PE's warning text stays identical.
-- `generate-pe-docx.ts` imports them and deletes its local copies. Nothing else in that file changes, so the PE file's output is the same.
+### 1. `src/components/layout/AppSidebar.tsx`
+- Delete line 92 (the `Agent Status` item in the `sales` group).
+- Remove `Activity,` from the `lucide-react` import block (line 2), since it is now unused. All other imports and the rest of the `sales` group are unchanged.
 
-### 2. KPI config additions: `src/config/scriptSurveyKpis.ts`
-- `formatKpiValue` and `kpiDenominator` move here from the dashboard. The dashboard and the brief both import them, so the numbers match.
-- New `SCRIPT_SURVEY_PURPOSE: Record<scriptId, string>` with the two purpose texts given in the ticket.
+### 2. `src/App.tsx`
+- Remove line 34: `import AgentStatus from "./pages/AgentStatus";`
+- Replace the route body at lines 202-208 so the path redirects to `/dashboard`, keeping the existing `ProtectedRoute` wrapper and `allowedRoles` exactly as they are:
+  ```tsx
+  <Route path="/agent-status" element={
+    <ProtectedRoute allowedRoles={['super_admin', 'admin', 'supervisor']}>
+      <Navigate to="/dashboard" replace />
+    </ProtectedRoute>
+  } />
+  ```
+  `DataProviders` is dropped from this route (a redirect needs no data contexts), and `Navigate` is already imported. The `AgentStatusProvider` import and its placement inside `DataProviders` (lines 13, 72-74) stay unchanged.
 
-### 3. Brief generator: `src/utils/generate-script-survey-docx.ts` (new)
-- **Signature:** `generateScriptSurveyDocx({ scriptId, scriptName, questions, sections, records, validRecords, eligibleRecords, kpiConfig, kpis })`.
-- **Styling:** copies PE's constants and cell helpers, and the same Arial styles, page size and margins.
-- **Header and title:**
-  - Page header "PadSplit <name> — Confidential", with a page-number footer.
-  - Title "PadSplit — <name> Executive Brief", the generated date, and the period from the earliest to the latest `booking_date`.
-- **KPI table:** a row of the 6 tiles on `KPI_BG`, using `formatKpiValue` and `kpiDenominator`.
-- **AI narrative:** Executive Analysis, Risk Flags, and Recommended Actions (Priority / Recommendation / Owner / Rationale) from the new function. When the function fails, the brief shows PE's "AI narrative unavailable" fallback.
-- **Per-Question Detail:**
-  - One Heading 2 per section, in script order. `questions` already excludes internal questions, as on the dashboard.
-  - Each question shows "Q<order>. text" and a meta line "n=… · avg=… · section".
-  - Choice, yes/no and scale questions get an Answer / Count / % table built from `summarizeScriptQuestion`. Scale answers use one row per point.
-  - Open-ended questions get a cluster table from `fetchClustersForQuestion(`${scriptId}:${q.id}`, q.question, summary.allResponses, '[generate-script-survey-docx]')`. This is the same array the dashboard passes, so the hash matches and cached clusters are reused. With fewer than 8 responses, or when clustering is unavailable, the line reads "Clusters unavailable".
-- **No member quotes:** only aggregates appear, and text goes through `stripUUIDs`.
-- **Methodology:**
-  - The counts of routed calls, valid conversations and eligible respondents.
-  - Answers come from the agent's typed form plus answers extracted from the call recording; when both exist, the typed form answer wins.
-- **File name:** `PadSplit-<Name-Slug>-Brief-yyyy-MM-dd.docx`, where the slug turns non-alphanumerics into "-".
-- **AI request body:**
-  - `{ surveyName, surveyPurpose, kpis: [{label, value}], perQuestion, sections, totalRoutedCalls, validConversations, totalRespondents, dateRange }`.
-  - `perQuestion` holds aggregates only: order, text, section, type, n, avg, top distribution rows, and cluster labels with counts.
+### 3. `src/pages/AgentStatus.tsx`
+- Not deleted, not edited. It becomes unreachable (no route renders it and no import remains). Easy to restore later.
 
-### 4. Edge function: `supabase/functions/generate-script-survey-brief/index.ts` (new)
-- A twin of `generate-pe-executive-brief`:
-  - Access: `requireUser(req, MANAGERS)`.
-  - Models and timeouts: the same Pro (110 s) then Flash (30 s) fallback.
-  - Output: the same JSON shape (`executiveAnalysis`, `riskFlags`, `recommendedActions`, …), matched to PE's field names exactly.
-  - Cost: `logApiCost` with `edge_function: 'generate-script-survey-brief'` and `service_type: 'script_survey_executive_brief'`.
-- **System prompt:**
-  - A generic senior research analyst.
-  - Aggregate figures only, no quotes; candid and actionable.
-  - Owners drawn from Member Support / Product / Property Ops / Sales / Marketing.
-  - Narrative paragraphs follow the survey's own sections.
-- **Input checks (400 on failure):**
-  - `perQuestion` must be an array of at most 60 items.
-  - Strings are cut to 500 characters.
-  - `kpis` holds at most 12 items and `sections` at most 30.
-  - Numbers must be finite.
-- **Logging:** request bodies are never logged. Only the status, the model and the failure reason appear.
-- Deployed after `deno check`. An unsigned POST `{}` should return 401.
-
-### 5. Dashboard: `src/components/research-insights/ScriptSurveyInsightsDashboard.tsx`
-- The Word button calls `generateScriptSurveyDocx` with the date-filtered records, valid records, eligible records and KPIs.
-- It shows PE's toasts:
-  - "Generating clusters and narrative — this can take ~1–2 minutes…"
-  - "Executive brief downloaded"
-  - "Failed to generate report"
-- The `generateDynamicReport` import is removed from this file only. The local `formatKpiValue` and `kpiDenominator` are replaced by the imported ones.
+### 4. Audit log display mapping
+- `src/pages/AuditLog.tsx:54` (`view_agent_status` in `ACTION_CONFIG`) is left as-is. It only styles pre-existing `access_logs` rows; removing it would make any historical "Agent Status" view rows render with a generic fallback. The `access_logs` CHECK constraint is not touched.
 
 ## Files touched
 
-New:
-- `src/utils/openEndedClusterFetch.ts`
-- `src/utils/generate-script-survey-docx.ts`
-- `supabase/functions/generate-script-survey-brief/index.ts`
-
 Edited:
-- `src/utils/generate-pe-docx.ts`: the two helpers are replaced by imports; bodies are unchanged.
-- `src/config/scriptSurveyKpis.ts`: the formatters and purpose texts are added.
-- `src/components/research-insights/ScriptSurveyInsightsDashboard.tsx`
+- `src/components/layout/AppSidebar.tsx` (remove nav item + `Activity` import)
+- `src/App.tsx` (remove page import; route → `Navigate` redirect, same `ProtectedRoute` + roles)
 
 Not touched:
-- The PE dashboard and `generate-pe-executive-brief`.
-- The legacy script panel.
-- RLS, auth, the database, `types.ts`, the billing UI.
-- No new dependencies (`docx` is already installed).
+- `src/pages/AgentStatus.tsx` (kept, unreachable)
+- `src/contexts/AgentStatusContext.tsx`, `App.tsx`'s `AgentStatusProvider`, `agent_sessions` writes, the heartbeat, the Settings → Security login-history panel, `useSidebarOrder`, `sidebar_custom_order*` preference data
+- `src/pages/AuditLog.tsx` (display mapping kept; CHECK constraint unchanged)
+- Every other route, role gate, the database
+- No new dependencies
 
 ## Verification
-
-- `tsgo --noEmit -p tsconfig.app.json`.
-- `deno check` on the new function, deploy it, then confirm an unsigned POST `{}` returns 401.
-- A diff showing that the moved cluster helper bodies are identical to the PE originals.
-- The brief will not be generated live, because that would spend AI credits and write cost rows. Nothing published.
+- `tsgo --noEmit -p tsconfig.app.json` is clean.
+- No role sees the Agent Status item in the sidebar.
+- Visiting `/agent-status` as super_admin/admin/supervisor lands on `/dashboard` with no console error.
+- Other roles hitting `/agent-status` keep today's `ProtectedRoute` behaviour (redirect-after-auth-gate).
+- Nothing published.
