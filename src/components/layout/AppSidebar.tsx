@@ -1,5 +1,4 @@
 import {
-  Activity,
   BarChart3,
   Briefcase,
   Calculator,
@@ -89,7 +88,6 @@ const menuGroups: MenuGroup[] = [
       item('sales', Users, 'Agent Leaderboard', '/leaderboard', ['super_admin', 'admin', 'supervisor']),
       item('sales', Target, 'Agent Goals', '/agent-goals', ['super_admin', 'admin', 'supervisor']),
       item('sales', Monitor, 'Operations View', '/wallboard', ['super_admin', 'admin', 'supervisor']),
-      item('sales', Activity, 'Agent Status', '/agent-status', ['super_admin', 'admin', 'supervisor']),
       item('sales', Calculator, 'Move-In Calculator', '/tools/move-in-calculator', ['super_admin', 'admin', 'supervisor']),
     ],
   },

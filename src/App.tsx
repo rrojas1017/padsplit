@@ -31,7 +31,6 @@ import AuditLog from "./pages/AuditLog";
 import Settings from "./pages/Settings";
 import ImportBookings from "./pages/ImportBookings";
 import CoachingHub from "./pages/CoachingHub";
-import AgentStatus from "./pages/AgentStatus";
 
 import MyQA from "./pages/MyQA";
 import QADashboard from "./pages/QADashboard";
@@ -201,9 +200,7 @@ const App = () => (
 
               <Route path="/agent-status" element={
                 <ProtectedRoute allowedRoles={['super_admin', 'admin', 'supervisor']}>
-                  <DataProviders>
-                    <AgentStatus />
-                  </DataProviders>
+                  <Navigate to="/dashboard" replace />
                 </ProtectedRoute>
               } />
 
