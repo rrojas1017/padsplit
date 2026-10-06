@@ -448,6 +448,7 @@ interface SubmissionRow {
   created_at: string;
   caller_type: string | null;
   call_outcome: string | null;
+  close_outcome_label: string | null;
   language: string | null;
   call_duration_seconds: number | null;
   responses: unknown;
@@ -496,7 +497,7 @@ export function ScriptSubmissionsTab({ scriptId }: { scriptId: string }) {
       while (true) {
         const { data, error } = await supabase
           .from("research_calls")
-          .select("id, created_at, caller_type, call_outcome, language, call_duration_seconds, responses, researcher_id, kixie_link")
+          .select("id, created_at, caller_type, call_outcome, language, call_duration_seconds, responses, researcher_id, kixie_link, close_outcome_label")
           .in("campaign_id", ids)
           .order("created_at", { ascending: false })
           .range(from, from + PAGE - 1);
@@ -552,6 +553,7 @@ export function ScriptSubmissionsTab({ scriptId }: { scriptId: string }) {
                 <th className="text-left py-2 px-3 font-medium">Source</th>
                 <th className="text-left py-2 px-3 font-medium">Outcome</th>
                 <th className="text-left py-2 px-3 font-medium">Early-end reason</th>
+                <th className="text-left py-2 px-3 font-medium">Call outcome</th>
                 <th className="text-right py-2 px-3 font-medium">Answered</th>
                 <th className="text-left py-2 px-3 font-medium">Language</th>
                 <th className="text-right py-2 px-3 font-medium">Duration</th>
@@ -573,6 +575,7 @@ export function ScriptSubmissionsTab({ scriptId }: { scriptId: string }) {
                     </Badge>
                   </td>
                   <td className="py-2 px-3">{r.call_outcome === "ended_early" ? (earlyDisposition(r.responses) ?? "—") : "—"}</td>
+                  <td className="py-2 px-3">{r.close_outcome_label || "—"}</td>
                   <td className="py-2 px-3 text-right">{answeredCount(r.responses)}</td>
                   <td className="py-2 px-3 uppercase">{r.language ?? "—"}</td>
                   <td className="py-2 px-3 text-right">{formatDuration(r.call_duration_seconds)}</td>

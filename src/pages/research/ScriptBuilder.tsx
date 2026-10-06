@@ -90,6 +90,7 @@ export default function ScriptBuilder() {
       intro_script: wizardData.introScript || null,
       rebuttal_script: wizardData.rebuttalScript || null,
       closing_script: wizardData.closingScript || null,
+      call_outcomes: wizardData.callOutcomes,
       is_active: isDraft ? false : wizardData.isActive,
       script_type: wizardData.scriptType || undefined,
       slug: wizardData.slug || undefined,

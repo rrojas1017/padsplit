@@ -7,6 +7,7 @@ import { StepAIPrompt } from './StepAIPrompt';
 import { StepPreview } from './StepPreview';
 import { StepLaunch } from './StepLaunch';
 import { toast } from 'sonner';
+import { duplicateOutcomeLabels, DUPLICATE_OUTCOME_MESSAGE } from '@/components/research/CallOutcomesEditor';
 
 const STEPS = [
   { label: 'Upload & Define', key: 'upload' },
@@ -32,6 +33,7 @@ const defaultData: WizardData = {
   introScript: '',
   rebuttalScript: '',
   closingScript: '',
+  callOutcomes: [],
   aiPrompt: '',
   aiModel: 'gemini-2.5-flash',
   aiTemperature: 0.2,
@@ -49,13 +51,14 @@ export function ScriptWizard({ onClose, onSave }: Props) {
 
   const canAdvance = (s: number): boolean => {
     if (s === 0) return !!data.name.trim() && !!data.scriptType;
-    if (s === 1) return data.questions.filter(q => q.question?.trim()).length > 0;
+    if (s === 1) return data.questions.filter(q => q.question?.trim()).length > 0 && duplicateOutcomeLabels(data.callOutcomes).size === 0;
     return true;
   };
 
   const handleNext = () => {
     if (!canAdvance(step)) {
-      toast.error(step === 0 ? 'Please enter a script name and type' : 'Add at least one question');
+      toast.error(step === 0 ? 'Please enter a script name and type'
+        : duplicateOutcomeLabels(data.callOutcomes).size > 0 ? DUPLICATE_OUTCOME_MESSAGE : 'Add at least one question');
       return;
     }
     setStep(prev => Math.min(prev + 1, STEPS.length - 1));
@@ -64,6 +67,7 @@ export function ScriptWizard({ onClose, onSave }: Props) {
   const handleBack = () => setStep(prev => Math.max(prev - 1, 0));
 
   const handleSave = async (isDraft: boolean) => {
+    if (duplicateOutcomeLabels(data.callOutcomes).size > 0) { toast.error(DUPLICATE_OUTCOME_MESSAGE); return; }
     setIsSaving(true);
     try {
       const saveData = { ...data, isActive: isDraft ? false : data.isActive };

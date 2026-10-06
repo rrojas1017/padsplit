@@ -11,7 +11,8 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Plus, Trash2, GripVertical, ChevronUp, ChevronDown, GitBranch } from 'lucide-react';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
-import type { ResearchScript, ScriptQuestion } from '@/hooks/useResearchScripts';
+import type { CallOutcome, ResearchScript, ScriptQuestion } from '@/hooks/useResearchScripts';
+import { CallOutcomesEditor, duplicateOutcomeLabels, DUPLICATE_OUTCOME_MESSAGE } from './CallOutcomesEditor';
 
 const CAMPAIGN_TYPES = [
   { value: 'satisfaction', label: 'Member Satisfaction (NPS)' },
@@ -71,6 +72,7 @@ export function ResearchScriptDialog({ open, onOpenChange, script, onSave, impor
   const [introScript, setIntroScript] = useState('');
   const [rebuttalScript, setRebuttalScript] = useState('');
   const [closingScript, setClosingScript] = useState('');
+  const [callOutcomes, setCallOutcomes] = useState<CallOutcome[]>([]);
   const [isSaving, setIsSaving] = useState(false);
   const [optionInput, setOptionInput] = useState<Record<number, string>>({});
 
@@ -88,6 +90,8 @@ export function ResearchScriptDialog({ open, onOpenChange, script, onSave, impor
         setIntroScript(source.intro_script || '');
         setRebuttalScript(source.rebuttal_script || '');
         setClosingScript(source.closing_script || '');
+        const co = (source as any).call_outcomes;
+        setCallOutcomes(Array.isArray(co) ? co : []);
       } else {
         setName('');
         setDescription('');
@@ -98,6 +102,7 @@ export function ResearchScriptDialog({ open, onOpenChange, script, onSave, impor
         setIntroScript('');
         setRebuttalScript('');
         setClosingScript('');
+        setCallOutcomes([]);
       }
       setOptionInput({});
     }
@@ -140,6 +145,7 @@ export function ResearchScriptDialog({ open, onOpenChange, script, onSave, impor
     if (!name.trim()) return;
     const validQuestions = questions.filter(q => q.question?.trim());
     if (validQuestions.length === 0) return;
+    if (duplicateOutcomeLabels(callOutcomes).size > 0) return;
 
     setIsSaving(true);
     try {
@@ -152,6 +158,7 @@ export function ResearchScriptDialog({ open, onOpenChange, script, onSave, impor
         intro_script: introScript.trim() || null,
         rebuttal_script: rebuttalScript.trim() || null,
         closing_script: closingScript.trim() || null,
+        call_outcomes: callOutcomes,
         questions: validQuestions.map((q, i) => ({
           ...q,
           order: i + 1,
@@ -258,6 +265,8 @@ export function ResearchScriptDialog({ open, onOpenChange, script, onSave, impor
                   rows={3}
                 />
               </div>
+
+              <CallOutcomesEditor value={callOutcomes} onChange={setCallOutcomes} />
             </div>
           </TabsContent>
 
@@ -397,7 +406,10 @@ export function ResearchScriptDialog({ open, onOpenChange, script, onSave, impor
 
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-          <Button onClick={handleSave} disabled={isSaving || !name.trim() || questions.filter(q => q.question?.trim()).length === 0}>
+          {duplicateOutcomeLabels(callOutcomes).size > 0 && (
+            <p className="text-xs text-destructive self-center mr-auto">{DUPLICATE_OUTCOME_MESSAGE}</p>
+          )}
+          <Button onClick={handleSave} disabled={isSaving || !name.trim() || questions.filter(q => q.question?.trim()).length === 0 || duplicateOutcomeLabels(callOutcomes).size > 0}>
           {isSaving ? 'Saving...' : script ? 'Update Script' : 'Create Script'}
           </Button>
 
