@@ -35,6 +35,35 @@ export interface ScriptQuestion {
   scale_max?: number;
 }
 
+export interface CallOutcome { id: string; label: string; label_es?: string }
+
+export function newCallOutcomeId(): string {
+  let s = '';
+  while (s.length < 8) s += Math.random().toString(36).slice(2);
+  return 'co_' + s.slice(0, 8);
+}
+
+/** Trim, drop empty English labels, cut to 80, keep ids (new ids for blanks), max 20. */
+export function cleanCallOutcomes(list: CallOutcome[] | null | undefined): CallOutcome[] {
+  if (!Array.isArray(list)) return [];
+  const out: CallOutcome[] = [];
+  for (const o of list) {
+    if (out.length >= 20) break;
+    const label = (o?.label ?? '').trim().slice(0, 80);
+    if (!label) continue;
+    const id = typeof o.id === 'string' && o.id.trim() && o.id.trim().length <= 64 ? o.id.trim() : newCallOutcomeId();
+    const es = (o.label_es ?? '').trim().slice(0, 80);
+    out.push(es ? { id, label, label_es: es } : { id, label });
+  }
+  return out;
+}
+
+function parseCallOutcomes(v: unknown): CallOutcome[] {
+  if (!Array.isArray(v)) return [];
+  return v.filter((o: any) => o && typeof o.id === 'string' && typeof o.label === 'string')
+    .map((o: any) => (typeof o.label_es === 'string' && o.label_es ? { id: o.id, label: o.label, label_es: o.label_es } : { id: o.id, label: o.label }));
+}
+
 export interface ResearchScript {
   id: string;
   name: string;
@@ -62,6 +91,7 @@ export interface ResearchScript {
   ai_temperature: number | null;
   slug: string | null;
   status: string | null;
+  call_outcomes: CallOutcome[];
 }
 
 export function useResearchScripts() {
@@ -91,6 +121,7 @@ export function useResearchScripts() {
         ai_temperature: s.ai_temperature ?? 0.2,
         slug: s.slug || s.campaign_type,
         status: s.status || 'active',
+        call_outcomes: parseCallOutcomes(s.call_outcomes),
       }));
       setScripts(mapped);
     }
@@ -113,7 +144,7 @@ export function useResearchScripts() {
     });
   }, [translateAndStore, fetchScripts]);
 
-  const createScript = async (script: Omit<ResearchScript, 'id' | 'created_at' | 'updated_at' | 'created_by'> & { intro_script_es?: string | null; closing_script_es?: string | null; rebuttal_script_es?: string | null; questions_es?: ScriptQuestion[] | null; translation_status?: string | null }) => {
+  const createScript = async (script: Omit<ResearchScript, 'id' | 'created_at' | 'updated_at' | 'created_by' | 'call_outcomes'> & { call_outcomes?: CallOutcome[]; intro_script_es?: string | null; closing_script_es?: string | null; rebuttal_script_es?: string | null; questions_es?: ScriptQuestion[] | null; translation_status?: string | null }) => {
     const { data: { user } } = await supabase.auth.getUser();
     const questionsWithIds = ensureIds(script.questions) as ScriptQuestion[];
     const { data, error } = await supabase.from('research_scripts').insert({
@@ -127,6 +158,7 @@ export function useResearchScripts() {
       closing_script: script.closing_script || null,
       is_active: script.is_active,
       created_by: user?.id || null,
+      call_outcomes: cleanCallOutcomes(script.call_outcomes ?? []) as any,
       ...(script.script_type !== undefined ? { script_type: script.script_type } : {}),
       ...(script.slug !== undefined ? { slug: script.slug } : {}),
       ...(script.ai_prompt !== undefined ? { ai_prompt: script.ai_prompt } : {}),
@@ -154,6 +186,7 @@ export function useResearchScripts() {
   const updateScript = async (id: string, updates: Partial<Omit<ResearchScript, 'id' | 'created_at' | 'updated_at' | 'created_by'>>) => {
     const payload: any = { ...updates };
     if (updates.questions) payload.questions = ensureIds(updates.questions) as any;
+    if (updates.call_outcomes) payload.call_outcomes = cleanCallOutcomes(updates.call_outcomes) as any;
     const { error } = await supabase.from('research_scripts').update(payload).eq('id', id);
     if (error) {
       toast.error('Failed to update script');

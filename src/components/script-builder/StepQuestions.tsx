@@ -7,6 +7,7 @@ import { QuestionCard } from './QuestionCard';
 import type { ScriptQuestion } from '@/hooks/useResearchScripts';
 import type { WizardData } from './StepUpload';
 import { generateQuestionId } from '@/utils/rawScriptAnswers';
+import { CallOutcomesEditor } from '@/components/research/CallOutcomesEditor';
 
 interface Props {
   data: WizardData;
@@ -120,6 +121,7 @@ export function StepQuestions({ data, onChange }: Props) {
             rows={4}
           />
         </div>
+        <CallOutcomesEditor value={data.callOutcomes ?? []} onChange={callOutcomes => onChange({ callOutcomes })} />
       </TabsContent>
 
       <TabsContent value="rebuttal" className="space-y-5 pt-2">

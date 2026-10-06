@@ -76,6 +76,7 @@ interface UseReportsDataReturn {
   researchProgressById: Record<string, ResearchProgressInfo>;
   /** Intake label for research rows, keyed by booking id. */
   researchIntakeById: Record<string, ResearchIntake>;
+  researchOutcomeById: Record<string, string>;
 }
 
 export type ResearchIntake = 'Form + Recording' | 'Form only' | 'Recording only';
@@ -107,6 +108,7 @@ export function useReportsData(
   const [researchScriptOptions, setResearchScriptOptions] = useState<ResearchScriptOption[]>([]);
   const [researchProgressById, setResearchProgressById] = useState<Record<string, ResearchProgressInfo>>({});
   const [researchIntakeById, setResearchIntakeById] = useState<Record<string, ResearchIntake>>({});
+  const [researchOutcomeById, setResearchOutcomeById] = useState<Record<string, string>>({});
 
   // Active research scripts without a dedicated dashboard → extra campaign filter entries.
   useEffect(() => {
@@ -466,29 +468,35 @@ export function useReportsData(
 
       // Intake badge: one batched lookup for research calls on this page.
       const intakeMap: Record<string, ResearchIntake> = {};
+      const outcomeMap: Record<string, string> = {};
       const rcIds = Array.from(new Set((data || []).map(r => (r as any).research_call_id).filter(Boolean))) as string[];
       if (rcIds.length > 0) {
         const { data: rcs, error: rcErr } = await (supabase as any)
           .from('research_calls')
-          .select('id, kixie_link, source:responses->>_source')
+          .select('id, kixie_link, close_outcome_label, source:responses->>_source')
           .in('id', rcIds);
         if (!rcErr && rcs) {
           const byRc = new Map<string, ResearchIntake>();
+          const outcomeByRc = new Map<string, string>();
           for (const rc of rcs as any[]) {
             const form = rc.source === 'public_script';
             const rec = !!rc.kixie_link;
             const v: ResearchIntake | null = form && rec ? 'Form + Recording' : form ? 'Form only' : rec ? 'Recording only' : null;
             if (v) byRc.set(rc.id, v);
+            if (typeof rc.close_outcome_label === 'string' && rc.close_outcome_label) outcomeByRc.set(rc.id, rc.close_outcome_label);
           }
           for (const r of data || []) {
             const v = byRc.get((r as any).research_call_id);
             if (v) intakeMap[r.id] = v;
+            const o = outcomeByRc.get((r as any).research_call_id);
+            if (o) outcomeMap[r.id] = o;
           }
         }
       }
 
       setRecords(transformedRecords);
       setResearchIntakeById(intakeMap);
+      setResearchOutcomeById(outcomeMap);
       setResearchProgressById(progressMap);
       setTotalCount(count || 0);
       setResearchSummary({
@@ -523,5 +531,6 @@ export function useReportsData(
     researchScriptOptions,
     researchProgressById,
     researchIntakeById,
+    researchOutcomeById,
   };
 }
