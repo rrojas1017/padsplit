@@ -70,6 +70,7 @@ interface PublicScript {
   rebuttal_script_es: string | null;
   questions_es: ScriptQuestion[] | null;
   translation_status: string | null;
+  call_outcomes?: { id: string; label: string; label_es?: string }[];
 }
 
 type Phase = 'start' | 'intro' | 'consent' | 'question' | 'closing' | 'rebuttal' | 'done';
@@ -159,6 +160,15 @@ export default function PublicScriptView() {
   const [submissionId, setSubmissionId] = useState<string | null>(null);
   const [earlyDisposition, setEarlyDisposition] = useState('');
   const [selectedEndDisposition, setSelectedEndDisposition] = useState('caller_hung_up');
+  // CR-012: script-defined call close outcomes.
+  const [closeOutcomeId, setCloseOutcomeId] = useState<string | null>(null);
+  const [pendingOutcomeId, setPendingOutcomeId] = useState<string | null>(null);
+  const [endDialogOpen, setEndDialogOpen] = useState(false);
+  type OutcomeSaveState = 'idle' | 'saving' | 'saved' | 'failed';
+  const [outcomeSaveState, setOutcomeSaveState] = useState<OutcomeSaveState>('idle');
+  const [outcomeError, setOutcomeError] = useState<string | null>(null);
+  const [outcomeTargetId, setOutcomeTargetId] = useState<string | null>(null);
+  const outcomeReqRef = useRef(0);
   const [surveyLanguage, setSurveyLanguage] = useState<SurveyLanguage>('en');
   const [translatedContent, setTranslatedContent] = useState<{
     intro: string; closing: string; rebuttal: string; questions: ScriptQuestion[];
@@ -189,6 +199,23 @@ export default function PublicScriptView() {
     setPhase('done'); // the done-phase effect sends the terminal save
   };
 
+  const callOutcomes = script?.call_outcomes ?? [];
+  const hasOutcomes = callOutcomes.length > 0;
+  const outcomeLabel = (o: { label: string; label_es?: string }) =>
+    surveyLanguage === 'es' && o.label_es ? o.label_es : o.label;
+
+  const openOutcomeDialog = () => { setPendingOutcomeId(null); setEndDialogOpen(true); };
+  const handleOutcomeEnd = () => {
+    const o = callOutcomes.find(x => x.id === pendingOutcomeId);
+    if (!o) return;
+    if (phase === 'start') setSubmissionId(crypto.randomUUID());
+    setCloseOutcomeId(o.id);
+    setEarlyDisposition(o.label);
+    setEndedEarly(true);
+    setEndDialogOpen(false);
+    setPhase('done'); // the done-phase effect sends the terminal save
+  };
+
   // ---- Save queue (BUG-005) ----
   type SaveState = 'idle' | 'saving' | 'saved' | 'failed';
   const [saveState, setSaveState] = useState<SaveState>('idle');
@@ -199,7 +226,7 @@ export default function PublicScriptView() {
   const [restartConfirmOpen, setRestartConfirmOpen] = useState(false);
 
   // Snapshot of the latest committed state, read by queued sends.
-  const snapshot = { responses, probeNotes, agentNotes, endedEarly, earlyDisposition, surveyLanguage, declined, submissionId };
+  const snapshot = { responses, probeNotes, agentNotes, endedEarly, earlyDisposition, surveyLanguage, declined, submissionId, closeOutcomeId };
   const snapshotRef = useRef(snapshot);
   snapshotRef.current = snapshot;
   const saveSeqRef = useRef(0);
@@ -250,6 +277,7 @@ export default function PublicScriptView() {
           language: s.surveyLanguage,
           declined: s.declined,
           submission_id: s.submissionId,
+          ...(s.closeOutcomeId ? { close_outcome_id: s.closeOutcomeId } : {}),
           final,
           save_seq: saveSeqRef.current,
           durationSeconds: startedAtRef.current !== null
@@ -350,6 +378,13 @@ export default function PublicScriptView() {
     setSubmissionId(null);
     setEarlyDisposition('');
     setSelectedEndDisposition('caller_hung_up');
+    outcomeReqRef.current += 1;
+    setCloseOutcomeId(null);
+    setPendingOutcomeId(null);
+    setEndDialogOpen(false);
+    setOutcomeSaveState('idle');
+    setOutcomeError(null);
+    setOutcomeTargetId(null);
     setSurveyLanguage('en');
     setTranslatedContent(null);
     setSaveState('idle');
@@ -365,6 +400,47 @@ export default function PublicScriptView() {
     terminalSavedRef.current = false;
     startedAtRef.current = null;
   }, []);
+
+  // CR-012: outcome-only correction after the terminal save (outside the BUG-005 queue).
+  const sendOutcome = async (id: string) => {
+    if (!token || !submissionId) return;
+    const reqId = ++outcomeReqRef.current;
+    setOutcomeTargetId(id);
+    setOutcomeSaveState('saving');
+    setOutcomeError(null);
+    try {
+      const { data, error: fnError } = await supabase.functions.invoke('submit-public-script', {
+        body: { token, submission_id: submissionId, outcome_only: true, close_outcome_id: id },
+      });
+      if (reqId !== outcomeReqRef.current) return;
+      if (fnError) {
+        let status = 0;
+        let body: any = null;
+        if (fnError instanceof FunctionsHttpError) {
+          status = fnError.context.status;
+          try { body = await fnError.context.json(); } catch { body = null; }
+        }
+        if (reqId !== outcomeReqRef.current) return;
+        const msg = status === 409 && body?.error === 'Submission expired'
+          ? 'This call can no longer be edited'
+          : (status ? (body?.error || 'Server error') : 'Server error');
+        setOutcomeError(msg);
+        setOutcomeSaveState('failed');
+        return;
+      }
+      setCloseOutcomeId(data?.close_outcome?.id ?? id);
+      setOutcomeSaveState('saved');
+    } catch {
+      if (reqId !== outcomeReqRef.current) return;
+      setOutcomeError('Server error');
+      setOutcomeSaveState('failed');
+    }
+  };
+  const selectDoneOutcome = (id: string) => {
+    if (!terminalSaved) return;
+    if (id === closeOutcomeId && outcomeSaveState !== 'failed') { setOutcomeTargetId(id); return; }
+    void sendOutcome(id);
+  };
 
   const restartBlocked = !terminalSaved && (saveState === 'saving' || saveState === 'idle' || saveState === 'saved');
   const restart = () => {
@@ -537,6 +613,11 @@ export default function PublicScriptView() {
                 </span>
                 <div className="flex items-center gap-2">
                   <span>{Math.round(progressPercent)}%</span>
+                  {hasOutcomes ? (
+                    <Button variant="destructive" size="sm" className="h-6 px-2 text-xs gap-1" onClick={openOutcomeDialog}>
+                      <PhoneOff className="w-3 h-3" /> End Call
+                    </Button>
+                  ) : (
                   <AlertDialog>
                     <AlertDialogTrigger asChild>
                       <Button variant="destructive" size="sm" className="h-6 px-2 text-xs gap-1">
@@ -584,6 +665,7 @@ export default function PublicScriptView() {
                       </AlertDialogFooter>
                     </AlertDialogContent>
                   </AlertDialog>
+                  )}
                 </div>
               </div>
               <Progress value={progressPercent} className="h-2" />
@@ -655,6 +737,13 @@ export default function PublicScriptView() {
                     <><Play className="w-4 h-4 mr-2" /> Begin Script</>
                   )}
                 </Button>
+                {hasOutcomes && (
+                  <div>
+                    <Button variant="outline" onClick={openOutcomeDialog}>
+                      <PhoneOff className="w-4 h-4 mr-2" /> Close call without survey
+                    </Button>
+                  </div>
+                )}
               </div>
             </WizardCard>
           )}
@@ -897,6 +986,52 @@ export default function PublicScriptView() {
                     <p className="text-sm text-muted-foreground">You've walked through the full script flow.</p>
                   </>
                 )}
+                {hasOutcomes && (
+                  <div className="text-left space-y-2">
+                    <p className="text-sm font-medium">How did the call end?</p>
+                    {!terminalSaved ? (
+                      <p className="text-xs text-muted-foreground">Saving…</p>
+                    ) : null}
+                    <div className="space-y-2">
+                      {callOutcomes.map(o => {
+                        const selected = (outcomeTargetId ?? closeOutcomeId) === o.id;
+                        return (
+                          <label
+                            key={o.id}
+                            className={cn(
+                              'flex items-center gap-3 p-3 rounded-lg border transition-colors',
+                              terminalSaved ? 'cursor-pointer' : 'opacity-60 cursor-not-allowed',
+                              selected ? 'border-destructive bg-destructive/5' : 'hover:bg-muted/50'
+                            )}
+                          >
+                            <input
+                              type="radio"
+                              name="pub-done-outcome"
+                              value={o.id}
+                              checked={selected}
+                              disabled={!terminalSaved}
+                              onChange={() => selectDoneOutcome(o.id)}
+                              className="accent-destructive"
+                            />
+                            <span className="text-sm font-medium">{outcomeLabel(o)}</span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                    {outcomeSaveState === 'saving' && <p className="text-xs text-muted-foreground">Saving…</p>}
+                    {outcomeSaveState === 'saved' && <p className="text-xs text-muted-foreground">Outcome saved</p>}
+                    {outcomeSaveState === 'failed' && (
+                      <div className="flex items-center gap-2 text-xs text-destructive">
+                        <span>{outcomeError}</span>
+                        {outcomeError !== 'This call can no longer be edited' && outcomeTargetId && (
+                          <Button variant="outline" size="sm" className="h-6 px-2 text-xs" onClick={() => void sendOutcome(outcomeTargetId)}>
+                            Retry
+                          </Button>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
                 <div className="flex flex-col items-center gap-1">
                   <Button onClick={restart} disabled={restartBlocked}>
                     <RotateCcw className="w-4 h-4 mr-2" /> Restart
@@ -909,6 +1044,48 @@ export default function PublicScriptView() {
 
         </div>
       </div>
+
+      {hasOutcomes && (
+        <AlertDialog open={endDialogOpen} onOpenChange={setEndDialogOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>{phase === 'start' ? 'Close Call' : 'End Call Early'}</AlertDialogTitle>
+              <AlertDialogDescription>Select how the call ended.</AlertDialogDescription>
+            </AlertDialogHeader>
+            <div className="space-y-2 py-2">
+              {callOutcomes.map(o => (
+                <label
+                  key={o.id}
+                  className={cn(
+                    'flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-colors',
+                    pendingOutcomeId === o.id ? 'border-destructive bg-destructive/5' : 'hover:bg-muted/50'
+                  )}
+                >
+                  <input
+                    type="radio"
+                    name="pub-end-outcome"
+                    value={o.id}
+                    checked={pendingOutcomeId === o.id}
+                    onChange={() => setPendingOutcomeId(o.id)}
+                    className="accent-destructive"
+                  />
+                  <span className="text-sm font-medium">{outcomeLabel(o)}</span>
+                </label>
+              ))}
+            </div>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <Button
+                className="bg-destructive hover:bg-destructive/90"
+                disabled={!pendingOutcomeId}
+                onClick={handleOutcomeEnd}
+              >
+                End Call
+              </Button>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      )}
 
       <AlertDialog open={restartConfirmOpen} onOpenChange={setRestartConfirmOpen}>
         <AlertDialogContent>
