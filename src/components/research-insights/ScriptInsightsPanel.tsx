@@ -574,7 +574,7 @@ export function ScriptSubmissionsTab({ scriptId }: { scriptId: string }) {
                       {r.call_outcome === "in_progress" ? "In progress" : (r.call_outcome ?? "—")}
                     </Badge>
                   </td>
-                  <td className="py-2 px-3">{r.call_outcome === "ended_early" ? (earlyDisposition(r.responses) ?? "—") : "—"}</td>
+                  <td className="py-2 px-3">{r.call_outcome === "ended_early" ? (r.close_outcome_label || (earlyDisposition(r.responses) ?? "—")) : "—"}</td>
                   <td className="py-2 px-3">{r.close_outcome_label || "—"}</td>
                   <td className="py-2 px-3 text-right">{answeredCount(r.responses)}</td>
                   <td className="py-2 px-3 uppercase">{r.language ?? "—"}</td>
