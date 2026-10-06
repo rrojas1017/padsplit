@@ -2362,6 +2362,8 @@ export type Database = {
           caller_status: string | null
           caller_type: string
           campaign_id: string
+          close_outcome_id: string | null
+          close_outcome_label: string | null
           created_at: string
           dialer_agent_user: string | null
           dialer_call_id: string | null
@@ -2389,6 +2391,8 @@ export type Database = {
           caller_status?: string | null
           caller_type: string
           campaign_id: string
+          close_outcome_id?: string | null
+          close_outcome_label?: string | null
           created_at?: string
           dialer_agent_user?: string | null
           dialer_call_id?: string | null
@@ -2416,6 +2420,8 @@ export type Database = {
           caller_status?: string | null
           caller_type?: string
           campaign_id?: string
+          close_outcome_id?: string | null
+          close_outcome_label?: string | null
           created_at?: string
           dialer_agent_user?: string | null
           dialer_call_id?: string | null
@@ -2621,6 +2627,7 @@ export type Database = {
           ai_model: string | null
           ai_prompt: string | null
           ai_temperature: number | null
+          call_outcomes: Json
           campaign_type: string
           closing_script: string | null
           closing_script_es: string | null
@@ -2650,6 +2657,7 @@ export type Database = {
           ai_model?: string | null
           ai_prompt?: string | null
           ai_temperature?: number | null
+          call_outcomes?: Json
           campaign_type: string
           closing_script?: string | null
           closing_script_es?: string | null
@@ -2679,6 +2687,7 @@ export type Database = {
           ai_model?: string | null
           ai_prompt?: string | null
           ai_temperature?: number | null
+          call_outcomes?: Json
           campaign_type?: string
           closing_script?: string | null
           closing_script_es?: string | null
