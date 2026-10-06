@@ -975,9 +975,11 @@ export default function PublicScriptView() {
                   <>
                     <PhoneOff className="w-12 h-12 mx-auto text-destructive" />
                     <h3 className="text-lg font-semibold">Call Ended Early</h3>
-                    <p className="text-sm text-muted-foreground">
-                      Disposition: <span className="font-medium text-foreground">{earlyDisposition}</span>
-                    </p>
+                    {!hasOutcomes && (
+                      <p className="text-sm text-muted-foreground">
+                        Disposition: <span className="font-medium text-foreground">{earlyDisposition}</span>
+                      </p>
+                    )}
                   </>
                 ) : (
                   <>

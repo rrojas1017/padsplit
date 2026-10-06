@@ -1153,7 +1153,7 @@ export default function Reports() {
                               <Badge variant="outline" className="text-[10px] px-1.5 py-0 cursor-help">Ended early</Badge>
                             </TooltipTrigger>
                             <TooltipContent side="right">
-                              <p className="text-xs">{p.disposition || 'No disposition'} · {p.answered ?? '?'}/{p.total ?? '?'} answered</p>
+                              <p className="text-xs">{researchOutcomeById[booking.id] || p.disposition || 'No disposition'} · {p.answered ?? '?'}/{p.total ?? '?'} answered</p>
                             </TooltipContent>
                           </Tooltip>
                         );
