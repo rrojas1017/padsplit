@@ -5,6 +5,27 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
+function sanitizeOutcomes(v: unknown): Array<{ id: string; label: string; label_es?: string }> {
+  if (!Array.isArray(v)) return [];
+  const out: Array<{ id: string; label: string; label_es?: string }> = [];
+  for (const it of v) {
+    if (out.length >= 20) break;
+    if (!it || typeof it !== 'object') continue;
+    const o = it as Record<string, unknown>;
+    if (typeof o.id !== 'string' || typeof o.label !== 'string') continue;
+    const id = o.id.trim();
+    const label = o.label.trim().slice(0, 80);
+    if (!id || id.length > 64 || !label) continue;
+    const item: { id: string; label: string; label_es?: string } = { id, label };
+    if (typeof o.label_es === 'string') {
+      const es = o.label_es.trim().slice(0, 80);
+      if (es) item.label_es = es;
+    }
+    out.push(item);
+  }
+  return out;
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -66,7 +87,7 @@ Deno.serve(async (req) => {
     // Fetch the script
     const { data: script, error: scriptError } = await supabaseAdmin
       .from('research_scripts')
-      .select('id, name, description, campaign_type, target_audience, questions, intro_script, rebuttal_script, closing_script, is_active, questions_es, intro_script_es, closing_script_es, rebuttal_script_es, translation_status')
+      .select('id, name, description, campaign_type, target_audience, questions, intro_script, rebuttal_script, closing_script, is_active, questions_es, intro_script_es, closing_script_es, rebuttal_script_es, translation_status, call_outcomes')
       .eq('id', tokenRow.script_id)
       .maybeSingle();
 
@@ -112,6 +133,7 @@ Deno.serve(async (req) => {
           closing_script_es: script.closing_script_es,
           rebuttal_script_es: script.rebuttal_script_es,
           translation_status: script.translation_status,
+          call_outcomes: sanitizeOutcomes((script as any).call_outcomes),
         },
       }),
       { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }

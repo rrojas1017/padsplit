@@ -227,6 +227,8 @@ Deno.serve(async (req) => {
       dialer_phone,
       dialer_agent,
       dialer_campaign,
+      close_outcome_id,
+      outcome_only,
     } = body || {};
     const callStart = resolveCallStart({ explicit: startedAt, audioUrl: '', maxPastMs: 24 * 60 * 60 * 1000 });
     // Old clients do not send `final` → treated as a terminal save.
@@ -284,7 +286,7 @@ Deno.serve(async (req) => {
     // Resolve script + most recent campaign for this script (if any)
     const { data: script, error: scriptErr } = await admin
       .from('research_scripts')
-      .select('id, questions, questions_es, is_active, slug')
+      .select('id, questions, questions_es, is_active, slug, call_outcomes')
       .eq('id', tokenRow.script_id)
       .maybeSingle();
 
@@ -296,6 +298,52 @@ Deno.serve(async (req) => {
 
     if (script.is_active === false) {
       return json(409, { error: 'Script is not active' });
+    }
+
+    // CR-012: close outcome resolves only against the script's own list; client labels are never read.
+    const resolveOutcome = (id: unknown): { id: string; label: string } | null => {
+      if (typeof id !== 'string' || id.length === 0 || id.length > 64) return null;
+      const list = Array.isArray((script as any).call_outcomes) ? (script as any).call_outcomes : [];
+      for (const it of list) {
+        if (it && typeof it === 'object' && typeof it.id === 'string' && it.id === id && typeof it.label === 'string') {
+          const label = it.label.trim().slice(0, 120);
+          return label ? { id, label } : null;
+        }
+      }
+      return null;
+    };
+    const closeOutcome = resolveOutcome(close_outcome_id);
+
+    // CR-012: outcome-only correction of a finalized submission.
+    if (outcome_only === true) {
+      if (!submissionId) return json(400, { error: 'submission_id is required' });
+      const { data: oRow } = await admin
+        .from('research_calls')
+        .select('id, call_outcome, created_at, responses')
+        .eq('responses->>_submission_id', submissionId)
+        .limit(1)
+        .maybeSingle();
+      if (!oRow) return json(404, { error: 'Submission not found' });
+      const oResp: any = (oRow.responses && typeof oRow.responses === 'object') ? oRow.responses : {};
+      if (oResp._token_id !== tokenRow.id) return json(403, { error: 'Submission belongs to another link' });
+      if (oRow.call_outcome === 'in_progress') return json(409, { error: 'Submission not finalized' });
+      const finMs = typeof oResp._finalized_at === 'string' ? new Date(oResp._finalized_at).getTime() : NaN;
+      const refMs = Number.isFinite(finMs) ? finMs : new Date(oRow.created_at).getTime();
+      if (Date.now() - refMs > 6 * 60 * 60 * 1000) return json(409, { error: 'Submission expired' });
+      if (!closeOutcome) return json(400, { error: 'Unknown outcome' });
+      const { error: oErr } = await admin
+        .from('research_calls')
+        .update({ close_outcome_id: closeOutcome.id, close_outcome_label: closeOutcome.label })
+        .eq('id', oRow.id);
+      if (oErr) {
+        console.error('submit-public-script: outcome update failed', oErr.message);
+        return json(500, { error: 'Failed to record outcome' });
+      }
+      admin.from('script_access_tokens')
+        .update({ last_accessed_at: new Date().toISOString() })
+        .eq('id', tokenRow.id)
+        .then(() => {});
+      return json(200, { ok: true, research_call_id: oRow.id, status: oRow.call_outcome, close_outcome: closeOutcome });
     }
 
     const questions = (language === 'es' && Array.isArray(script.questions_es) && script.questions_es.length > 0)
@@ -364,11 +412,17 @@ Deno.serve(async (req) => {
     const terminalOutcome = declined ? 'refused' : endedEarly ? 'ended_early' : (answeredCount === 0 ? 'refused' : 'completed');
     const totalQuestions = (questions as any[]).filter((q) => q?.is_internal !== true).length;
 
+    const effectiveDisposition = (endedEarly && closeOutcome) ? closeOutcome.label : earlyDisposition;
+    const outcomeCols = (outcome: string): Record<string, unknown> =>
+      (outcome !== 'in_progress' && closeOutcome)
+        ? { close_outcome_id: closeOutcome.id, close_outcome_label: closeOutcome.label } : {};
+    let writtenOutcome: { id: string; label: string } | null = null;
+
     const buildEnriched = (outcome: string): Record<string, unknown> => ({
       ...normalizedResponses,
       _probe_notes: probeNotes || {},
       _agent_notes: agentNotes || {},
-      _early_disposition: outcome === 'ended_early' ? (earlyDisposition || 'ended_early') : null,
+      _early_disposition: outcome === 'ended_early' ? (effectiveDisposition || 'ended_early') : null,
       _source: 'public_script',
       _token_id: tokenRow.id,
       _client_hash: clientHash,
@@ -395,6 +449,7 @@ Deno.serve(async (req) => {
         raw_answers_count: count,
         saved_at: new Date().toISOString(),
         linked: linkedFlag,
+        close_outcome: writtenOutcome,
       });
     };
 
@@ -622,7 +677,7 @@ Deno.serve(async (req) => {
       repair,
       callerName: callerName || null,
       duration: typeof durationSeconds === 'number' ? durationSeconds : null,
-      disposition: endedEarly ? (earlyDisposition || null) : null,
+      disposition: endedEarly ? (effectiveDisposition || null) : null,
       lang: language || 'en',
     });
 
@@ -671,6 +726,7 @@ Deno.serve(async (req) => {
           call_duration_seconds: typeof durationSeconds === 'number' ? durationSeconds : null,
           responses: { ...buildEnriched(outcome), ...extra },
           language: language || 'en',
+          ...outcomeCols(outcome),
           ...(dialerAgent ? { dialer_agent_user: dialerAgent } : {}),
           ...(dialerLead ? { dialer_lead_id: dialerLead } : {}),
           ...(withDialerId && dialerUid ? { dialer_call_id: dialerUid } : {}),
@@ -712,6 +768,7 @@ Deno.serve(async (req) => {
     const finishNew = async (id: string, outcome: string, linked: boolean): Promise<Response> => {
       linkedFlag = linked;
       if (outcome === 'in_progress') return ok(id, outcome, null);
+      writtenOutcome = closeOutcome;
       const bookingId = await finalizeSideEffects(id, outcome, rawScriptAnswers, currentOpts(false));
       return ok(id, outcome, bookingId);
     };
@@ -738,6 +795,7 @@ Deno.serve(async (req) => {
           call_outcome: outcome,
           language: language || 'en',
           caller_name: callerName || 'Public Submission',
+          ...outcomeCols(outcome),
           ...(d.caller_phone == null && dialerPhone ? { caller_phone: dialerPhone } : {}),
           ...(d.dialer_lead_id == null && dialerLead ? { dialer_lead_id: dialerLead } : {}),
           ...(d.dialer_agent_user == null && dialerAgent ? { dialer_agent_user: dialerAgent } : {}),
@@ -851,6 +909,7 @@ Deno.serve(async (req) => {
       caller_name: callerName || 'Public Submission',
       call_duration_seconds: typeof durationSeconds === 'number' ? durationSeconds : null,
       language: language || 'en',
+      ...outcomeCols(outcome),
     });
 
     if (!isFinal) {
@@ -890,6 +949,7 @@ Deno.serve(async (req) => {
       const fresh = await readRow();
       return fresh ? await handleTerminal(fresh) : json(500, { error: 'Failed to record submission' });
     }
+    writtenOutcome = closeOutcome;
     const bookingId = await finalizeSideEffects(row.id, terminalOutcome, rawScriptAnswers, currentOpts(false));
     return ok(row.id, terminalOutcome, bookingId);
   } catch (err) {
