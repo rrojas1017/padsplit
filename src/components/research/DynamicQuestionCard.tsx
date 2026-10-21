@@ -20,6 +20,7 @@ interface Props {
 const TYPE_LABELS: Record<string, string> = {
   open_ended: "Open-Ended",
   multiple_choice: "Multiple Choice",
+  multiple_select: "Multiple Select",
   yes_no: "Yes / No",
   scale: "Rating Scale",
 };
@@ -149,7 +150,7 @@ export function DynamicQuestionCard({ question, responses, totalRespondents }: P
             )}
 
             {/* MULTIPLE CHOICE bar */}
-            {question.type === "multiple_choice" && (
+            {(question.type === "multiple_choice" || question.type === "multiple_select") && (
               <div className="h-48">
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={chartData} layout="vertical">

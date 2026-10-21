@@ -65,6 +65,16 @@ function QuestionTopicCard({ scriptId, q, eligible }: { scriptId: string; q: Scr
       />
     );
   }
+  if (summary.type === 'multiple_select') {
+    return (
+      <TopicQuestionCard
+        summary={pe}
+        title={q.question}
+        chart="bars"
+        helperText="Multiple answers allowed — % of respondents"
+      />
+    );
+  }
   return <TopicQuestionCard summary={pe} title={q.question} chart="donut" />;
 }
 

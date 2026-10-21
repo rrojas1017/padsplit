@@ -15,6 +15,7 @@ import {
 
 const TYPE_MAP: Record<ScriptSurveyQuestion['type'], PEQuestionType> = {
   multiple_choice: 'multi',
+  multiple_select: 'multi',
   yes_no: 'yesno',
   scale: 'scale',
   open_ended: 'open',
