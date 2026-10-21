@@ -1,3 +1,5 @@
+import { getMatrixBlock, snapToBlockStart } from '@/utils/scriptMatrix';
+import { MatrixGridInput } from '@/components/research/MatrixGridInput';
 import { useState, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -35,6 +37,7 @@ export function StepPreview({ data }: Props) {
   const isClosing = currentIdx >= total;
   const currentQ = !isIntro && !isClosing ? validQuestions[currentIdx] : null;
   const currentAnswer = currentQ ? answers[currentIdx] : undefined;
+  const gridBlock = currentQ ? getMatrixBlock(validQuestions, currentIdx) : null;
 
   const needsAnswerToBranch =
     currentQ && currentQ.branch
@@ -52,7 +55,7 @@ export function StepPreview({ data }: Props) {
       })
     : null;
 
-  const nextDisabled = !!needsAnswerToBranch && (currentAnswer === undefined || currentAnswer === '');
+  const nextDisabled = !gridBlock && !!needsAnswerToBranch && (currentAnswer === undefined || currentAnswer === '');
 
   const goTo = (step: Step) => {
     setHistory(prev => [...prev, currentIdx]);
@@ -66,23 +69,28 @@ export function StepPreview({ data }: Props) {
       return;
     }
     if (!currentQ) return;
+    if (gridBlock) {
+      setHistory(prev => [...prev, gridBlock.start]);
+      setCurrentIdx(gridBlock.end + 1 >= total ? total : gridBlock.end + 1);
+      return;
+    }
     const resolved = resolveNextQuestionIndex({
       currentIndex: currentIdx,
       question: currentQ,
       answer: currentAnswer,
       questionsLength: total,
     });
-    goTo(resolved === 'closing' ? total : resolved);
+    goTo(resolved === 'closing' ? total : snapToBlockStart(validQuestions, resolved));
   };
 
   const handlePrev = () => {
     if (history.length === 0) {
-      setCurrentIdx(prev => Math.max(prev - 1, -1));
+      setCurrentIdx(prev => { const n = Math.max(prev - 1, -1); return n >= 0 && n < total ? snapToBlockStart(validQuestions, n) : n; });
       return;
     }
     const prev = history[history.length - 1];
     setHistory(h => h.slice(0, -1));
-    setCurrentIdx(prev);
+    setCurrentIdx(prev >= 0 && prev < total ? snapToBlockStart(validQuestions, prev) : prev);
   };
 
   const restart = () => {
@@ -95,7 +103,7 @@ export function StepPreview({ data }: Props) {
     setAnswers(a => ({ ...a, [currentIdx]: val }));
   };
 
-  const progress = isIntro ? 0 : isClosing ? 100 : ((currentIdx + 1) / Math.max(total, 1)) * 100;
+  const progress = isIntro ? 0 : isClosing ? 100 : (((gridBlock ? gridBlock.end : currentIdx) + 1) / Math.max(total, 1)) * 100;
 
   // Highlight target in the flow map
   const highlightedNextIdx: number | 'closing' | null =
@@ -111,7 +119,7 @@ export function StepPreview({ data }: Props) {
             <div className="px-5 pt-5 pb-3 border-b">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-xs text-muted-foreground font-medium">
-                  {isIntro ? 'Introduction' : isClosing ? 'Closing' : `Question ${currentIdx + 1} of ${total}`}
+                  {isIntro ? 'Introduction' : isClosing ? 'Closing' : (gridBlock ? `Questions ${gridBlock.start + 1}–${gridBlock.end + 1} of ${total}` : `Question ${currentIdx + 1} of ${total}`)}
                 </span>
                 <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={restart}>
                   <RotateCcw className="w-3 h-3 mr-1" /> Restart
@@ -160,7 +168,7 @@ export function StepPreview({ data }: Props) {
                     </div>
                   ) : null}
 
-                  <p className="text-base font-medium leading-relaxed">{currentQ.question}</p>
+                  <p className="text-base font-medium leading-relaxed">{gridBlock ? (currentQ.matrix?.title ?? currentQ.question) : currentQ.question}</p>
 
                   {currentQ.type === 'open_ended' && (
                     <Textarea
@@ -202,7 +210,15 @@ export function StepPreview({ data }: Props) {
                   );
                 })()}
 
-                {currentQ.type === 'multiple_choice' && currentQ.options?.length ? (
+                {gridBlock && (
+                  <MatrixGridInput
+                    rows={validQuestions.slice(gridBlock.start, gridBlock.end + 1)}
+                    idPrefix={`pgrid-${gridBlock.start}`}
+                    getValue={k => answers[gridBlock.start + k]}
+                    setValue={(k, v) => setAnswers(a => { const n = { ...a }; if (v === undefined) delete n[gridBlock.start + k]; else n[gridBlock.start + k] = v; return n; })}
+                  />
+                )}
+                {!gridBlock && currentQ.type === 'multiple_choice' && currentQ.options?.length ? (
                     <RadioGroup
                       className="space-y-2"
                       value={(currentAnswer as string) || ''}

@@ -18,8 +18,11 @@ const AI_MODELS = [
 function generateAIPrompt(name: string, scriptType: string, questions: ScriptQuestion[]): string {
   const questionsBlock = questions
     .filter(q => q.question?.trim())
-    .map((q, i) => {
+    .map((q, i, arr) => {
       let block = `Q${i + 1}: ${q.question}`;
+      if (q.type === 'multiple_choice' && q.matrix?.group && (i === 0 || arr[i - 1]?.matrix?.group !== q.matrix.group)) {
+        block = `Grid: ${q.matrix.title}\n` + block;
+      }
       if (q.type === 'multiple_choice' && q.options?.length) {
         block += `\n  Options: ${q.options.join(' | ')}`;
       }

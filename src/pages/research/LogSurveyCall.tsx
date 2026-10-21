@@ -1,3 +1,6 @@
+import { getMatrixBlock, snapToBlockStart } from '@/utils/scriptMatrix';
+import { MatrixGridInput } from '@/components/research/MatrixGridInput';
+import { Checkbox } from '@/components/ui/checkbox';
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { ResearchLayout } from '@/components/layout/ResearchLayout';
@@ -246,7 +249,10 @@ export default function LogSurveyCall() {
   }, [phase, questionIndex, questions.length]);
 
   const setResponse = (qId: string | number, value: unknown) => {
-    setResponses(prev => ({ ...prev, [String(qId)]: value }));
+    setResponses(prev => {
+      if (value === undefined) { const n = { ...prev }; delete n[String(qId)]; return n; }
+      return { ...prev, [String(qId)]: value };
+    });
   };
 
   const validateSetup = (): boolean => {
@@ -352,9 +358,11 @@ export default function LogSurveyCall() {
   const advanceQuestion = useCallback((fromIndex: number) => {
     const q = questions[fromIndex];
     const currentAnswer = responses[String(q?.id)];
-    const nextIdx = getNextQuestionIndex(fromIndex, currentAnswer);
+    const block = getMatrixBlock(questions, fromIndex);
+    const rawNext = block ? block.end + 1 : getNextQuestionIndex(fromIndex, currentAnswer);
+    const nextIdx = rawNext < questions.length ? snapToBlockStart(questions, rawNext) : rawNext;
 
-    setVisitedIndices(prev => new Set([...prev, fromIndex]));
+    setVisitedIndices(prev => new Set([...prev, block ? block.start : fromIndex]));
 
     if (nextIdx < questions.length) {
       setQuestionIndex(nextIdx);
@@ -397,8 +405,8 @@ export default function LogSurveyCall() {
     if (phase === 'question' && questionIndex > 0) {
       // Walk back to previous visited index
       const prevVisited = Math.max(...[...visitedIndices].filter(i => i < questionIndex), -1);
-      if (prevVisited >= 0) setQuestionIndex(prevVisited);
-      else setQuestionIndex(questionIndex - 1);
+      if (prevVisited >= 0) setQuestionIndex(snapToBlockStart(questions, prevVisited));
+      else setQuestionIndex(snapToBlockStart(questions, questionIndex - 1));
     } else if (phase === 'question' && questionIndex === 0) {
       setPhase('consent');
     } else if (phase === 'consent') {
@@ -411,7 +419,7 @@ export default function LogSurveyCall() {
     } else if (phase === 'closing') {
       if (questions.length > 0) {
         setPhase('question');
-        setQuestionIndex(questions.length - 1);
+        setQuestionIndex(snapToBlockStart(questions, questions.length - 1));
       } else {
         setPhase('consent');
       }
@@ -419,7 +427,7 @@ export default function LogSurveyCall() {
   };
 
   const handleJumpToSection = (firstQuestionIndex: number) => {
-    setQuestionIndex(firstQuestionIndex);
+    setQuestionIndex(snapToBlockStart(questions, firstQuestionIndex));
     setPendingBranchAnswer(null);
     setBranchProbesShown(false);
   };
@@ -494,6 +502,7 @@ export default function LogSurveyCall() {
   };
 
   const currentQ = questions[questionIndex];
+  const gridBlock = phase === 'question' ? getMatrixBlock(questions, questionIndex) : null;
   const showSectionNav = phase === 'question' && sections.length > 1;
   // Prefill Duration (minutes) from the call timer on entering wrap-up.
   useEffect(() => {
@@ -929,7 +938,10 @@ export default function LogSurveyCall() {
                         ? 'bg-muted border-muted-foreground/20'
                         : 'bg-muted/50'
                     )}>
-                      <p className="text-xl font-medium leading-relaxed">{currentQ.question ?? currentQ.text}</p>
+                      <p className="text-xl font-medium leading-relaxed">{gridBlock ? (currentQ.matrix?.title ?? currentQ.question ?? currentQ.text) : (currentQ.question ?? currentQ.text)}</p>
+                      {gridBlock && (
+                        <p className="text-xs text-muted-foreground mt-2">Questions {gridBlock.start + 1}–{gridBlock.end + 1} of {questions.length}</p>
+                      )}
                     </div>
 
                     {/* Probing follow-ups (general) */}
@@ -942,7 +954,18 @@ export default function LogSurveyCall() {
                     )}
 
                     {/* Answer input */}
-                    {pendingBranchAnswer === null && (
+                    {gridBlock && (
+                      <MatrixGridInput
+                        rows={questions.slice(gridBlock.start, gridBlock.end + 1)}
+                        idPrefix={`lgrid-${gridBlock.start}`}
+                        getValue={k => responses[String(questions[gridBlock.start + k].id)]}
+                        setValue={(k, v) => {
+                          const key = String(questions[gridBlock.start + k].id);
+                          setResponses(prev => { const n = { ...prev }; if (v === undefined) delete n[key]; else n[key] = v; return n; });
+                        }}
+                      />
+                    )}
+                    {!gridBlock && pendingBranchAnswer === null && (
                       <QuestionInput
                         question={currentQ}
                         value={responses[String(currentQ.id)]}
@@ -1159,6 +1182,36 @@ function QuestionInput({
           <p className="text-xs text-muted-foreground">Optional — just click Next to continue</p>
         </div>
       );
+
+    case 'multiple_select': {
+      const opts = question.options || [];
+      const selected: string[] = Array.isArray(value) ? (value as string[]) : [];
+      const maxSel = Number.isInteger(question.max_selections) && (question.max_selections as number) > 0 ? (question.max_selections as number) : null;
+      const atMax = maxSel !== null && selected.length >= maxSel;
+      return (
+        <div className="space-y-2">
+          <p className="text-xs text-muted-foreground">{maxSel !== null ? `Select up to ${maxSel}` : 'Select all that apply'}</p>
+          {opts.map((opt) => {
+            const checked = selected.includes(opt);
+            return (
+              <div key={opt} className="flex items-center space-x-3 p-3 rounded-lg border hover:bg-accent/50 cursor-pointer">
+                <Checkbox
+                  id={`q${question.id}_${opt}`}
+                  checked={checked}
+                  disabled={!checked && atMax}
+                  onCheckedChange={v => {
+                    const next = v === true ? (checked ? selected : [...selected, opt]) : selected.filter(x => x !== opt);
+                    onChange(next.length ? next : undefined);
+                  }}
+                />
+                <Label htmlFor={`q${question.id}_${opt}`} className="font-normal cursor-pointer text-base flex-1">{opt}</Label>
+              </div>
+            );
+          })}
+          <p className="text-xs text-muted-foreground">Optional — AI extracts from recording</p>
+        </div>
+      );
+    }
 
     case 'multiple_choice':
       return (

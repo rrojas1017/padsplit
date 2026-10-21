@@ -103,7 +103,8 @@ export function StepUpload({ data, onChange }: Props) {
         ai_extraction_hint: q.ai_extraction_hint || '',
         section: q.section || undefined,
         probes: q.probes?.length ? q.probes : undefined,
-        branch: q.branch && Object.keys(q.branch).length > 0 ? q.branch : undefined,
+        branch: q.branch && Object.keys(q.branch).length > 0 && !(q.type === 'multiple_choice' && q.matrix) ? q.branch : undefined,
+        matrix: q.type === 'multiple_choice' && q.matrix && typeof q.matrix.group === 'string' && q.matrix.group ? q.matrix : undefined,
         is_internal: q.is_internal ?? false,
       }));
 

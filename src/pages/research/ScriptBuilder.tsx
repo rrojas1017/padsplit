@@ -1,3 +1,4 @@
+import { cleanMatrixForSave } from '@/utils/scriptMatrix';
 import { useState } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -86,7 +87,7 @@ export default function ScriptBuilder() {
       description: wizardData.description || null,
       campaign_type: wizardData.campaignType,
       target_audience: wizardData.targetAudience,
-      questions: wizardData.questions,
+      questions: wizardData.questions.map(cleanMatrixForSave),
       intro_script: wizardData.introScript || null,
       rebuttal_script: wizardData.rebuttalScript || null,
       closing_script: wizardData.closingScript || null,

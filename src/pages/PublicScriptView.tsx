@@ -1,3 +1,5 @@
+import { getMatrixBlock, snapToBlockStart } from '@/utils/scriptMatrix';
+import { MatrixGridInput } from '@/components/research/MatrixGridInput';
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useParams } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
@@ -39,6 +41,7 @@ interface ScriptQuestion {
   required?: boolean;
   options?: string[];
   max_selections?: number;
+  matrix?: { group: string; title: string; row: string };
   probes?: string[];
   branch?: {
     yes_goto?: number;
@@ -508,6 +511,17 @@ export default function PublicScriptView() {
     if (phase === 'intro') setPhase('consent');
     else if (phase === 'question') {
       triggerSave(false);
+      const block = getMatrixBlock(sortedQuestions, questionIndex);
+      if (block) {
+        if (block.end + 1 >= sortedQuestions.length) {
+          if (closingScript) setPhase('closing');
+          else setPhase('done');
+        } else {
+          setVisitedStack(prev => [...prev, block.start]);
+          setQuestionIndex(block.end + 1);
+        }
+        return;
+      }
       const currentQ = sortedQuestions[questionIndex] as unknown as CanonicalScriptQuestion;
       const resolved = resolveNextQuestionIndex({
         currentIndex: questionIndex,
@@ -520,7 +534,7 @@ export default function PublicScriptView() {
         else setPhase('done');
       } else {
         setVisitedStack(prev => [...prev, questionIndex]);
-        setQuestionIndex(resolved);
+        setQuestionIndex(snapToBlockStart(sortedQuestions, resolved));
       }
     } else if (phase === 'closing' || phase === 'rebuttal') setPhase('done');
   };
@@ -535,16 +549,16 @@ export default function PublicScriptView() {
   const handleBack = () => {
     if (phase === 'question') {
       const prev = popVisited();
-      if (prev !== null) { setQuestionIndex(prev); return; }
-      if (questionIndex > 0) { setQuestionIndex(p => p - 1); return; }
+      if (prev !== null) { setQuestionIndex(snapToBlockStart(sortedQuestions, prev)); return; }
+      if (questionIndex > 0) { setQuestionIndex(snapToBlockStart(sortedQuestions, questionIndex - 1)); return; }
       setPhase('consent');
     }
     else if (phase === 'consent') { if (introScript) setPhase('intro'); else setPhase('start'); }
     else if (phase === 'intro') setPhase('start');
     else if (phase === 'closing') {
       const prev = popVisited();
-      if (prev !== null) { setPhase('question'); setQuestionIndex(prev); return; }
-      if (sortedQuestions.length > 0) { setPhase('question'); setQuestionIndex(sortedQuestions.length - 1); }
+      if (prev !== null) { setPhase('question'); setQuestionIndex(snapToBlockStart(sortedQuestions, prev)); return; }
+      if (sortedQuestions.length > 0) { setPhase('question'); setQuestionIndex(snapToBlockStart(sortedQuestions, sortedQuestions.length - 1)); }
       else setPhase('consent');
     }
   };
@@ -553,13 +567,14 @@ export default function PublicScriptView() {
   const currentStep = (() => {
     if (phase === 'intro') return 1;
     if (phase === 'consent') return introScript ? 2 : 1;
-    if (phase === 'question') return (introScript ? 3 : 2) + questionIndex;
+    if (phase === 'question') return (introScript ? 3 : 2) + (getMatrixBlock(sortedQuestions, questionIndex)?.end ?? questionIndex);
     return totalSteps;
   })();
   const progressPercent = totalSteps > 0 ? (currentStep / totalSteps) * 100 : 0;
 
   const currentQ = sortedQuestions[questionIndex];
   const currentKey = stableKeyFor(currentQ);
+  const gridBlock = phase === 'question' ? getMatrixBlock(sortedQuestions, questionIndex) : null;
   const currentResponse = responses[currentKey];
   const yesNoResponse = currentQ?.type === 'yes_no' ? (currentResponse as string) : undefined;
 
@@ -609,7 +624,7 @@ export default function PublicScriptView() {
                 <span>
                   {phase === 'intro' ? 'Introduction'
                     : phase === 'consent' ? 'Consent'
-                    : phase === 'question' ? `Question ${questionIndex + 1} of ${sortedQuestions.length}`
+                    : phase === 'question' ? (gridBlock ? `Questions ${gridBlock.start + 1}–${gridBlock.end + 1} of ${sortedQuestions.length}` : `Question ${questionIndex + 1} of ${sortedQuestions.length}`)
                     : phase === 'closing' ? 'Closing'
                     : 'Rebuttal'}
                 </span>
@@ -799,7 +814,7 @@ export default function PublicScriptView() {
 
               {/* Question text */}
               <div className="bg-muted/50 rounded-xl p-6 py-7 border">
-                <p className="text-xl font-medium leading-relaxed">{currentQ.question || currentQ.text}</p>
+                <p className="text-xl font-medium leading-relaxed">{gridBlock ? (currentQ.matrix?.title || currentQ.question || currentQ.text) : (currentQ.question || currentQ.text)}</p>
               </div>
 
               {/* Probing follow-ups */}
@@ -893,7 +908,18 @@ export default function PublicScriptView() {
                   );
                 })()}
 
-                {currentQ.type === 'multiple_choice' && (
+                {gridBlock && (
+                  <MatrixGridInput
+                    rows={sortedQuestions.slice(gridBlock.start, gridBlock.end + 1)}
+                    idPrefix={`grid-${gridBlock.start}`}
+                    getValue={k => responses[stableKeyFor(sortedQuestions[gridBlock.start + k])]}
+                    setValue={(k, v) => {
+                      const key = stableKeyFor(sortedQuestions[gridBlock.start + k]);
+                      setResponses(prev => { const n = { ...prev }; if (v === undefined) delete n[key]; else n[key] = v; return n; });
+                    }}
+                  />
+                )}
+                {!gridBlock && currentQ.type === 'multiple_choice' && (
                   <RadioGroup
                     value={(currentResponse as string) || ''}
                     onValueChange={v => setResponses(prev => ({ ...prev, [currentKey]: v }))}

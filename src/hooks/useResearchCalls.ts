@@ -49,6 +49,8 @@ export interface ScriptQuestion {
   section?: string;
   is_internal?: boolean;
   ai_extraction_hint?: string;
+  max_selections?: number;
+  matrix?: { group: string; title: string; row: string };
 }
 
 export interface ResearchCall {
