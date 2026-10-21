@@ -361,7 +361,20 @@ export default function UserManagement() {
       });
 
       if (response.error) {
-        throw new Error(response.error.message || 'Failed to create user');
+        let message = response.error.message || 'Failed to create user';
+        const ctx = (response.error as { context?: Response }).context;
+        if (ctx && typeof ctx.json === 'function') {
+          try {
+            const payload = await ctx.json();
+            if (payload?.error) message = payload.error;
+          } catch {
+            // keep generic message
+          }
+        }
+        if (/known to be weak|easy to guess|pwned/i.test(message)) {
+          message = 'This password has appeared in public data leaks. Please choose a different, less common password.';
+        }
+        throw new Error(message);
       }
 
       if (response.data?.error) {
