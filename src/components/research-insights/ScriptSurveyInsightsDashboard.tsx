@@ -32,6 +32,8 @@ import { ScriptSurveyFunnelSection } from './script-survey/ScriptSurveyFunnelSec
 import { ScriptSurveyTabs, type ScriptSurveyTab } from './script-survey/ScriptSurveyTabs';
 import { ScriptSurveyResponsesTab } from './script-survey/ScriptSurveyResponsesTab';
 import { ScriptSubmissionsTab, ScriptAISummaryTab } from './ScriptInsightsPanel';
+import { ScriptGridCard } from './ScriptGridCard';
+import { groupSurveyBlocks, type SurveyBlock } from '@/utils/scriptSurveyGrid';
 
 const shortLabel = (s: string) => (s.length > 28 ? s.slice(0, 27) + '…' : s);
 
@@ -76,6 +78,19 @@ function QuestionTopicCard({ scriptId, q, eligible }: { scriptId: string; q: Scr
     );
   }
   return <TopicQuestionCard summary={pe} title={q.question} chart="donut" />;
+}
+
+// Overview keeps KPI order; a KPI question that sits in a grid shows its whole grid once.
+function overviewBlocks(picked: ScriptSurveyQuestion[], all: ScriptSurveyQuestion[]): SurveyBlock[] {
+  const blocks = groupSurveyBlocks(all);
+  const out: SurveyBlock[] = [];
+  const seen = new Set<SurveyBlock>();
+  for (const q of picked) {
+    const b = blocks.find((x) => x.kind === 'grid' && x.rows.some((r) => r.id === q.id));
+    if (b) { if (!seen.has(b)) { seen.add(b); out.push(b); } }
+    else out.push({ kind: 'single', q });
+  }
+  return out;
 }
 
 export function ScriptSurveyInsightsDashboard({ scriptId }: { scriptId: string }) {
@@ -188,15 +203,17 @@ export function ScriptSurveyInsightsDashboard({ scriptId }: { scriptId: string }
   const forms = eligible.filter((r) => r.isForm).length;
   const nonZeroSteps = funnel.filter((s) => s.count > 0).length;
 
+  const renderBlock = (b: SurveyBlock) => b.kind === 'grid'
+    ? <ScriptGridCard key={`grid-${b.group}-${b.rows[0].id}`} block={b} eligible={eligible} />
+    : <QuestionTopicCard key={b.q.id} scriptId={scriptId} q={b.q} eligible={eligible} />;
+
   const tabs: ScriptSurveyTab[] = [
     {
       key: 'overview',
       label: 'Overview',
       content: (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-          {overviewQuestions.map((q) => (
-            <QuestionTopicCard key={q.id} scriptId={scriptId} q={q} eligible={eligible} />
-          ))}
+          {overviewBlocks(overviewQuestions, questions).map((b) => renderBlock(b))}
         </div>
       ),
     },
@@ -206,9 +223,7 @@ export function ScriptSurveyInsightsDashboard({ scriptId }: { scriptId: string }
       title: sec,
       content: (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-          {questions.filter((q) => q.section === sec).map((q) => (
-            <QuestionTopicCard key={q.id} scriptId={scriptId} q={q} eligible={eligible} />
-          ))}
+          {groupSurveyBlocks(questions.filter((q) => q.section === sec)).map((b) => renderBlock(b))}
         </div>
       ),
     })),
