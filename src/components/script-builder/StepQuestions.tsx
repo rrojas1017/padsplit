@@ -7,6 +7,8 @@ import { QuestionCard } from './QuestionCard';
 import type { ScriptQuestion } from '@/hooks/useResearchScripts';
 import type { WizardData } from './StepUpload';
 import { generateQuestionId } from '@/utils/rawScriptAnswers';
+import { GridQuestionCard } from './GridQuestionCard';
+import { appendGrid, duplicateBlock, groupEditorBlocks, moveBlock, removeBlock } from '@/utils/scriptMatrix';
 import { CallOutcomesEditor } from '@/components/research/CallOutcomesEditor';
 
 interface Props {
@@ -30,12 +32,14 @@ export function StepQuestions({ data, onChange }: Props) {
   };
 
   const moveQuestion = (idx: number, direction: 'up' | 'down') => {
-    const newIdx = direction === 'up' ? idx - 1 : idx + 1;
-    if (newIdx < 0 || newIdx >= questions.length) return;
-    const updated = [...questions];
-    [updated[idx], updated[newIdx]] = [updated[newIdx], updated[idx]];
-    onChange({ questions: updated.map((q, i) => ({ ...q, order: i + 1 })) });
+    onChange({ questions: moveBlock(questions, idx, idx, direction) });
   };
+
+  const addGrid = () => {
+    onChange({ questions: appendGrid(questions, generateQuestionId) });
+  };
+
+  const blocks = groupEditorBlocks(questions);
 
   const addQuestion = () => {
     onChange({ questions: [...questions, emptyQuestion(questions.length + 1)] });
@@ -63,9 +67,14 @@ export function StepQuestions({ data, onChange }: Props) {
       <TabsContent value="questions" className="space-y-3 pt-2">
         <div className="flex items-center justify-between">
           <Label className="text-base font-semibold">Survey Questions</Label>
-          <Button variant="outline" size="sm" onClick={addQuestion}>
-            <Plus className="w-4 h-4 mr-1" /> Add Question
-          </Button>
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" onClick={addQuestion}>
+              <Plus className="w-4 h-4 mr-1" /> Add Question
+            </Button>
+            <Button variant="outline" size="sm" onClick={addGrid}>
+              <Plus className="w-4 h-4 mr-1" /> Add grid question
+            </Button>
+          </div>
         </div>
 
         {questions.length === 0 && (
@@ -77,24 +86,44 @@ export function StepQuestions({ data, onChange }: Props) {
           </div>
         )}
 
-        {questions.map((q, idx) => (
+        {blocks.map((b, bi) => b.kind === 'grid' ? (
+          <GridQuestionCard
+            key={`g-${b.start}-${String(questions[b.start].matrix?.group)}`}
+            questions={questions}
+            start={b.start}
+            end={b.end}
+            onChange={qs => onChange({ questions: qs })}
+            onMoveUp={() => onChange({ questions: moveBlock(questions, b.start, b.end, 'up') })}
+            onMoveDown={() => onChange({ questions: moveBlock(questions, b.start, b.end, 'down') })}
+            onDelete={() => onChange({ questions: removeBlock(questions, b.start, b.end) })}
+            onDuplicate={() => onChange({ questions: duplicateBlock(questions, b.start, b.end, generateQuestionId) })}
+            canMoveUp={bi > 0}
+            canMoveDown={bi < blocks.length - 1}
+            newId={generateQuestionId}
+          />
+        ) : (
           <QuestionCard
-            key={idx}
-            question={q}
-            index={idx}
+            key={b.index}
+            question={questions[b.index]}
+            index={b.index}
             totalQuestions={questions.length}
-            onChange={updates => updateQuestion(idx, updates)}
-            onMoveUp={() => moveQuestion(idx, 'up')}
-            onMoveDown={() => moveQuestion(idx, 'down')}
-            onDelete={() => deleteQuestion(idx)}
-            onDuplicate={() => duplicateQuestion(idx)}
+            onChange={updates => updateQuestion(b.index, updates)}
+            onMoveUp={() => moveQuestion(b.index, 'up')}
+            onMoveDown={() => moveQuestion(b.index, 'down')}
+            onDelete={() => deleteQuestion(b.index)}
+            onDuplicate={() => duplicateQuestion(b.index)}
           />
         ))}
 
         {questions.length > 0 && (
-          <Button variant="outline" className="w-full" onClick={addQuestion}>
-            <Plus className="w-4 h-4 mr-2" /> Add Question
-          </Button>
+          <div className="flex gap-2">
+            <Button variant="outline" className="flex-1" onClick={addQuestion}>
+              <Plus className="w-4 h-4 mr-2" /> Add Question
+            </Button>
+            <Button variant="outline" className="flex-1" onClick={addGrid}>
+              <Plus className="w-4 h-4 mr-2" /> Add grid question
+            </Button>
+          </div>
         )}
       </TabsContent>
 

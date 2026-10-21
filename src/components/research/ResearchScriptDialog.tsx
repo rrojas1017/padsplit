@@ -1,4 +1,6 @@
-import { cleanMatrixForSave } from '@/utils/scriptMatrix';
+import { appendGrid, cleanMatrixForSave, groupEditorBlocks, moveBlock, removeBlock } from '@/utils/scriptMatrix';
+import { generateQuestionId } from '@/utils/rawScriptAnswers';
+import { GridQuestionCard } from '@/components/script-builder/GridQuestionCard';
 import { useState, useEffect } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
@@ -123,12 +125,14 @@ export function ResearchScriptDialog({ open, onOpenChange, script, onSave, impor
   };
 
   const moveQuestion = (idx: number, direction: 'up' | 'down') => {
-    const newIdx = direction === 'up' ? idx - 1 : idx + 1;
-    if (newIdx < 0 || newIdx >= questions.length) return;
-    const updated = [...questions];
-    [updated[idx], updated[newIdx]] = [updated[newIdx], updated[idx]];
-    setQuestions(updated.map((q, i) => ({ ...q, order: i + 1 })));
+    setQuestions(prev => moveBlock(prev, idx, idx, direction));
   };
+
+  const addGrid = () => {
+    setQuestions(prev => appendGrid(prev, generateQuestionId));
+  };
+
+  const editorBlocks = groupEditorBlocks(questions);
 
   const addOption = (idx: number) => {
     const val = (optionInput[idx] || '').trim();
@@ -276,12 +280,37 @@ export function ResearchScriptDialog({ open, onOpenChange, script, onSave, impor
           <TabsContent value="questions" className="space-y-3 py-2">
             <div className="flex items-center justify-between">
               <Label className="text-base font-semibold">Questions ({questions.length})</Label>
-              <Button variant="outline" size="sm" onClick={addQuestion}>
-                <Plus className="w-4 h-4 mr-1" /> Add Question
-              </Button>
+              <div className="flex gap-2">
+                <Button variant="outline" size="sm" onClick={addQuestion}>
+                  <Plus className="w-4 h-4 mr-1" /> Add Question
+                </Button>
+                <Button variant="outline" size="sm" onClick={addGrid}>
+                  <Plus className="w-4 h-4 mr-1" /> Add grid question
+                </Button>
+              </div>
             </div>
 
-            {questions.map((q, idx) => (
+            {editorBlocks.map((b, bi) => {
+              if (b.kind === 'grid') {
+                return (
+                  <GridQuestionCard
+                    key={`g-${b.start}-${String(questions[b.start].matrix?.group)}`}
+                    questions={questions}
+                    start={b.start}
+                    end={b.end}
+                    onChange={setQuestions}
+                    onMoveUp={() => setQuestions(prev => moveBlock(prev, b.start, b.end, 'up'))}
+                    onMoveDown={() => setQuestions(prev => moveBlock(prev, b.start, b.end, 'down'))}
+                    onDelete={() => setQuestions(prev => removeBlock(prev, b.start, b.end))}
+                    canMoveUp={bi > 0}
+                    canMoveDown={bi < editorBlocks.length - 1}
+                    newId={generateQuestionId}
+                  />
+                );
+              }
+              const idx = b.index;
+              const q = questions[idx];
+              return (
               <Card key={idx} className="border-border/60">
                 <CardContent className="pt-4 pb-3 space-y-3">
                   <div className="flex items-start gap-2">
@@ -427,7 +456,8 @@ export function ResearchScriptDialog({ open, onOpenChange, script, onSave, impor
                   </div>
                 </CardContent>
               </Card>
-            ))}
+              );
+            })}
           </TabsContent>
         </Tabs>
 
