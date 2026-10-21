@@ -6,6 +6,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
 import { Slider } from '@/components/ui/slider';
 import { Textarea } from '@/components/ui/textarea';
@@ -860,6 +861,36 @@ export default function PublicScriptView() {
                     )}
                   </div>
                 )}
+
+                {currentQ.type === 'multiple_select' && (() => {
+                  const opts: string[] = currentQ.options || [];
+                  const selected: string[] = Array.isArray(currentResponse) ? (currentResponse as string[]) : [];
+                  const maxSel = Number.isInteger(currentQ.max_selections) && (currentQ.max_selections as number) > 0 ? (currentQ.max_selections as number) : null;
+                  const atMax = maxSel !== null && selected.length >= maxSel;
+                  const toggle = (opt: string, on: boolean) => {
+                    const next = on ? (selected.includes(opt) ? selected : [...selected, opt]) : selected.filter(x => x !== opt);
+                    setResponses(prev => { const n = { ...prev }; if (next.length) n[currentKey] = next; else delete n[currentKey]; return n; });
+                  };
+                  return (
+                    <div className="space-y-2">
+                      <p className="text-xs text-muted-foreground">{maxSel !== null ? `Select up to ${maxSel}` : 'Select all that apply'}</p>
+                      {opts.map((opt, i) => {
+                        const checked = selected.includes(opt);
+                        return (
+                          <div key={i} className="flex items-center gap-3 border rounded-lg px-4 py-3 cursor-pointer hover:bg-muted/50 transition-colors">
+                            <Checkbox
+                              id={`ms-${questionIndex}-${i}`}
+                              checked={checked}
+                              disabled={!checked && atMax}
+                              onCheckedChange={v => toggle(opt, v === true)}
+                            />
+                            <Label htmlFor={`ms-${questionIndex}-${i}`} className="cursor-pointer">{opt}</Label>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  );
+                })()}
 
                 {currentQ.type === 'multiple_choice' && (
                   <RadioGroup
