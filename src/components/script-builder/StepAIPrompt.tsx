@@ -23,6 +23,9 @@ function generateAIPrompt(name: string, scriptType: string, questions: ScriptQue
       if (q.type === 'multiple_choice' && q.options?.length) {
         block += `\n  Options: ${q.options.join(' | ')}`;
       }
+      if (q.type === 'multiple_select' && q.options?.length) {
+        block += `\n  Options (select all that apply${q.max_selections ? `, up to ${q.max_selections}` : ''}): ${q.options.join(' | ')}`;
+      }
       if (q.type === 'scale') {
         block += `\n  Scale: 1 to 10`;
       }

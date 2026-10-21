@@ -16,26 +16,45 @@ export function hasAnswerValue(e: RawAnswerEntry | null | undefined): boolean {
   if (Array.isArray(e.selected_option_labels) && e.selected_option_labels.length > 0) return true;
   if (typeof e.scale_value === 'number' && Number.isFinite(e.scale_value)) return true;
   if (typeof e.raw_text_answer === 'string' && e.raw_text_answer.trim() !== '') return true;
+  // Legacy AI shape (pre CR-013): selected_options / answer_text.
+  if (Array.isArray(e.selected_options) && e.selected_options.some((x) => String(x ?? '').trim() !== '')) return true;
+  if (typeof e.answer_text === 'string' && e.answer_text.trim() !== '') return true;
   return false;
 }
 
 const trim = (s: string, n = 240) => (s.length > n ? s.slice(0, n - 1) + '…' : s);
 const pct = (num: number, den: number) => (den ? (num / den) * 100 : 0);
 
-export function answerLabels(e: RawAnswerEntry | undefined): string[] {
-  if (!e || !Array.isArray(e.selected_option_labels)) return [];
-  return e.selected_option_labels.map((x) => String(x).trim()).filter(Boolean);
+export function answerLabels(e: RawAnswerEntry | undefined, options?: string[]): string[] {
+  if (!e) return [];
+  if (Array.isArray(e.selected_option_labels)) {
+    const labels = e.selected_option_labels.map((x) => String(x).trim()).filter(Boolean);
+    if (labels.length) return labels;
+  }
+  // Legacy AI shape fallback.
+  if (!Array.isArray(e.selected_options)) return [];
+  const raw = e.selected_options.map((x) => String(x ?? '').trim()).filter(Boolean);
+  if (!options || !options.length) return raw;
+  const out: string[] = [];
+  for (const v of raw) {
+    const hit = options.find((o) => String(o).trim().toLowerCase() === v.toLowerCase());
+    if (hit && !out.includes(hit)) out.push(hit);
+  }
+  return out;
 }
 export function answerScale(e: RawAnswerEntry | undefined): number | null {
   return e && typeof e.scale_value === 'number' && Number.isFinite(e.scale_value) ? e.scale_value : null;
 }
 export function answerText(e: RawAnswerEntry | undefined): string | null {
-  return e && typeof e.raw_text_answer === 'string' && e.raw_text_answer.trim() ? e.raw_text_answer.trim() : null;
+  if (!e) return null;
+  if (typeof e.raw_text_answer === 'string' && e.raw_text_answer.trim()) return e.raw_text_answer.trim();
+  if (typeof e.answer_text === 'string' && e.answer_text.trim()) return e.answer_text.trim();
+  return null;
 }
 
 export interface DistributionItem { label: string; count: number; pct: number }
 export type ScriptQuestionSummary =
-  | { type: 'multiple_choice' | 'yes_no'; count: number; distribution: DistributionItem[] }
+  | { type: 'multiple_choice' | 'yes_no' | 'multiple_select'; count: number; distribution: DistributionItem[] }
   | { type: 'scale'; count: number; avg: number | null; min: number | null; max: number | null; buckets: DistributionItem[] }
   | { type: 'open_ended'; count: number; samples: string[]; allResponses: string[] };
 
@@ -61,15 +80,30 @@ export function summarizeScriptQuestion(q: ScriptSurveyQuestion, eligible: Scrip
     };
   }
   if (q.type === 'open_ended') {
-    const all = eligible.map((r) => answerText(r.answers[q.id]) ?? (hasAnswerValue(r.answers[q.id]) ? answerLabels(r.answers[q.id]).join('; ') || null : null))
+    const all = eligible.map((r) => answerText(r.answers[q.id]) ?? (hasAnswerValue(r.answers[q.id]) ? answerLabels(r.answers[q.id], q.options).join('; ') || null : null))
       .filter((v): v is string => !!v);
     return { type: 'open_ended', count: all.length, samples: all.slice(0, 25).map((s) => trim(s)), allResponses: all };
+  }
+  if (q.type === 'multiple_select') {
+    const counts = new Map<string, number>();
+    for (const o of q.options || []) { const t = String(o).trim(); if (t) counts.set(t, 0); }
+    let answered = 0;
+    for (const r of eligible) {
+      const labels = Array.from(new Set(answerLabels(r.answers[q.id], q.options)));
+      if (!labels.length) continue;
+      answered++;
+      for (const l of labels) counts.set(l, (counts.get(l) || 0) + 1);
+    }
+    const distribution = Array.from(counts.entries())
+      .map(([label, count]) => ({ label, count, pct: pct(count, answered) }))
+      .sort((a, b) => b.count - a.count);
+    return { type: 'multiple_select', count: answered, distribution };
   }
   const counts = new Map<string, number>();
   let answered = 0;
   for (const r of eligible) {
     const e = r.answers[q.id];
-    let labels = answerLabels(e);
+    let labels = answerLabels(e, q.options);
     if (!labels.length) {
       const t = answerText(e);
       if (t) labels = [t];
@@ -81,7 +115,7 @@ export function summarizeScriptQuestion(q: ScriptSurveyQuestion, eligible: Scrip
   const distribution = Array.from(counts.entries())
     .map(([label, count]) => ({ label, count, pct: pct(count, answered) }))
     .sort((a, b) => b.count - a.count);
-  return { type: q.type, count: answered, distribution };
+  return { type: q.type as 'multiple_choice' | 'yes_no', count: answered, distribution };
 }
 
 export interface ScriptSurveyStats {
@@ -132,8 +166,8 @@ const csvEscape = (v: any) => {
   return /[\",\n]/.test(s) ? `"${s.replace(/\"/g, '""')}"` : s;
 };
 
-function cellValue(e: RawAnswerEntry | undefined): string {
-  const labels = answerLabels(e);
+function cellValue(e: RawAnswerEntry | undefined, options?: string[]): string {
+  const labels = answerLabels(e, options);
   if (labels.length) return labels.join('; ');
   const s = answerScale(e);
   if (s !== null) return String(s);
@@ -145,7 +179,7 @@ export function buildScriptSurveyCsv(questions: ScriptSurveyQuestion[], eligible
   const rows = [header.map(csvEscape).join(',')];
   for (const r of eligible) {
     rows.push(
-      [r.booking_id, r.booking_date, r.isForm ? 'yes' : 'no', r.hasRecording ? 'yes' : 'no', ...questions.map((q) => cellValue(r.answers[q.id]))]
+      [r.booking_id, r.booking_date, r.isForm ? 'yes' : 'no', r.hasRecording ? 'yes' : 'no', ...questions.map((q) => cellValue(r.answers[q.id], q.options))]
         .map(csvEscape).join(','),
     );
   }

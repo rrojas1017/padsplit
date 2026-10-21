@@ -5,6 +5,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
 import { Textarea } from '@/components/ui/textarea';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { ChevronLeft, ChevronRight, RotateCcw, MessageSquare } from 'lucide-react';
@@ -171,7 +172,37 @@ export function StepPreview({ data }: Props) {
                     />
                   )}
 
-                  {currentQ.type === 'multiple_choice' && currentQ.options?.length ? (
+                  {currentQ.type === 'multiple_select' && (() => {
+                  const opts: string[] = currentQ.options || [];
+                  const selected: string[] = Array.isArray(currentAnswer) ? (currentAnswer as string[]) : [];
+                  const maxSel = Number.isInteger(currentQ.max_selections) && (currentQ.max_selections as number) > 0 ? (currentQ.max_selections as number) : null;
+                  const atMax = maxSel !== null && selected.length >= maxSel;
+                  const toggle = (opt: string, on: boolean) => {
+                    const next = on ? (selected.includes(opt) ? selected : [...selected, opt]) : selected.filter(x => x !== opt);
+                    setAnswer(next.length ? next : undefined);
+                  };
+                  return (
+                    <div className="space-y-2">
+                      <p className="text-xs text-muted-foreground">{maxSel !== null ? `Select up to ${maxSel}` : 'Select all that apply'}</p>
+                      {opts.map((opt, i) => {
+                        const checked = selected.includes(opt);
+                        return (
+                          <div key={i} className="flex items-center space-x-2">
+                            <Checkbox
+                              id={`ms-${currentIdx}-${i}`}
+                              checked={checked}
+                              disabled={!checked && atMax}
+                              onCheckedChange={v => toggle(opt, v === true)}
+                            />
+                            <Label htmlFor={`ms-${currentIdx}-${i}`} className="text-sm cursor-pointer">{opt}</Label>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  );
+                })()}
+
+                {currentQ.type === 'multiple_choice' && currentQ.options?.length ? (
                     <RadioGroup
                       className="space-y-2"
                       value={(currentAnswer as string) || ''}

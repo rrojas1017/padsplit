@@ -307,6 +307,12 @@ export async function generateScriptSurveyDocx(params: GenerateScriptSurveyDocxP
       }));
       return;
     }
+    if (s.type === 'multiple_select') {
+      children.push(new Paragraph({
+        children: [new TextRun({ text: '% of respondents; multiple answers allowed', italics: true, size: 16, font: 'Arial', color: '666666' })],
+        spacing: { after: 40 },
+      }));
+    }
     children.push(new Table({
       width: { size: 9360, type: WidthType.DXA },
       columnWidths: [5160, 2100, 2100],

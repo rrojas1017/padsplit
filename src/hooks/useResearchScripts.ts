@@ -9,8 +9,10 @@ export interface ScriptQuestion {
   id?: string | number;
   order: number;
   question: string;
-  type: 'scale' | 'open_ended' | 'multiple_choice' | 'yes_no';
+  type: 'scale' | 'open_ended' | 'multiple_choice' | 'yes_no' | 'multiple_select';
   options?: string[];
+  /** For type='multiple_select' — optional cap on selections ("select up to N"). */
+  max_selections?: number;
   required: boolean;
   ai_extraction_hint?: string;
   section?: string;

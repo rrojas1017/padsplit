@@ -14,6 +14,7 @@ import type { ScriptQuestion } from '@/hooks/useResearchScripts';
 const QUESTION_TYPES = [
   { value: 'open_ended', label: 'Open Ended' },
   { value: 'multiple_choice', label: 'Multiple Choice' },
+  { value: 'multiple_select', label: 'Multiple select (select all that apply)' },
   { value: 'scale', label: 'Rating Scale' },
   { value: 'yes_no', label: 'Yes / No' },
 ];
@@ -85,6 +86,11 @@ export function QuestionCard({ question, index, totalQuestions, onChange, onMove
 
   const handleTypeChange = (v: ScriptQuestion['type']) => {
     const updates: Partial<ScriptQuestion> = { type: v };
+    if (v === 'multiple_select' && question.branch?.option_gotos) {
+      const { option_gotos: _drop, ...restBranch } = question.branch;
+      updates.branch = restBranch;
+    }
+    if (v !== 'multiple_select') updates.max_selections = undefined;
     if (v === 'scale') {
       if (question.scale_min === undefined) updates.scale_min = 1;
       if (question.scale_max === undefined) updates.scale_max = 5;
@@ -193,7 +199,7 @@ export function QuestionCard({ question, index, totalQuestions, onChange, onMove
             )}
 
             {/* Multiple choice options */}
-            {question.type === 'multiple_choice' && (
+            {(question.type === 'multiple_choice' || question.type === 'multiple_select') && (
               <div className="space-y-2">
                 <Label className="text-xs">Options</Label>
                 <div className="flex flex-wrap gap-1.5">
@@ -216,6 +222,25 @@ export function QuestionCard({ question, index, totalQuestions, onChange, onMove
                   />
                   <Button variant="outline" size="sm" className="h-8 text-xs" onClick={addOption}>Add</Button>
                 </div>
+                {question.type === 'multiple_select' && (
+                  <div className="space-y-1 max-w-xs">
+                    <Label className="text-xs">Max selections</Label>
+                    <Input
+                      type="number"
+                      min={2}
+                      max={(question.options || []).length || undefined}
+                      value={question.max_selections ?? ''}
+                      onChange={e => {
+                        const n = Number(e.target.value);
+                        const ok = e.target.value !== '' && Number.isInteger(n) && n >= 2 && n <= (question.options || []).length;
+                        onChange({ max_selections: ok ? n : undefined });
+                      }}
+                      placeholder="No limit"
+                      className="h-8 text-xs"
+                    />
+                    <p className="text-[11px] text-muted-foreground">Leave empty for no limit. Must be 2 to the number of options.</p>
+                  </div>
+                )}
               </div>
             )}
 
