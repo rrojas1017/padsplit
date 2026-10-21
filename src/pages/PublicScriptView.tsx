@@ -38,6 +38,7 @@ interface ScriptQuestion {
   type: string;
   required?: boolean;
   options?: string[];
+  max_selections?: number;
   probes?: string[];
   branch?: {
     yes_goto?: number;
