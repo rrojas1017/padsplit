@@ -1,3 +1,5 @@
+import { getMatrixBlock, snapToBlockStart } from '@/utils/scriptMatrix';
+import { MatrixGridInput } from '@/components/research/MatrixGridInput';
 import { useState, useCallback, useEffect } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
@@ -164,6 +166,17 @@ export function ScriptTesterDialog({ open, onOpenChange, script }: Props) {
       setPhase('consent');
     } else if (phase === 'question') {
       const currentQ = questions[questionIndex];
+      const block = getMatrixBlock(questions as any, questionIndex);
+      if (block) {
+        if (block.end + 1 >= questions.length) {
+          if (closingScript) setPhase('closing');
+          else setPhase('done');
+        } else {
+          setVisitedStack(prev => [...prev, block.start]);
+          setQuestionIndex(block.end + 1);
+        }
+        return;
+      }
       const resolved = resolveNextQuestionIndex({
         currentIndex: questionIndex,
         question: currentQ,
@@ -175,7 +188,7 @@ export function ScriptTesterDialog({ open, onOpenChange, script }: Props) {
         else setPhase('done');
       } else {
         setVisitedStack(prev => [...prev, questionIndex]);
-        setQuestionIndex(resolved);
+        setQuestionIndex(snapToBlockStart(questions as any, resolved));
       }
     } else if (phase === 'closing' || phase === 'rebuttal') {
       setPhase('done');
@@ -192,8 +205,8 @@ export function ScriptTesterDialog({ open, onOpenChange, script }: Props) {
   const handleBack = () => {
     if (phase === 'question') {
       const prev = popVisited();
-      if (prev !== null) { setQuestionIndex(prev); return; }
-      if (questionIndex > 0) { setQuestionIndex(p => p - 1); return; }
+      if (prev !== null) { setQuestionIndex(snapToBlockStart(questions as any, prev)); return; }
+      if (questionIndex > 0) { setQuestionIndex(snapToBlockStart(questions as any, questionIndex - 1)); return; }
       setPhase('consent');
     } else if (phase === 'consent') {
       if (introScript) setPhase('intro');
@@ -204,10 +217,10 @@ export function ScriptTesterDialog({ open, onOpenChange, script }: Props) {
       setPhase('start');
     } else if (phase === 'closing') {
       const prev = popVisited();
-      if (prev !== null) { setPhase('question'); setQuestionIndex(prev); return; }
+      if (prev !== null) { setPhase('question'); setQuestionIndex(snapToBlockStart(questions as any, prev)); return; }
       if (questions.length > 0) {
         setPhase('question');
-        setQuestionIndex(questions.length - 1);
+        setQuestionIndex(snapToBlockStart(questions as any, questions.length - 1));
       } else {
         setPhase('consent');
       }
@@ -215,6 +228,7 @@ export function ScriptTesterDialog({ open, onOpenChange, script }: Props) {
   };
 
   const currentQ = questions[questionIndex];
+  const gridBlock = phase === 'question' ? getMatrixBlock(questions as any, questionIndex) : null;
   const isActivePhase = phase !== 'start' && phase !== 'done';
   const isNextDisabled = phase === 'question' && currentQ?.type === 'yes_no' && responses[questionIndex] === undefined;
 
@@ -405,7 +419,10 @@ export function ScriptTesterDialog({ open, onOpenChange, script }: Props) {
                 <span>Read aloud to the caller</span>
               </div>
               <div className="bg-muted/50 rounded-xl p-6 py-7 border">
-                <p className="text-2xl font-medium leading-relaxed">{currentQ.question}</p>
+                <p className="text-2xl font-medium leading-relaxed">{gridBlock ? (currentQ.matrix?.title ?? currentQ.question) : currentQ.question}</p>
+                {gridBlock && (
+                  <p className="text-xs text-muted-foreground mt-2">Questions {gridBlock.start + 1}–{gridBlock.end + 1} of {questions.length}</p>
+                )}
               </div>
 
               {/* Response input simulation */}
@@ -480,7 +497,15 @@ export function ScriptTesterDialog({ open, onOpenChange, script }: Props) {
                   );
                 })()}
 
-                {currentQ.type === 'multiple_choice' && (
+                {gridBlock && (
+                  <MatrixGridInput
+                    rows={questions.slice(gridBlock.start, gridBlock.end + 1)}
+                    idPrefix={`grid-${gridBlock.start}`}
+                    getValue={k => responses[gridBlock.start + k]}
+                    setValue={(k, v) => setResponses(prev => { const n = { ...prev }; if (v === undefined) delete n[gridBlock.start + k]; else n[gridBlock.start + k] = v; return n; })}
+                  />
+                )}
+                {!gridBlock && currentQ.type === 'multiple_choice' && (
                   <RadioGroup
                     value={(responses[questionIndex] as string) || ''}
                     onValueChange={v => setResponses(prev => ({ ...prev, [questionIndex]: v }))}
