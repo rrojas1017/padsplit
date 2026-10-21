@@ -161,7 +161,7 @@ export function ResearchScriptDialog({ open, onOpenChange, script, onSave, impor
         closing_script: closingScript.trim() || null,
         call_outcomes: callOutcomes,
         questions: validQuestions.map((q, i) => ({
-          ...q,
+          ...cleanMatrixForSave(q),
           order: i + 1,
           options: q.type === 'multiple_choice' || q.type === 'multiple_select' ? q.options : undefined,
           max_selections: q.type === 'multiple_select' ? q.max_selections : undefined,

@@ -13,6 +13,8 @@ export interface ScriptQuestion {
   options?: string[];
   /** For type='multiple_select' — optional cap on selections ("select up to N"). */
   max_selections?: number;
+  /** CR-013 grid row: consecutive multiple_choice rows sharing group + options. */
+  matrix?: { group: string; title: string; row: string };
   required: boolean;
   ai_extraction_hint?: string;
   section?: string;

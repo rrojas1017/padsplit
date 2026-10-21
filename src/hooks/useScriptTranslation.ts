@@ -1,3 +1,4 @@
+import { alignMatrix } from '@/utils/scriptMatrix';
 import { useState, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
@@ -66,11 +67,11 @@ export function useScriptTranslation() {
       const translatedQs = Array.isArray(result.questions) ? result.questions : [];
       result.questions = translatedQs.map((tq: any, idx: number) => {
         const sq: any = sourceQs[idx] || {};
-        return {
+        return alignMatrix({
           ...tq,
           id: sq.id ?? tq.id,
           ai_extraction_hint: tq.ai_extraction_hint ?? sq.ai_extraction_hint,
-        };
+        }, sq);
       });
       return result;
     } catch (err) {
@@ -119,11 +120,11 @@ export function useScriptTranslation() {
       const translatedQs = Array.isArray(translated.questions) ? translated.questions : [];
       const alignedQs = translatedQs.map((tq: any, idx: number) => {
         const sq: any = sourceQs[idx] || {};
-        return {
+        return alignMatrix({
           ...tq,
           id: sq.id ?? tq.id,
           ai_extraction_hint: tq.ai_extraction_hint ?? sq.ai_extraction_hint,
-        };
+        }, sq);
       });
       await supabase.from('research_scripts').update({
         intro_script_es: translated.intro || null,
