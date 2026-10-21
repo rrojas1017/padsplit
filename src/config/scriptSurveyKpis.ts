@@ -1,5 +1,5 @@
 import type { LucideIcon } from 'lucide-react';
-import { Users, Star, Repeat, Share2, LifeBuoy, Wrench, CalendarCheck, DollarSign, ShieldCheck, Search, ShieldAlert } from 'lucide-react';
+import { Users, Star, Repeat, Share2, LifeBuoy, Wrench, CalendarCheck, DollarSign, ShieldCheck, Search, ShieldAlert, Shield, UserCheck, CalendarX } from 'lucide-react';
 import type { ScriptSurveyQuestion, ScriptSurveyRecord } from '@/hooks/useScriptSurveyResponses';
 import { answerLabels, answerScale } from '@/utils/scriptSurveyAnalytics';
 
@@ -33,6 +33,24 @@ const avg5 = (label: string, hint: string, icon: LucideIcon, extra: Partial<Scri
 });
 
 export const SCRIPT_SURVEY_KPIS: Record<string, ScriptKpiConfig[]> = {
+  '247ead24-6b86-4b19-b352-0493c1831ba9': [
+    surveyed,
+    avg5('Approval Clarity', 'approval_clarity', ShieldCheck),
+    avg5('Trust in Screening', 'trust_in_screening', Shield),
+    {
+      label: 'Host Extra Screening', hint: 'host_secondary_screening_requested', kind: 'pct',
+      positiveOptions: ['Yes, one host', 'Yes, every time I submitted a booking'], icon: UserCheck,
+      iconBg: 'bg-primary/10', iconColor: 'text-primary', variant: 'primary', accent: 'orange',
+      denominatorText: 'X of Y answered',
+    },
+    {
+      label: 'Host-Requested Cancellations', hint: 'host_requested_cancellation_frequency', kind: 'pct',
+      positiveOptions: ['Once', '2–3 times', '4+ times'], icon: CalendarX,
+      iconBg: 'bg-primary/10', iconColor: 'text-primary', variant: 'primary', accent: 'orange',
+      denominatorText: 'X of Y answered',
+    },
+    avg5('Overall CSAT', 'overall_csat', Star, { variant: 'primary', accent: 'green' }),
+  ],
   'c24c5e6b-c7d8-43c6-86d5-affea47178bf': [
     surveyed,
     avg5('Overall Experience', 'overall_experience_rating', Star),
@@ -107,6 +125,8 @@ export function kpiDenominator(k: ScriptKpiConfig, r: ScriptKpiResult): string {
 }
 
 export const SCRIPT_SURVEY_PURPOSE: Record<string, string> = {
+  '247ead24-6b86-4b19-b352-0493c1831ba9':
+    'how members experience PadSplit approval, host secondary screening and fees, host-requested cancellations, and which transparency features and profile information would help them book faster',
   'c24c5e6b-c7d8-43c6-86d5-affea47178bf':
     'experience of members in their first 30 days after move-in (renewal, referral, support, maintenance)',
   '827b23ef-3f35-4108-8462-468bf6cf7872':

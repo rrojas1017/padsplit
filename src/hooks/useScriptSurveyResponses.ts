@@ -16,6 +16,7 @@ export interface ScriptSurveyQuestion {
   scale_max?: number;
   section?: string;
   ai_extraction_hint?: string;
+  matrix?: { group: string; title: string; row: string };
 }
 
 export interface ScriptSurveyScript {
@@ -70,6 +71,7 @@ export function useScriptSurveyResponses(scriptId: string | null | undefined) {
           scale_max: q.scale_max,
           section: q.section,
           ai_extraction_hint: q.ai_extraction_hint,
+          ...((q as any).matrix ? { matrix: (q as any).matrix } : {}),
         }));
 
       const rows = await fetchAllPages((from, to) =>

@@ -17,6 +17,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { fetchClustersForQuestion } from '@/utils/openEndedClusterFetch';
 import type { ScriptSurveyQuestion, ScriptSurveyRecord } from '@/hooks/useScriptSurveyResponses';
 import { summarizeScriptQuestion, type ScriptQuestionSummary } from '@/utils/scriptSurveyAnalytics';
+import { buildGridModel, groupSurveyBlocks, type GridModel } from '@/utils/scriptSurveyGrid';
 import {
   formatKpiValue,
   SCRIPT_SURVEY_PURPOSE,
@@ -75,6 +76,32 @@ interface ScriptSurveyBrief {
     rationale: string;
   }>;
   generated_at?: string;
+}
+
+/** One table for a grid: Row | each column "n (pct%)" | n answered. */
+export function buildGridDocxTable(model: GridModel): Table {
+  const total = 9360;
+  const rowW = 3000;
+  const nW = 1200;
+  const colW = Math.floor((total - rowW - nW) / Math.max(1, model.columns.length));
+  return new Table({
+    width: { size: total, type: WidthType.DXA },
+    columnWidths: [rowW, ...model.columns.map(() => colW), nW],
+    rows: [
+      new TableRow({ children: [headerCell('Row', rowW), ...model.columns.map((c) => headerCell(c, colW)), headerCell('n answered', nW)] }),
+      ...model.rows.map((r, i) => {
+        const bg = i % 2 === 1 ? LIGHT_BG : undefined;
+        return new TableRow({ children: [
+          cell(r.label, rowW, { shading: bg }),
+          ...model.columns.map((c) => {
+            const seg = r.segments.find((x) => x.label === c);
+            return cell(seg ? `${seg.count} (${seg.pct.toFixed(1)}%)` : '0 (0.0%)', colW, { shading: bg });
+          }),
+          cell(String(r.n), nW, { shading: bg }),
+        ] });
+      }),
+    ],
+  });
 }
 
 async function fetchBrief(payload: any): Promise<ScriptSurveyBrief | null> {
@@ -331,17 +358,31 @@ export async function generateScriptSurveyDocx(params: GenerateScriptSurveyDocxP
     children.push(new Paragraph({ text: '', spacing: { after: 160 } }));
   };
 
+  const renderList = (list: ScriptSurveyQuestion[]) => {
+    for (const b of groupSurveyBlocks(list)) {
+      if (b.kind === 'single') { renderQuestion(b.q); continue; }
+      const model = buildGridModel(b, eligibleRecords);
+      children.push(new Paragraph({
+        children: [new TextRun({ text: model.title, bold: true, size: 22, font: 'Arial' })],
+        spacing: { before: 120, after: 40 },
+      }));
+      children.push(buildGridDocxTable(model));
+      children.push(new Paragraph({ text: '', spacing: { after: 160 } }));
+    }
+  };
+
   const rendered = new Set<string>();
   for (const sec of sections) {
     const inSec = questions.filter((q) => q.section === sec);
     if (!inSec.length) continue;
     children.push(new Paragraph({ text: sec, heading: HeadingLevel.HEADING_2 }));
-    for (const q of inSec) { renderQuestion(q); rendered.add(q.id); }
+    renderList(inSec);
+    for (const q of inSec) rendered.add(q.id);
   }
   const unsectioned = questions.filter((q) => !rendered.has(q.id));
   if (unsectioned.length) {
     if (sections.length) children.push(new Paragraph({ text: 'Other questions', heading: HeadingLevel.HEADING_2 }));
-    for (const q of unsectioned) renderQuestion(q);
+    renderList(unsectioned);
   }
 
   // ── Recommended Actions ───────────────────────────────────────────────────
