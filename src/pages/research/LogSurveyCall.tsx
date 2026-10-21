@@ -249,7 +249,10 @@ export default function LogSurveyCall() {
   }, [phase, questionIndex, questions.length]);
 
   const setResponse = (qId: string | number, value: unknown) => {
-    setResponses(prev => ({ ...prev, [String(qId)]: value }));
+    setResponses(prev => {
+      if (value === undefined) { const n = { ...prev }; delete n[String(qId)]; return n; }
+      return { ...prev, [String(qId)]: value };
+    });
   };
 
   const validateSetup = (): boolean => {
@@ -499,6 +502,7 @@ export default function LogSurveyCall() {
   };
 
   const currentQ = questions[questionIndex];
+  const gridBlock = phase === 'question' ? getMatrixBlock(questions, questionIndex) : null;
   const showSectionNav = phase === 'question' && sections.length > 1;
   // Prefill Duration (minutes) from the call timer on entering wrap-up.
   useEffect(() => {
