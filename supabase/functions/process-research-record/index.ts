@@ -1172,9 +1172,22 @@ Deno.serve(async (req) => {
 
       const aiMap: Record<string, any> = {};
       const aiAnswers = Array.isArray(parsed?.raw_script_answers) ? parsed.raw_script_answers : [];
+      const qById = new Map<string, any>();
+      (ctx.scriptQuestions || []).forEach((q: any, i: number) => {
+        const sid = (q?.id ?? '') !== '' && String(q.id).trim() !== '' ? String(q.id) : `q_idx_${i}`;
+        qById.set(sid, q);
+      });
+      const answeredAt = new Date().toISOString();
       for (const a of aiAnswers) {
         if (!a || a.question_id === undefined || a.question_id === null || a.question_id === '') continue;
-        aiMap[String(a.question_id)] = {
+        const qid = String(a.question_id);
+        const q = qById.get(qid);
+        if (q) {
+          const norm = normalizeGenericAiAnswer(q, qid, a, answeredAt);
+          if (norm) aiMap[qid] = norm;
+          continue;
+        }
+        aiMap[qid] = {
           answer_text: a.answer_text ?? null,
           selected_options: Array.isArray(a.selected_options) ? a.selected_options : [],
           scale_value: typeof a.scale_value === 'number' ? a.scale_value : null,
