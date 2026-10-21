@@ -62,6 +62,7 @@ Content to translate:
   section: q.section || "",
   branch_yes_probes: q.branch?.yes_probes || [],
   branch_no_probes: q.branch?.no_probes || [],
+  ...(q.matrix ? { matrix_title: q.matrix.title || "", matrix_row: q.matrix.row || "" } : {}),
 })))}
 
 Use the translate_script tool to return the translated content.`;
@@ -102,6 +103,8 @@ Use the translate_script tool to return the translated content.`;
                         section: { type: "string", description: "Translated section name" },
                         branch_yes_probes: { type: "array", items: { type: "string" } },
                         branch_no_probes: { type: "array", items: { type: "string" } },
+                        matrix_title: { type: "string", description: "Translated grid title (only when provided)" },
+                        matrix_row: { type: "string", description: "Translated grid row label (only when provided)" },
                       },
                       required: ["key", "text"],
                       additionalProperties: false,
@@ -189,6 +192,13 @@ Use the translate_script tool to return the translated content.`;
           yes_probes: tq.branch_yes_probes?.length ? tq.branch_yes_probes : origQ.branch.yes_probes,
           no_probes: tq.branch_no_probes?.length ? tq.branch_no_probes : origQ.branch.no_probes,
         } : origQ.branch,
+        ...(origQ.matrix ? {
+          matrix: {
+            ...origQ.matrix,
+            title: tq.matrix_title || origQ.matrix.title,
+            row: tq.matrix_row || origQ.matrix.row,
+          },
+        } : {}),
       };
     });
 
