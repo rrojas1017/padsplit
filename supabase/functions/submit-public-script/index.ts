@@ -98,8 +98,10 @@ function buildRawScriptAnswers(
         break;
       }
       case 'multiple_select': {
-        const labels = (Array.isArray(answer) ? answer : [answer])
+        let labels = (Array.isArray(answer) ? answer : [answer])
           .map((x: unknown) => String(x ?? '').trim()).filter(Boolean);
+        const maxSel = Number(q?.max_selections);
+        if (Number.isInteger(maxSel) && maxSel > 0) labels = labels.slice(0, maxSel);
         if (!labels.length) return;
         base.question_type = 'multiple_select';
         base.selected_option_labels = labels;

@@ -243,18 +243,25 @@ function normalizeGatewayModel(model: string | null): string | null {
 }
 
 function buildGenericScriptPrompt(questions: any[]): string {
-  const list = (questions || []).map((q: any, i: number) => ({
-    question_id: (q?.id ?? '') !== '' ? String(q.id) : `q_idx_${i}`,
-    question: q?.question ?? q?.text ?? '',
-    type: q?.type ?? null,
-    options: Array.isArray(q?.options) ? q.options : [],
-  }));
+  const list = (questions || []).map((q: any, i: number) => {
+    const maxSel = Number(q?.max_selections);
+    return {
+      question_id: (q?.id ?? '') !== '' ? String(q.id) : `q_idx_${i}`,
+      question: q?.question ?? q?.text ?? '',
+      type: q?.type ?? null,
+      options: Array.isArray(q?.options) ? q.options : [],
+      ...(Number.isInteger(maxSel) && maxSel > 0 ? { max_selections: maxSel } : {}),
+    };
+  });
   return `You analyze a phone survey transcript between an agent and a respondent.
 The survey script questions are:
 ${JSON.stringify(list, null, 2)}
 
 For each question, extract the respondent's answer using only evidence from the transcript.
 Use null when a question was not asked or not answered.
+For "multiple_select" questions, list EVERY option the respondent mentioned (at most max_selections when given).
+For "multiple_choice" and "yes_no" questions, give exactly ONE option.
+selected_options must use only the exact option strings from that question's options list.
 Respond ONLY with a JSON object of this exact shape:
 {
   "raw_script_answers": [
@@ -263,6 +270,57 @@ Respond ONLY with a JSON object of this exact shape:
   "summary": "<2-4 sentence summary of the conversation>",
   "human_review_recommended": <true|false>
 }`;
+}
+
+// CR-013: normalize a generic AI answer into the RawScriptAnswer shape the
+// dashboards read, keeping the legacy fields. Returns null when unusable.
+function normalizeGenericAiAnswer(q: any, stableId: string, a: any, answeredAt: string): any | null {
+  const legacy = {
+    answer_text: a.answer_text ?? null,
+    selected_options: Array.isArray(a.selected_options) ? a.selected_options : [],
+    scale_value: typeof a.scale_value === 'number' ? a.scale_value : null,
+  };
+  const base: any = {
+    question_id: stableId,
+    question_text: String(q?.question ?? q?.text ?? '').trim(),
+    ai_hint: q?.ai_extraction_hint ?? null,
+    answered_at: answeredAt,
+    source: 'ai_extraction',
+    ...legacy,
+  };
+  const type = String(q?.type ?? 'open_ended');
+  const opts: string[] = type === 'yes_no'
+    ? ['Yes', 'No']
+    : (Array.isArray(q?.options) ? q.options.map((o: unknown) => String(o ?? '').trim()).filter(Boolean) : []);
+  const matchOpts = (): string[] => {
+    const out: string[] = [];
+    for (const raw of legacy.selected_options) {
+      const s = String(raw ?? '').trim().toLowerCase();
+      if (!s) continue;
+      const hit = opts.find((o) => o.toLowerCase() === s);
+      if (hit && !out.includes(hit)) out.push(hit);
+    }
+    return out;
+  };
+  if (type === 'multiple_select') {
+    let labels = matchOpts();
+    const maxSel = Number(q?.max_selections);
+    if (Number.isInteger(maxSel) && maxSel > 0) labels = labels.slice(0, maxSel);
+    if (!labels.length) return null;
+    return { ...base, question_type: 'multiple_select', selected_option_labels: labels };
+  }
+  if (type === 'multiple_choice' || type === 'yes_no') {
+    const labels = matchOpts();
+    if (!labels.length) return null;
+    return { ...base, question_type: type, selected_option_labels: [labels[0]] };
+  }
+  if (type === 'scale') {
+    if (legacy.scale_value === null || !Number.isFinite(legacy.scale_value)) return null;
+    return { ...base, question_type: 'scale', scale_value: legacy.scale_value };
+  }
+  const text = String(legacy.answer_text ?? '').trim();
+  if (!text) return null;
+  return { ...base, question_type: 'open_ended', raw_text_answer: text };
 }
 
 // ── Payment Experience fallback prompt (used only if script has no ai_prompt) ──
