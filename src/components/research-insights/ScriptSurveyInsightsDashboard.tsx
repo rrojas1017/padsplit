@@ -180,6 +180,7 @@ export function ScriptSurveyInsightsDashboard({ scriptId }: { scriptId: string }
         eligibleRecords: eligible,
         kpiConfig,
         kpis,
+        campaignName: selectedCampaign?.name,
       });
       toast.success('Executive brief downloaded');
     } catch (err) {
@@ -271,6 +272,19 @@ export function ScriptSurveyInsightsDashboard({ scriptId }: { scriptId: string }
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-end gap-2">
+        {showCampaignFilter && (
+          <Select value={selectedCampaign?.id ?? 'all'} onValueChange={setCampaign}>
+            <SelectTrigger className="w-[260px] h-8 text-xs" aria-label="Campaign">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All campaigns</SelectItem>
+              {campaigns.map((c) => (
+                <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
         <Select value={dateRange} onValueChange={(v) => setDateRange(v as DateRangeOption)}>
           <SelectTrigger className="w-[140px] h-8 text-xs">
             <SelectValue />
@@ -303,6 +317,15 @@ export function ScriptSurveyInsightsDashboard({ scriptId }: { scriptId: string }
           ? `Based on ${report.total_records_analyzed.toLocaleString()} analyzed records`
           : null}
       />
+      {selectedCampaign && (
+        <div className="space-y-0.5 text-xs text-muted-foreground">
+          <p>AI summary covers all campaigns of this script</p>
+          {nullCampaignCount > 0 && (
+            <p>{nullCampaignCount.toLocaleString()} calls without a campaign are only included in All campaigns</p>
+          )}
+        </div>
+      )}
+
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
         {kpiConfig.map((k, i) => {
