@@ -2,6 +2,7 @@
 // (30-Day Member Experience, Non-Booking Conversion). Built on the Phase 1
 // data layer; reuses PE visuals where generic, generic twins otherwise.
 import { useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { FileText, Loader2 } from 'lucide-react';
@@ -99,13 +100,28 @@ export function ScriptSurveyInsightsDashboard({ scriptId }: { scriptId: string }
   const canSeeAISummary = canSeeSubmissions || user?.role === 'supervisor';
   const [dateRange, setDateRange] = useSessionState<DateRangeOption>(`scriptSurvey:${scriptId}:dateRange`, 'allTime');
   const [isGenerating, setIsGenerating] = useState(false);
+  const [searchParams, setSearchParams] = useSearchParams();
 
-  const { script, questions, sections, records: allRecords, validRecords: allValid, eligibleRecords: allEligible, isLoading } =
+  const { script, questions, sections, records: allRecords, validRecords: allValid, eligibleRecords: allEligible, campaigns, campaignIdsReadable, isLoading } =
     useScriptSurveyResponses(scriptId);
 
-  const records = useMemo(() => filterByDateRange(allRecords, dateRange), [allRecords, dateRange]);
-  const validRecords = useMemo(() => filterByDateRange(allValid, dateRange), [allValid, dateRange]);
-  const eligible = useMemo(() => filterByDateRange(allEligible, dateRange), [allEligible, dateRange]);
+  // CR-014: campaign filter (AND with date range). Unknown id → All.
+  const showCampaignFilter = campaignIdsReadable && campaigns.length >= 2;
+  const campParam = searchParams.get('camp');
+  const selectedCampaign = showCampaignFilter ? campaigns.find((c) => c.id === campParam) ?? null : null;
+  const setCampaign = (v: string) => {
+    const next = new URLSearchParams(searchParams);
+    if (v === 'all') next.delete('camp'); else next.set('camp', v);
+    setSearchParams(next, { replace: true });
+  };
+  const byCampaign = (rs: ScriptSurveyRecord[]) =>
+    selectedCampaign ? rs.filter((r) => r.campaign_id === selectedCampaign.id) : rs;
+
+  const datedRecords = useMemo(() => filterByDateRange(allRecords, dateRange), [allRecords, dateRange]);
+  const records = useMemo(() => byCampaign(datedRecords), [datedRecords, selectedCampaign]);
+  const validRecords = useMemo(() => byCampaign(filterByDateRange(allValid, dateRange)), [allValid, dateRange, selectedCampaign]);
+  const eligible = useMemo(() => byCampaign(filterByDateRange(allEligible, dateRange)), [allEligible, dateRange, selectedCampaign]);
+  const nullCampaignCount = selectedCampaign ? datedRecords.filter((r) => !r.campaign_id).length : 0;
 
   const campaignType = script?.campaignType ?? '';
   const { data: report } = useQuery({
@@ -164,6 +180,7 @@ export function ScriptSurveyInsightsDashboard({ scriptId }: { scriptId: string }
         eligibleRecords: eligible,
         kpiConfig,
         kpis,
+        campaignName: selectedCampaign?.name,
       });
       toast.success('Executive brief downloaded');
     } catch (err) {
@@ -255,6 +272,19 @@ export function ScriptSurveyInsightsDashboard({ scriptId }: { scriptId: string }
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-end gap-2">
+        {showCampaignFilter && (
+          <Select value={selectedCampaign?.id ?? 'all'} onValueChange={setCampaign}>
+            <SelectTrigger className="w-[260px] h-8 text-xs" aria-label="Campaign">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All campaigns</SelectItem>
+              {campaigns.map((c) => (
+                <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
         <Select value={dateRange} onValueChange={(v) => setDateRange(v as DateRangeOption)}>
           <SelectTrigger className="w-[140px] h-8 text-xs">
             <SelectValue />
@@ -287,6 +317,15 @@ export function ScriptSurveyInsightsDashboard({ scriptId }: { scriptId: string }
           ? `Based on ${report.total_records_analyzed.toLocaleString()} analyzed records`
           : null}
       />
+      {selectedCampaign && (
+        <div className="space-y-0.5 text-xs text-muted-foreground">
+          <p>AI summary covers all campaigns of this script</p>
+          {nullCampaignCount > 0 && (
+            <p>{nullCampaignCount.toLocaleString()} calls without a campaign are only included in All campaigns</p>
+          )}
+        </div>
+      )}
+
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
         {kpiConfig.map((k, i) => {
