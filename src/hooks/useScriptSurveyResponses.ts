@@ -184,6 +184,8 @@ export function useScriptSurveyResponses(scriptId: string | null | undefined) {
     records,
     validRecords,
     eligibleRecords,
+    campaigns: data?.campaigns ?? [],
+    campaignIdsReadable: data?.campaignIdsReadable ?? false,
     isLoading: query.isLoading,
     refetch: query.refetch,
   };
