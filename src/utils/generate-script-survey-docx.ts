@@ -138,6 +138,7 @@ export interface GenerateScriptSurveyDocxParams {
   eligibleRecords: ScriptSurveyRecord[];
   kpiConfig: ScriptKpiConfig[];
   kpis: ScriptKpiResult[];
+  campaignName?: string;
 }
 
 export async function generateScriptSurveyDocx(params: GenerateScriptSurveyDocxParams) {
@@ -211,7 +212,7 @@ export async function generateScriptSurveyDocx(params: GenerateScriptSurveyDocxP
       alignment: AlignmentType.CENTER,
     }),
     new Paragraph({
-      children: [new TextRun({ text: `Generated: ${todayStr} · Period: ${dateRangeStr}`, color: '666666', size: 20, font: 'Arial' })],
+      children: [new TextRun({ text: `Generated: ${todayStr} · Period: ${dateRangeStr}${params.campaignName ? ` · Campaign: ${params.campaignName}` : ''}`, color: '666666', size: 20, font: 'Arial' })],
       alignment: AlignmentType.CENTER,
       spacing: { after: 300 },
     }),

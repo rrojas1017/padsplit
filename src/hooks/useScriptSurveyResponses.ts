@@ -41,6 +41,14 @@ export interface ScriptSurveyRecord {
   answeredCount: number;
   isForm: boolean;
   hasRecording: boolean;
+  campaign_id: string | null;
+}
+
+export interface ScriptSurveyCampaign {
+  id: string;
+  name: string;
+  campaign_key: string | null;
+  status: string | null;
 }
 
 export function useScriptSurveyResponses(scriptId: string | null | undefined) {
@@ -88,6 +96,42 @@ export function useScriptSurveyResponses(scriptId: string | null | undefined) {
           .range(from, to),
       );
 
+      // CR-014: campaign lookup is best-effort; denied/failed reads never throw.
+      const campaignMap = new Map<string, string | null>();
+      let campaignIdsReadable = false;
+      try {
+        const cRows = await fetchAllPages((from, to) =>
+          (supabase as any)
+            .from('booking_transcriptions')
+            .select('id, bookings!inner(research_call_id, record_type, research_calls(campaign_id))')
+            .eq('research_campaign_type', campaignType)
+            .eq('bookings.record_type', 'research')
+            .order('id', { ascending: true })
+            .range(from, to),
+        );
+        for (const r of cRows as any[]) {
+          const cid = r?.bookings?.research_calls?.campaign_id ?? null;
+          campaignMap.set(r.id, cid);
+          if (cid) campaignIdsReadable = true;
+        }
+      } catch {
+        campaignMap.clear();
+        campaignIdsReadable = false;
+      }
+      if (!campaignIdsReadable) campaignMap.clear();
+
+      let campaigns: ScriptSurveyCampaign[] = [];
+      try {
+        const { data: cd, error: ce } = await (supabase as any)
+          .from('research_campaigns')
+          .select('id, name, campaign_key, status')
+          .eq('script_id', s.id)
+          .order('name', { ascending: true });
+        if (!ce && Array.isArray(cd)) campaigns = cd as ScriptSurveyCampaign[];
+      } catch {
+        campaigns = [];
+      }
+
       const records: ScriptSurveyRecord[] = rows.map((row: any) => {
         const b = row.bookings || {};
         const raw = (row.raw_script_answers && typeof row.raw_script_answers === 'object'
@@ -116,11 +160,12 @@ export function useScriptSurveyResponses(scriptId: string | null | undefined) {
           answeredCount,
           isForm,
           hasRecording: !!b.kixie_link,
+          campaign_id: campaignMap.get(row.id) ?? null,
         };
       });
 
       const script: ScriptSurveyScript = { id: s.id, name: (s as any).name, slug: (s as any).slug ?? null, campaignType };
-      return { script, questions, records };
+      return { script, questions, records, campaigns, campaignIdsReadable };
     },
   });
 
