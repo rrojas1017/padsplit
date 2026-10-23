@@ -82,25 +82,22 @@ export function useScriptSurveyResponses(scriptId: string | null | undefined) {
           ...((q as any).matrix ? { matrix: (q as any).matrix } : {}),
         }));
 
-      const rows = await fetchAllPages((from, to) =>
-        (supabase as any)
-          .from('booking_transcriptions')
-          .select(
-            'id, booking_id, research_processing_status, survey_progress, ' +
-            'raw_script_answers:research_extraction->raw_script_answers, ' +
-            'bookings!inner(id, booking_date, call_duration_seconds, has_valid_conversation, transcription_status, kixie_link, research_call_id, record_type)',
-          )
-          .eq('research_campaign_type', campaignType)
-          .eq('bookings.record_type', 'research')
-          .order('id', { ascending: true })
-          .range(from, to),
-      );
-
-      // CR-014: campaign lookup is best-effort; denied/failed reads never throw.
-      const campaignMap = new Map<string, string | null>();
-      let campaignIdsReadable = false;
-      try {
-        const cRows = await fetchAllPages((from, to) =>
+      // CR-014: records, campaign map and campaign list are read in parallel.
+      const [rowsRes, mapRes, campRes] = await Promise.allSettled([
+        fetchAllPages((from, to) =>
+          (supabase as any)
+            .from('booking_transcriptions')
+            .select(
+              'id, booking_id, research_processing_status, survey_progress, ' +
+              'raw_script_answers:research_extraction->raw_script_answers, ' +
+              'bookings!inner(id, booking_date, call_duration_seconds, has_valid_conversation, transcription_status, kixie_link, research_call_id, record_type)',
+            )
+            .eq('research_campaign_type', campaignType)
+            .eq('bookings.record_type', 'research')
+            .order('id', { ascending: true })
+            .range(from, to),
+        ),
+        fetchAllPages((from, to) =>
           (supabase as any)
             .from('booking_transcriptions')
             .select('id, bookings!inner(research_call_id, record_type, research_calls(campaign_id))')
@@ -108,28 +105,33 @@ export function useScriptSurveyResponses(scriptId: string | null | undefined) {
             .eq('bookings.record_type', 'research')
             .order('id', { ascending: true })
             .range(from, to),
-        );
-        for (const r of cRows as any[]) {
+        ),
+        (supabase as any)
+          .from('research_campaigns')
+          .select('id, name, campaign_key, status')
+          .eq('script_id', s.id)
+          .order('name', { ascending: true }),
+      ]);
+
+      if (rowsRes.status === 'rejected') throw rowsRes.reason;
+      const rows = rowsRes.value;
+
+      // Campaign reads are best-effort; denied/failed reads never throw.
+      const campaignMap = new Map<string, string | null>();
+      let campaignIdsReadable = false;
+      if (mapRes.status === 'fulfilled') {
+        for (const r of mapRes.value as any[]) {
           const cid = r?.bookings?.research_calls?.campaign_id ?? null;
           campaignMap.set(r.id, cid);
           if (cid) campaignIdsReadable = true;
         }
-      } catch {
-        campaignMap.clear();
-        campaignIdsReadable = false;
       }
       if (!campaignIdsReadable) campaignMap.clear();
 
       let campaigns: ScriptSurveyCampaign[] = [];
-      try {
-        const { data: cd, error: ce } = await (supabase as any)
-          .from('research_campaigns')
-          .select('id, name, campaign_key, status')
-          .eq('script_id', s.id)
-          .order('name', { ascending: true });
+      if (campRes.status === 'fulfilled') {
+        const { data: cd, error: ce } = campRes.value as { data: unknown; error: unknown };
         if (!ce && Array.isArray(cd)) campaigns = cd as ScriptSurveyCampaign[];
-      } catch {
-        campaigns = [];
       }
 
       const records: ScriptSurveyRecord[] = rows.map((row: any) => {
