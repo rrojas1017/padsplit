@@ -100,7 +100,7 @@ export function useScriptSurveyResponses(scriptId: string | null | undefined) {
         fetchAllPages((from, to) =>
           (supabase as any)
             .from('booking_transcriptions')
-            .select('id, bookings!inner(research_call_id, record_type, research_calls(campaign_id))')
+            .select('id, bookings!inner(research_call_id, record_type, research_calls!bookings_research_call_id_fkey(campaign_id))')
             .eq('research_campaign_type', campaignType)
             .eq('bookings.record_type', 'research')
             .order('id', { ascending: true })
@@ -125,13 +125,18 @@ export function useScriptSurveyResponses(scriptId: string | null | undefined) {
           campaignMap.set(r.id, cid);
           if (cid) campaignIdsReadable = true;
         }
+      } else {
+        console.warn('[script-survey] campaign map unavailable', (mapRes.reason as any)?.code ?? 'unknown');
       }
       if (!campaignIdsReadable) campaignMap.clear();
 
       let campaigns: ScriptSurveyCampaign[] = [];
       if (campRes.status === 'fulfilled') {
         const { data: cd, error: ce } = campRes.value as { data: unknown; error: unknown };
-        if (!ce && Array.isArray(cd)) campaigns = cd as ScriptSurveyCampaign[];
+        if (ce) console.warn('[script-survey] campaign map unavailable', (ce as any)?.code ?? 'unknown');
+        else if (Array.isArray(cd)) campaigns = cd as ScriptSurveyCampaign[];
+      } else {
+        console.warn('[script-survey] campaign map unavailable', (campRes.reason as any)?.code ?? 'unknown');
       }
 
       const records: ScriptSurveyRecord[] = rows.map((row: any) => {
