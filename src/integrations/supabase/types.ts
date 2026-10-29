@@ -3286,6 +3286,22 @@ export type Database = {
           transcribed: number
         }[]
       }
+      get_script_campaigns: {
+        Args: { p_script_id: string }
+        Returns: {
+          campaign_key: string
+          id: string
+          name: string
+          status: string
+        }[]
+      }
+      get_script_survey_campaign_map: {
+        Args: { p_script_id: string }
+        Returns: {
+          booking_id: string
+          campaign_id: string
+        }[]
+      }
       get_user_role: {
         Args: { _user_id: string }
         Returns: Database["public"]["Enums"]["app_role"]

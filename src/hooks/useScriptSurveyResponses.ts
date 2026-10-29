@@ -97,20 +97,13 @@ export function useScriptSurveyResponses(scriptId: string | null | undefined) {
             .order('id', { ascending: true })
             .range(from, to),
         ),
+        // CR-015: role-scoped SECURITY DEFINER lookups (ordered by booking_id / name).
         fetchAllPages((from, to) =>
-          (supabase as any)
-            .from('booking_transcriptions')
-            .select('id, bookings!inner(research_call_id, record_type, research_calls!bookings_research_call_id_fkey(campaign_id))')
-            .eq('research_campaign_type', campaignType)
-            .eq('bookings.record_type', 'research')
-            .order('id', { ascending: true })
+          supabase
+            .rpc('get_script_survey_campaign_map', { p_script_id: s.id })
             .range(from, to),
         ),
-        (supabase as any)
-          .from('research_campaigns')
-          .select('id, name, campaign_key, status')
-          .eq('script_id', s.id)
-          .order('name', { ascending: true }),
+        supabase.rpc('get_script_campaigns', { p_script_id: s.id }),
       ]);
 
       if (rowsRes.status === 'rejected') throw rowsRes.reason;
@@ -120,9 +113,9 @@ export function useScriptSurveyResponses(scriptId: string | null | undefined) {
       const campaignMap = new Map<string, string | null>();
       let campaignIdsReadable = false;
       if (mapRes.status === 'fulfilled') {
-        for (const r of mapRes.value as any[]) {
-          const cid = r?.bookings?.research_calls?.campaign_id ?? null;
-          campaignMap.set(r.id, cid);
+        for (const r of mapRes.value as { booking_id: string; campaign_id: string | null }[]) {
+          const cid = r?.campaign_id ?? null;
+          if (r?.booking_id) campaignMap.set(r.booking_id, cid);
           if (cid) campaignIdsReadable = true;
         }
       } else {
@@ -167,7 +160,7 @@ export function useScriptSurveyResponses(scriptId: string | null | undefined) {
           answeredCount,
           isForm,
           hasRecording: !!b.kixie_link,
-          campaign_id: campaignMap.get(row.id) ?? null,
+          campaign_id: campaignMap.get(row.booking_id ?? b.id) ?? null,
         };
       });
 
