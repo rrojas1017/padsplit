@@ -117,7 +117,7 @@ function ScriptBlock({ children, variant = 'default' }: { children: React.ReactN
 const DIALER_CTRL_RE = /[\u0000-\u001f\u007f]/g;
 const DIALER_PARAMS: Array<[string, string, boolean]> = [
   ['uid', 'dialer_uid', false], ['lead', 'dialer_lead', false], ['phone', 'dialer_phone', true],
-  ['agent', 'dialer_agent', false], ['campaign', 'dialer_campaign', false],
+  ['agent', 'dialer_agent', false], ['campaign', 'dialer_campaign', false], ['list', 'dialer_list', false],
 ];
 function sanitizeDialer(v: unknown, phone = false): string | undefined {
   try {
