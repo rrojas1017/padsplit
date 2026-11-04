@@ -2369,7 +2369,6 @@ export type Database = {
           dialer_call_id: string | null
           dialer_lead_id: string | null
           dialer_list_id: string | null
-          dialer_list_id: string | null
           id: string
           kixie_link: string | null
           language: string | null
@@ -2400,7 +2399,6 @@ export type Database = {
           dialer_call_id?: string | null
           dialer_lead_id?: string | null
           dialer_list_id?: string | null
-          dialer_list_id?: string | null
           id?: string
           kixie_link?: string | null
           language?: string | null
@@ -2430,7 +2428,6 @@ export type Database = {
           dialer_agent_user?: string | null
           dialer_call_id?: string | null
           dialer_lead_id?: string | null
-          dialer_list_id?: string | null
           dialer_list_id?: string | null
           id?: string
           kixie_link?: string | null
