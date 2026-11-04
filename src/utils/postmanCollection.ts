@@ -37,6 +37,7 @@ export function generatePostmanCollection() {
                 phoneNumber: "+14155551234",
                 campaign: "Q1-Research-2026",
                 type: "research",
+                listId: "1001",
               },
               null,
               2

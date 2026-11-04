@@ -121,6 +121,7 @@ X-Client-Secret: sk_your_client_secret_here`}</CodeBlock>
               { name: 'callTimestamp', type: 'string', required: false, description: 'Call start as ISO-8601 with offset or Z (e.g. 2026-09-21T23:30:00-04:00). If omitted, the call time is read from the recording filename (YYYYMMDD-HHMMSS_, dialer time UTC-4); otherwise the upload time is used.' },
               { name: 'leadId', type: 'string', required: false, description: 'ViciDial lead_id, max 64 chars. Fallback link key (lead + agent + call time).' },
               { name: 'recordingId', type: 'string', required: false, description: 'ViciDial recording_id, max 64 chars. Primary link key to the screen-pop form (the pop sends it as `uid`) and duplicate-protection key.' },
+              { name: 'listId', type: 'string', required: false, description: 'ViciDial list_id, max 64 chars. Stored for reporting only; not used for linking. `list_id` is accepted as an alias.' },
               { name: 'uniqueid', type: 'string', required: false, description: 'Legacy alias of recordingId. If both are sent, recordingId wins.' },
             ]}
           />
@@ -192,7 +193,10 @@ X-Client-Secret: sk_your_client_secret_here`}</CodeBlock>
             <code className="text-xs bg-muted px-1.5 py-0.5 rounded font-mono">null</code> (new record).
           </p>
           <p className="text-sm text-muted-foreground mb-3">Screen-pop form URL (configure in the ViciDial campaign web form):</p>
-          <CodeBlock language="text">{`<public script link>?uid=--A--recording_id--B--&lead=--A--lead_id--B--&phone=--A--phone_number--B--&agent=--A--user--B--&campaign=--A--campaign--B--`}</CodeBlock>
+          <CodeBlock language="text">{`<public script link>?uid=--A--recording_id--B--&lead=--A--lead_id--B--&phone=--A--phone_number--B--&agent=--A--user--B--&campaign=--A--campaign--B--&list=--A--list_id--B--`}</CodeBlock>
+          <p className="text-sm text-muted-foreground mt-3 max-w-2xl">
+            The <code className="text-xs bg-muted px-1.5 py-0.5 rounded font-mono">list</code> parameter carries the ViciDial list_id; it is stored for reporting only and never used for linking.
+          </p>
         </div>
       </DocSection>
 

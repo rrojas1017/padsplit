@@ -229,6 +229,7 @@ Deno.serve(async (req) => {
       dialer_phone,
       dialer_agent,
       dialer_campaign,
+      dialer_list,
       close_outcome_id,
       outcome_only,
     } = body || {};
@@ -245,6 +246,7 @@ Deno.serve(async (req) => {
     const dialerLead = cleanDialer(dialer_lead);
     const dialerAgent = cleanDialer(dialer_agent);
     const dialerCampaign = cleanDialer(dialer_campaign);
+    const dialerList = cleanDialer(dialer_list); // CR-016: stored only
     const dialerPhone = phoneDigits(dialer_phone);
 
     if (!token || typeof token !== 'string') {
@@ -731,6 +733,7 @@ Deno.serve(async (req) => {
           ...outcomeCols(outcome),
           ...(dialerAgent ? { dialer_agent_user: dialerAgent } : {}),
           ...(dialerLead ? { dialer_lead_id: dialerLead } : {}),
+          ...(dialerList ? { dialer_list_id: dialerList } : {}),
           ...(withDialerId && dialerUid ? { dialer_call_id: dialerUid } : {}),
         })
         .select('id')
@@ -739,7 +742,7 @@ Deno.serve(async (req) => {
     const readRow = async () => {
       const { data } = await admin
         .from('research_calls')
-        .select('id, call_outcome, created_at, responses, caller_name, call_duration_seconds, language, dialer_call_id')
+        .select('id, call_outcome, created_at, responses, caller_name, call_duration_seconds, language, dialer_call_id, dialer_list_id')
         .eq('responses->>_submission_id', submissionId)
         .limit(1)
         .maybeSingle();
@@ -747,7 +750,7 @@ Deno.serve(async (req) => {
     };
 
     // ---- CR-005: new submission (plain insert, or link to the dialer call row) ----
-    const DIALER_SELECT = 'id, call_outcome, created_at, responses, kixie_link, call_duration_seconds, caller_phone, dialer_lead_id, dialer_agent_user';
+    const DIALER_SELECT = 'id, call_outcome, created_at, responses, kixie_link, call_duration_seconds, caller_phone, dialer_lead_id, dialer_agent_user, dialer_list_id';
     const readDialerRow = async () => {
       const { data } = await admin
         .from('research_calls')
@@ -782,7 +785,7 @@ Deno.serve(async (req) => {
     const insertUnlinked = async (outcome: string, idMismatch = false): Promise<Response | 'existing'> => {
       const { data, error } = await insertRow(outcome, false, {
         _dialer: {
-          uid: dialerUid, lead: dialerLead, agent: dialerAgent, campaign: dialerCampaign,
+          uid: dialerUid, lead: dialerLead, agent: dialerAgent, campaign: dialerCampaign, list: dialerList,
           ...(idMismatch ? { idMismatch: true } : {}),
         },
       });
@@ -800,6 +803,7 @@ Deno.serve(async (req) => {
           ...outcomeCols(outcome),
           ...(d.caller_phone == null && dialerPhone ? { caller_phone: dialerPhone } : {}),
           ...(d.dialer_lead_id == null && dialerLead ? { dialer_lead_id: dialerLead } : {}),
+          ...(d.dialer_list_id == null && dialerList ? { dialer_list_id: dialerList } : {}),
           ...(d.dialer_agent_user == null && dialerAgent ? { dialer_agent_user: dialerAgent } : {}),
           ...(d.call_duration_seconds == null && typeof durationSeconds === 'number' ? { call_duration_seconds: durationSeconds } : {}),
         })
@@ -912,6 +916,7 @@ Deno.serve(async (req) => {
       call_duration_seconds: typeof durationSeconds === 'number' ? durationSeconds : null,
       language: language || 'en',
       ...outcomeCols(outcome),
+      ...(row.dialer_list_id == null && dialerList ? { dialer_list_id: dialerList } : {}),
     });
 
     if (!isFinal) {

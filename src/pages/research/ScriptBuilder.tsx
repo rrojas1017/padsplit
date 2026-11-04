@@ -35,7 +35,7 @@ const AUDIENCE_LABELS: Record<string, string> = {
   active_member: 'Active Members',
 };
 
-const SCREEN_POP_QUERY = '?uid=--A--recording_id--B--&lead=--A--lead_id--B--&phone=--A--phone_number--B--&agent=--A--user--B--&campaign=--A--campaign--B--';
+const SCREEN_POP_QUERY = '?uid=--A--recording_id--B--&lead=--A--lead_id--B--&phone=--A--phone_number--B--&agent=--A--user--B--&campaign=--A--campaign--B--&list=--A--list_id--B--';
 
 export default function ScriptBuilder() {
   
@@ -224,7 +224,7 @@ export default function ScriptBuilder() {
                                 <Button size="sm" variant="outline" className="w-full" onClick={() => { navigator.clipboard.writeText(`${getScriptPublicUrl(token.token)}${SCREEN_POP_QUERY}`); toast.success('Screen-pop URL copied'); }}>
                                   <Copy className="w-3 h-3 mr-1.5" /> Copy Screen-Pop URL
                                 </Button>
-                                <p className="text-xs text-muted-foreground">In the recording POST send the same recording_id as <code className="font-mono">recordingId</code> and the lead_id as <code className="font-mono">leadId</code>.</p>
+                                <p className="text-xs text-muted-foreground">In the recording POST send the same recording_id as <code className="font-mono">recordingId</code> and the lead_id as <code className="font-mono">leadId</code> and the list_id as <code className="font-mono">listId</code> (<code className="font-mono">list</code> carries it in the pop; stored for reporting only).</p>
                               </div>
                               <div className="space-y-1">
                                 {token.last_accessed_at && (

@@ -218,6 +218,8 @@ Deno.serve(async (req) => {
     // CR-007: recordingId is the link key; uniqueid kept as legacy alias
     const callKey = cleanDialer(body.recordingId) ?? cleanDialer(body.uniqueid);
     const leadId = cleanDialer(body.leadId);
+    // CR-016: ViciDial list_id, stored only (never used for linking)
+    const listId = cleanDialer(body.listId) ?? cleanDialer(body.list_id);
     const phone10 = (phoneDigits(phoneNumber) ?? '').slice(-10) || null;
     let linked: 'uid' | 'lead' | 'fallback' | null = null;
     let notesSuffix = '';
@@ -225,7 +227,7 @@ Deno.serve(async (req) => {
     let researchCallId: string | null = null;
     let researchCallHandled = false;
 
-    const RC_SELECT = 'id, kixie_link, caller_phone, dialer_lead_id, dialer_agent_user, dialer_call_id, created_at, call_outcome, finalized_at:responses->>_finalized_at';
+    const RC_SELECT = 'id, kixie_link, caller_phone, dialer_lead_id, dialer_agent_user, dialer_call_id, dialer_list_id, created_at, call_outcome, finalized_at:responses->>_finalized_at';
     const readByUid = async () => {
       const { data } = await adminClient
         .from('research_calls')
@@ -252,6 +254,7 @@ Deno.serve(async (req) => {
           call_date: today,
           caller_type: 'existing_member',
           caller_status: 'submitted',
+          ...(listId ? { dialer_list_id: listId } : {}),
           ...extra,
         })
         .select('id')
@@ -385,6 +388,7 @@ Deno.serve(async (req) => {
         kixie_link: audioUrl,
         ...(linkRow.caller_phone == null ? { caller_phone: phoneNumber } : {}),
         ...(linkRow.dialer_lead_id == null && leadId ? { dialer_lead_id: leadId } : {}),
+        ...(linkRow.dialer_list_id == null && listId ? { dialer_list_id: listId } : {}),
         ...(linkRow.dialer_agent_user == null ? { dialer_agent_user: dialerAgentUser.slice(0, 64) } : {}),
       };
       const runLink = (patch: Record<string, unknown>) => adminClient
