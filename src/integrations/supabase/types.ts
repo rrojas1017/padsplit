@@ -1491,6 +1491,44 @@ export type Database = {
           },
         ]
       }
+      dialer_lists: {
+        Row: {
+          campaign_id: string
+          created_at: string
+          id: string
+          list_id: string
+          name: string
+          sort_order: number
+          updated_at: string
+        }
+        Insert: {
+          campaign_id: string
+          created_at?: string
+          id?: string
+          list_id: string
+          name: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Update: {
+          campaign_id?: string
+          created_at?: string
+          id?: string
+          list_id?: string
+          name?: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "dialer_lists_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "research_campaigns"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       display_token_views: {
         Row: {
           browser: string | null
@@ -3298,11 +3336,27 @@ export type Database = {
           status: string
         }[]
       }
+      get_script_lists: {
+        Args: { p_script_id: string }
+        Returns: {
+          campaign_id: string
+          list_id: string
+          name: string
+          sort_order: number
+        }[]
+      }
       get_script_survey_campaign_map: {
         Args: { p_script_id: string }
         Returns: {
           booking_id: string
           campaign_id: string
+        }[]
+      }
+      get_script_survey_list_map: {
+        Args: { p_script_id: string }
+        Returns: {
+          booking_id: string
+          list_id: string
         }[]
       }
       get_user_role: {
