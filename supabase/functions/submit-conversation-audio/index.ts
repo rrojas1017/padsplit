@@ -219,7 +219,11 @@ Deno.serve(async (req) => {
     const callKey = cleanDialer(body.recordingId) ?? cleanDialer(body.uniqueid);
     const leadId = cleanDialer(body.leadId);
     // CR-016: ViciDial list_id, stored only (never used for linking)
-    const listId = cleanDialer(body.listId) ?? cleanDialer(body.list_id);
+    const listIdValue = (v: unknown): string | null =>
+      typeof v === 'number'
+        ? (Number.isFinite(v) && Number.isInteger(v) && v >= 0 ? cleanDialer(String(v)) : null)
+        : cleanDialer(v);
+    const listId = listIdValue(body.listId) ?? listIdValue(body.list_id);
     const phone10 = (phoneDigits(phoneNumber) ?? '').slice(-10) || null;
     let linked: 'uid' | 'lead' | 'fallback' | null = null;
     let notesSuffix = '';
