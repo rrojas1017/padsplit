@@ -102,26 +102,55 @@ export function ScriptSurveyInsightsDashboard({ scriptId }: { scriptId: string }
   const [isGenerating, setIsGenerating] = useState(false);
   const [searchParams, setSearchParams] = useSearchParams();
 
-  const { script, questions, sections, records: allRecords, validRecords: allValid, eligibleRecords: allEligible, campaigns, campaignIdsReadable, isLoading } =
+  const { script, questions, sections, records: allRecords, validRecords: allValid, eligibleRecords: allEligible, campaigns, campaignIdsReadable, lists, isLoading } =
     useScriptSurveyResponses(scriptId);
 
   // CR-014: campaign filter (AND with date range). Unknown id → All.
   const showCampaignFilter = campaignIdsReadable && campaigns.length >= 2;
   const campParam = searchParams.get('camp');
   const selectedCampaign = showCampaignFilter ? campaigns.find((c) => c.id === campParam) ?? null : null;
+  // CR-017: list filter (AND with campaign + date). Unknown/not-offered value → All.
+  const showListFilter = lists.length >= 1;
+  const offeredLists = selectedCampaign ? lists.filter((l) => l.campaign_id === selectedCampaign.id) : lists;
+  const listParam = searchParams.get('list');
+  const listNone = showListFilter && listParam === 'none';
+  const selectedList = showListFilter && !listNone ? offeredLists.find((l) => l.list_id === listParam) ?? null : null;
+  const listKey = listNone ? 'none' : selectedList?.list_id ?? 'all';
   const setCampaign = (v: string) => {
     const next = new URLSearchParams(searchParams);
     if (v === 'all') next.delete('camp'); else next.set('camp', v);
+    const lp = next.get('list');
+    if (lp && lp !== 'none' && v !== 'all' && !lists.some((l) => l.list_id === lp && l.campaign_id === v)) next.delete('list');
+    setSearchParams(next, { replace: true });
+  };
+  const setList = (v: string) => {
+    const next = new URLSearchParams(searchParams);
+    if (v === 'all') next.delete('list'); else next.set('list', v);
     setSearchParams(next, { replace: true });
   };
   const byCampaign = (rs: ScriptSurveyRecord[]) =>
     selectedCampaign ? rs.filter((r) => r.campaign_id === selectedCampaign.id) : rs;
+  const byFilters = (rs: ScriptSurveyRecord[]) => {
+    const c = byCampaign(rs);
+    if (listNone) return c.filter((r) => !r.list_id);
+    if (selectedList) return c.filter((r) => r.list_id === selectedList.list_id);
+    return c;
+  };
 
   const datedRecords = useMemo(() => filterByDateRange(allRecords, dateRange), [allRecords, dateRange]);
-  const records = useMemo(() => byCampaign(datedRecords), [datedRecords, selectedCampaign]);
-  const validRecords = useMemo(() => byCampaign(filterByDateRange(allValid, dateRange)), [allValid, dateRange, selectedCampaign]);
-  const eligible = useMemo(() => byCampaign(filterByDateRange(allEligible, dateRange)), [allEligible, dateRange, selectedCampaign]);
+  const records = useMemo(() => byFilters(datedRecords), [datedRecords, selectedCampaign, listKey]);
+  const validRecords = useMemo(() => byFilters(filterByDateRange(allValid, dateRange)), [allValid, dateRange, selectedCampaign, listKey]);
+  const eligible = useMemo(() => byFilters(filterByDateRange(allEligible, dateRange)), [allEligible, dateRange, selectedCampaign, listKey]);
   const nullCampaignCount = selectedCampaign ? datedRecords.filter((r) => !r.campaign_id).length : 0;
+  const { unnamedListCount, noListCount } = useMemo(() => {
+    if (!showListFilter) return { unnamedListCount: 0, noListCount: 0 };
+    const named = new Set(lists.map((l) => l.list_id));
+    let unnamed = 0, none = 0;
+    for (const r of byCampaign(datedRecords)) {
+      if (!r.list_id) none++; else if (!named.has(r.list_id)) unnamed++;
+    }
+    return { unnamedListCount: unnamed, noListCount: none };
+  }, [showListFilter, lists, datedRecords, selectedCampaign]);
 
   const campaignType = script?.campaignType ?? '';
   const { data: report } = useQuery({
@@ -181,6 +210,7 @@ export function ScriptSurveyInsightsDashboard({ scriptId }: { scriptId: string }
         kpiConfig,
         kpis,
         campaignName: selectedCampaign?.name,
+        listName: listNone ? 'No list' : selectedList?.name,
       });
       toast.success('Executive brief downloaded');
     } catch (err) {
@@ -285,6 +315,20 @@ export function ScriptSurveyInsightsDashboard({ scriptId }: { scriptId: string }
             </SelectContent>
           </Select>
         )}
+        {showListFilter && (
+          <Select value={listKey} onValueChange={setList}>
+            <SelectTrigger className="w-[220px] h-8 text-xs" aria-label="List">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All lists</SelectItem>
+              {offeredLists.map((l) => (
+                <SelectItem key={l.list_id} value={l.list_id}>{l.name}</SelectItem>
+              ))}
+              <SelectItem value="none">No list</SelectItem>
+            </SelectContent>
+          </Select>
+        )}
         <Select value={dateRange} onValueChange={(v) => setDateRange(v as DateRangeOption)}>
           <SelectTrigger className="w-[140px] h-8 text-xs">
             <SelectValue />
@@ -326,6 +370,13 @@ export function ScriptSurveyInsightsDashboard({ scriptId }: { scriptId: string }
         </div>
       )}
 
+
+      {showListFilter && (unnamedListCount > 0 || noListCount > 0) && (
+        <div className="space-y-0.5 text-xs text-muted-foreground">
+          {unnamedListCount > 0 && <p>{unnamedListCount.toLocaleString()} calls come from lists without a name</p>}
+          {noListCount > 0 && <p>{noListCount.toLocaleString()} calls arrived without a list (the dialer did not send it)</p>}
+        </div>
+      )}
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
         {kpiConfig.map((k, i) => {

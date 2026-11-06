@@ -42,6 +42,14 @@ export interface ScriptSurveyRecord {
   isForm: boolean;
   hasRecording: boolean;
   campaign_id: string | null;
+  list_id: string | null;
+}
+
+export interface ScriptSurveyList {
+  campaign_id: string | null;
+  list_id: string;
+  name: string;
+  sort_order: number | null;
 }
 
 export interface ScriptSurveyCampaign {
@@ -83,7 +91,7 @@ export function useScriptSurveyResponses(scriptId: string | null | undefined) {
         }));
 
       // CR-014: records, campaign map and campaign list are read in parallel.
-      const [rowsRes, mapRes, campRes] = await Promise.allSettled([
+      const [rowsRes, mapRes, campRes, listMapRes, listsRes] = await Promise.allSettled([
         fetchAllPages((from, to) =>
           (supabase as any)
             .from('booking_transcriptions')
@@ -104,6 +112,13 @@ export function useScriptSurveyResponses(scriptId: string | null | undefined) {
             .range(from, to),
         ),
         supabase.rpc('get_script_campaigns', { p_script_id: s.id }),
+        // CR-017: list map + named lists (best-effort, role-scoped).
+        fetchAllPages((from, to) =>
+          supabase
+            .rpc('get_script_survey_list_map', { p_script_id: s.id })
+            .range(from, to),
+        ),
+        supabase.rpc('get_script_lists', { p_script_id: s.id }),
       ]);
 
       if (rowsRes.status === 'rejected') throw rowsRes.reason;
@@ -130,6 +145,28 @@ export function useScriptSurveyResponses(scriptId: string | null | undefined) {
         else if (Array.isArray(cd)) campaigns = cd as ScriptSurveyCampaign[];
       } else {
         console.warn('[script-survey] campaign map unavailable', (campRes.reason as any)?.code ?? 'unknown');
+      }
+
+      const listMap = new Map<string, string | null>();
+      let listIdsReadable = false;
+      if (listMapRes.status === 'fulfilled') {
+        for (const r of listMapRes.value as { booking_id: string; list_id: string | null }[]) {
+          const lid = r?.list_id ? String(r.list_id) : null;
+          if (r?.booking_id) listMap.set(r.booking_id, lid);
+          if (lid) listIdsReadable = true;
+        }
+      } else {
+        console.warn('[script-survey] list map unavailable', (listMapRes.reason as any)?.code ?? 'unknown');
+      }
+      if (!listIdsReadable) listMap.clear();
+
+      let lists: ScriptSurveyList[] = [];
+      if (listsRes.status === 'fulfilled') {
+        const { data: ld, error: le } = listsRes.value as { data: unknown; error: unknown };
+        if (le) console.warn('[script-survey] list map unavailable', (le as any)?.code ?? 'unknown');
+        else if (Array.isArray(ld)) lists = (ld as ScriptSurveyList[]).filter((l) => l?.list_id);
+      } else {
+        console.warn('[script-survey] list map unavailable', (listsRes.reason as any)?.code ?? 'unknown');
       }
 
       const records: ScriptSurveyRecord[] = rows.map((row: any) => {
@@ -161,11 +198,12 @@ export function useScriptSurveyResponses(scriptId: string | null | undefined) {
           isForm,
           hasRecording: !!b.kixie_link,
           campaign_id: campaignMap.get(row.booking_id ?? b.id) ?? null,
+          list_id: listMap.get(row.booking_id ?? b.id) ?? null,
         };
       });
 
       const script: ScriptSurveyScript = { id: s.id, name: (s as any).name, slug: (s as any).slug ?? null, campaignType };
-      return { script, questions, records, campaigns, campaignIdsReadable };
+      return { script, questions, records, campaigns, campaignIdsReadable, lists, listIdsReadable };
     },
   });
 
@@ -186,6 +224,8 @@ export function useScriptSurveyResponses(scriptId: string | null | undefined) {
     eligibleRecords,
     campaigns: data?.campaigns ?? [],
     campaignIdsReadable: data?.campaignIdsReadable ?? false,
+    lists: data?.lists ?? [],
+    listIdsReadable: data?.listIdsReadable ?? false,
     isLoading: query.isLoading,
     refetch: query.refetch,
   };
