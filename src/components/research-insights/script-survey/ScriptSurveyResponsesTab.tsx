@@ -453,6 +453,7 @@ export function ScriptSurveyResponsesTab({
   questions,
   eligibleRecords,
 }: ScriptSurveyResponsesTabProps) {
+  const recordIdentity = useRecordIdentity();
   const data = useMemo(
     () => toPEScriptData(questions, eligibleRecords),
     [questions, eligibleRecords],
