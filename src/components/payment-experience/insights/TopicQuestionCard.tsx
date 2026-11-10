@@ -41,6 +41,19 @@ interface TopicQuestionCardProps {
   className?: string;
   /** Forces ranked-bars when donut would be unreadable. */
   donutMinReadablePct?: number;
+  /** CR-018: optional — when set, answer rows become clickable. Not passed by PE/Move-Out/Audience. */
+  onItemClick?: (item: PEDistributionItem) => void;
+}
+
+function clickProps(d: PEDistributionItem, onItemClick?: (item: PEDistributionItem) => void) {
+  if (!onItemClick || d.key === '__other__') return {};
+  return {
+    role: 'button' as const,
+    tabIndex: 0,
+    onClick: () => onItemClick(d),
+    onKeyDown: (e: React.KeyboardEvent) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onItemClick(d); } },
+    className: 'cursor-pointer rounded hover:bg-muted/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+  };
 }
 
 // Muted PadSplit-compatible palette (HSL). Restrained, no rainbows.
@@ -68,10 +81,12 @@ function HorizontalBars({
   items,
   highlightTop = false,
   animKey,
+  onItemClick,
 }: {
   items: PEDistributionItem[];
   highlightTop?: boolean;
   animKey: string;
+  onItemClick?: (item: PEDistributionItem) => void;
 }) {
   const ready = useMountAnimated([animKey]);
   const max = Math.max(1, ...items.map((d) => d.percentage));
@@ -80,10 +95,12 @@ function HorizontalBars({
       {items.map((d, i) => {
         const isTop = highlightTop && i === 0;
         const targetWidth = (d.percentage / max) * 100;
+        const cp = clickProps(d, onItemClick);
         return (
           <li
             key={d.key}
-            className="space-y-1 animate-fade-in"
+            {...cp}
+            className={cn('space-y-1 animate-fade-in', cp.className)}
             style={{ animationDelay: `${i * 40}ms`, animationFillMode: 'both' }}
             aria-label={ariaFor(d)}
             title={`${d.count} responses`}
@@ -168,7 +185,7 @@ function SplitPill({ items, animKey }: { items: PEDistributionItem[]; animKey: s
   );
 }
 
-function Donut({ items, animKey }: { items: PEDistributionItem[]; animKey: string }) {
+function Donut({ items, animKey, onItemClick }: { items: PEDistributionItem[]; animKey: string; onItemClick?: (item: PEDistributionItem) => void }) {
   const ready = useMountAnimated([animKey]);
   const total = items.reduce((a, d) => a + d.count, 0);
   if (total === 0) return <p className="text-sm text-muted-foreground">No responses.</p>;
@@ -221,7 +238,8 @@ function Donut({ items, animKey }: { items: PEDistributionItem[]; animKey: strin
             fill={s.color}
             stroke="hsl(var(--background))"
             strokeWidth={1.5}
-            className="transition-opacity duration-500"
+            onClick={onItemClick && s.d.key !== '__other__' ? () => onItemClick(s.d) : undefined}
+            className={cn('transition-opacity duration-500', onItemClick && s.d.key !== '__other__' && 'cursor-pointer')}
             style={{
               opacity: ready ? 1 : 0,
               transitionDelay: `${200 + i * 60}ms`,
@@ -232,10 +250,11 @@ function Donut({ items, animKey }: { items: PEDistributionItem[]; animKey: strin
         ))}
       </svg>
       <ul className="flex-1 min-w-0 space-y-1.5 w-full">
-        {slices.map((s, i) => (
+        {slices.map((s, i) => { const cp = clickProps(s.d, onItemClick); return (
           <li
             key={i}
-            className="flex items-center gap-2 text-sm animate-fade-in"
+            {...cp}
+            className={cn('flex items-center gap-2 text-sm animate-fade-in', cp.className)}
             style={{ animationDelay: `${200 + i * 60}ms`, animationFillMode: 'both' }}
             aria-label={ariaFor(s.d)}
           >
@@ -250,7 +269,7 @@ function Donut({ items, animKey }: { items: PEDistributionItem[]; animKey: strin
               {formatPct(s.d.percentage)}
             </span>
           </li>
-        ))}
+        ); })}
       </ul>
     </div>
   );
@@ -266,6 +285,7 @@ export function TopicQuestionCard({
   maxRows,
   className,
   donutMinReadablePct = 2,
+  onItemClick,
 }: TopicQuestionCardProps) {
   const normalized = normalizeAndMergeDistribution(
     summary.question.id,
@@ -327,11 +347,11 @@ export function TopicQuestionCard({
         ) : effectiveChart === 'split-pill' ? (
           <SplitPill items={items} animKey={animKey} />
         ) : effectiveChart === 'donut' ? (
-          <Donut items={items} animKey={animKey} />
+          <Donut items={items} animKey={animKey} onItemClick={onItemClick} />
         ) : effectiveChart === 'ranked-bars' ? (
-          <HorizontalBars items={items} highlightTop animKey={animKey} />
+          <HorizontalBars items={items} highlightTop animKey={animKey} onItemClick={onItemClick} />
         ) : (
-          <HorizontalBars items={items} animKey={animKey} />
+          <HorizontalBars items={items} animKey={animKey} onItemClick={onItemClick} />
         )}
       </CardContent>
     </Card>
