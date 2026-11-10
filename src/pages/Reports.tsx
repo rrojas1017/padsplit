@@ -1893,16 +1893,17 @@ export default function Reports() {
       </div>
       </TooltipProvider>
 
+      <ResearchCallPanel
+        booking={panelBooking}
+        agentName={panelBooking ? getAgentName(agents, panelBooking.agentId) : ''}
+        surveyLabel={panelBooking ? researchCampaignLabel(panelBooking.researchCampaignType, scriptLabelByType, 'long') : ''}
+        maskContact={shouldMaskContactInfo(user?.role)}
+        onClose={closePanel}
+        onOpenTranscript={(b) => { setSelectedBooking(b); setShowTranscriptModal(true); }}
+      />
+
       {/* Transcription Modal */}
       {selectedBooking && (
-        <ResearchCallPanel
-          booking={panelBooking}
-          agentName={panelBooking ? getAgentName(agents, panelBooking.agentId) : ''}
-          surveyLabel={panelBooking ? researchCampaignLabel(panelBooking.researchCampaignType, scriptLabelByType, 'long') : ''}
-          maskContact={shouldMaskContactInfo(user?.role)}
-          onClose={closePanel}
-          onOpenTranscript={(b) => { setSelectedBooking(b); setShowTranscriptModal(true); }}
-        />
         <TranscriptionModal
           booking={selectedBooking}
           isOpen={showTranscriptModal}
