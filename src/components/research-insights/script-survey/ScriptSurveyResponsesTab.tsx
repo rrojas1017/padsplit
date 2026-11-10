@@ -13,6 +13,44 @@ import { toPEScriptData } from '@/utils/scriptSurveyPEAdapter';
 import { buildScriptSurveyCsv } from '@/utils/scriptSurveyAnalytics';
 import { openScriptSurveyReport } from '@/utils/scriptSurveyReportExport';
 import { OpenEndedClusters } from '@/components/payment-experience/insights/OpenEndedClusters';
+import { useNavigate } from 'react-router-dom';
+import { openEndedAnswers } from '@/utils/scriptSurveyRespondents';
+import { useRecordIdentity, fmtCallDate } from './RespondentsSheet';
+
+// CR-018: attributed written answers (identity · call date → Reports call panel).
+function WrittenAnswers({ q, records }: { q: ScriptSurveyQuestion; records: ScriptSurveyRecord[] }) {
+  const [open, setOpen] = useState(false);
+  const [shown, setShown] = useState(50);
+  const navigate = useNavigate();
+  const identity = useRecordIdentity();
+  const items = useMemo(() => (open ? openEndedAnswers(q, records) : []), [open, q, records]);
+  return (
+    <div className="border-t pt-3">
+      <button type="button" className="flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground" onClick={() => setOpen((o) => !o)}>
+        {open ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />} Written answers
+      </button>
+      {open && (
+        <ul className="mt-2 space-y-3">
+          {items.slice(0, shown).map(({ record, text }) => (
+            <li key={record.booking_id} className="text-sm">
+              <p className="text-foreground whitespace-pre-wrap">{text}</p>
+              <button
+                type="button"
+                className="mt-0.5 text-xs text-muted-foreground hover:text-foreground hover:underline"
+                onClick={() => navigate(`/reports?booking=${encodeURIComponent(record.booking_id)}`)}
+              >
+                {identity(record).primary} · {fmtCallDate(record.booking_date)}
+              </button>
+            </li>
+          ))}
+          {shown < items.length && (
+            <li><Button variant="ghost" size="sm" onClick={() => setShown((n) => n + 50)}>Show more</Button></li>
+          )}
+        </ul>
+      )}
+    </div>
+  );
+}
 
 interface ScriptSurveyResponsesTabProps {
   scriptId: string;
@@ -21,8 +59,15 @@ interface ScriptSurveyResponsesTabProps {
   eligibleRecords: ScriptSurveyRecord[];
 }
 
-function downloadCsv(scriptName: string, questions: ScriptSurveyQuestion[], eligible: ScriptSurveyRecord[]) {
-  const csv = buildScriptSurveyCsv(questions, eligible);
+function downloadCsv(
+  scriptName: string,
+  questions: ScriptSurveyQuestion[],
+  eligible: ScriptSurveyRecord[],
+  identity: (r: ScriptSurveyRecord) => { primary: string; phone: string | null },
+) {
+  const csv = buildScriptSurveyCsv(questions, eligible, {
+    identity: (r) => { const id = identity(r); return { customer: id.primary, phone: id.phone ?? '' }; },
+  });
   const today = new Date().toISOString().slice(0, 10);
   const slug = scriptName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'script';
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
@@ -281,11 +326,15 @@ function QuestionCard({
   total,
   highlighted,
   scriptId,
+  scriptQuestion,
+  records,
 }: {
   summary: PEQuestionSummary;
   total: number;
   highlighted: boolean;
   scriptId: string;
+  scriptQuestion?: ScriptSurveyQuestion;
+  records: ScriptSurveyRecord[];
 }) {
   const q = summary.question;
   return (
@@ -356,6 +405,9 @@ function QuestionCard({
                 sampleResponses={summary.samples ?? []}
                 totalResponses={summary.count}
               />
+            )}
+            {q.type === 'open' && scriptQuestion && summary.count > 0 && (
+              <WrittenAnswers q={scriptQuestion} records={records} />
             )}
           </>
         )}
@@ -470,7 +522,7 @@ export function ScriptSurveyResponsesTab({
             variant="outline"
             size="sm"
             className="gap-1.5 h-9 w-full sm:w-auto"
-            onClick={() => openScriptSurveyReport({ scriptName, data, onPopupBlocked: () => downloadCsv(scriptName, questions, eligibleRecords) })}
+            onClick={() => openScriptSurveyReport({ scriptName, data, onPopupBlocked: () => downloadCsv(scriptName, questions, eligibleRecords, recordIdentity) })}
           >
             <Download className="w-3.5 h-3.5" />
             Download Report
@@ -479,7 +531,7 @@ export function ScriptSurveyResponsesTab({
             variant="ghost"
             size="sm"
             className="h-9 px-2 text-xs text-muted-foreground hover:text-foreground"
-            onClick={() => downloadCsv(scriptName, questions, eligibleRecords)}
+            onClick={() => downloadCsv(scriptName, questions, eligibleRecords, recordIdentity)}
             title="Download raw CSV"
           >
             CSV
@@ -516,6 +568,8 @@ export function ScriptSurveyResponsesTab({
             total={totalRespondents}
             highlighted={highlightedOrder === qs.question.order}
             scriptId={scriptId}
+            scriptQuestion={questions.find((sq) => sq.id === qs.question.id)}
+            records={eligibleRecords}
           />
         ))}
       </div>
