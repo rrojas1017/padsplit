@@ -6,12 +6,12 @@ import { Button } from '@/components/ui/button';
 import { Booking } from '@/types';
 import { callerIdentity } from '@/utils/callerIdentity';
 import { maskPhone } from '@/utils/contactPrivacy';
-import { researchCampaignLabel } from '@/utils/researchCampaignType';
 import { useResearchCallAnswers } from '@/hooks/useResearchCallAnswers';
 
 interface Props {
   booking: Booking | null;
   agentName: string;
+  surveyLabel: string;
   maskContact: boolean;
   onClose: () => void;
   onOpenTranscript: (b: Booking) => void;
@@ -22,7 +22,7 @@ const mss = (s?: number) => {
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 };
 
-export function ResearchCallPanel({ booking, agentName, maskContact, onClose, onOpenTranscript }: Props) {
+export function ResearchCallPanel({ booking, agentName, surveyLabel, maskContact, onClose, onOpenTranscript }: Props) {
   const { isLoading, groups, hasAnswers } = useResearchCallAnswers(booking?.id ?? null, booking?.researchCallId);
   const id = booking
     ? callerIdentity({ name: booking.memberName, phone: maskContact ? null : booking.contactPhone })
@@ -45,7 +45,7 @@ export function ResearchCallPanel({ booking, agentName, maskContact, onClose, on
             <dl className="mt-4 grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
               <dt className="text-muted-foreground">Call date</dt><dd>{format(booking.bookingDate, 'MMM d, yyyy')}</dd>
               <dt className="text-muted-foreground">Agent</dt><dd>{agentName}</dd>
-              <dt className="text-muted-foreground">Survey</dt><dd>{booking.researchCampaignType ? researchCampaignLabel(booking.researchCampaignType) : '—'}</dd>
+              <dt className="text-muted-foreground">Survey</dt><dd>{surveyLabel || '—'}</dd>
               <dt className="text-muted-foreground">Duration</dt><dd>{mss(booking.callDurationSeconds)}</dd>
             </dl>
             {(booking.kixieLink || booking.transcriptionStatus === 'completed') && (

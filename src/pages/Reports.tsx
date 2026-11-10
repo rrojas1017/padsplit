@@ -12,7 +12,9 @@ import { calculateFollowUpPriority } from '@/utils/followUpPriority';
 import { Input } from '@/components/ui/input';
 import { format, startOfDay, endOfDay } from 'date-fns';
 import { cn } from '@/lib/utils';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { ResearchCallPanel } from '@/components/reports/ResearchCallPanel';
+import { callerIdentity, isRealCallerName } from '@/utils/callerIdentity';
 import { useState, useMemo, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { TranscriptionModal } from '@/components/booking/TranscriptionModal';
@@ -113,6 +115,27 @@ export default function Reports() {
   // Transcription modal state
   const [selectedBooking, setSelectedBooking] = useState<Booking | null>(null);
   const [showTranscriptModal, setShowTranscriptModal] = useState(false);
+
+  // CR-018: call panel (deep link ?booking=<id>, id only)
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [panelBooking, setPanelBooking] = useState<Booking | null>(null);
+  const openPanel = (b: Booking) => {
+    setPanelBooking(b);
+    const next = new URLSearchParams(searchParams);
+    next.set('booking', b.id);
+    setSearchParams(next, { replace: true });
+  };
+  const closePanel = () => {
+    setPanelBooking(null);
+    const next = new URLSearchParams(searchParams);
+    next.delete('booking');
+    setSearchParams(next, { replace: true });
+  };
+  const handleResearchRowClick = (e: React.MouseEvent, b: Booking) => {
+    const t = e.target as HTMLElement;
+    if (t.closest('a, button, [role="button"], input, [data-no-row-click]')) return;
+    openPanel(b);
+  };
 
   // Sites from Supabase
   const [sites, setSites] = useState<Site[]>([]);
@@ -1065,7 +1088,7 @@ export default function Reports() {
               ) : isResearch ? (
                 /* ===== RESEARCH VIEW ROWS ===== */
                 records.map((booking) => (
-                  <tr key={booking.id} className="hover:bg-muted/30 transition-colors">
+                  <tr key={booking.id} className="hover:bg-muted/30 transition-colors cursor-pointer" onClick={(e) => handleResearchRowClick(e, booking)}>
                     {/* Call Date */}
                     <td className="py-3 px-4 text-sm text-foreground">
                       <div className="flex items-center gap-1.5">
@@ -1176,8 +1199,12 @@ export default function Reports() {
                     </td>
                     {/* Name (enriched only) */}
                     <td className="py-3 px-4 text-sm font-medium text-foreground">
-                      {booking.memberName?.startsWith('API Submission') ? (
-                        <span className="text-muted-foreground">—</span>
+                      {!isRealCallerName(booking.memberName) ? (
+                        <span className={booking.contactPhone ? 'text-foreground' : 'text-muted-foreground'}>
+                          {shouldMaskContactInfo(user?.role) && booking.contactPhone
+                            ? maskPhone(booking.contactPhone)
+                            : callerIdentity({ name: booking.memberName, phone: booking.contactPhone }).primary}
+                        </span>
                       ) : (
                         <ContactProfileHoverCard
                           memberName={booking.memberName}
@@ -1196,7 +1223,7 @@ export default function Reports() {
                           emailVerificationStatus={booking.emailVerificationStatus}
                           emailVerified={booking.emailVerified}
                         >
-                          <span className="hover:text-primary transition-colors cursor-default">{booking.memberName}</span>
+                          <span className="hover:text-primary transition-colors cursor-default">{callerIdentity({ name: booking.memberName, phone: booking.contactPhone }).primary}</span>
                         </ContactProfileHoverCard>
                       )}
                     </td>
