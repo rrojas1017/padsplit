@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import type { ScriptSurveyRecord } from '@/hooks/useScriptSurveyResponses';
 import { useAgents } from '@/contexts/AgentsContext';
 import { useAuth } from '@/contexts/AuthContext';
-import { callerIdentity } from '@/utils/callerIdentity';
+import { callerIdentity, formatCallerPhone, isRealCallerName } from '@/utils/callerIdentity';
 import { maskPhone, shouldMaskContactInfo } from '@/utils/contactPrivacy';
 
 export interface RespondentsSelection { title: string; question: string; records: ScriptSurveyRecord[] }
@@ -25,12 +25,14 @@ export function useRecordIdentity() {
   const { user } = useAuth();
   const mask = shouldMaskContactInfo(user?.role);
   return (r: Pick<ScriptSurveyRecord, 'member_name' | 'contact_phone'>) => {
-    const id = callerIdentity({ name: r.member_name, phone: mask ? null : r.contact_phone });
-    if (!mask || !r.contact_phone) return { ...id, phone: mask && r.contact_phone ? maskPhone(r.contact_phone) : id.secondary ?? (id.primary !== 'Unknown caller' && !r.member_name ? id.primary : null) };
+    const id = callerIdentity({ name: r.member_name, phone: r.contact_phone });
+    const formatted = formatCallerPhone(r.contact_phone);
+    if (!mask || !r.contact_phone) return { ...id, phone: formatted };
     const masked = maskPhone(r.contact_phone);
-    return id.primary === 'Unknown caller'
-      ? { primary: masked, secondary: null, phone: masked }
-      : { primary: id.primary, secondary: masked, phone: masked };
+    // Real name stays; any phone shown is masked.
+    return isRealCallerName(r.member_name)
+      ? { primary: id.primary, secondary: masked, phone: masked }
+      : { primary: masked, secondary: null, phone: masked };
   };
 }
 
