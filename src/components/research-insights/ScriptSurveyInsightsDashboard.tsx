@@ -34,12 +34,29 @@ import { ScriptSurveyTabs, type ScriptSurveyTab } from './script-survey/ScriptSu
 import { ScriptSurveyResponsesTab } from './script-survey/ScriptSurveyResponsesTab';
 import { ScriptSubmissionsTab, ScriptAISummaryTab } from './ScriptInsightsPanel';
 import { ScriptGridCard } from './ScriptGridCard';
+import { RespondentsSheet, type RespondentsSelection } from './script-survey/RespondentsSheet';
+import { respondentsForChoice, respondentsForGridCell, respondentsForScale } from '@/utils/scriptSurveyRespondents';
 import { groupSurveyBlocks, type SurveyBlock } from '@/utils/scriptSurveyGrid';
 
 const shortLabel = (s: string) => (s.length > 28 ? s.slice(0, 27) + '…' : s);
 
-function QuestionTopicCard({ scriptId, q, eligible }: { scriptId: string; q: ScriptSurveyQuestion; eligible: ScriptSurveyRecord[] }) {
+function QuestionTopicCard({ scriptId, q, eligible, onSelect }: { scriptId: string; q: ScriptSurveyQuestion; eligible: ScriptSurveyRecord[]; onSelect?: (s: RespondentsSelection) => void }) {
   const summary = useMemo(() => summarizeScriptQuestion(q, eligible), [q, eligible]);
+  // CR-018: same normalization as the counts; merged chart rows union their source labels.
+  const onItemClick = onSelect && summary.type !== 'open_ended'
+    ? (item: { label: string }) => {
+        if (summary.type === 'scale') {
+          onSelect({ title: item.label, question: q.question, records: respondentsForScale(q, eligible, Number(item.label)) });
+          return;
+        }
+        const want = item.label.trim().toLowerCase();
+        const labels = summary.distribution.map((d) => d.label).filter((l) => l.trim().toLowerCase() === want);
+        const seen = new Map<string, ScriptSurveyRecord>();
+        for (const l of labels.length ? labels : [item.label]) for (const r of respondentsForChoice(q, eligible, l)) seen.set(r.booking_id, r);
+        const records = Array.from(seen.values()).sort((a, b) => (a.booking_date === b.booking_date ? (a.booking_id < b.booking_id ? 1 : -1) : a.booking_date < b.booking_date ? 1 : -1));
+        onSelect({ title: item.label, question: q.question, records });
+      }
+    : undefined;
   if (summary.type === 'open_ended') {
     return (
       <Card>
@@ -65,6 +82,7 @@ function QuestionTopicCard({ scriptId, q, eligible }: { scriptId: string; q: Scr
         chart="bars"
         fixedOrder={pe.distribution.map((d) => d.key)}
         helperText={summary.avg != null ? `Average ${summary.avg.toFixed(1)} · ${summary.count} responses` : undefined}
+        onItemClick={onItemClick}
       />
     );
   }
@@ -75,10 +93,11 @@ function QuestionTopicCard({ scriptId, q, eligible }: { scriptId: string; q: Scr
         title={q.question}
         chart="bars"
         helperText="Multiple answers allowed — % of respondents"
+        onItemClick={onItemClick}
       />
     );
   }
-  return <TopicQuestionCard summary={pe} title={q.question} chart="donut" />;
+  return <TopicQuestionCard summary={pe} title={q.question} chart="donut" onItemClick={onItemClick} />;
 }
 
 // Overview keeps KPI order; a KPI question that sits in a grid shows its whole grid once.
@@ -101,6 +120,7 @@ export function ScriptSurveyInsightsDashboard({ scriptId }: { scriptId: string }
   const [dateRange, setDateRange] = useSessionState<DateRangeOption>(`scriptSurvey:${scriptId}:dateRange`, 'allTime');
   const [isGenerating, setIsGenerating] = useState(false);
   const [searchParams, setSearchParams] = useSearchParams();
+  const [respSel, setRespSel] = useState<RespondentsSelection | null>(null);
 
   const { script, questions, sections, records: allRecords, validRecords: allValid, eligibleRecords: allEligible, campaigns, campaignIdsReadable, lists, isLoading } =
     useScriptSurveyResponses(scriptId);
@@ -250,9 +270,14 @@ export function ScriptSurveyInsightsDashboard({ scriptId }: { scriptId: string }
   const forms = eligible.filter((r) => r.isForm).length;
   const nonZeroSteps = funnel.filter((s) => s.count > 0).length;
 
+  const onGridCell = (b: Extract<SurveyBlock, { kind: 'grid' }>) => (rowId: string, column: string) => {
+    const rowQ = b.rows.find((r) => r.id === rowId);
+    if (!rowQ) return;
+    setRespSel({ title: `${rowQ.matrix?.row || rowQ.question} — ${column}`, question: b.title, records: respondentsForGridCell(rowQ, eligible, column) });
+  };
   const renderBlock = (b: SurveyBlock) => b.kind === 'grid'
-    ? <ScriptGridCard key={`grid-${b.group}-${b.rows[0].id}`} block={b} eligible={eligible} />
-    : <QuestionTopicCard key={b.q.id} scriptId={scriptId} q={b.q} eligible={eligible} />;
+    ? <ScriptGridCard key={`grid-${b.group}-${b.rows[0].id}`} block={b} eligible={eligible} onCellClick={onGridCell(b)} />
+    : <QuestionTopicCard key={b.q.id} scriptId={scriptId} q={b.q} eligible={eligible} onSelect={setRespSel} />;
 
   const tabs: ScriptSurveyTab[] = [
     {
@@ -409,6 +434,12 @@ export function ScriptSurveyInsightsDashboard({ scriptId }: { scriptId: string }
       )}
 
       <ScriptSurveyTabs tabs={tabs} />
+      <RespondentsSheet
+        selection={respSel}
+        onClose={() => setRespSel(null)}
+        campaignName={showCampaignFilter ? (id) => campaigns.find((c) => c.id === id)?.name ?? null : undefined}
+        listName={showListFilter ? (id) => (id ? lists.find((l) => l.list_id === id)?.name ?? null : null) : undefined}
+      />
     </div>
   );
 }

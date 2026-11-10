@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { resolveResearchCampaignType } from '@/utils/researchCampaignType';
+import { answerLabels, answerScale, answerText as dashAnswerText, hasAnswerValue } from '@/utils/scriptSurveyAnalytics';
 import { getMatrixBlock, type MatrixLikeQuestion } from '@/utils/scriptMatrix';
 
 export interface AnswerItem { key: string; label: string; answer: string | null }
@@ -16,14 +17,13 @@ export interface ResearchCallAnswersState {
 
 type ScriptQ = MatrixLikeQuestion & { is_internal?: boolean };
 
-function answerText(a: any): string | null {
+function answerString(a: any, options?: string[]): string | null {
   if (!a || typeof a !== 'object') return null;
-  if (Array.isArray(a.selected_option_labels) && a.selected_option_labels.length > 0) {
-    return a.selected_option_labels.filter((s: unknown) => typeof s === 'string' && s).join(', ') || null;
-  }
-  if (typeof a.scale_value === 'number' && Number.isFinite(a.scale_value)) return String(a.scale_value);
-  if (typeof a.raw_text_answer === 'string' && a.raw_text_answer.trim()) return a.raw_text_answer.trim();
-  return null;
+  const labels = answerLabels(a, options);
+  if (labels.length) return labels.join(', ');
+  const sc = answerScale(a);
+  if (sc !== null) return String(sc);
+  return dashAnswerText(a);
 }
 
 function toAnswerList(raw: unknown): any[] {
@@ -59,7 +59,7 @@ export function buildAnswerGroups(questions: ScriptQ[] | null, raw: unknown): An
   if (!questions) {
     return list.length === 0 ? [] : [{
       key: 'stored', title: null,
-      items: list.map((a, i) => ({ key: String(a.question_id ?? i), label: String(a.question_text ?? `Question ${i + 1}`), answer: answerText(a) })),
+      items: list.map((a, i) => ({ key: String(a.question_id ?? i), label: String(a.question_text ?? `Question ${i + 1}`), answer: answerString(a) })),
     }];
   }
   const byId = new Map<string, any>();
@@ -75,7 +75,7 @@ export function buildAnswerGroups(questions: ScriptQ[] | null, raw: unknown): An
         const q = questions[j];
         if (q.is_internal) continue;
         const id = idOf(q, j);
-        items.push({ key: id, label: q.matrix?.row || q.question || q.text || '', answer: answerText(byId.get(id)) });
+        items.push({ key: id, label: q.matrix?.row || q.question || q.text || '', answer: answerString(byId.get(id), q.options) });
       }
       if (items.length) groups.push({ key: `g_${i}`, title: questions[block.start].matrix?.title || null, items });
       i = block.end + 1;
@@ -84,7 +84,7 @@ export function buildAnswerGroups(questions: ScriptQ[] | null, raw: unknown): An
     const q = questions[i];
     if (!q.is_internal) {
       const id = idOf(q, i);
-      groups.push({ key: id, title: null, items: [{ key: id, label: q.question || q.text || '', answer: answerText(byId.get(id)) }] });
+      groups.push({ key: id, title: null, items: [{ key: id, label: q.question || q.text || '', answer: answerString(byId.get(id), q.options) }] });
     }
     i++;
   }
@@ -110,7 +110,7 @@ export function useResearchCallAnswers(
           .maybeSingle();
         if (error) console.warn('[call-panel] answers unavailable', error.code);
         const raw = (bt?.research_extraction as any)?.raw_script_answers;
-        const hasAnswers = toAnswerList(raw).some((a) => answerText(a) !== null);
+        const hasAnswers = toAnswerList(raw).some((a) => hasAnswerValue(a));
         const questions = hasAnswers ? await resolveScriptQuestions(researchCallId, bt?.research_campaign_type ?? null) : null;
         if (cancelled) return;
         setState({ isLoading: false, groups: hasAnswers ? buildAnswerGroups(questions, raw) : [], hasAnswers });

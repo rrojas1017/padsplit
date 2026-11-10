@@ -18,6 +18,7 @@ export function hasAnswerValue(e: RawAnswerEntry | null | undefined): boolean {
   if (typeof e.raw_text_answer === 'string' && e.raw_text_answer.trim() !== '') return true;
   // Legacy AI shape (pre CR-013): selected_options / answer_text.
   if (Array.isArray(e.selected_options) && e.selected_options.some((x) => String(x ?? '').trim() !== '')) return true;
+  if (typeof e.selected_options === 'string' && e.selected_options.trim() !== '') return true;
   if (typeof e.answer_text === 'string' && e.answer_text.trim() !== '') return true;
   return false;
 }
@@ -32,8 +33,9 @@ export function answerLabels(e: RawAnswerEntry | undefined, options?: string[]):
     if (labels.length) return labels;
   }
   // Legacy AI shape fallback.
-  if (!Array.isArray(e.selected_options)) return [];
-  const raw = e.selected_options.map((x) => String(x ?? '').trim()).filter(Boolean);
+  const so = typeof e.selected_options === 'string' ? [e.selected_options] : e.selected_options;
+  if (!Array.isArray(so)) return [];
+  const raw = so.map((x) => String(x ?? '').trim()).filter(Boolean);
   if (!options || !options.length) return raw;
   const out: string[] = [];
   for (const v of raw) {
@@ -174,12 +176,16 @@ function cellValue(e: RawAnswerEntry | undefined, options?: string[]): string {
   return answerText(e) ?? '';
 }
 
-export function buildScriptSurveyCsv(questions: ScriptSurveyQuestion[], eligible: ScriptSurveyRecord[]): string {
-  const header = ['booking_id', 'booking_date', 'has_form', 'has_recording', ...questions.map((q) => `Q${q.order} ${q.question}`)];
+export interface CsvIdentityOpts { identity?: (r: ScriptSurveyRecord) => { customer: string; phone: string } }
+
+export function buildScriptSurveyCsv(questions: ScriptSurveyQuestion[], eligible: ScriptSurveyRecord[], opts: CsvIdentityOpts = {}): string {
+  const idCols = opts.identity ? ['Customer', 'Phone'] : [];
+  const header = ['booking_id', 'booking_date', ...idCols, 'has_form', 'has_recording', ...questions.map((q) => `Q${q.order} ${q.question}`)];
   const rows = [header.map(csvEscape).join(',')];
   for (const r of eligible) {
+    const id = opts.identity ? opts.identity(r) : null;
     rows.push(
-      [r.booking_id, r.booking_date, r.isForm ? 'yes' : 'no', r.hasRecording ? 'yes' : 'no', ...questions.map((q) => cellValue(r.answers[q.id], q.options))]
+      [r.booking_id, r.booking_date, ...(id ? [id.customer, id.phone] : []), r.isForm ? 'yes' : 'no', r.hasRecording ? 'yes' : 'no', ...questions.map((q) => cellValue(r.answers[q.id], q.options))]
         .map(csvEscape).join(','),
     );
   }

@@ -43,6 +43,9 @@ export interface ScriptSurveyRecord {
   hasRecording: boolean;
   campaign_id: string | null;
   list_id: string | null;
+  member_name: string | null;
+  contact_phone: string | null;
+  agent_id: string | null;
 }
 
 export interface ScriptSurveyList {
@@ -98,7 +101,7 @@ export function useScriptSurveyResponses(scriptId: string | null | undefined) {
             .select(
               'id, booking_id, research_processing_status, survey_progress, ' +
               'raw_script_answers:research_extraction->raw_script_answers, ' +
-              'bookings!inner(id, booking_date, call_duration_seconds, has_valid_conversation, transcription_status, kixie_link, research_call_id, record_type)',
+              'bookings!inner(id, booking_date, call_duration_seconds, has_valid_conversation, transcription_status, kixie_link, research_call_id, record_type, member_name, contact_phone, agent_id)',
             )
             .eq('research_campaign_type', campaignType)
             .eq('bookings.record_type', 'research')
@@ -199,6 +202,9 @@ export function useScriptSurveyResponses(scriptId: string | null | undefined) {
           hasRecording: !!b.kixie_link,
           campaign_id: campaignMap.get(row.booking_id ?? b.id) ?? null,
           list_id: listMap.get(row.booking_id ?? b.id) ?? null,
+          member_name: b.member_name ?? null,
+          contact_phone: b.contact_phone ?? null,
+          agent_id: b.agent_id ?? null,
         };
       });
 

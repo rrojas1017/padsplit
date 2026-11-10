@@ -12,7 +12,12 @@ function segStyle(label: string, i: number): React.CSSProperties {
   return { backgroundColor: `hsl(var(--primary) / ${RAMP[Math.min(i, RAMP.length - 1)]})` };
 }
 
-export function ScriptGridCard({ block, eligible }: { block: Extract<SurveyBlock, { kind: 'grid' }>; eligible: ScriptSurveyRecord[] }) {
+export function ScriptGridCard({ block, eligible, onCellClick }: {
+  block: Extract<SurveyBlock, { kind: 'grid' }>;
+  eligible: ScriptSurveyRecord[];
+  /** CR-018: optional — makes row × column segments clickable. */
+  onCellClick?: (rowId: string, column: string) => void;
+}) {
   const model = useMemo(() => buildGridModel(block, eligible), [block, eligible]);
   return (
     <Card className="lg:col-span-2">
@@ -34,7 +39,8 @@ export function ScriptGridCard({ block, eligible }: { block: Extract<SurveyBlock
                 {r.n > 0 && r.segments.map((s, i) => s.pct > 0 && (
                   <div
                     key={s.label}
-                    className="flex items-center justify-center text-[11px] font-medium text-primary-foreground"
+                    className={`flex items-center justify-center text-[11px] font-medium text-primary-foreground${onCellClick ? ' cursor-pointer hover:opacity-80' : ''}`}
+                    {...(onCellClick ? { role: 'button', tabIndex: 0, onClick: () => onCellClick(r.id, s.label), onKeyDown: (e: { key: string }) => { if (e.key === 'Enter') onCellClick(r.id, s.label); } } : {})}
                     style={{ ...segStyle(s.label, i), width: `${s.pct}%` }}
                     title={`${s.label}: ${s.count} (${s.pct.toFixed(1)}%)`}
                   >
