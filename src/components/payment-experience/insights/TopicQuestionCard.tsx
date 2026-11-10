@@ -51,7 +51,7 @@ function clickProps(d: PEDistributionItem, onItemClick?: (item: PEDistributionIt
     role: 'button' as const,
     tabIndex: 0,
     onClick: () => onItemClick(d),
-    onKeyDown: (e: React.KeyboardEvent) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onItemClick(d); } },
+    onKeyDown: (e: { key: string; preventDefault: () => void }) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onItemClick(d); } },
     className: 'cursor-pointer rounded hover:bg-muted/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring',
   };
 }
