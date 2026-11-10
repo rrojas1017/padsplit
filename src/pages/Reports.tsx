@@ -131,7 +131,7 @@ export default function Reports() {
     next.delete('booking');
     setSearchParams(next, { replace: true });
   };
-  const handleResearchRowClick = (e: React.MouseEvent, b: Booking) => {
+  const handleResearchRowClick = (e: { target: EventTarget }, b: Booking) => {
     const t = e.target as HTMLElement;
     if (t.closest('a, button, [role="button"], input, [data-no-row-click]')) return;
     openPanel(b);
@@ -235,6 +235,49 @@ export default function Reports() {
     researchIntakeById,
     researchOutcomeById,
   } = useReportsData(filters, pagination, sorting);
+
+  // CR-018: deep link — open the call panel for ?booking=<id> (silently ignored if unreadable).
+  const deepLinkBookingId = searchParams.get('booking');
+  useEffect(() => {
+    if (!deepLinkBookingId || panelBooking?.id === deepLinkBookingId) return;
+    if (recordTypeFilter !== 'research') { handleViewChange('research'); return; }
+    const onPage = records.find(r => r.id === deepLinkBookingId);
+    if (onPage) { setPanelBooking(onPage); return; }
+    let cancelled = false;
+    (async () => {
+      const { data, error } = await supabase
+        .from('bookings')
+        .select('id, booking_date, member_name, contact_phone, agent_id, call_duration_seconds, kixie_link, transcription_status, research_call_id, booking_transcriptions(research_campaign_type)')
+        .eq('id', deepLinkBookingId)
+        .eq('record_type', 'research')
+        .maybeSingle();
+      if (cancelled) return;
+      if (error || !data) {
+        const next = new URLSearchParams(searchParams);
+        next.delete('booking');
+        setSearchParams(next, { replace: true });
+        return;
+      }
+      const bt = (data as any).booking_transcriptions;
+      const btRow = Array.isArray(bt) ? bt[0] : bt;
+      setPanelBooking({
+        id: data.id,
+        bookingDate: new Date(data.booking_date + 'T00:00:00'),
+        memberName: data.member_name,
+        contactPhone: data.contact_phone || undefined,
+        agentId: data.agent_id,
+        agentName: agents.find(a => a.id === data.agent_id)?.name || 'Unknown',
+        callDurationSeconds: data.call_duration_seconds || undefined,
+        kixieLink: data.kixie_link || undefined,
+        transcriptionStatus: data.transcription_status as Booking['transcriptionStatus'],
+        researchCallId: data.research_call_id || undefined,
+        researchCampaignType: btRow?.research_campaign_type || undefined,
+        recordType: 'research',
+      } as Booking);
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [deepLinkBookingId, recordTypeFilter, records]);
 
   const scriptLabelByType = useMemo(() => {
     const m: Record<string, string> = {};
@@ -1852,6 +1895,14 @@ export default function Reports() {
 
       {/* Transcription Modal */}
       {selectedBooking && (
+        <ResearchCallPanel
+          booking={panelBooking}
+          agentName={panelBooking ? getAgentName(agents, panelBooking.agentId) : ''}
+          surveyLabel={panelBooking ? researchCampaignLabel(panelBooking.researchCampaignType, scriptLabelByType, 'long') : ''}
+          maskContact={shouldMaskContactInfo(user?.role)}
+          onClose={closePanel}
+          onOpenTranscript={(b) => { setSelectedBooking(b); setShowTranscriptModal(true); }}
+        />
         <TranscriptionModal
           booking={selectedBooking}
           isOpen={showTranscriptModal}
