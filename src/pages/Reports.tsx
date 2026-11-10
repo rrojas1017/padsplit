@@ -241,7 +241,7 @@ export default function Reports() {
   useEffect(() => {
     if (!deepLinkBookingId || panelBooking?.id === deepLinkBookingId) return;
     if (recordTypeFilter !== 'research') { handleViewChange('research'); return; }
-    const onPage = records.find(r => r.id === deepLinkBookingId);
+    const onPage = rawRecords.find(r => r.id === deepLinkBookingId);
     if (onPage) { setPanelBooking(onPage); return; }
     let cancelled = false;
     (async () => {
@@ -277,7 +277,7 @@ export default function Reports() {
     })();
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [deepLinkBookingId, recordTypeFilter, records]);
+  }, [deepLinkBookingId, recordTypeFilter, rawRecords]);
 
   const scriptLabelByType = useMemo(() => {
     const m: Record<string, string> = {};
