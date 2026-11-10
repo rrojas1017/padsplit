@@ -55,15 +55,27 @@ async function resolveScriptQuestions(researchCallId: string | undefined, campai
 }
 
 export function buildAnswerGroups(questions: ScriptQ[] | null, raw: unknown): AnswerGroup[] {
-  const list = toAnswerList(raw);
+  // Pairs of (map key | null, entry). Object maps carry the question id as the key.
+  const pairs: { key: string | null; a: any }[] = Array.isArray(raw)
+    ? toAnswerList(raw).map((a) => ({ key: null, a }))
+    : raw && typeof raw === 'object'
+      ? Object.entries(raw as Record<string, unknown>)
+          .filter(([, v]) => v && typeof v === 'object')
+          .map(([k, a]) => ({ key: k, a }))
+      : [];
   if (!questions) {
-    return list.length === 0 ? [] : [{
+    return pairs.length === 0 ? [] : [{
       key: 'stored', title: null,
-      items: list.map((a, i) => ({ key: String(a.question_id ?? i), label: String(a.question_text ?? `Question ${i + 1}`), answer: answerString(a) })),
+      items: pairs.map(({ key, a }, i) => ({
+        key: String(key ?? a.question_id ?? i),
+        label: String(a.question_text ?? key ?? `Question ${i + 1}`),
+        answer: answerString(a),
+      })),
     }];
   }
   const byId = new Map<string, any>();
-  list.forEach((a) => { if (a.question_id != null) byId.set(String(a.question_id), a); });
+  pairs.forEach(({ a }) => { if (a.question_id != null) byId.set(String(a.question_id), a); });
+  pairs.forEach(({ key, a }) => { if (key != null) byId.set(key, a); }); // map key wins
   const idOf = (q: ScriptQ, i: number) => (q.id != null && String(q.id).trim() !== '' ? String(q.id) : `q_idx_${i}`);
   const groups: AnswerGroup[] = [];
   let i = 0;

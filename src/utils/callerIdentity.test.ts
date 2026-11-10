@@ -37,3 +37,9 @@ describe('callerIdentity', () => {
     expect(callerIdentity({ name: 'Public Submission', phone: '' })).toEqual({ primary: 'Unknown caller', secondary: null });
   });
 });
+
+describe('formatCallerPhone extra leading 1 (CR-018 corrective)', () => {
+  test('12-digit dialer phone', () => {
+    expect(formatCallerPhone('+119569541807')).toBe('(956) 954-1807');
+  });
+});
