@@ -12,7 +12,9 @@ import { calculateFollowUpPriority } from '@/utils/followUpPriority';
 import { Input } from '@/components/ui/input';
 import { format, startOfDay, endOfDay } from 'date-fns';
 import { cn } from '@/lib/utils';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { ResearchCallPanel } from '@/components/reports/ResearchCallPanel';
+import { callerIdentity, isRealCallerName } from '@/utils/callerIdentity';
 import { useState, useMemo, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { TranscriptionModal } from '@/components/booking/TranscriptionModal';
@@ -114,6 +116,27 @@ export default function Reports() {
   const [selectedBooking, setSelectedBooking] = useState<Booking | null>(null);
   const [showTranscriptModal, setShowTranscriptModal] = useState(false);
 
+  // CR-018: call panel (deep link ?booking=<id>, id only)
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [panelBooking, setPanelBooking] = useState<Booking | null>(null);
+  const openPanel = (b: Booking) => {
+    setPanelBooking(b);
+    const next = new URLSearchParams(searchParams);
+    next.set('booking', b.id);
+    setSearchParams(next, { replace: true });
+  };
+  const closePanel = () => {
+    setPanelBooking(null);
+    const next = new URLSearchParams(searchParams);
+    next.delete('booking');
+    setSearchParams(next, { replace: true });
+  };
+  const handleResearchRowClick = (e: { target: EventTarget }, b: Booking) => {
+    const t = e.target as HTMLElement;
+    if (t.closest('a, button, [role="button"], input, [data-no-row-click]')) return;
+    openPanel(b);
+  };
+
   // Sites from Supabase
   const [sites, setSites] = useState<Site[]>([]);
 
@@ -212,6 +235,49 @@ export default function Reports() {
     researchIntakeById,
     researchOutcomeById,
   } = useReportsData(filters, pagination, sorting);
+
+  // CR-018: deep link — open the call panel for ?booking=<id> (silently ignored if unreadable).
+  const deepLinkBookingId = searchParams.get('booking');
+  useEffect(() => {
+    if (!deepLinkBookingId || panelBooking?.id === deepLinkBookingId) return;
+    if (recordTypeFilter !== 'research') { handleViewChange('research'); return; }
+    const onPage = rawRecords.find(r => r.id === deepLinkBookingId);
+    if (onPage) { setPanelBooking(onPage); return; }
+    let cancelled = false;
+    (async () => {
+      const { data, error } = await supabase
+        .from('bookings')
+        .select('id, booking_date, member_name, contact_phone, agent_id, call_duration_seconds, kixie_link, transcription_status, research_call_id, booking_transcriptions(research_campaign_type)')
+        .eq('id', deepLinkBookingId)
+        .eq('record_type', 'research')
+        .maybeSingle();
+      if (cancelled) return;
+      if (error || !data) {
+        const next = new URLSearchParams(searchParams);
+        next.delete('booking');
+        setSearchParams(next, { replace: true });
+        return;
+      }
+      const bt = (data as any).booking_transcriptions;
+      const btRow = Array.isArray(bt) ? bt[0] : bt;
+      setPanelBooking({
+        id: data.id,
+        bookingDate: new Date(data.booking_date + 'T00:00:00'),
+        memberName: data.member_name,
+        contactPhone: data.contact_phone || undefined,
+        agentId: data.agent_id,
+        agentName: agents.find(a => a.id === data.agent_id)?.name || 'Unknown',
+        callDurationSeconds: data.call_duration_seconds || undefined,
+        kixieLink: data.kixie_link || undefined,
+        transcriptionStatus: data.transcription_status as Booking['transcriptionStatus'],
+        researchCallId: data.research_call_id || undefined,
+        researchCampaignType: btRow?.research_campaign_type || undefined,
+        recordType: 'research',
+      } as Booking);
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [deepLinkBookingId, recordTypeFilter, rawRecords]);
 
   const scriptLabelByType = useMemo(() => {
     const m: Record<string, string> = {};
@@ -1065,7 +1131,7 @@ export default function Reports() {
               ) : isResearch ? (
                 /* ===== RESEARCH VIEW ROWS ===== */
                 records.map((booking) => (
-                  <tr key={booking.id} className="hover:bg-muted/30 transition-colors">
+                  <tr key={booking.id} className="hover:bg-muted/30 transition-colors cursor-pointer" onClick={(e) => handleResearchRowClick(e, booking)}>
                     {/* Call Date */}
                     <td className="py-3 px-4 text-sm text-foreground">
                       <div className="flex items-center gap-1.5">
@@ -1176,8 +1242,12 @@ export default function Reports() {
                     </td>
                     {/* Name (enriched only) */}
                     <td className="py-3 px-4 text-sm font-medium text-foreground">
-                      {booking.memberName?.startsWith('API Submission') ? (
-                        <span className="text-muted-foreground">—</span>
+                      {!isRealCallerName(booking.memberName) ? (
+                        <span className={booking.contactPhone ? 'text-foreground' : 'text-muted-foreground'}>
+                          {shouldMaskContactInfo(user?.role) && booking.contactPhone
+                            ? maskPhone(booking.contactPhone)
+                            : callerIdentity({ name: booking.memberName, phone: booking.contactPhone }).primary}
+                        </span>
                       ) : (
                         <ContactProfileHoverCard
                           memberName={booking.memberName}
@@ -1196,7 +1266,7 @@ export default function Reports() {
                           emailVerificationStatus={booking.emailVerificationStatus}
                           emailVerified={booking.emailVerified}
                         >
-                          <span className="hover:text-primary transition-colors cursor-default">{booking.memberName}</span>
+                          <span className="hover:text-primary transition-colors cursor-default">{callerIdentity({ name: booking.memberName, phone: booking.contactPhone }).primary}</span>
                         </ContactProfileHoverCard>
                       )}
                     </td>
@@ -1822,6 +1892,15 @@ export default function Reports() {
         </div>
       </div>
       </TooltipProvider>
+
+      <ResearchCallPanel
+        booking={panelBooking}
+        agentName={panelBooking ? getAgentName(agents, panelBooking.agentId) : ''}
+        surveyLabel={panelBooking ? researchCampaignLabel(panelBooking.researchCampaignType, scriptLabelByType, 'long') : ''}
+        maskContact={shouldMaskContactInfo(user?.role)}
+        onClose={closePanel}
+        onOpenTranscript={(b) => { setSelectedBooking(b); setShowTranscriptModal(true); }}
+      />
 
       {/* Transcription Modal */}
       {selectedBooking && (
