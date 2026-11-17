@@ -49,3 +49,11 @@ export function openEndedAnswers(q: ScriptSurveyQuestion, records: ScriptSurveyR
   }
   return out;
 }
+
+/** CR-018 phase 2b: respondents for an item shown in the Script Responses tab.
+ * That tab lists exact labels from summarizeScriptQuestion, so the exact label
+ * (scale: bucket value) reproduces the displayed count. */
+export function respondentsForTabItem(q: ScriptSurveyQuestion, records: ScriptSurveyRecord[], label: string): ScriptSurveyRecord[] {
+  if (q.type === 'scale') return respondentsForScale(q, records, Number(label));
+  return respondentsForChoice(q, records, label);
+}

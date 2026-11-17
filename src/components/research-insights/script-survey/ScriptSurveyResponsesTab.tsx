@@ -14,8 +14,11 @@ import { buildScriptSurveyCsv } from '@/utils/scriptSurveyAnalytics';
 import { openScriptSurveyReport } from '@/utils/scriptSurveyReportExport';
 import { OpenEndedClusters } from '@/components/payment-experience/insights/OpenEndedClusters';
 import { useNavigate } from 'react-router-dom';
-import { openEndedAnswers } from '@/utils/scriptSurveyRespondents';
-import { useRecordIdentity, fmtCallDate } from './RespondentsSheet';
+import { openEndedAnswers, respondentsForTabItem } from '@/utils/scriptSurveyRespondents';
+import { useRecordIdentity, fmtCallDate, type RespondentsSelection } from './RespondentsSheet';
+
+type OnItem = ((label: string) => void) | undefined;
+const clickCls = 'cursor-pointer rounded-md transition-colors hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring';
 
 // CR-018: attributed written answers (identity · call date → Reports call panel).
 function WrittenAnswers({ q, records }: { q: ScriptSurveyQuestion; records: ScriptSurveyRecord[] }) {
@@ -57,6 +60,8 @@ interface ScriptSurveyResponsesTabProps {
   scriptName: string;
   questions: ScriptSurveyQuestion[];
   eligibleRecords: ScriptSurveyRecord[];
+  /** CR-018 phase 2b: opens the dashboard's shared RespondentsSheet. */
+  onSelect?: (s: RespondentsSelection) => void;
 }
 
 function downloadCsv(
@@ -117,13 +122,21 @@ function StatCard({ label, value }: { label: string; value: string }) {
   );
 }
 
-function MultiBars({ summary }: { summary: PEQuestionSummary }) {
+function MultiBars({ summary, onItem }: { summary: PEQuestionSummary; onItem?: OnItem }) {
   const max = Math.max(1, ...summary.distribution.map((d) => d.count));
   const visible = summary.distribution.filter((d) => d.count > 0);
   return (
     <div className="space-y-2">
       {visible.map((d) => (
-        <div key={d.key} className="space-y-1">
+        <div
+          key={d.key}
+          className={cn('space-y-1', onItem && cn(clickCls, '-mx-1 px-1 py-0.5'))}
+          {...(onItem ? {
+            role: 'button', tabIndex: 0,
+            onClick: () => onItem(d.label),
+            onKeyDown: (e: React.KeyboardEvent) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onItem(d.label); } },
+          } : {})}
+        >
           <div className="flex items-center justify-between gap-3 text-sm">
             <span className="truncate text-foreground" title={d.label}>
               {d.label}
@@ -150,21 +163,31 @@ function MultiBars({ summary }: { summary: PEQuestionSummary }) {
 function YesNoPills({
   summary,
   total,
+  onItem,
 }: {
   summary: PEQuestionSummary;
   total: number;
+  onItem?: OnItem;
 }) {
   const yes = summary.distribution.find((d) => d.key === 'yes');
   const no = summary.distribution.find((d) => d.key === 'no');
   const pillBase =
     'flex-1 rounded-lg border p-4 flex items-baseline justify-between gap-3';
+  const pillProps = (d: typeof yes) => (onItem && d && d.count > 0 ? {
+    role: 'button', tabIndex: 0,
+    onClick: () => onItem(d.label),
+    onKeyDown: (e: React.KeyboardEvent) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onItem(d.label); } },
+  } : {});
+  const pillClick = (d: typeof yes) => (onItem && d && d.count > 0 ? 'cursor-pointer transition-opacity hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring' : '');
   return (
     <div className="flex flex-col sm:flex-row gap-3">
       <div
         className={cn(
           pillBase,
           'border-amber-200 bg-amber-50 dark:border-amber-900/40 dark:bg-amber-950/20',
+          pillClick(yes),
         )}
+        {...pillProps(yes)}
       >
         <div>
           <p className="text-xs uppercase tracking-wide text-amber-800 dark:text-amber-300 font-medium">
@@ -178,7 +201,7 @@ function YesNoPills({
           {yes?.percentage ?? 0}%
         </span>
       </div>
-      <div className={cn(pillBase, 'border-border bg-muted/40')}>
+      <div className={cn(pillBase, 'border-border bg-muted/40', pillClick(no))} {...pillProps(no)}>
         <div>
           <p className="text-xs uppercase tracking-wide text-muted-foreground font-medium">
             No
@@ -195,7 +218,7 @@ function YesNoPills({
   );
 }
 
-function ScaleDisplay({ summary }: { summary: PEQuestionSummary }) {
+function ScaleDisplay({ summary, onItem }: { summary: PEQuestionSummary; onItem?: OnItem }) {
   const isClarity1to5 = false;
   // For bucketed scales (e.g. overdue_threshold 0–2000), only show buckets
   // that actually have responses. Keep all 1–5 ticks for the clarity scale.
@@ -227,7 +250,15 @@ function ScaleDisplay({ summary }: { summary: PEQuestionSummary }) {
           const px =
             d.count > 0 ? Math.max(MIN_BAR_PX, Math.round(scale(d.count) * CHART_PX)) : 2;
           return (
-            <div key={d.key} className="flex-1 flex flex-col items-stretch justify-end">
+            <div
+              key={d.key}
+              className={cn('flex-1 flex flex-col items-stretch justify-end', onItem && d.count > 0 && clickCls)}
+              {...(onItem && d.count > 0 ? {
+                role: 'button', tabIndex: 0, 'aria-label': `${d.label}: ${d.count}`,
+                onClick: () => onItem(d.label),
+                onKeyDown: (e: React.KeyboardEvent) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onItem(d.label); } },
+              } : {})}
+            >
               <span
                 className={cn(
                   'text-center text-[11px] font-medium tabular-nums leading-none mb-1',
@@ -328,6 +359,7 @@ function QuestionCard({
   scriptId,
   scriptQuestion,
   records,
+  onSelect,
 }: {
   summary: PEQuestionSummary;
   total: number;
@@ -335,8 +367,16 @@ function QuestionCard({
   scriptId: string;
   scriptQuestion?: ScriptSurveyQuestion;
   records: ScriptSurveyRecord[];
+  onSelect?: (s: RespondentsSelection) => void;
 }) {
   const q = summary.question;
+  const onItem: OnItem = onSelect && scriptQuestion
+    ? (label) => onSelect({
+        title: scriptQuestion.matrix ? `${scriptQuestion.matrix.row || scriptQuestion.question} — ${label}` : label,
+        question: scriptQuestion.matrix ? scriptQuestion.matrix.title || scriptQuestion.question : scriptQuestion.question,
+        records: respondentsForTabItem(scriptQuestion, records, label),
+      })
+    : undefined;
   return (
     <Card
       id={`ss-question-${q.order}`}
@@ -394,9 +434,9 @@ function QuestionCard({
           </div>
         ) : (
           <>
-            {q.type === 'multi' && <MultiBars summary={summary} />}
-            {q.type === 'yesno' && <YesNoPills summary={summary} total={total} />}
-            {q.type === 'scale' && <ScaleDisplay summary={summary} />}
+            {q.type === 'multi' && <MultiBars summary={summary} onItem={onItem} />}
+            {q.type === 'yesno' && <YesNoPills summary={summary} total={total} onItem={onItem} />}
+            {q.type === 'scale' && <ScaleDisplay summary={summary} onItem={onItem} />}
             {q.type === 'open' && (
               <OpenEndedClusters
                 questionId={`${scriptId}:${summary.question.id}`}
@@ -452,6 +492,7 @@ export function ScriptSurveyResponsesTab({
   scriptName,
   questions,
   eligibleRecords,
+  onSelect,
 }: ScriptSurveyResponsesTabProps) {
   const recordIdentity = useRecordIdentity();
   const data = useMemo(
@@ -571,6 +612,7 @@ export function ScriptSurveyResponsesTab({
             scriptId={scriptId}
             scriptQuestion={questions.find((sq) => sq.id === qs.question.id)}
             records={eligibleRecords}
+            onSelect={onSelect}
           />
         ))}
       </div>

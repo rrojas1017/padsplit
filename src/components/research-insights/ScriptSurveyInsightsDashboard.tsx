@@ -309,6 +309,7 @@ export function ScriptSurveyInsightsDashboard({ scriptId }: { scriptId: string }
           scriptName={script?.name ?? 'Survey'}
           questions={questions}
           eligibleRecords={eligible}
+          onSelect={setRespSel}
         />
       ),
     },
