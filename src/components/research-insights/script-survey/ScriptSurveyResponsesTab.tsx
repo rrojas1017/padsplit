@@ -14,7 +14,7 @@ import { buildScriptSurveyCsv } from '@/utils/scriptSurveyAnalytics';
 import { openScriptSurveyReport } from '@/utils/scriptSurveyReportExport';
 import { OpenEndedClusters } from '@/components/payment-experience/insights/OpenEndedClusters';
 import { useNavigate } from 'react-router-dom';
-import { openEndedAnswers, respondentsForTabItem } from '@/utils/scriptSurveyRespondents';
+import { openEndedAnswers, respondentsForTabItem, unmatchedAnswerText, OTHER_LABEL } from '@/utils/scriptSurveyRespondents';
 import { useRecordIdentity, fmtCallDate, type RespondentsSelection } from './RespondentsSheet';
 
 type OnItem = ((label: string) => void) | undefined;
@@ -171,6 +171,7 @@ function YesNoPills({
 }) {
   const yes = summary.distribution.find((d) => d.key === 'yes');
   const no = summary.distribution.find((d) => d.key === 'no');
+  const other = summary.distribution.find((d) => d.label === OTHER_LABEL && d.count > 0);
   const pillBase =
     'flex-1 rounded-lg border p-4 flex items-baseline justify-between gap-3';
   const pillProps = (d: typeof yes) => (onItem && d && d.count > 0 ? {
@@ -214,6 +215,15 @@ function YesNoPills({
           {no?.percentage ?? 0}%
         </span>
       </div>
+      {other && (
+        <div className={cn(pillBase, 'border-border bg-muted/20', pillClick(other))} {...pillProps(other)}>
+          <div>
+            <p className="text-xs uppercase tracking-wide text-muted-foreground font-medium">Other</p>
+            <p className="mt-0.5 text-2xl font-semibold tabular-nums text-foreground">{other.count}</p>
+          </div>
+          <span className="text-sm font-medium text-muted-foreground tabular-nums">{other.percentage}%</span>
+        </div>
+      )}
     </div>
   );
 }
@@ -375,6 +385,7 @@ function QuestionCard({
         title: scriptQuestion.matrix ? `${scriptQuestion.matrix.row || scriptQuestion.question} — ${label}` : label,
         question: scriptQuestion.matrix ? scriptQuestion.matrix.title || scriptQuestion.question : scriptQuestion.question,
         records: respondentsForTabItem(scriptQuestion, records, label),
+        ...(label === OTHER_LABEL ? { answerFor: (r: ScriptSurveyRecord) => unmatchedAnswerText(scriptQuestion, r) } : {}),
       })
     : undefined;
   return (

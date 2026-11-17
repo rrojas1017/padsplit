@@ -10,7 +10,13 @@ import { useAuth } from '@/contexts/AuthContext';
 import { callerIdentity, formatCallerPhone, isRealCallerName } from '@/utils/callerIdentity';
 import { maskPhone, shouldMaskContactInfo } from '@/utils/contactPrivacy';
 
-export interface RespondentsSelection { title: string; question: string; records: ScriptSurveyRecord[] }
+export interface RespondentsSelection {
+  title: string;
+  question: string;
+  records: ScriptSurveyRecord[];
+  /** CR-019: the person's own answer ("Other" panels only). */
+  answerFor?: (r: ScriptSurveyRecord) => string | null;
+}
 
 interface Props {
   selection: RespondentsSelection | null;
@@ -63,12 +69,13 @@ export function RespondentsSheet({ selection, onClose, campaignName, listName }:
                 const agent = agents.find((a) => a.id === r.agent_id)?.name;
                 return (
                   <li key={r.booking_id} className="py-3 flex items-start justify-between gap-3">
-                    <div className="min-w-0 space-y-0.5">
+                    <div className="min-w-0 flex-1 space-y-0.5">
                       <p className="font-semibold text-sm text-foreground truncate">{id.primary}</p>
                       {id.secondary && <p className="text-xs text-muted-foreground">{id.secondary}</p>}
                       <p className="text-xs text-muted-foreground">
                         {[fmtCallDate(r.booking_date), agent, camp, list].filter(Boolean).join(' · ')}
                       </p>
+                      {(() => { const t = selection.answerFor?.(r); return t ? <p className="text-xs text-muted-foreground whitespace-pre-wrap break-words pt-1">{t}</p> : null; })()}
                     </div>
                     <Button size="sm" variant="outline" className="shrink-0" onClick={() => navigate(`/reports?booking=${encodeURIComponent(r.booking_id)}`)}>
                       Open call

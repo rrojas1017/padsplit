@@ -35,7 +35,8 @@ import { ScriptSurveyResponsesTab } from './script-survey/ScriptSurveyResponsesT
 import { ScriptSubmissionsTab, ScriptAISummaryTab } from './ScriptInsightsPanel';
 import { ScriptGridCard } from './ScriptGridCard';
 import { RespondentsSheet, type RespondentsSelection } from './script-survey/RespondentsSheet';
-import { respondentsForChoice, respondentsForGridCell, respondentsForScale } from '@/utils/scriptSurveyRespondents';
+import { respondentsForChoice, respondentsForGridCell, respondentsForScale, unmatchedAnswerText, OTHER_LABEL } from '@/utils/scriptSurveyRespondents';
+import { GRID_OTHER } from '@/utils/scriptSurveyGrid';
 import { groupSurveyBlocks, type SurveyBlock } from '@/utils/scriptSurveyGrid';
 
 const shortLabel = (s: string) => (s.length > 28 ? s.slice(0, 27) + '…' : s);
@@ -54,7 +55,7 @@ function QuestionTopicCard({ scriptId, q, eligible, onSelect }: { scriptId: stri
         const seen = new Map<string, ScriptSurveyRecord>();
         for (const l of labels.length ? labels : [item.label]) for (const r of respondentsForChoice(q, eligible, l)) seen.set(r.booking_id, r);
         const records = Array.from(seen.values()).sort((a, b) => (a.booking_date === b.booking_date ? (a.booking_id < b.booking_id ? 1 : -1) : a.booking_date < b.booking_date ? 1 : -1));
-        onSelect({ title: item.label, question: q.question, records });
+        onSelect({ title: item.label, question: q.question, records, ...(item.label === OTHER_LABEL ? { answerFor: (r: ScriptSurveyRecord) => unmatchedAnswerText(q, r) } : {}) });
       }
     : undefined;
   if (summary.type === 'open_ended') {
@@ -273,7 +274,7 @@ export function ScriptSurveyInsightsDashboard({ scriptId }: { scriptId: string }
   const onGridCell = (b: Extract<SurveyBlock, { kind: 'grid' }>) => (rowId: string, column: string) => {
     const rowQ = b.rows.find((r) => r.id === rowId);
     if (!rowQ) return;
-    setRespSel({ title: `${rowQ.matrix?.row || rowQ.question} — ${column}`, question: b.title, records: respondentsForGridCell(rowQ, eligible, column) });
+    setRespSel({ title: `${rowQ.matrix?.row || rowQ.question} — ${column}`, question: b.title, records: respondentsForGridCell(rowQ, eligible, column), ...(column === GRID_OTHER ? { answerFor: (r: ScriptSurveyRecord) => unmatchedAnswerText(rowQ, r) } : {}) });
   };
   const renderBlock = (b: SurveyBlock) => b.kind === 'grid'
     ? <ScriptGridCard key={`grid-${b.group}-${b.rows[0].id}`} block={b} eligible={eligible} onCellClick={onGridCell(b)} />

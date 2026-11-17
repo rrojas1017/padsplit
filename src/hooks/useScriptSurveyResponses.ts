@@ -12,6 +12,8 @@ export interface ScriptSurveyQuestion {
   question: string;
   type: ScriptQuestion['type'];
   options?: string[];
+  /** CR-019: Spanish options by position (from questions_es), when present. */
+  options_es?: string[];
   scale_min?: number;
   scale_max?: number;
   section?: string;
@@ -69,7 +71,7 @@ export function useScriptSurveyResponses(scriptId: string | null | undefined) {
     queryFn: async () => {
       const { data: s, error } = await supabase
         .from('research_scripts')
-        .select('id, name, slug, questions')
+        .select('id, name, slug, questions, questions_es')
         .eq('id', scriptId!)
         .maybeSingle();
       if (error) throw error;
@@ -77,6 +79,15 @@ export function useScriptSurveyResponses(scriptId: string | null | undefined) {
 
       const campaignType = resolveResearchCampaignType({ id: s.id, slug: (s as any).slug ?? null }) as string;
       const all = ensureQuestionIds(((s as any).questions || []) as ScriptQuestion[]);
+      // CR-019: Spanish option labels by question id, else by position.
+      const esRaw: any[] = Array.isArray((s as any).questions_es) ? (s as any).questions_es : [];
+      const esById = new Map<string, any>();
+      for (const e of esRaw) if (e && e.id != null) esById.set(String(e.id), e);
+      const esFor = (q: any, idx: number): string[] | undefined => {
+        const e = esById.get(String(q.id)) ?? esRaw[idx];
+        return Array.isArray(e?.options) ? e.options.map((o: unknown) => String(o ?? '')) : undefined;
+      };
+      const allIdx = new Map(all.map((q, i) => [q, i] as const));
       const questions: ScriptSurveyQuestion[] = all
         .filter((q) => !q.is_internal)
         .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
@@ -86,6 +97,7 @@ export function useScriptSurveyResponses(scriptId: string | null | undefined) {
           question: q.question,
           type: q.type,
           options: q.options,
+          options_es: esFor(q, allIdx.get(q) ?? -1),
           scale_min: q.scale_min,
           scale_max: q.scale_max,
           section: q.section,

@@ -1,6 +1,8 @@
 import type { FunnelStep } from '@/utils/paymentExperienceAnalytics';
 import type { ScriptSurveyQuestion, ScriptSurveyRecord } from '@/hooks/useScriptSurveyResponses';
 
+import { displayLabels, isChoiceWithOptions, OTHER_LABEL } from '@/utils/scriptSurveyOptionMatch';
+
 export { filterByDateRange } from '@/components/payment-experience/PaymentExperienceInsightsDashboard';
 
 export interface RawAnswerEntry {
@@ -85,6 +87,26 @@ export function summarizeScriptQuestion(q: ScriptSurveyQuestion, eligible: Scrip
     const all = eligible.map((r) => answerText(r.answers[q.id]) ?? (hasAnswerValue(r.answers[q.id]) ? answerLabels(r.answers[q.id], q.options).join('; ') || null : null))
       .filter((v): v is string => !!v);
     return { type: 'open_ended', count: all.length, samples: all.slice(0, 25).map((s) => trim(s)), allResponses: all };
+  }
+  if (isChoiceWithOptions(q)) {
+    // CR-019: option rows (matched answers) + one trailing "Other" row (unmatched).
+    const counts = new Map<string, number>();
+    if (q.type === 'multiple_select') for (const o of q.options || []) { const t = String(o).trim(); if (t) counts.set(t, 0); }
+    let answered = 0, other = 0;
+    for (const r of eligible) {
+      const labels = displayLabels(q, r.answers[q.id]);
+      if (!labels.length) continue;
+      answered++;
+      for (const l of labels) {
+        if (l === OTHER_LABEL && !(q.options || []).some((o) => String(o).trim().toLowerCase() === OTHER_LABEL.toLowerCase())) other++;
+        else counts.set(l, (counts.get(l) || 0) + 1);
+      }
+    }
+    const distribution = Array.from(counts.entries())
+      .map(([label, count]) => ({ label, count, pct: pct(count, answered) }))
+      .sort((a, b) => b.count - a.count);
+    if (other > 0) distribution.push({ label: OTHER_LABEL, count: other, pct: pct(other, answered) });
+    return { type: q.type as 'multiple_choice' | 'yes_no' | 'multiple_select', count: answered, distribution };
   }
   if (q.type === 'multiple_select') {
     const counts = new Map<string, number>();

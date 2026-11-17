@@ -3,6 +3,8 @@
 import type { ScriptSurveyQuestion, ScriptSurveyRecord } from '@/hooks/useScriptSurveyResponses';
 import { answerLabels, answerScale, answerText, hasAnswerValue } from '@/utils/scriptSurveyAnalytics';
 import { GRID_OTHER } from '@/utils/scriptSurveyGrid';
+import { displayLabels, isChoiceWithOptions, splitAnswerLabels } from '@/utils/scriptSurveyOptionMatch';
+export { unmatchedAnswerText, OTHER_LABEL } from '@/utils/scriptSurveyOptionMatch';
 
 export function sortNewestFirst(records: ScriptSurveyRecord[]): ScriptSurveyRecord[] {
   return [...records].sort((a, b) =>
@@ -11,6 +13,7 @@ export function sortNewestFirst(records: ScriptSurveyRecord[]): ScriptSurveyReco
 
 function choiceLabels(q: ScriptSurveyQuestion, r: ScriptSurveyRecord): string[] {
   const e = r.answers[q.id];
+  if (isChoiceWithOptions(q)) return displayLabels(q, e);
   if (q.type === 'multiple_select') return Array.from(new Set(answerLabels(e, q.options)));
   let labels = answerLabels(e, q.options);
   if (!labels.length) { const t = answerText(e); if (t) labels = [t]; }
@@ -29,12 +32,11 @@ export function respondentsForScale(q: ScriptSurveyQuestion, records: ScriptSurv
 }
 
 export function respondentsForGridCell(rowQ: ScriptSurveyQuestion, records: ScriptSurveyRecord[], column: string): ScriptSurveyRecord[] {
-  const columns = (rowQ.options || []).map((o) => String(o).trim()).filter(Boolean);
-  const keyOf = new Map(columns.map((c) => [c.toLowerCase(), c]));
+  // CR-019: same matching rule as the grid model.
   return sortNewestFirst(records.filter((r) => {
-    const labels = choiceLabels(rowQ, r);
-    if (column === GRID_OTHER) return labels.some((l) => !keyOf.has(l.trim().toLowerCase()));
-    return labels.some((l) => keyOf.get(l.trim().toLowerCase()) === column);
+    const { matched, unmatched } = splitAnswerLabels(rowQ, r.answers[rowQ.id]);
+    if (column === GRID_OTHER) return unmatched.length > 0 && !matched.includes(GRID_OTHER);
+    return matched.includes(column);
   }));
 }
 
