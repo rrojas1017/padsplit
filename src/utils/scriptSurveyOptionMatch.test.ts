@@ -66,4 +66,17 @@ describe('CR-019 Other grouping', () => {
     expect(m.rows[0].segments.find((x) => x.label === 'Yes').count).toBe(1);
     expect(m.rows[0].segments.find((x) => x.label === GRID_OTHER).count).toBe(1);
   });
+  test('grid with a literal "Other" option: picked Other + unmatched both count', () => {
+    const row = { id: 'go', order: 6, question: 'T — R', type: 'multiple_choice', options: ['Yes', 'No', 'Other'], matrix: { group: 'x', title: 'T', row: 'R' } };
+    const rs = [
+      rec('a', '2026-10-01', { go: { selected_option_labels: ['Other'] } }),
+      rec('b', '2026-10-02', { go: { answer_text: 'Kind of' } }),
+      rec('c', '2026-10-03', { go: { selected_option_labels: ['Yes'] } }),
+    ];
+    const m = buildGridModel({ kind: 'grid', group: 'x', title: 'T', rows: [row] }, rs);
+    for (const seg of m.rows[0].segments) expect(respondentsForGridCell(row, rs, seg.label).length).toBe(seg.count);
+    expect(m.rows[0].segments.find((x) => x.label === GRID_OTHER).count).toBe(2);
+    expect(unmatchedAnswerText(row, rs[1])).toBe('Kind of');
+    expect(unmatchedAnswerText(row, rs[0])).toBeNull();
+  });
 });

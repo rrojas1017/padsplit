@@ -35,7 +35,7 @@ export function respondentsForGridCell(rowQ: ScriptSurveyQuestion, records: Scri
   // CR-019: same matching rule as the grid model.
   return sortNewestFirst(records.filter((r) => {
     const { matched, unmatched } = splitAnswerLabels(rowQ, r.answers[rowQ.id]);
-    if (column === GRID_OTHER) return unmatched.length > 0 && !matched.includes(GRID_OTHER);
+    if (column === GRID_OTHER) return matched.includes(GRID_OTHER) || unmatched.length > 0;
     return matched.includes(column);
   }));
 }
