@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { useSessionState } from '@/hooks/useSessionState';
 import { useQuery } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router-dom';
@@ -115,14 +115,15 @@ export default function ResearchInsights() {
   const { campaigns } = useResearchCampaigns();
 
   // Fetch active scripts for the dropdown
-  const { data: activeScripts = [] } = useQuery({
-    queryKey: ['research-scripts-for-insights', 'v2-dedupe-payment'],
+  // BUG-010: only list surveys that have ≥1 campaign in Campaign Manager
+  // (via get_script_campaigns, readable by supervisors). Fails open.
+  const { data: scriptsData, isLoading: scriptsLoading } = useQuery({
+    queryKey: ['research-scripts-for-insights', 'v3-with-campaigns'],
     queryFn: async () => {
       const { data, error } = await supabase
         .from('research_scripts')
         .select('id, name, slug, campaign_type')
         .eq('is_active', true)
-        .not('campaign_type', 'in', '("move_out_survey","audience_survey")')
         .order('name');
       if (error) throw error;
       // Hide scripts that already have a canonical dashboard entry above.
@@ -133,15 +134,40 @@ export default function ResearchInsights() {
         const slug = (s.slug || '').toLowerCase();
         const ct = (s.campaign_type || '').toLowerCase();
         const name = (s.name || '').toLowerCase();
+        if (ct === 'move_out_survey' || ct === 'audience_survey') return false;
         if (HIDDEN_SLUGS.includes(slug)) return false;
         if (HIDDEN_CAMPAIGN_TYPES.includes(ct)) return false;
         if (HIDDEN_IDS.includes(s.id)) return false;
         if (name.includes('padsplit member payment experience survey')) return false;
         return true;
       });
-      return filtered;
+      const results = await Promise.allSettled(
+        (data || []).map((s: any) => supabase.rpc('get_script_campaigns' as any, { p_script_id: s.id } as any)),
+      );
+      const withCampaign = new Set<string>();
+      let lookupOk = true;
+      results.forEach((r, i) => {
+        if (r.status !== 'fulfilled' || (r.value as any).error) { lookupOk = false; return; }
+        const rows = (r.value as any).data;
+        if (Array.isArray(rows) && rows.length > 0) withCampaign.add((data as any[])[i].id);
+      });
+      return { scripts: filtered, withCampaign, lookupOk };
     },
   });
+  const gateOpen = scriptsLoading || !scriptsData || !scriptsData.lookupOk;
+  const hasCampaign = (id: string) => gateOpen || !!scriptsData?.withCampaign.has(id);
+  const activeScripts = useMemo(
+    () => (scriptsData?.scripts || []).filter((s: any) => hasCampaign(s.id)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [scriptsData, gateOpen],
+  );
+  const FIXED_OPTIONS: { value: string; label: string; scriptId: string }[] = [
+    { value: 'move_out_survey', label: 'Move-Out Research', scriptId: '6397bb7f-ac6a-49ea-90ad-9ca6ec046434' },
+    { value: 'audience_survey', label: 'Audience Survey', scriptId: '12fd2184-68af-4502-9f8e-9fc9fcef1214' },
+    { value: 'payment_experience', label: 'Payment Experience Survey', scriptId: 'c701a243-1c66-425a-8f79-99a290ec5b6b' },
+  ];
+  const visibleFixed = FIXED_OPTIONS.filter((o) => hasCampaign(o.scriptId));
+  const visibleValues = [...visibleFixed.map((o) => o.value), ...activeScripts.map((s: any) => `script:${s.id}`)];
 
   const refreshCallback = useCallback(() => {
     refresh();
@@ -206,6 +232,14 @@ export default function ResearchInsights() {
     localStorage.setItem('research_insights_campaign', value);
     setSearchParams({ tab: currentTab, campaign: value }, { replace: true });
   };
+
+  // BUG-010: stored selection no longer listed → first visible option (never while loading / fail-open).
+  const visibleKey = visibleValues.join('|');
+  useEffect(() => {
+    if (gateOpen || !visibleValues.length) return;
+    if (!visibleValues.includes(campaignType)) handleCampaignTypeChange(visibleValues[0]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gateOpen, visibleKey, campaignType]);
 
   const handleGenerate = async () => {
     setIsGenerating(true);
@@ -409,10 +443,10 @@ export default function ResearchInsights() {
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="move_out_survey">Move-Out Research</SelectItem>
-            <SelectItem value="audience_survey">Audience Survey</SelectItem>
-            <SelectItem value="payment_experience">Payment Experience Survey</SelectItem>
-            {activeScripts.map(s => (
+            {visibleFixed.map((o) => (
+              <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+            ))}
+            {activeScripts.map((s: any) => (
               <SelectItem key={s.id} value={`script:${s.id}`}>{s.name}</SelectItem>
             ))}
           </SelectContent>
