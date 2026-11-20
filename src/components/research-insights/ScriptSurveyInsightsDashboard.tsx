@@ -1,7 +1,7 @@
 // CR-010 Phase 2: Payment-Experience-style dashboard for per-script surveys
 // (30-Day Member Experience, Non-Booking Conversion). Built on the Phase 1
 // data layer; reuses PE visuals where generic, generic twins otherwise.
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
@@ -134,11 +134,39 @@ export function ScriptSurveyInsightsDashboard({ scriptId }: { scriptId: string }
   const { agents } = useAgents();
   const maskContact = shouldMaskContactInfo(user?.role);
   const closeAllPanels = () => { setCallRecord(null); setRespSel(null); };
+  // CR-020 corrective: trigger tracked per opened call (by booking id).
   const callTrigger = useRef<HTMLElement | null>(null);
+  const callBookingId = useRef<string | null>(null);
   const openCall = (r: ScriptSurveyRecord) => {
-    if (!callRecord) callTrigger.current = document.activeElement as HTMLElement | null;
+    callTrigger.current = document.activeElement as HTMLElement | null;
+    callBookingId.current = r.booking_id;
     setCallRecord(r);
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      const panel = document.getElementById('ri-call-panel');
+      const target = panel?.querySelector<HTMLElement>('button[class*="absolute"]') ?? panel;
+      target?.focus();
+    }));
   };
+  const restoreCallFocus = () => {
+    const id = callBookingId.current;
+    const list = document.getElementById('respondents-sheet');
+    const btn = id && list ? Array.from(list.querySelectorAll<HTMLElement>('[data-open-call]')).find((b) => b.dataset.openCall === id) : null;
+    const el = btn ?? list ?? callTrigger.current;
+    setTimeout(() => el?.focus(), 0);
+  };
+  const blockEsc = (e: KeyboardEvent) => e.preventDefault();
+  useEffect(() => {
+    if (!respSel && !callRecord) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || transcriptRecord) return;
+      e.preventDefault();
+      e.stopPropagation();
+      if (callRecord) setCallRecord(null);
+      else setRespSel(null);
+    };
+    document.addEventListener('keydown', onKey, true);
+    return () => document.removeEventListener('keydown', onKey, true);
+  }, [respSel, callRecord, transcriptRecord]);
 
   const { script, questions, sections, records: allRecords, validRecords: allValid, eligibleRecords: allEligible, campaigns, campaignIdsReadable, lists, isLoading, refetch } =
     useScriptSurveyResponses(scriptId);
@@ -464,6 +492,7 @@ export function ScriptSurveyInsightsDashboard({ scriptId }: { scriptId: string }
         onOpenCall={openCall}
         activeBookingId={callRecord?.booking_id ?? null}
         shifted={!!callRecord && !!respSel}
+        onEscapeKeyDown={blockEsc}
         campaignName={showCampaignFilter ? (id) => campaigns.find((c) => c.id === id)?.name ?? null : undefined}
         listName={showListFilter ? (id) => (id ? lists.find((l) => l.list_id === id)?.name ?? null : null) : undefined}
       />
@@ -477,7 +506,9 @@ export function ScriptSurveyInsightsDashboard({ scriptId }: { scriptId: string }
         modal={false}
         hideOverlay
         onInteractOutside={(e) => e.preventDefault()}
-        onCloseAutoFocus={(e) => { e.preventDefault(); const el = callTrigger.current; setTimeout(() => el?.focus(), 0); }}
+        onCloseAutoFocus={(e) => { e.preventDefault(); restoreCallFocus(); }}
+        onEscapeKeyDown={blockEsc}
+        contentId="ri-call-panel"
       />
       {transcriptRecord && (
         <TranscriptionModal

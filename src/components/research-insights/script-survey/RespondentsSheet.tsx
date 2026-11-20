@@ -29,6 +29,7 @@ interface Props {
   activeBookingId?: string | null;
   /** Shift left so the call panel fits beside it (≥1024px). */
   shifted?: boolean;
+  onEscapeKeyDown?: (e: KeyboardEvent) => void;
 }
 
 const PAGE = 50;
@@ -50,7 +51,7 @@ export function useRecordIdentity() {
 
 export const fmtCallDate = (d: string) => (d ? format(new Date(d + 'T00:00:00'), 'MMM d, yyyy') : '—');
 
-export function RespondentsSheet({ selection, onClose, campaignName, listName, onOpenCall, activeBookingId, shifted }: Props) {
+export function RespondentsSheet({ selection, onClose, campaignName, listName, onOpenCall, activeBookingId, shifted, onEscapeKeyDown }: Props) {
   const navigate = useNavigate();
   const { agents } = useAgents();
   const identity = useRecordIdentity();
@@ -63,6 +64,9 @@ export function RespondentsSheet({ selection, onClose, campaignName, listName, o
       <SheetContent
         side="right"
         data-respondents-sheet=""
+        id="respondents-sheet"
+        tabIndex={-1}
+        onEscapeKeyDown={onEscapeKeyDown}
         hideOverlay={!!onOpenCall}
         // CR-020: closes only via X / Escape / the shared overlay (handled by the dashboard).
         onInteractOutside={onOpenCall ? (e) => e.preventDefault() : undefined}
@@ -94,6 +98,7 @@ export function RespondentsSheet({ selection, onClose, campaignName, listName, o
                       size="sm"
                       variant="outline"
                       className="shrink-0"
+                      data-open-call={r.booking_id}
                       disabled={!!onOpenCall && activeBookingId === r.booking_id}
                       onClick={() => (onOpenCall ? onOpenCall(r) : navigate(`/reports?booking=${encodeURIComponent(r.booking_id)}`))}
                     >

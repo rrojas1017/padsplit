@@ -22,6 +22,8 @@ interface Props {
   className?: string;
   onInteractOutside?: (e: Event) => void;
   onCloseAutoFocus?: (e: Event) => void;
+  onEscapeKeyDown?: (e: KeyboardEvent) => void;
+  contentId?: string;
 }
 
 const mss = (s?: number) => {
@@ -29,7 +31,7 @@ const mss = (s?: number) => {
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 };
 
-export function ResearchCallPanel({ booking, agentName, surveyLabel, maskContact, onClose, onOpenTranscript, modal, hideOverlay, className, onInteractOutside, onCloseAutoFocus }: Props) {
+export function ResearchCallPanel({ booking, agentName, surveyLabel, maskContact, onClose, onOpenTranscript, modal, hideOverlay, className, onInteractOutside, onCloseAutoFocus, onEscapeKeyDown, contentId }: Props) {
   const { isLoading, groups, hasAnswers } = useResearchCallAnswers(booking?.id ?? null, booking?.researchCallId);
   const id = booking
     ? callerIdentity({ name: booking.memberName, phone: maskContact ? null : booking.contactPhone })
@@ -48,6 +50,8 @@ export function ResearchCallPanel({ booking, agentName, surveyLabel, maskContact
         hideOverlay={hideOverlay}
         onInteractOutside={onInteractOutside}
         onCloseAutoFocus={onCloseAutoFocus}
+        onEscapeKeyDown={onEscapeKeyDown}
+        id={contentId}
         aria-label="Call details"
       >
         {booking && (
