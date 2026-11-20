@@ -3,6 +3,7 @@ import { format } from 'date-fns';
 import { FileText, Loader2 } from 'lucide-react';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet';
 import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
 import { Booking } from '@/types';
 import { callerIdentity } from '@/utils/callerIdentity';
 import { maskPhone } from '@/utils/contactPrivacy';
@@ -15,6 +16,12 @@ interface Props {
   maskContact: boolean;
   onClose: () => void;
   onOpenTranscript: (b: Booking) => void;
+  /** CR-020 (optional, defaults = Reports behaviour). */
+  modal?: boolean;
+  hideOverlay?: boolean;
+  className?: string;
+  onInteractOutside?: (e: Event) => void;
+  onCloseAutoFocus?: (e: Event) => void;
 }
 
 const mss = (s?: number) => {
@@ -22,7 +29,7 @@ const mss = (s?: number) => {
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 };
 
-export function ResearchCallPanel({ booking, agentName, surveyLabel, maskContact, onClose, onOpenTranscript }: Props) {
+export function ResearchCallPanel({ booking, agentName, surveyLabel, maskContact, onClose, onOpenTranscript, modal, hideOverlay, className, onInteractOutside, onCloseAutoFocus }: Props) {
   const { isLoading, groups, hasAnswers } = useResearchCallAnswers(booking?.id ?? null, booking?.researchCallId);
   const id = booking
     ? callerIdentity({ name: booking.memberName, phone: maskContact ? null : booking.contactPhone })
@@ -34,8 +41,15 @@ export function ResearchCallPanel({ booking, agentName, surveyLabel, maskContact
     ? maskPhone(booking.contactPhone) : id?.secondary;
 
   return (
-    <Sheet open={!!booking} onOpenChange={(o) => { if (!o) onClose(); }}>
-      <SheetContent side="right" className="w-full sm:max-w-lg overflow-y-auto">
+    <Sheet open={!!booking} onOpenChange={(o) => { if (!o) onClose(); }} modal={modal ?? true}>
+      <SheetContent
+        side="right"
+        className={cn('w-full sm:max-w-lg overflow-y-auto', className)}
+        hideOverlay={hideOverlay}
+        onInteractOutside={onInteractOutside}
+        onCloseAutoFocus={onCloseAutoFocus}
+        aria-label="Call details"
+      >
         {booking && (
           <>
             <SheetHeader className="text-left space-y-1">

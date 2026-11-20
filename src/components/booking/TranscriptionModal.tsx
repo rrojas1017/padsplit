@@ -81,7 +81,6 @@ export function TranscriptionModal({ booking, isOpen, onClose, onTranscriptionCo
           filter: `id=eq.${booking.id}`,
         },
         (payload) => {
-          console.log('Booking update received:', payload);
           const newStatus = payload.new.transcription_status;
           const newErrorMessage = payload.new.transcription_error_message;
           setCurrentStatus(newStatus);

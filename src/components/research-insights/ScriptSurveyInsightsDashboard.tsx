@@ -1,7 +1,7 @@
 // CR-010 Phase 2: Payment-Experience-style dashboard for per-script surveys
 // (30-Day Member Experience, Non-Booking Conversion). Built on the Phase 1
 // data layer; reuses PE visuals where generic, generic twins otherwise.
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
@@ -35,6 +35,12 @@ import { ScriptSurveyResponsesTab } from './script-survey/ScriptSurveyResponsesT
 import { ScriptSubmissionsTab, ScriptAISummaryTab } from './ScriptInsightsPanel';
 import { ScriptGridCard } from './ScriptGridCard';
 import { RespondentsSheet, type RespondentsSelection } from './script-survey/RespondentsSheet';
+import { createPortal } from 'react-dom';
+import { ResearchCallPanel } from '@/components/reports/ResearchCallPanel';
+import { TranscriptionModal } from '@/components/booking/TranscriptionModal';
+import { useAgents } from '@/contexts/AgentsContext';
+import { shouldMaskContactInfo } from '@/utils/contactPrivacy';
+import { recordToPanelBooking, recordToTranscriptBooking } from '@/utils/scriptSurveyCallBooking';
 import { respondentsForChoice, respondentsForGridCell, respondentsForScale, unmatchedAnswerText, OTHER_LABEL } from '@/utils/scriptSurveyRespondents';
 import { GRID_OTHER } from '@/utils/scriptSurveyGrid';
 import { groupSurveyBlocks, type SurveyBlock } from '@/utils/scriptSurveyGrid';
@@ -122,8 +128,19 @@ export function ScriptSurveyInsightsDashboard({ scriptId }: { scriptId: string }
   const [isGenerating, setIsGenerating] = useState(false);
   const [searchParams, setSearchParams] = useSearchParams();
   const [respSel, setRespSel] = useState<RespondentsSelection | null>(null);
+  // CR-020: call panel beside the respondents list (no navigation, no new reads).
+  const [callRecord, setCallRecord] = useState<ScriptSurveyRecord | null>(null);
+  const [transcriptRecord, setTranscriptRecord] = useState<ScriptSurveyRecord | null>(null);
+  const { agents } = useAgents();
+  const maskContact = shouldMaskContactInfo(user?.role);
+  const closeAllPanels = () => { setCallRecord(null); setRespSel(null); };
+  const callTrigger = useRef<HTMLElement | null>(null);
+  const openCall = (r: ScriptSurveyRecord) => {
+    if (!callRecord) callTrigger.current = document.activeElement as HTMLElement | null;
+    setCallRecord(r);
+  };
 
-  const { script, questions, sections, records: allRecords, validRecords: allValid, eligibleRecords: allEligible, campaigns, campaignIdsReadable, lists, isLoading } =
+  const { script, questions, sections, records: allRecords, validRecords: allValid, eligibleRecords: allEligible, campaigns, campaignIdsReadable, lists, isLoading, refetch } =
     useScriptSurveyResponses(scriptId);
 
   // CR-014: campaign filter (AND with date range). Unknown id → All.
@@ -311,6 +328,7 @@ export function ScriptSurveyInsightsDashboard({ scriptId }: { scriptId: string }
           questions={questions}
           eligibleRecords={eligible}
           onSelect={setRespSel}
+          onOpenCall={openCall}
         />
       ),
     },
@@ -436,12 +454,39 @@ export function ScriptSurveyInsightsDashboard({ scriptId }: { scriptId: string }
       )}
 
       <ScriptSurveyTabs tabs={tabs} />
+      {(respSel || callRecord) && createPortal(
+        <div aria-hidden="true" className="fixed inset-0 z-50 bg-black/80 animate-in fade-in-0" onClick={closeAllPanels} />,
+        document.body,
+      )}
       <RespondentsSheet
         selection={respSel}
-        onClose={() => setRespSel(null)}
+        onClose={closeAllPanels}
+        onOpenCall={openCall}
+        activeBookingId={callRecord?.booking_id ?? null}
+        shifted={!!callRecord && !!respSel}
         campaignName={showCampaignFilter ? (id) => campaigns.find((c) => c.id === id)?.name ?? null : undefined}
         listName={showListFilter ? (id) => (id ? lists.find((l) => l.list_id === id)?.name ?? null : null) : undefined}
       />
+      <ResearchCallPanel
+        booking={callRecord ? recordToPanelBooking(callRecord) : null}
+        agentName={callRecord ? agents.find((a) => a.id === callRecord.agent_id)?.name ?? '—' : ''}
+        surveyLabel={script?.name ?? ''}
+        maskContact={maskContact}
+        onClose={() => setCallRecord(null)}
+        onOpenTranscript={() => setTranscriptRecord(callRecord)}
+        modal={false}
+        hideOverlay
+        onInteractOutside={(e) => e.preventDefault()}
+        onCloseAutoFocus={(e) => { e.preventDefault(); const el = callTrigger.current; setTimeout(() => el?.focus(), 0); }}
+      />
+      {transcriptRecord && (
+        <TranscriptionModal
+          booking={recordToTranscriptBooking(transcriptRecord, maskContact)}
+          isOpen={!!transcriptRecord}
+          onClose={() => { setTranscriptRecord(null); refetch(); }}
+          onTranscriptionComplete={() => { refetch(); }}
+        />
+      )}
     </div>
   );
 }

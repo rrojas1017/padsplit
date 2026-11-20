@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { format } from 'date-fns';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet';
 import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
 import type { ScriptSurveyRecord } from '@/hooks/useScriptSurveyResponses';
 import { useAgents } from '@/contexts/AgentsContext';
 import { useAuth } from '@/contexts/AuthContext';
@@ -23,6 +24,11 @@ interface Props {
   onClose: () => void;
   campaignName?: (id: string | null) => string | null;
   listName?: (id: string | null) => string | null;
+  /** CR-020: open the call panel in place (no navigation). */
+  onOpenCall?: (r: ScriptSurveyRecord) => void;
+  activeBookingId?: string | null;
+  /** Shift left so the call panel fits beside it (≥1024px). */
+  shifted?: boolean;
 }
 
 const PAGE = 50;
@@ -44,7 +50,7 @@ export function useRecordIdentity() {
 
 export const fmtCallDate = (d: string) => (d ? format(new Date(d + 'T00:00:00'), 'MMM d, yyyy') : '—');
 
-export function RespondentsSheet({ selection, onClose, campaignName, listName }: Props) {
+export function RespondentsSheet({ selection, onClose, campaignName, listName, onOpenCall, activeBookingId, shifted }: Props) {
   const navigate = useNavigate();
   const { agents } = useAgents();
   const identity = useRecordIdentity();
@@ -53,8 +59,15 @@ export function RespondentsSheet({ selection, onClose, campaignName, listName }:
   const recs = selection?.records ?? [];
 
   return (
-    <Sheet open={!!selection} onOpenChange={(o) => { if (!o) onClose(); }}>
-      <SheetContent side="right" className="w-full sm:max-w-lg overflow-y-auto">
+    <Sheet open={!!selection} onOpenChange={(o) => { if (!o) onClose(); }} modal={!onOpenCall}>
+      <SheetContent
+        side="right"
+        data-respondents-sheet=""
+        hideOverlay={!!onOpenCall}
+        // CR-020: closes only via X / Escape / the shared overlay (handled by the dashboard).
+        onInteractOutside={onOpenCall ? (e) => e.preventDefault() : undefined}
+        className={cn('w-full sm:max-w-lg overflow-y-auto transition-[right] duration-300 ease-out', shifted && 'lg:right-[32rem]')}
+      >
         {selection && (
           <>
             <SheetHeader className="text-left space-y-1">
@@ -68,7 +81,7 @@ export function RespondentsSheet({ selection, onClose, campaignName, listName }:
                 const list = listName?.(r.list_id);
                 const agent = agents.find((a) => a.id === r.agent_id)?.name;
                 return (
-                  <li key={r.booking_id} className="py-3 flex items-start justify-between gap-3">
+                  <li key={r.booking_id} className={cn('py-3 flex items-start justify-between gap-3', activeBookingId === r.booking_id && 'bg-muted -mx-2 px-2 rounded-md')}>
                     <div className="min-w-0 flex-1 space-y-0.5">
                       <p className="font-semibold text-sm text-foreground truncate">{id.primary}</p>
                       {id.secondary && <p className="text-xs text-muted-foreground">{id.secondary}</p>}
@@ -77,8 +90,14 @@ export function RespondentsSheet({ selection, onClose, campaignName, listName }:
                       </p>
                       {(() => { const t = selection.answerFor?.(r); return t ? <p className="text-xs text-muted-foreground whitespace-pre-wrap break-words pt-1">{t}</p> : null; })()}
                     </div>
-                    <Button size="sm" variant="outline" className="shrink-0" onClick={() => navigate(`/reports?booking=${encodeURIComponent(r.booking_id)}`)}>
-                      Open call
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="shrink-0"
+                      disabled={!!onOpenCall && activeBookingId === r.booking_id}
+                      onClick={() => (onOpenCall ? onOpenCall(r) : navigate(`/reports?booking=${encodeURIComponent(r.booking_id)}`))}
+                    >
+                      {onOpenCall && activeBookingId === r.booking_id ? 'Viewing' : 'Open call'}
                     </Button>
                   </li>
                 );

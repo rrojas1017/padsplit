@@ -21,7 +21,7 @@ type OnItem = ((label: string) => void) | undefined;
 const clickCls = 'cursor-pointer rounded-md transition-colors hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring';
 
 // CR-018: attributed written answers (identity · call date → Reports call panel).
-function WrittenAnswers({ q, records }: { q: ScriptSurveyQuestion; records: ScriptSurveyRecord[] }) {
+function WrittenAnswers({ q, records, onOpenCall }: { q: ScriptSurveyQuestion; records: ScriptSurveyRecord[]; onOpenCall?: (r: ScriptSurveyRecord) => void }) {
   const [open, setOpen] = useState(false);
   const [shown, setShown] = useState(50);
   const navigate = useNavigate();
@@ -40,7 +40,7 @@ function WrittenAnswers({ q, records }: { q: ScriptSurveyQuestion; records: Scri
               <button
                 type="button"
                 className="mt-0.5 text-xs text-muted-foreground hover:text-foreground hover:underline"
-                onClick={() => navigate(`/reports?booking=${encodeURIComponent(record.booking_id)}`)}
+                onClick={() => (onOpenCall ? onOpenCall(record) : navigate(`/reports?booking=${encodeURIComponent(record.booking_id)}`))}
               >
                 {identity(record).primary} · {fmtCallDate(record.booking_date)}
               </button>
@@ -62,6 +62,8 @@ interface ScriptSurveyResponsesTabProps {
   eligibleRecords: ScriptSurveyRecord[];
   /** CR-018 phase 2b: opens the dashboard's shared RespondentsSheet. */
   onSelect?: (s: RespondentsSelection) => void;
+  /** CR-020: open the call panel in place. */
+  onOpenCall?: (r: ScriptSurveyRecord) => void;
 }
 
 function downloadCsv(
@@ -370,6 +372,7 @@ function QuestionCard({
   scriptQuestion,
   records,
   onSelect,
+  onOpenCall,
 }: {
   summary: PEQuestionSummary;
   total: number;
@@ -378,6 +381,7 @@ function QuestionCard({
   scriptQuestion?: ScriptSurveyQuestion;
   records: ScriptSurveyRecord[];
   onSelect?: (s: RespondentsSelection) => void;
+  onOpenCall?: (r: ScriptSurveyRecord) => void;
 }) {
   const q = summary.question;
   const onItem: OnItem = onSelect && scriptQuestion
@@ -458,7 +462,7 @@ function QuestionCard({
               />
             )}
             {q.type === 'open' && scriptQuestion && summary.count > 0 && (
-              <WrittenAnswers q={scriptQuestion} records={records} />
+              <WrittenAnswers q={scriptQuestion} records={records} onOpenCall={onOpenCall} />
             )}
           </>
         )}
@@ -504,6 +508,7 @@ export function ScriptSurveyResponsesTab({
   questions,
   eligibleRecords,
   onSelect,
+  onOpenCall,
 }: ScriptSurveyResponsesTabProps) {
   const recordIdentity = useRecordIdentity();
   const data = useMemo(
@@ -624,6 +629,7 @@ export function ScriptSurveyResponsesTab({
             scriptQuestion={questions.find((sq) => sq.id === qs.question.id)}
             records={eligibleRecords}
             onSelect={onSelect}
+            onOpenCall={onOpenCall}
           />
         ))}
       </div>
