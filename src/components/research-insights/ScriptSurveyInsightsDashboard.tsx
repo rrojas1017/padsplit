@@ -483,7 +483,7 @@ export function ScriptSurveyInsightsDashboard({ scriptId }: { scriptId: string }
         <TranscriptionModal
           booking={recordToTranscriptBooking(transcriptRecord, maskContact)}
           isOpen={!!transcriptRecord}
-          onClose={() => { setTranscriptRecord(null); refetch(); }}
+          onClose={() => setTranscriptRecord(null)}
           onTranscriptionComplete={() => { refetch(); }}
         />
       )}
