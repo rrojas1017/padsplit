@@ -39,10 +39,12 @@ export function cleanOtherText(v: unknown): string | null {
 
 const SYSTEM = `You read a phone-call transcript between an agent and a caller. For each question listed, the caller's answer was recorded as "Other". Return what the CALLER said in answer to that question.
 Rules:
-- Quote the caller as close to verbatim as possible, at most 200 characters, in the transcript's language.
+- Use the caller's own words, but remove filler and stutters ("Mhmm", "I- I", "you know", repeated words, "Yeah, pretty much"). Do not change the meaning and do not add words.
+- Prefer one sentence, at most 160 characters, in the transcript's language.
 - No interpretation, no summary of the agent's words, no agent words.
+- If the caller explains why none of the listed options fits (e.g. "haven't booked yet, none available in my area", "never paid an application fee"), keep that as a short answer.
+- Use null when the caller only asks for clarification ("What do you mean..."), makes small talk, agrees vaguely, or gives no real answer to that question.
 - Never include names, phone numbers, emails or addresses; leave them out.
-- If the transcript has no clear caller answer to that question, use null.
 Respond with JSON only: {"answers":[{"question_id":"...","other_text":"..." or null}]}`;
 
 export async function extractOtherDetails(p: { apiKey: string; model: string; transcript: string; items: OtherItem[] }):
